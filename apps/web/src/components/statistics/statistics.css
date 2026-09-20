@@ -1,0 +1,361 @@
+/* implementation — the Statistics screen's layout and its own heading typography.
+   Everything here is scoped under `.pd-stats` on purpose.
+
+   PrepDeck's global heading face is Caprasimo (tokens.css). The dashboard
+   concept this screen implements is a dense, numeric surface where a display
+   serif at 13px card titles is unreadable, so headings and figures inside this
+   screen use the body face at a heavier weight. Scoping it to `.pd-stats`
+   means no other screen's headings change.
+
+   Breakpoints match lib/responsive.ts (900px "narrow", 620px "phone") so the
+   columns here collapse at the same widths as the rest of the app, without
+   this file needing the `bp` prop threaded into every card. */
+
+.pd-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* `backwards`, not `both`: a forwards-filling animation on `transform` stays
+     in effect after it ends, which keeps this element a containing block for
+     `position: fixed` descendants and clips any dialog backdrop opened from
+     this screen to the content column. The animation ends on the element's
+     own resting style, so dropping the forwards fill changes nothing visually. */
+  animation: pd-rise 0.28s ease backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-stats { animation: none; }
+}
+
+.pd-stats h1,
+.pd-stats h2,
+.pd-stats h3,
+.pd-stats h4 {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.pd-stats h1 { font-size: 32px; }
+.pd-stats h2 { font-size: 24px; }
+.pd-stats h3 { font-size: 19px; }
+.pd-stats h4 { font-size: 15px; }
+
+@media (max-width: 620px) {
+  .pd-stats h1 { font-size: 26px; }
+  .pd-stats h2 { font-size: 20px; }
+}
+
+/* The concept's card: a light surface, a hairline border and a whisper of
+   elevation, at a 14px radius — not the app's 32px pill-cards, which do not
+   tile into a metric grid. */
+.pd-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-bg);
+  box-shadow: var(--pd-shadow-sm);
+  min-width: 0;
+}
+
+.pd-stats-card--tight { padding: 18px 20px; gap: 12px; }
+
+.pd-stats-muted { color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.pd-stats-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+.pd-stats-figure {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.pd-stats-figure--sm { font-size: 26px; }
+
+/* --- Header ------------------------------------------------------------- */
+
+.pd-stats-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.pd-stats-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* --- Rows --------------------------------------------------------------- */
+
+.pd-stats-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.pd-stats-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .pd-stats-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .pd-stats-metrics { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- Readiness ---------------------------------------------------------- */
+
+.pd-stats-readiness {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.pd-stats-readiness-copy { flex: 1 1 240px; min-width: 0; }
+
+.pd-stats-ring { position: relative; flex: none; }
+/* The pass-line marker rides on top of the Untitled UI progress circle. */
+.pd-stats-ring-overlay { position: absolute; inset: 0; pointer-events: none; }
+
+.pd-stats-divider {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: var(--color-divider);
+}
+
+.pd-stats-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.pd-stats-actions > * { flex: 1 1 auto; min-width: 0; }
+
+/* --- Metric cards ------------------------------------------------------- */
+
+.pd-stats-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pd-stats-metric-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+}
+
+.pd-stats-metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* --- Wrong-book severity strip ------------------------------------------ */
+
+.pd-stats-strip { display: flex; gap: 4px; flex-wrap: wrap; }
+.pd-stats-strip span {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* --- Mock mini-bars ----------------------------------------------------- */
+
+.pd-stats-mockbars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 34px;
+}
+.pd-stats-mockbars > span {
+  flex: 1 1 0;
+  min-width: 6px;
+  border-radius: 4px;
+}
+
+/* --- Charts ------------------------------------------------------------- */
+
+/* Recharts sizes its SVG in pixels from a ResizeObserver, so between a
+   viewport shrink and the next measurement the SVG is still the old, wider
+   size. Without `overflow: hidden` that stale frame widens the page for one
+   paint, which at 375px is a visible horizontal scrollbar. */
+.pd-stats-chart {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.pd-stats-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.pd-stats-chart-legend span.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+/* The keyboard-reachable data alternative every chart carries. */
+.pd-stats-data summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-accent);
+  /* max-content would push the card wider than the viewport on a phone. */
+  max-width: 100%;
+  width: fit-content;
+}
+.pd-stats-data table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.pd-stats-data th,
+.pd-stats-data td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--color-divider);
+  font-variant-numeric: tabular-nums;
+}
+.pd-stats-data-scroll { overflow-x: auto; }
+
+/* --- Weekly study bars -------------------------------------------------- */
+
+.pd-stats-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.pd-stats-week-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pd-stats-week-track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 110px;
+}
+.pd-stats-week-bar {
+  width: 60%;
+  max-width: 34px;
+  min-height: 3px;
+  border-radius: 6px;
+}
+.pd-stats-week-label { font-size: 11px; white-space: nowrap; }
+
+/* --- Focus list --------------------------------------------------------- */
+
+.pd-stats-focus-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pd-stats-focus-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.pd-stats-focus-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.pd-stats-focus-name strong { overflow-wrap: anywhere; }
+
+.pd-stats-focus-meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.pd-stats-focus-meter-track {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-neutral-200);
+  overflow: hidden;
+}
+.pd-stats-focus-meter-fill { height: 100%; border-radius: 999px; }
+.pd-stats-focus-pct { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 42px; text-align: right; }
+
+@media (max-width: 760px) {
+  .pd-stats-focus-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .pd-stats-focus-row > :last-child { justify-self: start; }
+}
+
+/* --- Detail disclosure -------------------------------------------------- */
+
+.pd-stats-detail > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  max-width: 100%;
+  width: fit-content;
+}
+.pd-stats-detail[open] > summary { margin-bottom: 20px; }
+
+.pd-stats-heatmap {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.pd-stats-heatmap span { width: 14px; height: 14px; border-radius: 5px; }
+
+/* --- Study plan dialog -------------------------------------------------- */
+
+.pd-stats-plan-fields {
+  display: grid;
+  gap: 16px;
+}

@@ -1,0 +1,12 @@
+/* Layout-only rules for the MCP tokens card. Appearance comes from the shared
+   Untitled UI primitives (implementation, docs/guides/ui-components.md); these
+   classes only place them and let the long labels wrap on narrow screens. */
+.mcp-secret-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.mcp-secret-actions .mcp-secret-field { flex: 1 1 180px; min-width: 0; }
+.mcp-setup-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.mcp-setup-actions p { margin: 0; font-size: 12.5px; }
+/* The imported Button keeps its label on one line; these two are full
+   sentences, so they have to wrap rather than overflow a 360px screen. */
+.mcp-setup-actions .mcp-setup-button { white-space: normal; text-align: left; height: auto; }
+.mcp-setup-actions .mcp-setup-button > [data-text] { white-space: normal; }
+.mcp-setup-actions .mcp-setup-fallback { width: 100%; min-width: 0; }

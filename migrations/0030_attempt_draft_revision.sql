@@ -1,0 +1,12 @@
+-- Mock submission needs a cheap optimistic-concurrency token for the draft.
+--
+-- POST /attempts/:id/complete guards every statement it writes on "the draft
+-- has not moved since I read and graded it". Using draft_answers_json itself
+-- as that token meant each of the attempt's per-question statements carried a
+-- full copy of the whole draft blob, so a submission's payload grew with the
+-- SQUARE of the draft's size. A counter bumped by the draft writer gives the
+-- identical guarantee for one integer per statement.
+--
+-- Only draft ANSWERS bump it. Flags (flagged_json) are not graded, so a flag
+-- toggled while a submission is in flight must not invalidate that submission.
+ALTER TABLE attempts ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0;

@@ -1,0 +1,37 @@
+{
+  "name": "@prepdeck/worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:prompts": "node scripts/precompile-prompts.mjs",
+    "build": "npm run build:prompts && node scripts/migrate-remote-if-ci.mjs",
+    "predev": "npm run build:prompts",
+    "predeploy": "npm run build:prompts",
+    "pretypecheck": "npm run build:prompts",
+    "pretest": "npm run build:prompts",
+    "dev": "wrangler dev --env development",
+    "deploy": "wrangler deploy --env=\"\"",
+    "test": "node --test \"scripts/**/*.test.mjs\" \"src/**/*.test.ts\"",
+    "logs:estimate": "node scripts/estimate-log-volume.mjs",
+    "metrics:estimate": "node scripts/estimate-mcp-metric-volume.mjs",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply prepdeck --local",
+    "db:migrate:remote": "wrangler d1 migrations apply prepdeck --remote"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@prepdeck/shared": "*",
+    "hono": "^4.6.0",
+    "nunjucks": "^3.2.4",
+    "vite": "8.3.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260904.1",
+    "@types/nunjucks": "^3.2.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.131.0"
+  }
+}

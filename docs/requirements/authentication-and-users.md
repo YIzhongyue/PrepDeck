@@ -1,0 +1,72 @@
+# Authentication and users
+
+[Documentation index](../README.md)
+
+Browser authentication, allow-list membership and roles are separate concerns. The
+current implementation is [auth routes](../../apps/worker/src/routes/auth.ts),
+[authorization middleware](../../apps/worker/src/middleware/access.ts) and
+[user cache](../../apps/worker/src/lib/userCache.ts). Setup belongs in
+[development and deployment](../guides/development-and-deployment.md).
+
+Production does not support password sign-in. The local password endpoint requires
+both `ENVIRONMENT=development` and `ENABLE_DEV_PASSWORD_LOGIN=true`; merely running
+Wrangler's development environment does not enable it. MCP credentials and browser
+sessions have separate lifecycles; see [MCP setup](../guides/mcp-and-skills.md).
+
+Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
+
+## Authentication and authorization
+
+<a id="fr-1-1"></a>
+
+- **FR-1.1 (M):** Google sign-in uses the application login screen and direct OAuth, establishing a signed session cookie (`AUTH_MODE=cookie`). The invited-user allow-list protects application data. Static assets, login, health and unsubscribe have public entry points. The old requirement to put every route behind Cloudflare Access is superseded; `AUTH_MODE=access` is an optional rollback path, not the default.
+
+<a id="fr-1-2"></a>
+
+- **FR-1.2 (M):** From a dedicated **Authorized Users** admin screen, Admin can **invite** a new account by entering its Google email address and choosing an initial role (`admin` or `user`). This creates a `users` row with status `invited` and no `google_sub` yet, since the person has not signed in.
+
+<a id="fr-1-3"></a>
+
+- **FR-1.3 (M):** The Worker authorizes the Google email against `users`. An invited account becomes active on first sign-in and receives its Google subject/profile defaults; an active account may proceed; an unknown or revoked account is denied. Google authentication alone does not grant membership.
+
+<a id="fr-1-4"></a>
+
+- **FR-1.4 (M):** Admin can change roles or revoke accounts. Browser authorization caches are explicitly invalidated after these changes, but the 600-second KV cache and its propagation mean next-request revocation is not a global consistency guarantee. MCP independently checks current account status/role in D1 on every request. This corrects the original unconditional next-request promise.
+
+<a id="fr-1-5"></a>
+
+- **FR-1.5 (M):** Revoking an account does not delete its historical data (attempts, bookmarks, annotations, etc.) — it only blocks further access. A separate, explicit "delete account and all data" action is a distinct, more destructive operation (Could-have, [Future work](future-enhancements.md)).
+
+<a id="fr-1-6"></a>
+
+- **FR-1.6 (M):** Every protected browser API request verifies the configured cookie session or Access JWT and resolves internal identity, role and status server-side; client-supplied roles are never trusted. Public entry points have their own validation. MCP has separate bearer authentication and cannot use browser cookies or Access JWTs; see [MCP architecture](../architecture/mcp.md).
+
+<a id="fr-1-7"></a>
+
+- **FR-1.7 (M):** Admin-only endpoints (question bank management, Authorized Users management) must return `403 Forbidden` for `user`-role accounts.
+
+<a id="fr-1-8"></a>
+
+- **FR-1.8 (C):** **Deferred optional design.** Synchronizing an edge-level Cloudflare Access email policy is not implemented and is not required by the current cookie-auth deployment. Retain this ID for that original optional intent; no automatic Access policy synchronization is claimed.
+
+## User profiles
+
+<a id="fr-12-1"></a>
+
+- **FR-12.1 (M):** On an account's first successful sign-in (FR-1.3), the Worker initializes that user's display name and avatar from their Google account's OIDC profile claims (`name` and `picture`).
+
+<a id="fr-12-2"></a>
+
+- **FR-12.2 (M):** A user can edit their own display name at any time from their Settings page, overriding the Google-sourced default.
+
+<a id="fr-12-3"></a>
+
+- **FR-12.3 (M):** A user can upload a custom avatar image from their Settings page, overriding the Google-sourced default photo. Uploaded avatars are stored in Cloudflare R2 (see [storage and services](../architecture/system-overview.md#storage-and-services) for serving considerations).
+
+<a id="fr-12-4"></a>
+
+- **FR-12.4 (S):** Avatar uploads accept JPEG, PNG and WebP up to 2 MiB. The client prepares/resizes images before upload. The Worker validates the supported content type and size; avatars are served through the authenticated avatar route.
+
+<a id="fr-12-5"></a>
+
+- **FR-12.5 (M):** Display name and avatar — whether still Google-sourced or user-overridden — are shown wherever an account's identity is surfaced elsewhere in the app: shared Notes (FR-11.7), the Admin's Authorized Users list, and any other author/attribution UI.

@@ -1,0 +1,8 @@
+{
+  "audience": "admin",
+  "connectionName": "prepdeck-admin",
+  "serverName": "prepdeck-admin-mcp",
+  "endpointPath": "/admin-mcp",
+  "tokenEnvVar": "PREPDECK_ADMIN_MCP_TOKEN",
+  "identityTool": "admin_get_identity"
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  // Same exclusion as apps/worker/tsconfig.json: the test files import
+  // node:test and node:assert, and this package ships no Node types.
+  "exclude": ["src/**/*.test.ts"]
+}

@@ -1,0 +1,60 @@
+name: Release skills
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "skills/**"
+      - ".github/scripts/*skills*"
+      - ".github/workflows/release-skills.yml"
+      - "apps/worker/src/mcp/user/server.ts"
+      - "apps/worker/src/mcp/admin/server.ts"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-skills-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and release skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python for Skill validation
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install validation dependency
+        run: python -m pip install 'PyYAML>=6,<7'
+
+      - name: Test Skill validation
+        run: python -m unittest discover -s .github/scripts -p 'test_validate_skills.py'
+
+      - name: Package skill directories
+        run: bash .github/scripts/package-skills.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: skills-${{ github.sha }}
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          release_title="Skills ${short_sha}"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/skills/*.skill --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/skills/*.skill \
+              --target "$GITHUB_SHA" \
+              --title "$release_title" \
+              --generate-notes
+          fi

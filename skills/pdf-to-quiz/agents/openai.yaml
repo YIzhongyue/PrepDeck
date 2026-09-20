@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF to Quiz"
+  short_description: "Convert exam PDFs into validated quiz JSON"
+  default_prompt: "Use $pdf-to-quiz to convert my exam PDF into validated PrepDeck import JSON."

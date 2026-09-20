@@ -1,0 +1,4 @@
+interface:
+  display_name: "PrepDeck"
+  short_description: "Study and manage personal notes with User MCP"
+  default_prompt: "Use $prepdeck to show what I should review today."

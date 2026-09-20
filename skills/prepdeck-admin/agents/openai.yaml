@@ -1,0 +1,4 @@
+interface:
+  display_name: "PrepDeck Admin"
+  short_description: "Review and maintain banks with privileged Admin MCP"
+  default_prompt: "Use $prepdeck-admin to find questions missing explanations and show a proposed fix."

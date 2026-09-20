@@ -1,0 +1,29 @@
+name: Local development and export safety
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check tracked source for credentials before export
+        run: npm run oss:check
+      - name: Verify configuration, export sanitization and isolated history
+        run: npm run test:local
+      - name: Install browser test tooling without changing the lockfile
+        run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - name: Exercise clean local bootstrap, bindings and browser login
+        run: npm run test:local:smoke -- --browser

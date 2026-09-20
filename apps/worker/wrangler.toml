@@ -1,0 +1,216 @@
+name = "prepdeck"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve the built SPA (apps/web) from the same Worker/origin as the API.
+# /api/* and the dedicated /mcp and /admin-mcp endpoints invoke this Worker's
+# fetch handler (src/index.ts); other requests use static assets, with unmatched paths
+# falling back to index.html for client-side routing.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/admin-mcp", "/admin-mcp/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "prepdeck"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "prepdeck-files"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "00000000000000000000000000000000"
+
+# implementation — bounded MCP metrics; queried separately from sampled Workers Logs.
+[[analytics_engine_datasets]]
+binding = "MCP_METRICS"
+dataset = "prepdeck_mcp_metrics"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterObject"
+
+[[migrations]]
+tag = "v1-rate-limiter"
+new_sqlite_classes = ["RateLimiterObject"]
+
+# implementation — daily question review email delivery. `remote = true` proxies
+# sends to the real Email Sending service even from `wrangler dev`, so local
+# testing exercises the real send path instead of silently no-op'ing.
+[[send_email]]
+name = "EMAIL"
+remote = true
+
+# implementation — daily sweep for abandoned Knowledge Point image uploads
+# (src/scheduled/cleanupKnowledgePointImages.ts). Off-peak, arbitrary minute
+# to avoid round-number contention with other scheduled jobs.
+# implementation — every-15-minutes sweep so each user's own configured local
+# delivery hour is checked promptly (src/scheduled/sendDailyReviewEmails.ts)
+# without per-minute invocation cost. The scheduled handler branches on
+# event.cron to route each trigger to its job.
+[triggers]
+crons = ["17 3 * * *", "*/15 * * * *"]
+
+# Admin import validation performs D1 duplicate lookups, so it has its own
+# distributed budget rather than sharing the final write/import budget.
+[[ratelimits]]
+name = "IMPORT_VALIDATE_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "IMPORT_EXECUTE_RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 5, period = 60 }
+
+[observability.logs]
+enabled = true
+# Production: retain a small diagnostic sample, but do not automatically
+# persist a platform-generated record for every invocation. Application
+# event sampling and the operational controls are documented in
+# docs/operations/observability-runbook.md.
+head_sampling_rate = 0.05
+invocation_logs = false
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+# Google OAuth 2.0 (docs/requirements/authentication-and-users.md) is the primary sign-in path — the app
+# presents its own login page (apps/web/src/screens/Login.tsx) and drives the
+# OAuth round trip itself, rather than Cloudflare Access's hosted page.
+# CF_ACCESS_TEAM_DOMAIN/CF_ACCESS_AUD are kept only for the AUTH_MODE =
+# "access" rollback path (see src/middleware/access.ts) — no longer used
+# day-to-day.
+[vars]
+# This checked-in/default deployment is production. Local password login must
+# be opted into with BOTH ENVIRONMENT=development and
+# ENABLE_DEV_PASSWORD_LOGIN=true in .dev.vars. Never enable it here.
+ENVIRONMENT = "production"
+ENABLE_DEV_PASSWORD_LOGIN = "false"
+CF_ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+CF_ACCESS_AUD = "YOUR_CLOUDFLARE_ACCESS_AUD"
+# The OAuth 2.0 Web client ID from Google Cloud Console (not secret — it's
+# visible in the browser-facing auth URL). Replace with your own; the
+# matching secret goes in GOOGLE_CLIENT_SECRET below.
+GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+# "cookie": our own session cookie, established via Google OAuth or (locally
+# only) email+password login — see src/routes/auth.ts. "access": fall back to
+# Cloudflare Access instead (requires Access to still be configured in front
+# of the app at the edge).
+AUTH_MODE = "cookie"
+# Cost circuit: normal | degraded | emergency. Change through the reviewed
+# deployment automation described in docs/operations/cloudflare-cost-containment.md.
+CIRCUIT_MODE = "normal"
+# Defence-in-depth exact IP list only; put CIDR enforcement in a WAF custom
+# rule. Production values should be supplied by environment-specific config.
+EMERGENCY_ADMIN_IPS = ""
+
+# implementation — MCP per-account request quotas (requests per 60s window), kept
+# as plain vars (not secrets) so they can be tuned by deploying a config
+# change alone. Values here reproduce the original fixed defaults; see
+# configuredLimit() in src/middleware/rateLimit.ts for fallback behaviour if
+# unset or non-numeric.
+MCP_METRICS_ENABLED = "true"
+MCP_USER_RATE_LIMIT_PER_MINUTE = "60"
+MCP_ADMIN_RATE_LIMIT_PER_MINUTE = "30"
+MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE = "30"
+# Stricter than the blanket Admin account quota above: covers every content
+# mutation tool (question create/update/delete/batch, exam lifecycle, tag
+# tools). Imports use their own native rate limiters instead (see
+# IMPORT_VALIDATE_RATE_LIMITER/IMPORT_EXECUTE_RATE_LIMITER below).
+MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
+
+# implementation — daily review email. PLACEHOLDER VALUES: replace with the real
+# deployment domain and an address on a domain that has been onboarded via
+# `wrangler email sending enable <domain>` (required before any send will
+# succeed — see the Cloudflare Email Service docs). Used to build absolute
+# links (CTA, unsubscribe, logo) since the scheduled job runs outside any
+# request context and has no request origin to derive them from.
+APP_BASE_URL = "https://prepdeck.example.com"
+EMAIL_FROM_ADDRESS = "noreply@example.com"
+
+# Local development is intentionally verbose and is never persisted to the
+# production Workers Logs dataset. `npm run dev` selects this environment.
+[env.development]
+name = "prepdeck-development"
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "prepdeck"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../migrations"
+
+[[env.development.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "prepdeck-files"
+
+[[env.development.kv_namespaces]]
+binding = "KV"
+id = "00000000000000000000000000000000"
+
+# Separate dataset if development is deployed; local Wrangler simulates it.
+[[env.development.analytics_engine_datasets]]
+binding = "MCP_METRICS"
+dataset = "prepdeck_mcp_metrics_development"
+
+[[env.development.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterObject"
+
+[[env.development.ratelimits]]
+name = "IMPORT_VALIDATE_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
+[[env.development.ratelimits]]
+name = "IMPORT_EXECUTE_RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 5, period = 60 }
+
+[[env.development.send_email]]
+name = "EMAIL"
+remote = false
+
+[env.development.observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = false
+
+[env.development.observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = false
+
+[env.development.vars]
+ENVIRONMENT = "development"
+ENABLE_DEV_PASSWORD_LOGIN = "true"
+CIRCUIT_MODE = "normal"
+EMERGENCY_ADMIN_IPS = ""
+MCP_USER_RATE_LIMIT_PER_MINUTE = "60"
+MCP_ADMIN_RATE_LIMIT_PER_MINUTE = "30"
+MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE = "30"
+MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
+MCP_METRICS_ENABLED = "true"
+CF_ACCESS_TEAM_DOMAIN = ""
+CF_ACCESS_AUD = ""
+GOOGLE_CLIENT_ID = ""
+AUTH_MODE = "cookie"
+APP_BASE_URL = "http://localhost:5173"
+EMAIL_FROM_ADDRESS = "noreply@example.com"
+
+# Secrets (never committed): set via `wrangler secret put <NAME>` for deployment.
+# - GOOGLE_CLIENT_SECRET: required only for explicitly configured Google OAuth.
+# - SESSION_SECRET: HMAC key for sessions. `npm run dev:setup` generates its
+#   local value in .dev.vars.development; Wrangler never reads deployed secrets.
+# - none required for BYOK AI relay (docs/requirements/ai-explanations.md) — provider keys are supplied
+#   per-request by the browser and never persisted server-side.

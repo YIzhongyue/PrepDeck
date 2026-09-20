@@ -1,0 +1,5 @@
+# Local secrets only. npm run dev:setup generates a random SESSION_SECRET.
+# Development flags, binding names and safe addresses live in wrangler.toml.
+SESSION_SECRET=replace-with-a-random-local-secret
+# Optional remote Google integration only; password login needs neither value.
+# GOOGLE_CLIENT_SECRET=

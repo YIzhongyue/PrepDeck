@@ -1,0 +1,34 @@
+.kp-editor { min-width: 0; }
+.kp-editor-toolbar, .kp-table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 10px 14px; background: var(--color-neutral-100); border-bottom: 1px solid var(--color-divider); }
+.kp-editor button, .kp-editor select, .kp-editor input, .kp-editor textarea { font: inherit; color: var(--color-text); }
+.kp-editor-toolbar button, .kp-editor-toolbar select, .kp-table-tools button, .kp-block-controls button, .kp-image-dialog button { min-height: 34px; padding: 5px 10px; border: 1px solid var(--color-divider); border-radius: 12px; background: var(--color-bg); cursor: pointer; font-size: 12px; }
+.kp-editor-toolbar button[aria-pressed=true] { background: var(--color-accent-200); color: var(--color-accent-800); }
+.kp-editor button:disabled { cursor: default; opacity: .45; }
+.kp-editor :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.kp-editor-header { padding: 22px 24px 0; }
+.kp-editor-body { padding: 12px 24px 26px; min-width: 0; overflow-wrap: anywhere; }
+.kp-editor .tiptap { min-height: 300px; outline: 0; font-size: 15.5px; line-height: 1.72; }
+.kp-editor .tiptap p { margin: 0 0 .8em; }
+.kp-editor .tiptap h1, .kp-editor .tiptap h2, .kp-editor .tiptap h3 { margin: 1em 0 .5em; }
+.kp-editor .tiptap blockquote { border-left: 3px solid var(--color-accent); margin: 1em 0; padding: 8px 18px; background: var(--color-accent-100); }
+.kp-editor .tiptap ul, .kp-editor .tiptap ol { padding-left: 26px; }
+.kp-editor .tiptap a { color: var(--color-accent-700); text-decoration: underline; }
+.kp-editor .tiptap code { font-family: 'JetBrains Mono', monospace; background: var(--color-neutral-100); border-radius: 4px; }
+.kp-editor .tableWrapper { overflow-x: auto; margin: 14px 0; }
+.kp-editor table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.kp-editor td, .kp-editor th { border: 1px solid var(--color-divider); padding: 9px; vertical-align: top; min-width: 60px; position: relative; }
+.kp-editor th { background: var(--color-neutral-100); }
+.kp-editor .selectedCell { background: var(--color-accent-100); }
+.kp-source-block, .kp-image-block { border: 1px solid var(--color-divider); border-radius: 14px; margin: 16px 0; overflow: hidden; }
+.kp-source-block pre { margin: 0; padding: 14px; max-width: 100%; overflow-x: auto; white-space: pre; background: var(--color-surface); }
+.kp-block-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 12px; background: var(--color-neutral-100); font-size: 12px; }
+.kp-block-controls label { display: flex; align-items: center; flex: 1; min-width: 0; gap: 8px; }
+.kp-block-controls input { width: 100%; min-width: 0; padding: 5px 8px; background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 8px; }
+.kp-image-open { display: block; width: 100%; border: 0; padding: 0; cursor: zoom-in; background: var(--color-bg); }
+.kp-image-open img { display: block; max-width: 100%; max-height: 420px; margin: auto; }
+.kp-image-dialog { position: fixed; z-index: 120; inset: 3vh 3vw; width: 94vw; height: 94vh; padding: 16px; border: 1px solid var(--color-divider); border-radius: 20px; background: var(--color-bg); box-shadow: var(--pd-shadow-lg); }
+.kp-image-dialog img { display: block; max-width: 100%; max-height: calc(100% - 50px); margin: 12px auto; object-fit: contain; }
+.kp-editor-message { padding: 10px 16px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.kp-editor-message[role=alert] { color: var(--color-danger-text); background: var(--color-danger-bg); }
+.kp-source-mode { width: 100%; min-height: 320px; resize: vertical; background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 12px; padding: 12px; font-family: 'JetBrains Mono', monospace !important; }
+@media (max-width: 480px) { .kp-editor-header { padding: 18px 14px 0; } .kp-editor-body { padding: 10px 14px 20px; } .kp-editor-toolbar { padding: 8px; } .kp-editor-toolbar button { min-height: 40px; } }

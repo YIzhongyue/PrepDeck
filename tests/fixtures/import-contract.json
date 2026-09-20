@@ -1,0 +1,786 @@
+{
+  "base": {
+    "schemaVersion": "1.0",
+    "exam": {
+      "id": "sample-exam",
+      "name": "Sample exam",
+      "language": "en"
+    },
+    "source": {
+      "originalFileName": "sample.pdf",
+      "extractedAt": "2026-09-07T00:00:00Z"
+    },
+    "questions": [
+      {
+        "externalId": "Section-A-Q1",
+        "type": "single_choice",
+        "stem": "Which value is even?",
+        "options": [
+          {
+            "id": "A",
+            "text": "2"
+          },
+          {
+            "id": "B",
+            "text": "3"
+          }
+        ],
+        "correctAnswers": [
+          "A"
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "valid single choice",
+      "valid": true,
+      "set": {},
+      "remove": []
+    },
+    {
+      "name": "valid multiple choice",
+      "valid": true,
+      "set": {
+        "/questions/0/type": "multiple_choice",
+        "/questions/0/correctAnswers": [
+          "A",
+          "B"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "valid true false",
+      "valid": true,
+      "set": {
+        "/questions/0/type": "true_false",
+        "/questions/0/options": [
+          {
+            "id": "true",
+            "text": "True"
+          },
+          {
+            "id": "false",
+            "text": "False"
+          }
+        ],
+        "/questions/0/correctAnswers": [
+          "false"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "valid fill blank aliases",
+      "valid": true,
+      "set": {
+        "/questions/0/type": "fill_blank",
+        "/questions/0/correctAnswers": [
+          "two",
+          "2"
+        ]
+      },
+      "remove": [
+        "/questions/0/options"
+      ]
+    },
+    {
+      "name": "optional fields omitted",
+      "valid": true,
+      "set": {},
+      "remove": [
+        "/source",
+        "/questions/0/externalId"
+      ]
+    },
+    {
+      "name": "nullable explanation difficulty",
+      "valid": true,
+      "set": {
+        "/questions/0/explanation": null,
+        "/questions/0/difficulty": null
+      },
+      "remove": []
+    },
+    {
+      "name": "future metadata retained",
+      "valid": true,
+      "set": {
+        "/future": {
+          "v": 1
+        },
+        "/questions/0/future": [
+          "a"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "null type",
+      "valid": false,
+      "set": {
+        "/questions/0/type": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null stem",
+      "valid": false,
+      "set": {
+        "/questions/0/stem": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null externalId",
+      "valid": false,
+      "set": {
+        "/questions/0/externalId": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null options",
+      "valid": false,
+      "set": {
+        "/questions/0/options": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null correctAnswers",
+      "valid": false,
+      "set": {
+        "/questions/0/correctAnswers": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null tags",
+      "valid": false,
+      "set": {
+        "/questions/0/tags": null
+      },
+      "remove": []
+    },
+    {
+      "name": "null points",
+      "valid": false,
+      "set": {
+        "/questions/0/points": null
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed type list",
+      "valid": false,
+      "set": {
+        "/questions/0/type": []
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed type dict",
+      "valid": false,
+      "set": {
+        "/questions/0/type": {}
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed difficulty list",
+      "valid": false,
+      "set": {
+        "/questions/0/difficulty": []
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed difficulty dict",
+      "valid": false,
+      "set": {
+        "/questions/0/difficulty": {}
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed externalId list",
+      "valid": false,
+      "set": {
+        "/questions/0/externalId": []
+      },
+      "remove": []
+    },
+    {
+      "name": "malformed externalId dict",
+      "valid": false,
+      "set": {
+        "/questions/0/externalId": {}
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid questions None",
+      "valid": false,
+      "set": {
+        "/questions": null
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid questions []",
+      "valid": false,
+      "set": {
+        "/questions": []
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid questions {}",
+      "valid": false,
+      "set": {
+        "/questions": {}
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid questions ",
+      "valid": false,
+      "set": {
+        "/questions": ""
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid questions False",
+      "valid": false,
+      "set": {
+        "/questions": false
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid source None",
+      "valid": false,
+      "set": {
+        "/source": null
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid source []",
+      "valid": false,
+      "set": {
+        "/source": []
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid source 5",
+      "valid": false,
+      "set": {
+        "/source": 5
+      },
+      "remove": []
+    },
+    {
+      "name": "invalid optional exam language",
+      "valid": false,
+      "set": {
+        "/exam/language": 5
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /exam/id",
+      "valid": false,
+      "set": {
+        "/exam/id": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /exam/name",
+      "valid": false,
+      "set": {
+        "/exam/name": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /questions/0/stem",
+      "valid": false,
+      "set": {
+        "/questions/0/stem": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /questions/0/externalId",
+      "valid": false,
+      "set": {
+        "/questions/0/externalId": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /questions/0/options/0/id",
+      "valid": false,
+      "set": {
+        "/questions/0/options/0/id": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "empty /questions/0/options/0/text",
+      "valid": false,
+      "set": {
+        "/questions/0/options/0/text": "  "
+      },
+      "remove": []
+    },
+    {
+      "name": "single choice multiple answers",
+      "valid": false,
+      "set": {
+        "/questions/0/correctAnswers": [
+          "A",
+          "B"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "duplicate answers",
+      "valid": false,
+      "set": {
+        "/questions/0/correctAnswers": [
+          "A",
+          "A"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "missing answer option",
+      "valid": false,
+      "set": {
+        "/questions/0/correctAnswers": [
+          "C"
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "blank answer",
+      "valid": false,
+      "set": {
+        "/questions/0/correctAnswers": [
+          ""
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "multiple choice one answer",
+      "valid": false,
+      "set": {
+        "/questions/0/type": "multiple_choice"
+      },
+      "remove": []
+    },
+    {
+      "name": "duplicate option IDs",
+      "valid": false,
+      "set": {
+        "/questions/0/options/1/id": "A"
+      },
+      "remove": []
+    },
+    {
+      "name": "true false wrong option IDs",
+      "valid": false,
+      "set": {
+        "/questions/0/type": "true_false"
+      },
+      "remove": []
+    },
+    {
+      "name": "fill blank null options",
+      "valid": false,
+      "set": {
+        "/questions/0/type": "fill_blank",
+        "/questions/0/options": null
+      },
+      "remove": []
+    },
+    {
+      "name": "duplicate external IDs",
+      "valid": false,
+      "set": {
+        "/questions": [
+          {
+            "externalId": "Section-A-Q1",
+            "type": "single_choice",
+            "stem": "Which value is even?",
+            "options": [
+              {
+                "id": "A",
+                "text": "2"
+              },
+              {
+                "id": "B",
+                "text": "3"
+              }
+            ],
+            "correctAnswers": [
+              "A"
+            ]
+          },
+          {
+            "externalId": "Section-A-Q1",
+            "type": "single_choice",
+            "stem": "Which value is even?",
+            "options": [
+              {
+                "id": "A",
+                "text": "2"
+              },
+              {
+                "id": "B",
+                "text": "3"
+              }
+            ],
+            "correctAnswers": [
+              "A"
+            ]
+          }
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "boolean points",
+      "valid": false,
+      "set": {
+        "/questions/0/points": true
+      },
+      "remove": []
+    },
+    {
+      "name": "array question",
+      "valid": false,
+      "set": {
+        "/questions/0": []
+      },
+      "remove": []
+    },
+    {
+      "name": "array option",
+      "valid": false,
+      "set": {
+        "/questions/0/options/0": []
+      },
+      "remove": []
+    },
+    {
+      "name": "non-string tags",
+      "valid": false,
+      "set": {
+        "/questions/0/tags": [
+          "tag",
+          1
+        ]
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-09-07",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "2026-09-07"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-09-07T10:00:00",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "2026-09-07T10:00:00"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-02-30T10:00:00Z",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "2026-02-30T10:00:00Z"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2024-02-29t23:59:59.123z",
+      "valid": true,
+      "set": {
+        "/source/extractedAt": "2024-02-29t23:59:59.123z"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-09-07T10:00:00+09:00",
+      "valid": true,
+      "set": {
+        "/source/extractedAt": "2026-09-07T10:00:00+09:00"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-09-07T10:00:00+09:99",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "2026-09-07T10:00:00+09:99"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 2026-09-07T24:00:00Z",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "2026-09-07T24:00:00Z"
+      },
+      "remove": []
+    },
+    {
+      "name": "timestamp 0000-01-01T00:00:00Z",
+      "valid": false,
+      "set": {
+        "/source/extractedAt": "0000-01-01T00:00:00Z"
+      },
+      "remove": []
+    },
+    {
+      "name": "Unicode whitespace 0xfeff",
+      "valid": false,
+      "set": {
+        "/questions/0/stem": "﻿"
+      },
+      "remove": []
+    },
+    {
+      "name": "Unicode whitespace 0x85",
+      "valid": false,
+      "set": {
+        "/questions/0/stem": ""
+      },
+      "remove": []
+    },
+    {
+      "name": "Unicode whitespace 0x1c",
+      "valid": false,
+      "set": {
+        "/questions/0/stem": "\u001c"
+      },
+      "remove": []
+    },
+    {
+      "name": "length /questions/0/stem 20000",
+      "valid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/stem": {
+          "value": "x",
+          "count": 20000
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/stem 20001",
+      "valid": false,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/stem": {
+          "value": "x",
+          "count": 20001
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/options/0/text 10000",
+      "valid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/options/0/text": {
+          "value": "x",
+          "count": 10000
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/options/0/text 10001",
+      "valid": false,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/options/0/text": {
+          "value": "x",
+          "count": 10001
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/explanation 50000",
+      "valid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/explanation": {
+          "value": "x",
+          "count": 50000
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/explanation 50001",
+      "valid": false,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/explanation": {
+          "value": "x",
+          "count": 50001
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/tags/0 200",
+      "valid": true,
+      "set": {
+        "/questions/0/tags": [
+          "tag"
+        ]
+      },
+      "remove": [],
+      "repeat": {
+        "/questions/0/tags/0": {
+          "value": "x",
+          "count": 200
+        }
+      }
+    },
+    {
+      "name": "length /questions/0/tags/0 201",
+      "valid": false,
+      "set": {
+        "/questions/0/tags": [
+          "tag"
+        ]
+      },
+      "remove": [],
+      "repeat": {
+        "/questions/0/tags/0": {
+          "value": "x",
+          "count": 201
+        }
+      }
+    },
+    {
+      "name": "array length /questions 1000",
+      "valid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions": {
+          "value": {
+            "type": "single_choice",
+            "stem": "Which value is even?",
+            "options": [
+              {
+                "id": "A",
+                "text": "2"
+              },
+              {
+                "id": "B",
+                "text": "3"
+              }
+            ],
+            "correctAnswers": [
+              "A"
+            ]
+          },
+          "count": 1000
+        }
+      }
+    },
+    {
+      "name": "array length /questions 1001",
+      "valid": false,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions": {
+          "value": {
+            "type": "single_choice",
+            "stem": "Which value is even?",
+            "options": [
+              {
+                "id": "A",
+                "text": "2"
+              },
+              {
+                "id": "B",
+                "text": "3"
+              }
+            ],
+            "correctAnswers": [
+              "A"
+            ]
+          },
+          "count": 1001
+        }
+      }
+    },
+    {
+      "name": "UTF16 stem 10000",
+      "valid": true,
+      "schemaValid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/stem": {
+          "value": "😀",
+          "count": 10000
+        }
+      }
+    },
+    {
+      "name": "UTF16 stem 10001",
+      "valid": false,
+      "schemaValid": true,
+      "set": {},
+      "remove": [],
+      "repeat": {
+        "/questions/0/stem": {
+          "value": "😀",
+          "count": 10001
+        }
+      }
+    }
+  ],
+  "limits": {
+    "maxQuestions": 1000,
+    "maxStemLength": 20000,
+    "maxOptionTextLength": 10000,
+    "maxOptions": 20,
+    "maxTags": 50,
+    "maxTagLength": 200,
+    "maxExplanationLength": 50000
+  },
+  "transportLimits": {
+    "maxBytes": 5242880,
+    "maxDepth": 32
+  }
+}

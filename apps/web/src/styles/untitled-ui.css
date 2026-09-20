@@ -1,0 +1,406 @@
+/* Untitled UI React (MIT, https://www.untitledui.com/react) — Tailwind CSS v4
+   entry point and the single place where Untitled UI's semantic design tokens
+   are bound to PrepDeck's own tokens. implementation; see
+   docs/guides/ui-components.md for the mapping table and how to add a
+   component.
+
+   Two rules keep the two systems from fighting each other:
+
+   1. Tailwind's preflight is deliberately NOT imported. It resets list markers
+      and link underlines that PrepDeck's Markdown previews render with the
+      browser defaults, and it would reset `h1`-`h6` that tokens.css sizes. The
+      handful of preflight rules the imported components actually rely on are
+      re-stated, scoped, at the bottom of this file.
+
+   2. Every binding below uses `@theme inline`, so a utility compiles to
+      `background-color: var(--color-accent)` rather than to an intermediate
+      variable resolved once on `:root`. Custom properties substitute at
+      computed-value time, so an intermediate would freeze the palette that
+      `<html>` happened to carry at load. Inlining makes each utility resolve
+      against the nearest `[data-pd-theme]` ancestor instead, which is what
+      lets a scheme change repaint imported components — including the ones
+      React Aria portals into `<body>` — without a reload. */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Stated rather than inferred, so the Vite build and the standalone Tailwind
+   CLI that scripts/settings.browser.mjs runs scan exactly the same files. */
+@source "../**/*.{ts,tsx}";
+
+@plugin "tailwindcss-react-aria-components";
+@plugin "tailwindcss-animate";
+
+@custom-variant label (& [data-label]);
+@custom-variant focus-input-within (&:has(input:focus));
+
+@utility transition-inherit-all {
+    transition-property: inherit;
+    transition-duration: inherit;
+    transition-timing-function: inherit;
+}
+
+@utility scrollbar-hide {
+    &::-webkit-scrollbar {
+        display: none;
+        -webkit-appearance: none;
+    }
+
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Untitled UI's own type scale. PrepDeck does not define `--text-*`, and
+   Tailwind has no `--text-md`, which the components use throughout. */
+@theme {
+    --text-xs: 0.75rem;
+    --text-xs--line-height: 1.125rem;
+    --text-sm: 0.875rem;
+    --text-sm--line-height: 1.25rem;
+    --text-md: 1rem;
+    --text-md--line-height: 1.5rem;
+    --text-lg: 1.125rem;
+    --text-lg--line-height: 1.75rem;
+    --text-xl: 1.25rem;
+    --text-xl--line-height: 1.875rem;
+
+    /* Untitled UI's display scale, used by the progress circles (implementation).
+       Like `--text-*` above these are sizes, not colors, so they belong in the
+       plain `@theme` block: nothing here has to follow `[data-pd-theme]`. */
+    --text-display-xs: 1.5rem;
+    --text-display-xs--line-height: 2rem;
+    --text-display-sm: 1.875rem;
+    --text-display-sm--line-height: 2.375rem;
+    --text-display-md: 2.25rem;
+    --text-display-md--line-height: 2.75rem;
+    --text-display-lg: 3rem;
+    --text-display-lg--line-height: 3.75rem;
+
+    /* Untitled UI's skeuomorphic button/input edge. Tailwind supplies the rest
+       of the `--shadow-*` scale; PrepDeck's own elevations are `--pd-shadow-*`
+       so the two scales cannot collide. */
+    --shadow-skeuomorphic:
+        0px 0px 0px 1px rgba(0, 0, 0, 0.18) inset,
+        0px -2px 0px 0px rgba(0, 0, 0, 0.05) inset;
+    --shadow-xs-skeuomorphic: var(--shadow-skeuomorphic), var(--shadow-xs);
+}
+
+/* ---------------------------------------------------------------------------
+   Token mapping — Untitled UI semantic token -> PrepDeck token.
+
+   Nothing here may reference another Untitled UI token: each binding has to
+   bottom out in a PrepDeck variable in one step, or `@theme inline` would emit
+   an intermediate and the scheme would stop following `[data-pd-theme]`.
+
+   PrepDeck's neutral and accent ramps already invert for the Dusk scheme
+   (`--color-neutral-900` is the lightest tone there), so Untitled UI's
+   light-mode definitions produce correct dark-scheme output on their own. That
+   is why there is no `.dark-mode` block: the five PrepDeck schemes are the
+   only modes, and they are selected by `[data-pd-theme]`.
+   --------------------------------------------------------------------------- */
+@theme inline {
+    /* --- Surfaces (`bg-*`) ------------------------------------------------ */
+    --color-bg-primary: var(--color-bg);
+    --color-bg-primary_alt: var(--color-bg);
+    --color-bg-primary_hover: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
+    --color-bg-secondary: var(--color-surface);
+    --color-bg-secondary_alt: var(--color-surface);
+    --color-bg-secondary_hover: color-mix(in srgb, var(--color-text) 8%, var(--color-surface));
+    --color-bg-tertiary: var(--color-neutral-100);
+    --color-bg-quaternary: var(--color-neutral-200);
+    --color-bg-active: color-mix(in srgb, var(--color-text) 8%, var(--color-bg));
+    --color-bg-disabled: var(--color-neutral-100);
+    --color-bg-disabled_subtle: var(--color-neutral-100);
+    --color-bg-primary-solid: var(--color-neutral-900);
+    --color-bg-secondary-solid: var(--color-neutral-600);
+    /* Matches the existing `.dialog-backdrop` wash in tokens.css. */
+    --color-bg-overlay: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
+    --color-bg-brand-primary: var(--color-accent-100);
+    --color-bg-brand-primary_alt: var(--color-accent-100);
+    --color-bg-brand-secondary: var(--color-accent-200);
+    --color-bg-brand-solid: var(--color-accent);
+    --color-bg-brand-solid_hover: var(--color-accent-600);
+    --color-bg-brand-section: var(--color-accent-800);
+    --color-bg-brand-section_subtle: var(--color-accent-700);
+    --color-bg-error-primary: var(--color-danger-bg);
+    --color-bg-error-secondary: var(--color-danger-border);
+    --color-bg-error-solid: var(--color-danger);
+    --color-bg-error-solid_hover: var(--color-danger-text);
+    --color-bg-warning-primary: var(--color-warning-bg);
+    --color-bg-warning-secondary: var(--color-warning-border);
+    --color-bg-warning-solid: var(--color-warning);
+    --color-bg-success-primary: var(--color-accent-2-100);
+    --color-bg-success-secondary: var(--color-accent-2-200);
+    --color-bg-success-solid: var(--color-accent-2-600);
+
+    --background-color-primary: var(--color-bg);
+    --background-color-primary_alt: var(--color-bg);
+    --background-color-primary_hover: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
+    --background-color-secondary: var(--color-surface);
+    --background-color-secondary_alt: var(--color-surface);
+    --background-color-secondary_hover: color-mix(in srgb, var(--color-text) 8%, var(--color-surface));
+    --background-color-tertiary: var(--color-neutral-100);
+    --background-color-quaternary: var(--color-neutral-200);
+    --background-color-active: color-mix(in srgb, var(--color-text) 8%, var(--color-bg));
+    --background-color-disabled: var(--color-neutral-100);
+    --background-color-disabled_subtle: var(--color-neutral-100);
+    --background-color-primary-solid: var(--color-neutral-900);
+    --background-color-secondary-solid: var(--color-neutral-600);
+    --background-color-overlay: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
+    --background-color-brand-primary: var(--color-accent-100);
+    --background-color-brand-primary_alt: var(--color-accent-100);
+    --background-color-brand-secondary: var(--color-accent-200);
+    --background-color-brand-solid: var(--color-accent);
+    --background-color-brand-solid_hover: var(--color-accent-600);
+    --background-color-brand-section: var(--color-accent-800);
+    --background-color-brand-section_subtle: var(--color-accent-700);
+    --background-color-error-primary: var(--color-danger-bg);
+    --background-color-error-secondary: var(--color-danger-border);
+    --background-color-error-solid: var(--color-danger);
+    --background-color-error-solid_hover: var(--color-danger-text);
+    --background-color-warning-primary: var(--color-warning-bg);
+    --background-color-warning-secondary: var(--color-warning-border);
+    --background-color-warning-solid: var(--color-warning);
+    --background-color-success-primary: var(--color-accent-2-100);
+    --background-color-success-secondary: var(--color-accent-2-200);
+    --background-color-success-solid: var(--color-accent-2-600);
+    --background-color-border-brand: var(--color-accent);
+    --background-color-border-brand_alt: var(--color-accent-600);
+
+    /* --- Text (`text-*`) -------------------------------------------------- */
+    --color-text-primary: var(--color-text);
+    --color-text-secondary: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --color-text-secondary_hover: var(--color-text);
+    --color-text-tertiary: color-mix(in srgb, var(--color-text) 70%, transparent);
+    --color-text-tertiary_hover: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --color-text-quaternary: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --color-text-placeholder: color-mix(in srgb, var(--color-text) 45%, transparent);
+    --color-text-placeholder_subtle: color-mix(in srgb, var(--color-text) 30%, transparent);
+    --color-text-disabled: color-mix(in srgb, var(--color-text) 40%, transparent);
+    --color-text-brand-primary: var(--color-accent-900);
+    --color-text-brand-secondary: var(--color-accent-700);
+    --color-text-brand-secondary_hover: var(--color-accent-800);
+    --color-text-brand-tertiary: var(--color-accent-600);
+    --color-text-brand-tertiary_alt: var(--color-accent-600);
+    --color-text-error-primary: var(--color-danger-text);
+    --color-text-error-primary_hover: var(--color-danger);
+    --color-text-warning-primary: var(--color-warning-text);
+    --color-text-success-primary: var(--color-accent-2-700);
+    --color-text-editor-icon-fg: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --color-text-editor-icon-fg_active: var(--color-text);
+
+    --text-color-primary: var(--color-text);
+    --text-color-secondary: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --text-color-secondary_hover: var(--color-text);
+    --text-color-tertiary: color-mix(in srgb, var(--color-text) 70%, transparent);
+    --text-color-tertiary_hover: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --text-color-quaternary: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --text-color-placeholder: color-mix(in srgb, var(--color-text) 45%, transparent);
+    --text-color-placeholder_subtle: color-mix(in srgb, var(--color-text) 30%, transparent);
+    --text-color-disabled: color-mix(in srgb, var(--color-text) 40%, transparent);
+    --text-color-brand-primary: var(--color-accent-900);
+    --text-color-brand-secondary: var(--color-accent-700);
+    --text-color-brand-secondary_hover: var(--color-accent-800);
+    --text-color-brand-tertiary: var(--color-accent-600);
+    --text-color-brand-tertiary_alt: var(--color-accent-600);
+    --text-color-error-primary: var(--color-danger-text);
+    --text-color-error-primary_hover: var(--color-danger);
+    --text-color-warning-primary: var(--color-warning-text);
+    --text-color-success-primary: var(--color-accent-2-700);
+    --text-color-editor-icon-fg: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --text-color-editor-icon-fg_active: var(--color-text);
+
+    /* Text that sits on a solid accent fill. PrepDeck's `.btn-primary` uses the
+       page background for this, which is what keeps Dusk's light-orange accent
+       legible; plain `text-white` would not be. Only the `text-*` namespace is
+       rebound, so `bg-white` and `border-white/12` stay true white. */
+    --text-color-white: var(--color-bg);
+    --text-color-primary_on-brand: var(--color-bg);
+    --text-color-secondary_on-brand: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    --text-color-tertiary_on-brand: color-mix(in srgb, var(--color-bg) 78%, transparent);
+    --text-color-quaternary_on-brand: color-mix(in srgb, var(--color-bg) 66%, transparent);
+    --color-text-white: var(--color-bg);
+    --color-text-primary_on-brand: var(--color-bg);
+    --color-text-secondary_on-brand: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    --color-text-tertiary_on-brand: color-mix(in srgb, var(--color-bg) 78%, transparent);
+    --color-text-quaternary_on-brand: color-mix(in srgb, var(--color-bg) 66%, transparent);
+
+    /* --- Foreground / icons (`text-fg-*`, `bg-fg-*`, `fill-fg-*`) --------- */
+    --color-fg-primary: var(--color-text);
+    --color-fg-secondary: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --color-fg-secondary_hover: var(--color-text);
+    --color-fg-tertiary: color-mix(in srgb, var(--color-text) 70%, transparent);
+    --color-fg-tertiary_hover: color-mix(in srgb, var(--color-text) 85%, transparent);
+    --color-fg-quaternary: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --color-fg-quaternary_hover: color-mix(in srgb, var(--color-text) 70%, transparent);
+    --color-fg-quinary: color-mix(in srgb, var(--color-text) 45%, transparent);
+    --color-fg-quinary_hover: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --color-fg-senary: color-mix(in srgb, var(--color-text) 35%, transparent);
+    --color-fg-disabled: color-mix(in srgb, var(--color-text) 35%, transparent);
+    --color-fg-disabled_subtle: color-mix(in srgb, var(--color-text) 25%, transparent);
+    /* The check inside a filled checkbox and the knob of a filled toggle. */
+    --color-fg-white: var(--color-bg);
+    --color-fg-brand-primary: var(--color-accent);
+    --color-fg-brand-primary_alt: var(--color-accent);
+    --color-fg-brand-secondary: var(--color-accent-500);
+    --color-fg-brand-secondary_alt: var(--color-accent-500);
+    --color-fg-brand-secondary_hover: var(--color-accent-600);
+    --color-fg-error-primary: var(--color-danger);
+    --color-fg-error-secondary: var(--color-danger-border);
+    --color-fg-warning-primary: var(--color-warning);
+    --color-fg-warning-secondary: var(--color-warning-border);
+    --color-fg-success-primary: var(--color-accent-2-600);
+    --color-fg-success-secondary: var(--color-accent-2-500);
+
+    /* --- Borders, rings and outlines -------------------------------------- */
+    --color-border-primary: var(--color-divider);
+    --color-border-secondary: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --color-border-secondary_alt: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --color-border-tertiary: color-mix(in srgb, var(--color-text) 5%, transparent);
+    --color-border-disabled: var(--color-neutral-300);
+    --color-border-disabled_subtle: var(--color-neutral-200);
+    --color-border-brand: var(--color-accent);
+    --color-border-brand_alt: var(--color-accent-600);
+    --color-border-error: var(--color-danger);
+    --color-border-error_subtle: var(--color-danger-border);
+
+    --border-color-primary: var(--color-divider);
+    --border-color-secondary: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --border-color-secondary_alt: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --border-color-tertiary: color-mix(in srgb, var(--color-text) 5%, transparent);
+    --border-color-disabled: var(--color-neutral-300);
+    --border-color-disabled_subtle: var(--color-neutral-200);
+    --border-color-brand: var(--color-accent);
+    --border-color-brand_alt: var(--color-accent-600);
+    --border-color-brand-solid: var(--color-accent);
+    --border-color-brand-solid_hover: var(--color-accent-600);
+    --border-color-error: var(--color-danger);
+    --border-color-error_subtle: var(--color-danger-border);
+
+    --ring-color-primary: var(--color-divider);
+    --ring-color-secondary: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --ring-color-secondary_alt: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --ring-color-tertiary: color-mix(in srgb, var(--color-text) 5%, transparent);
+    --ring-color-disabled: var(--color-neutral-300);
+    --ring-color-disabled_subtle: var(--color-neutral-200);
+    --ring-color-brand: var(--color-accent);
+    --ring-color-brand_alt: var(--color-accent-600);
+    --ring-color-brand-solid: var(--color-accent);
+    --ring-color-brand-solid_hover: var(--color-accent-600);
+    --ring-color-error: var(--color-danger);
+    --ring-color-error_subtle: var(--color-danger-border);
+
+    --outline-color-primary: var(--color-divider);
+    --outline-color-secondary: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --outline-color-secondary_alt: color-mix(in srgb, var(--color-text) 8%, transparent);
+    --outline-color-tertiary: color-mix(in srgb, var(--color-text) 5%, transparent);
+    --outline-color-brand: var(--color-accent);
+    --outline-color-brand_alt: var(--color-accent-600);
+    --outline-color-brand-solid: var(--color-accent);
+    --outline-color-brand-solid_hover: var(--color-accent-600);
+    --outline-color-error: var(--color-danger);
+    --outline-color-error_subtle: var(--color-danger-border);
+
+    /* --- Component-specific tokens ---------------------------------------- */
+    /* PrepDeck's global `:focus-visible` ring is `--color-accent`; keeping the
+       same value means imported and existing controls focus identically. */
+    --color-focus-ring: var(--color-accent);
+    --color-focus-ring-error: var(--color-danger);
+    --color-toggle-border: var(--color-divider);
+    --color-toggle-slim-border_pressed: var(--color-accent);
+    --color-toggle-slim-border_pressed-hover: var(--color-accent-600);
+    /* Tooltips paint on `--color-bg-primary-solid` (`--color-neutral-900`),
+       which PrepDeck inverts per scheme, so the supporting line tracks it. */
+    --color-tooltip-supporting-text: var(--color-neutral-300);
+    --color-slider-handle-bg: var(--color-bg);
+    --color-slider-handle-border: var(--color-accent);
+    --color-icon-fg-brand: var(--color-accent);
+    --color-alpha-white: var(--color-bg);
+    --color-alpha-black: var(--color-text);
+    --color-brand-50: var(--color-accent-100);
+    --color-utility-blue-500: var(--color-accent-500);
+
+    /* --- Utility ramps (implementation) --------------------------------------
+       Badges paint from `utility-<hue>-{50,100,200,400,500,700}`: a 50 fill, a
+       200 ring, 700 text and 400/500 for the leading dot. PrepDeck has no such
+       ramps, so each one is folded onto the nearest PrepDeck ramp — the same
+       pairing `.tag-accent` and the danger/warning quartets already use — and
+       only the five hues the Statistics screen renders are bound. An unbound
+       utility hue produces no CSS at all, which is why `?kit` renders each
+       bound badge color and measures what the browser resolved.
+
+       Dusk inverts the neutral and accent-2 ramps, so the same bindings give a
+       dark fill with light text there without a second block. Clay defines no
+       accent-2 ramp (a pre-existing gap recorded in docs/guides/ui-components.md),
+       so success badges there fall back to the Light scheme's teals. */
+    --color-utility-brand-50: var(--color-accent-100);
+    --color-utility-brand-100: var(--color-accent-200);
+    --color-utility-brand-200: var(--color-accent-300);
+    --color-utility-brand-400: var(--color-accent-500);
+    --color-utility-brand-500: var(--color-accent-500);
+    --color-utility-brand-600: var(--color-accent-600);
+    --color-utility-brand-700: var(--color-accent-800);
+
+    --color-utility-neutral-50: var(--color-neutral-100);
+    --color-utility-neutral-100: var(--color-neutral-200);
+    --color-utility-neutral-200: var(--color-neutral-300);
+    --color-utility-neutral-300: var(--color-neutral-300);
+    --color-utility-neutral-400: var(--color-neutral-500);
+    --color-utility-neutral-500: var(--color-neutral-600);
+    --color-utility-neutral-700: var(--color-neutral-800);
+
+    --color-utility-red-50: var(--color-danger-bg);
+    --color-utility-red-100: var(--color-danger-border);
+    --color-utility-red-200: var(--color-danger-border);
+    --color-utility-red-400: var(--color-danger);
+    --color-utility-red-500: var(--color-danger);
+    --color-utility-red-700: var(--color-danger-text);
+
+    --color-utility-yellow-50: var(--color-warning-bg);
+    --color-utility-yellow-100: var(--color-warning-border);
+    --color-utility-yellow-200: var(--color-warning-border);
+    --color-utility-yellow-400: var(--color-warning);
+    --color-utility-yellow-500: var(--color-warning);
+    --color-utility-yellow-700: var(--color-warning-text);
+
+    --color-utility-green-50: var(--color-accent-2-100);
+    --color-utility-green-100: var(--color-accent-2-200);
+    --color-utility-green-200: var(--color-accent-2-300);
+    --color-utility-green-400: var(--color-accent-2-600);
+    --color-utility-green-500: var(--color-accent-2-600);
+    --color-utility-green-700: var(--color-accent-2-800);
+}
+
+@layer base {
+    /* Tailwind's preflight is not imported (see the header comment). These are
+       the only preflight rules the imported components depend on: React Aria
+       renders plain `<button>`, `<input>` and `<textarea>` elements, and
+       Untitled UI styles their edges with `ring-*`, not `border-*`, so the
+       user-agent border and font have to go.
+
+       `@layer base` is deliberate: tokens.css, app.css and every inline
+       `style` in the app are unlayered, so all of them still win over these
+       rules and no existing control changes. */
+    button,
+    input,
+    optgroup,
+    select,
+    textarea {
+        font: inherit;
+        letter-spacing: inherit;
+        color: inherit;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+        border: 0 solid;
+    }
+
+    button {
+        background-color: transparent;
+    }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "prepdeck",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PrepDeck \u2014 multi-exam practice platform (Cloudflare Pages/Workers/D1/R2/KV/Access)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace apps/web",
+    "dev:worker": "node scripts/local.mjs worker",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "deploy": "npm run build --workspace apps/web && npm run deploy --workspace apps/worker",
+    "test:pdf2json": "node --test tests/*.test.mjs && python3 -B -m unittest discover -s tests/pdf-to-quiz -v",
+    "test:browser": "node apps/web/scripts/exam-workspace.browser.mjs && node apps/web/scripts/knowledge-points.browser.mjs && node apps/web/scripts/question-authoring.browser.mjs && node apps/web/scripts/mcp-setup.browser.mjs && node apps/web/scripts/answer-state.browser.mjs && node apps/web/scripts/settings.browser.mjs && node apps/web/scripts/statistics.browser.mjs",
+    "dev": "node scripts/local.mjs start",
+    "dev:setup": "node scripts/local.mjs setup",
+    "dev:reset": "node scripts/local.mjs reset",
+    "dev:seed": "node scripts/local.mjs seed",
+    "dev:login": "node scripts/local.mjs login",
+    "dev:scheduled": "node scripts/local.mjs scheduled",
+    "test:local": "node --test scripts/local.test.mjs",
+    "test:local:smoke": "node scripts/local-smoke.mjs",
+    "oss:export": "node scripts/public-export.mjs",
+    "oss:scan": "node scripts/public-export.mjs --scan",
+    "upstream:sync": "node scripts/upstream-sync.mjs",
+    "oss:check": "node scripts/public-export.mjs --check-source"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "wrangler": "^4.131.0"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom",
+    "sharp": "0.35.4",
+    "lodash-es": "4.18.1"
+  }
+}
