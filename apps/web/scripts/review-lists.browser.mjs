@@ -111,9 +111,31 @@ try {
   assert.equal(await cards.count(), 1);
   await page.getByText("1 of 14 questions · 1 tag selected").waitFor();
 
-  // An empty search says so rather than looking like an empty tag set.
+  // Searching for a different tag must not take the active filter off screen:
+  // it is still filtering the page, and its chip is the only way to switch it
+  // off. Selected chips are pinned ahead of the matches, search or no search.
+  await search.fill("sec");
+  await page.getByRole("button", { name: "Security, 2 questions" }).waitFor();
+  assert.deepEqual(await chipNames(), ["Storage", "Security"], "the active filter is pinned while the search narrows the rest");
+  assert.equal(await page.locator('.tag-filter__chip[aria-pressed="true"]').count(), 1);
+  assert.equal(await cards.count(), 1, "searching filters chips, never questions");
+  await capture("wrong-search-pinned");
+
+  // Even a search that matches nothing keeps it, and says what it is that
+  // found nothing.
   await search.fill("zzz");
+  await page.getByText("No other tags match “zzz”.").waitFor();
+  assert.deepEqual(await chipNames(), ["Storage"]);
+  await page.getByRole("button", { name: "Storage, 1 question" }).click();
+  await page.getByRole("button", { name: "Practice these 14", exact: true }).waitFor();
+  assert.equal(await page.locator(".tag-filter__clear").count(), 0, "the filter was switched off from where it stood, mid-search");
+  // Nothing pinned now, so the same empty result speaks for the whole tag set.
   await page.getByText("No tags match “zzz”.").waitFor();
+  assert.deepEqual(await chipNames(), []);
+  await search.fill("sto");
+  await page.getByRole("button", { name: "Storage, 1 question" }).click();
+  await page.getByRole("button", { name: "Practice these 1", exact: true }).waitFor();
+  await search.fill("zzz");
 
   // Collapsing keeps the filter and pulls its chip to the front, where a
   // top-six-by-coverage bar would not have shown it at all.

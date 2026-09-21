@@ -60,11 +60,14 @@ three, and the two must still behave the same way.
   un-bookmarking the last question behind an active tag retires the tag and the
   filter it was applying, rather than leaving an invisible filter over an empty
   page. It follows that a filtered page is never empty.
-- **Collapsed by default.** The bar shows the tags covering most of the list,
-  keeps every selected tag visible whatever the collapse state, and holds the
-  rest behind "Show N more"; past a dozen tags, expanding also offers a search
-  field. Expanded, the chip area scrolls rather than pushing the questions off
-  screen.
+- **Collapsed by default.** The bar shows the tags covering most of the list
+  and holds the rest behind "Show N more"; past a dozen tags, expanding also
+  offers a search field. Expanded, the chip area scrolls rather than pushing
+  the questions off screen.
+- **A selected tag is always on screen.** Selected chips lead the bar, and
+  neither collapsing it nor searching it for a different tag removes them: the
+  search narrows the unselected tags only. A filter the user cannot see is one
+  they cannot switch off.
 - **Filter chips are controls, not metadata.** They are outlined, carry a count
   and a selected tick, and are separated from the solid tag badges printed on
   each question card; a card tag the filter matched carries the accent ring.

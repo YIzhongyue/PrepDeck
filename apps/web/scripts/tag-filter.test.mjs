@@ -67,8 +67,22 @@ test('expanding applies the search and stops hiding tags', () => {
   const expanded = visibleFacets(facets, [], { expanded: true, limit: 2 });
   assert.deepEqual(expanded.shown.map(f => f.name), ['Networking', 'Security', 'Storage']);
   assert.equal(expanded.hidden, 0);
-
-  const searched = visibleFacets(facets, ['Storage'], { expanded: true, limit: 2, query: 'ec' });
-  assert.deepEqual(searched.shown.map(f => f.name), ['Security'], 'search may hide a selected tag; its chip is not the filter state');
   assert.deepEqual(visibleFacets(facets, [], { expanded: true, limit: 2, query: 'zzz' }).shown, []);
+});
+
+test('searching for another tag never takes an active filter off the screen', () => {
+  const facets = tagFacets(questions);
+  // Storage filters the page; searching for something else must not remove the
+  // one control that can switch it off.
+  const searched = visibleFacets(facets, ['Storage'], { expanded: true, limit: 2, query: 'ec' });
+  assert.deepEqual(searched.shown.map(f => f.name), ['Storage', 'Security'], 'the selected tag stays pinned ahead of the matches');
+  assert.equal(searched.matched, 1);
+
+  const noMatch = visibleFacets(facets, ['Storage'], { expanded: true, limit: 2, query: 'zzz' });
+  assert.deepEqual(noMatch.shown.map(f => f.name), ['Storage']);
+  assert.equal(noMatch.matched, 0, 'an empty result is about the tags the search can reach');
+
+  // A selected tag is not a search hit either: it is pinned whether or not the
+  // query happens to match it, and never listed twice.
+  assert.deepEqual(visibleFacets(facets, ['Storage'], { expanded: true, limit: 2, query: 'sto' }).shown.map(f => f.name), ['Storage']);
 });

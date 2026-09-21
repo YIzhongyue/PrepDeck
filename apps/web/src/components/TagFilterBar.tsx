@@ -4,8 +4,9 @@ import "./TagFilterBar.css";
 
 // The tag filter shared by Bookmarks and the Wrong Question Book. Both lists
 // can carry dozens of tags, so the bar stays one or two rows tall by default
-// and everything past `COLLAPSED_LIMIT` lives behind "More". See
-// `lib/tagFilter.ts` for the matching rules the screens rely on.
+// and everything past `COLLAPSED_LIMIT` lives behind "More" — everything, that
+// is, except the chips currently filtering the page, which neither collapsing
+// nor searching may take away. See `lib/tagFilter.ts` for the rules.
 //
 // `StudyTagFilter` is the same idea for the practice/learning setup forms: it
 // filters the whole catalog inside a form card and is always expanded. This
@@ -35,7 +36,10 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
   const id = useId();
   const facets = tagFacets(questions);
   const searchable = facets.length >= SEARCH_THRESHOLD;
-  const { shown, hidden } = visibleFacets(facets, selected, { expanded, limit: COLLAPSED_LIMIT, query: searchable ? query : "" });
+  const { shown, hidden, matched } = visibleFacets(facets, selected, { expanded, limit: COLLAPSED_LIMIT, query: searchable ? query : "" });
+  // Selected chips stay put while searching, so an empty result is about the
+  // tags the search could reach, not about the chips on screen.
+  const noMatches = expanded && searchable && !!query.trim() && !matched;
 
   // A list that shrinks past the threshold (mastering questions, removing
   // bookmarks) leaves no way back to a collapsed bar, so drop the expansion
@@ -89,8 +93,10 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
           );
         })}
 
-        {expanded && !shown.length && (
-          <p className="tag-filter__empty">No tags match “{query.trim()}”.</p>
+        {noMatches && (
+          <p className="tag-filter__empty">
+            {selected.length ? "No other tags match" : "No tags match"} “{query.trim()}”.
+          </p>
         )}
       </div>
 

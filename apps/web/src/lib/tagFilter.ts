@@ -55,20 +55,29 @@ export function matchesQuery(name: string, query: string): boolean {
 
 export interface VisibleFacets {
   shown: TagFacet[];
+  // Tags a collapsed bar is holding back; 0 while expanded.
   hidden: number;
+  // Unselected tags the query matched. The search never applies to the
+  // selected ones, so this is what "no results" means.
+  matched: number;
 }
 
-// Selected tags always lead, so collapsing the bar can never hide an active
-// filter — the chip stays visible even when it is not one of the top `limit`.
-// `query` only applies while expanded; a collapsed bar has no search field.
+// Selected tags lead and are always shown. Neither collapsing the bar nor
+// searching it for something else may hide a chip that is currently filtering
+// the page: a filter the user cannot see is one they cannot undo. The search
+// therefore narrows the unselected tags only, and `query` applies solely while
+// expanded, since a collapsed bar has no search field.
 export function visibleFacets(
   facets: readonly TagFacet[],
   selected: readonly string[],
   { expanded, limit, query = "" }: { expanded: boolean; limit: number; query?: string }
 ): VisibleFacets {
   const active = new Set(selected);
-  const ordered = [...facets.filter((f) => active.has(f.name)), ...facets.filter((f) => !active.has(f.name))];
-  if (expanded) return { shown: ordered.filter((facet) => matchesQuery(facet.name, query)), hidden: 0 };
-  const shown = ordered.slice(0, Math.max(limit, active.size));
-  return { shown, hidden: ordered.length - shown.length };
+  const pinned = facets.filter((facet) => active.has(facet.name));
+  const rest = facets.filter((facet) => !active.has(facet.name));
+  const matches = expanded ? rest.filter((facet) => matchesQuery(facet.name, query)) : rest;
+  const ordered = [...pinned, ...matches];
+  if (expanded) return { shown: ordered, hidden: 0, matched: matches.length };
+  const shown = ordered.slice(0, Math.max(limit, pinned.length));
+  return { shown, hidden: facets.length - shown.length, matched: matches.length };
 }
