@@ -26,17 +26,30 @@ const { authorizeIdentity, adminUsersRouter } = await import(
 
 const migration = (name) => readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8");
 
-function d1(sqlite) {
+// `onRead` is the seam the concurrency test uses to park two sign-ins on the
+// same read, so both observe the same pre-write snapshot (the pattern
+// mutation-consistency.test.mjs uses for attempt races).
+function d1(sqlite, readHook = { current: null }) {
   return {
     prepare(sql) {
       const methodsFor = (args) => ({
-        first: async () => sqlite.prepare(sql).get(...args) ?? null,
+        first: async () => {
+          const row = sqlite.prepare(sql).get(...args) ?? null;
+          if (readHook.current) await readHook.current(sql);
+          return row;
+        },
         run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
         all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
       });
       return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
     },
   };
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
 }
 
 function kv() {
@@ -53,7 +66,20 @@ function fixture(t) {
   const sqlite = new DatabaseSync(":memory:");
   t.after(() => sqlite.close());
   sqlite.exec(migration("0001_init.sql"));
-  const env = { DB: d1(sqlite), KV: kv() };
+  const readHook = { current: null };
+  const env = { DB: d1(sqlite, readHook), KV: kv() };
+
+  // Hold the first two reads matching `match` until both have arrived, then
+  // release them together and stop intercepting.
+  const synchronizeReads = (match) => {
+    const ready = deferred();
+    let count = 0;
+    readHook.current = async (sql) => {
+      if (!match(sql) || count >= 2) return;
+      if (++count === 2) ready.resolve();
+      await ready.promise;
+    };
+  };
 
   // The Authorized Users screen's half of the FR-1.9 recovery, mounted behind
   // a stand-in for the auth middleware that would normally populate the actor.
@@ -67,7 +93,7 @@ function fixture(t) {
     }, env);
     return { status: res.status, body: await res.json() };
   };
-  return { sqlite, env, patchUser };
+  return { sqlite, env, patchUser, synchronizeReads };
 }
 
 function insertUser(sqlite, overrides = {}) {
@@ -226,7 +252,7 @@ test("a Cloudflare Access subject is never stored as a Google subject", async (t
   });
 });
 
-test("0032 clears provider subjects that cannot be Google subjects", async (t) => {
+test("0032 clears the Cloudflare Access UUIDs written into google_sub", async (t) => {
   const { sqlite } = fixture(t);
   insertUser(sqlite, { status: "active", google_sub: "110000000000000000001" });
   insertUser(sqlite, { id: "user-2", email: "bob@example.test", status: "active", google_sub: "6a1f0e2c-0000-4000-8000-000000000000" });
@@ -285,4 +311,43 @@ test("clearing a Google link is admin-only and drops the cached row", async (t) 
 
   assert.equal((await patchUser("user-1", { googleSub: null })).status, 200);
   assert.equal(env.KV.store.has("user-cache:id:user-1"), false);
+});
+
+test("concurrent first sign-ins with different subjects bind exactly one", async (t) => {
+  const { sqlite, env, synchronizeReads } = fixture(t);
+  insertUser(sqlite);
+
+  // Park both sign-ins on the email lookup, so each sees the row still
+  // unbound and neither can observe the other's write before deciding.
+  synchronizeReads((sql) => sql.startsWith("SELECT id, email, google_sub") && sql.endsWith("WHERE email = ?"));
+
+  const results = await Promise.all([
+    authorizeIdentity(env, google("110000000000000000001"), profile()),
+    authorizeIdentity(env, google("220000000000000000002"), profile()),
+  ]);
+
+  // One session, for the subject that is actually stored. The loser is turned
+  // away rather than handed an account bound to someone else's Google account.
+  const winners = results.filter((r) => r.ok);
+  assert.equal(winners.length, 1);
+  const stored = userRow(sqlite).google_sub;
+  assert.ok(stored === "110000000000000000001" || stored === "220000000000000000002");
+  assert.equal(results.indexOf(winners[0]), stored === "110000000000000000001" ? 0 : 1);
+  assert.equal(results.find((r) => !r.ok).reason, "subject_conflict");
+});
+
+test("0032 keeps a Google subject that is not decimal", async (t) => {
+  const { sqlite } = fixture(t);
+  // Google documents `sub` only as an ASCII string of at most 255 characters.
+  // It is decimal in practice, so this is a stand-in for the day it is not:
+  // clearing it would leave the row claimable by whoever next signs in with
+  // the address.
+  insertUser(sqlite, { status: "active", google_sub: "sub_2f8Az.Qk-90" });
+  insertUser(sqlite, { id: "user-2", email: "bob@example.test", status: "active", google_sub: "6A1F0E2C-0000-4000-8000-000000000000" });
+
+  sqlite.exec(migration("0032_google_sub_identity.sql"));
+
+  assert.equal(userRow(sqlite).google_sub, "sub_2f8Az.Qk-90");
+  // Uppercase hex is still an Access UUID.
+  assert.equal(userRow(sqlite, "user-2").google_sub, null);
 });

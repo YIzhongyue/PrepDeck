@@ -131,27 +131,32 @@ export async function authorizeIdentity(
   // once nothing is left to backfill.
   //
   // `google_sub = COALESCE(google_sub, ?)` is what binds a subject to the
-  // account the migration lookup found, and binds it only once: a row that
-  // already carries a subject reached this point by matching it, and Access
-  // mode passes NULL, which leaves the column untouched.
+  // account the email lookup found, and binds it only once. The binding state
+  // the read above saw is re-asserted in the WHERE clause (BIND_GUARD) rather
+  // than assumed, because the read and this write are not one operation: two
+  // first sign-ins carrying *different* subjects for the same invited address
+  // can both see the row unbound, and COALESCE alone would let the loser walk
+  // away with a session on an account now bound to the winner's Google
+  // account. Losing the guard means updating no rows, so RETURNING yields
+  // nothing and the sign-in is denied.
   if (row.status === "invited" || row.avatar_url === null) {
     const profile = await getProfile();
     const displayName = row.display_name ?? profile.name ?? storedEmail.split("@")[0] ?? storedEmail;
     const avatarUrl = row.avatar_url ?? profile.picture ?? null;
     const activated = await env.DB.prepare(
-      "UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, status = 'active', display_name = COALESCE(display_name, ?), avatar_url = COALESCE(avatar_url, ?), last_login_at = ? WHERE id = ? AND status IN ('invited', 'active') RETURNING id, email, role, status, display_name, avatar_url"
+      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, status = 'active', display_name = COALESCE(display_name, ?), avatar_url = COALESCE(avatar_url, ?), last_login_at = ? WHERE id = ? AND status IN ('invited', 'active') AND ${BIND_GUARD} RETURNING id, email, role, status, display_name, avatar_url`
     )
-      .bind(subject, storedEmail, displayName, avatarUrl, now, row.id)
+      .bind(subject, storedEmail, displayName, avatarUrl, now, row.id, subject, subject)
       .first<CachedUserRow>();
-    if (!activated) return { ok: false, email, reason: "not_authorized" };
+    if (!activated) return { ok: false, email, reason: await denialReason(env, subject, email) };
     cacheRow = activated;
   } else {
     const active = await env.DB.prepare(
-      "UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, last_login_at = ? WHERE id = ? AND status = 'active' RETURNING id, email, role, status, display_name, avatar_url"
+      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, last_login_at = ? WHERE id = ? AND status = 'active' AND ${BIND_GUARD} RETURNING id, email, role, status, display_name, avatar_url`
     )
-      .bind(subject, storedEmail, now, row.id)
+      .bind(subject, storedEmail, now, row.id, subject, subject)
       .first<CachedUserRow>();
-    if (!active) return { ok: false, email, reason: "not_authorized" };
+    if (!active) return { ok: false, email, reason: await denialReason(env, subject, email) };
     cacheRow = active;
   }
 
@@ -191,6 +196,23 @@ async function resolveByGoogleSubject(env: Env, subject: string, email: string):
     return "subject_conflict";
   }
   return byEmail;
+}
+
+// Takes the expected subject twice: the row must still be unbound, or already
+// bound to this very subject. The leading `? IS NULL` makes the whole guard a
+// no-op for Cloudflare Access, which carries no subject to assert and whose
+// rows may legitimately hold a Google one from an earlier OAuth sign-in.
+const BIND_GUARD = "(? IS NULL OR google_sub IS NULL OR google_sub = ?)";
+
+// A guarded UPDATE comes back empty for one of two reasons, and they need
+// opposite advice on the login screen: the account was revoked between the
+// read and the write, or a concurrent sign-in won the binding with a different
+// subject. One extra read on the (rare) failure path tells them apart. It only
+// picks the wording — neither outcome retries the write.
+async function denialReason(env: Env, subject: string | null, email: string): Promise<DenialReason> {
+  if (!subject) return "not_authorized";
+  const row = await selectUser(env, "email = ?", email);
+  return row && row.google_sub !== null && row.google_sub !== subject ? "subject_conflict" : "not_authorized";
 }
 
 function selectUser(env: Env, where: string, value: string): Promise<UserRow | null> {
