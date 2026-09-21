@@ -260,9 +260,9 @@ for (const status of ["invited", "active"]) {
   test(`profile completion cannot reactivate a revoked ${status} user`, async (t) => {
     const f = fixture(t);
     f.sqlite.prepare("UPDATE users SET status=? WHERE id='alice'").run(status);
-    const result = await authorizeIdentity(f.env, "alice@example.test", async () => {
+    const result = await authorizeIdentity(f.env, { provider: "google", subject: "synthetic-sub", email: "alice@example.test" }, async () => {
       f.sqlite.exec("UPDATE users SET status='revoked' WHERE id='alice'");
-      return { sub: "synthetic", name: "Alice", picture: null };
+      return { name: "Alice", picture: null };
     });
     assert.equal(result.ok, false);
     assert.equal(f.sqlite.prepare("SELECT status FROM users WHERE id='alice'").get().status, "revoked");
@@ -272,9 +272,9 @@ for (const status of ["invited", "active"]) {
 
 test("activation caches the committed profile and role", async (t) => {
   const f = fixture(t);
-  const result = await authorizeIdentity(f.env, "alice@example.test", async () => {
+  const result = await authorizeIdentity(f.env, { provider: "google", subject: "synthetic-sub", email: "alice@example.test" }, async () => {
     f.sqlite.exec("UPDATE users SET role='admin', display_name='Custom', avatar_url='/custom.png' WHERE id='alice'");
-    return { sub: "synthetic", name: "Provider", picture: "/provider.png" };
+    return { name: "Provider", picture: "/provider.png" };
   });
   assert.deepEqual([result.user.role, result.user.displayName, result.user.avatarUrl], ["admin", "Custom", "/custom.png"]);
 });

@@ -85,7 +85,8 @@ adminUsersRouter.post("/", async (c) => {
   return c.json({ user: toUser(row!) }, 201);
 });
 
-// FR-1.4: change an account's role, or revoke/restore its access. Guards
+// FR-1.4: change an account's role, or revoke/restore its access; FR-1.9:
+// clear a stale Google binding so the account can be claimed again. Guards
 // against an admin editing their own row here (Settings is for that) —
 // which, as a side effect, also means an active admin can never demote or
 // revoke themselves into leaving zero active admins: whoever performs the
@@ -97,7 +98,7 @@ adminUsersRouter.patch("/:id", async (c) => {
     return c.json({ error: "Use your own Settings page to change your own account" }, 400);
   }
 
-  const body = await c.req.json<{ role?: Role; status?: "active" | "revoked" }>().catch(() => null);
+  const body = await c.req.json<{ role?: Role; status?: "active" | "revoked"; googleSub?: null }>().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   if (body.role !== undefined && body.role !== "admin" && body.role !== "user") {
     return c.json({ error: "role must be 'admin' or 'user'" }, 400);
@@ -105,7 +106,15 @@ adminUsersRouter.patch("/:id", async (c) => {
   if (body.status !== undefined && body.status !== "active" && body.status !== "revoked") {
     return c.json({ error: "status must be 'active' or 'revoked'" }, 400);
   }
-  if (body.role === undefined && body.status === undefined) {
+  // Clearing only: an Admin can unbind a Google account, never hand-pick which
+  // one an account answers to. A subject is only ever written by a sign-in
+  // that verified it against Google's JWKS (FR-1.9), so accepting one here
+  // would turn the Authorized Users screen into a way to take over an account
+  // by typing a number.
+  if (body.googleSub !== undefined && body.googleSub !== null) {
+    return c.json({ error: "googleSub can only be cleared (null)" }, 400);
+  }
+  if (body.role === undefined && body.status === undefined && body.googleSub === undefined) {
     return c.json({ error: "Nothing to update" }, 400);
   }
 
@@ -121,6 +130,12 @@ adminUsersRouter.patch("/:id", async (c) => {
   if (body.status !== undefined) {
     fields.push("status = ?");
     values.push(body.status);
+  }
+  // FR-1.9 recovery: re-arms the one-time email-based binding, so the next
+  // successful Google sign-in on this address adopts whichever account signs
+  // in. The row — and everything hanging off its id — stays exactly as it is.
+  if (body.googleSub === null) {
+    fields.push("google_sub = NULL");
   }
   await c.env.DB.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`)
     .bind(...values, id)

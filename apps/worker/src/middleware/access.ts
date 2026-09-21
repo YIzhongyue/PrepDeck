@@ -37,9 +37,14 @@ const requireAccessJwtUser: Handler = async (c, next) => {
   // FR-12.1: the compact Access JWT only carries email/sub, so profile info
   // (name/picture) needs a second, best-effort call — see fetchAccessProfile.
   // Fetched lazily: only actually needed on a brand-new row's first sign-in.
-  const result = await authorizeIdentity(c.env, identity.email, async () => {
+  //
+  // The `sub` here is Access's own subject for this person, not the Google
+  // subject the primary path resolves on (FR-1.9), so it is tagged with its
+  // provider and lib/authorizeIdentity keeps this path on the email lookup
+  // rather than storing an Access id in `users.google_sub`.
+  const result = await authorizeIdentity(c.env, { provider: "cloudflare-access", subject: identity.sub, email: identity.email }, async () => {
     const profile = await fetchAccessProfile(assertion, c.env);
-    return { sub: identity.sub, name: profile.name, picture: profile.picture };
+    return { name: profile.name, picture: profile.picture };
   });
   if (!result.ok) {
     return c.json({ error: "Forbidden", email: result.email }, 403);

@@ -151,15 +151,23 @@ export function Shell() {
 // route) tells us whether an existing session cookie is still valid; a 403
 // there means "has a session, but got revoked since" — the same "denied"
 // state as a fresh sign-in that isn't on the Authorized Users list (FR-1.3).
-type Gate = { kind: "loading" } | { kind: "authed" } | { kind: "denied"; email: string | null } | { kind: "signin"; signedOut?: boolean; error?: boolean };
+// `conflict` is its own state: the address *is* on the list, but bound to a
+// different Google account (FR-1.9), which needs an Admin to clear rather
+// than another invitation.
+type Gate =
+  | { kind: "loading" }
+  | { kind: "authed" }
+  | { kind: "denied"; email: string | null; conflict?: boolean }
+  | { kind: "signin"; signedOut?: boolean; error?: boolean };
 
-function readAuthParam(): { kind: "denied"; email: string | null } | { kind: "signin"; signedOut?: boolean; error?: boolean } | null {
+function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boolean } | { kind: "signin"; signedOut?: boolean; error?: boolean } | null {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get("auth");
   if (!auth) return null;
 
   window.history.replaceState(null, "", window.location.pathname);
   if (auth === "denied") return { kind: "denied", email: params.get("email") };
+  if (auth === "conflict") return { kind: "denied", email: params.get("email"), conflict: true };
   if (auth === "signedout") return { kind: "signin", signedOut: true };
   if (auth === "error") return { kind: "signin", error: true };
   return null;
@@ -198,7 +206,7 @@ function AuthenticatedApp() {
   }, []);
 
   if (gate.kind === "loading") return null;
-  if (gate.kind === "denied") return <Login deniedEmail={gate.email} />;
+  if (gate.kind === "denied") return <Login deniedEmail={gate.email} conflict={gate.conflict} />;
   if (gate.kind === "signin") return <Login signedOut={gate.signedOut} error={gate.error} />;
 
   return (

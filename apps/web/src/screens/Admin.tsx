@@ -254,7 +254,7 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
       .finally(() => setInviteBusy(false));
   };
 
-  const updateUser = (id: string, patch: { role?: Role; status?: "active" | "revoked" }) => {
+  const updateUser = (id: string, patch: { role?: Role; status?: "active" | "revoked"; googleSub?: null }) => {
     return apiFetch<UpdateUserResponse>(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) })
       .then(({ user }) => {
         setUsers((prev) => prev.map((u) => (u.id === id ? user : u)));
@@ -265,6 +265,17 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
   const revoke = (u: User) => {
     if (!window.confirm(`Revoke access for ${u.email}? Historical data is kept; this can be undone with Restore.`)) return;
     updateUser(u.id, { status: "revoked" }).catch((err) => window.alert(err instanceof ApiError ? err.message : "Could not update this account."));
+  };
+
+  // FR-1.9: an account answers to the Google account that first signed into it,
+  // not to its address, so a person whose Google account was replaced (a
+  // Workspace migration onto a custom domain, say) is turned away rather than
+  // silently adopting the existing data. Clearing the link lets the next
+  // successful sign-in on this address claim the account — which is also
+  // exactly why it is a deliberate Admin act with a warning, not automatic.
+  const resetGoogleLink = (u: User) => {
+    if (!window.confirm(`Reset the Google link for ${u.email}? The next Google account that signs in with this address takes over this account and all of its data. Only do this if you know the account changed hands legitimately.`)) return;
+    updateUser(u.id, { googleSub: null }).catch((err) => window.alert(err instanceof ApiError ? err.message : "Could not update this account."));
   };
 
   const editableSelectedIds = selected.filter((id) => id !== myId);
@@ -396,11 +407,16 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
                       <td style={{ padding: "14px 18px", fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}</td>
                       <td style={{ padding: "14px 18px", textAlign: "right" }}>
                         {!isMe && (
-                          u.status === "revoked" ? (
-                            <button type="button" className="btn btn-secondary" style={{ padding: "7px 14px", fontSize: 12.5 }} onClick={() => updateUser(u.id, { status: "active" }).catch((err) => window.alert(err instanceof ApiError ? err.message : "Could not update this account."))}>Restore</button>
-                          ) : (
-                            <button type="button" className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12.5, color: DANGER }} onClick={() => revoke(u)}>Revoke</button>
-                          )
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                            {u.googleSub && (
+                              <button type="button" className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12.5 }} title="Unlink the Google account this row answers to, so the next sign-in with this address claims it" onClick={() => resetGoogleLink(u)}>Reset link</button>
+                            )}
+                            {u.status === "revoked" ? (
+                              <button type="button" className="btn btn-secondary" style={{ padding: "7px 14px", fontSize: 12.5 }} onClick={() => updateUser(u.id, { status: "active" }).catch((err) => window.alert(err instanceof ApiError ? err.message : "Could not update this account."))}>Restore</button>
+                            ) : (
+                              <button type="button" className="btn btn-ghost" style={{ padding: "7px 12px", fontSize: 12.5, color: DANGER }} onClick={() => revoke(u)}>Revoke</button>
+                            )}
+                          </span>
                         )}
                       </td>
                     </tr>

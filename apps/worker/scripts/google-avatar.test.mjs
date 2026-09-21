@@ -45,6 +45,8 @@ function fixture(t) {
   return { sqlite, env };
 }
 
+const googleIdentity = (subject, email = "alice@example.test") => ({ provider: "google", subject, email });
+
 function insertUser(sqlite, overrides = {}) {
   const row = {
     id: "user-1", email: "alice@example.test", google_sub: null, display_name: null, avatar_url: null,
@@ -60,8 +62,8 @@ test("first sign-in stores the Google picture claim as the avatar", async (t) =>
   const { sqlite, env } = fixture(t);
   insertUser(sqlite);
 
-  const result = await authorizeIdentity(env, "alice@example.test", async () => ({
-    sub: "google-sub-1", name: "Alice", picture: "https://lh3.googleusercontent.com/alice.jpg",
+  const result = await authorizeIdentity(env, googleIdentity("google-sub-1"), async () => ({
+    name: "Alice", picture: "https://lh3.googleusercontent.com/alice.jpg",
   }));
 
   assert.equal(result.ok, true);
@@ -75,8 +77,8 @@ test("first sign-in without a picture claim activates with no avatar and does no
   const { sqlite, env } = fixture(t);
   insertUser(sqlite);
 
-  const result = await authorizeIdentity(env, "alice@example.test", async () => ({
-    sub: "google-sub-1", name: "Alice", picture: null,
+  const result = await authorizeIdentity(env, googleIdentity("google-sub-1"), async () => ({
+    name: "Alice", picture: null,
   }));
 
   assert.equal(result.ok, true);
@@ -90,8 +92,8 @@ test("a later sign-in backfills the avatar for an already-active user that has n
   const { sqlite, env } = fixture(t);
   insertUser(sqlite, { status: "active", google_sub: "google-sub-1", display_name: "Alice", avatar_url: null });
 
-  const result = await authorizeIdentity(env, "alice@example.test", async () => ({
-    sub: "google-sub-1", name: "Alice", picture: "https://lh3.googleusercontent.com/alice-new.jpg",
+  const result = await authorizeIdentity(env, googleIdentity("google-sub-1"), async () => ({
+    name: "Alice", picture: "https://lh3.googleusercontent.com/alice-new.jpg",
   }));
 
   assert.equal(result.ok, true);
@@ -108,9 +110,9 @@ test("an active user's existing avatar is never overwritten by a later sign-in",
   });
   let getProfileCalls = 0;
 
-  const result = await authorizeIdentity(env, "alice@example.test", async () => {
+  const result = await authorizeIdentity(env, googleIdentity("google-sub-1"), async () => {
     getProfileCalls += 1;
-    return { sub: "google-sub-1", name: "Alice", picture: "https://lh3.googleusercontent.com/alice-new.jpg" };
+    return { name: "Alice", picture: "https://lh3.googleusercontent.com/alice-new.jpg" };
   });
 
   assert.equal(result.ok, true);
@@ -127,9 +129,9 @@ test("a revoked user is denied without ever fetching a profile", async (t) => {
   insertUser(sqlite, { status: "revoked", avatar_url: null });
   let getProfileCalls = 0;
 
-  const result = await authorizeIdentity(env, "alice@example.test", async () => {
+  const result = await authorizeIdentity(env, googleIdentity("google-sub-1"), async () => {
     getProfileCalls += 1;
-    return { sub: "google-sub-1", name: "Alice", picture: "https://lh3.googleusercontent.com/alice.jpg" };
+    return { name: "Alice", picture: "https://lh3.googleusercontent.com/alice.jpg" };
   });
 
   assert.equal(result.ok, false);
