@@ -112,7 +112,11 @@ authRouter.get("/google/callback", async (c) => {
 
   let result: Awaited<ReturnType<typeof authorizeIdentity>>;
   try {
-    result = await authorizeIdentity(c.env, identity.email, async () => identity);
+    result = await authorizeIdentity(
+      c.env,
+      { provider: "google", subject: identity.sub, email: identity.email },
+      async () => identity
+    );
   } catch (error) {
     console.error("auth.google.callback.authorization_failed", {
       message: error instanceof Error ? error.message : "Unknown authorization error"

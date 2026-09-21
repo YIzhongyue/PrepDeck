@@ -27,7 +27,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-1-3"></a>
 
-- **FR-1.3 (M):** The Worker authorizes the Google email against `users`. An invited account becomes active on first sign-in and receives its Google subject/profile defaults; an active account may proceed; an unknown or revoked account is denied. Google authentication alone does not grant membership.
+- **FR-1.3 (M):** The Worker authorizes the verified Google identity against `users` (resolved per FR-1.9). An invited account becomes active on first sign-in and receives its Google subject/profile defaults; an active account may proceed; an unknown or revoked account is denied. Google authentication alone does not grant membership.
 
 <a id="fr-1-4"></a>
 
@@ -48,6 +48,10 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-1-8"></a>
 
 - **FR-1.8 (C):** **Deferred optional design.** Synchronizing an edge-level Cloudflare Access email policy is not implemented and is not required by the current cookie-auth deployment. Retain this ID for that original optional intent; no automatic Access policy synchronization is claimed.
+
+<a id="fr-1-9"></a>
+
+- **FR-1.9 (M):** A Google-authenticated account is identified by the OIDC `sub` claim of a verified ID token, stored as `users.google_sub`, not by its email address. A returning user is resolved by that subject first; only an account that carries no subject yet is located by the invited/legacy email association, and the subject is bound to it at that sign-in so every later one resolves by subject. An account already bound to a different subject is never rebound or merged on an email match — it is denied, and an Admin re-invites. The verified email is kept in step with the account for contact and display purposes (invitations, the daily review mail, the Authorized Users list), except where another account already holds that address, in which case the stored address is left unchanged. Subjects are provider-scoped: the `sub` in a Cloudflare Access JWT (`AUTH_MODE=access`) identifies the person to Access, not to Google, so that path stays on the email association and never writes `users.google_sub`.
 
 ## User profiles
 
