@@ -1,0 +1,69 @@
+/* The bar is a control surface, not content: a recessed panel with an outlined
+   chip set, so it never reads as another question card and its chips never read
+   as the solid `.tag` badges printed on those cards. */
+.tag-filter {
+  min-width: 0;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--pd-radius-md);
+  background: color-mix(in srgb, var(--color-surface) 55%, var(--color-bg));
+}
+.tag-filter__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.tag-filter__label { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.tag-filter__status { font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
+.tag-filter__clear {
+  margin-left: auto; padding: 4px 10px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--color-accent); font: inherit; font-size: 12px; cursor: pointer;
+}
+.tag-filter__clear:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+
+.tag-filter__search { width: 100%; box-sizing: border-box; margin-top: 10px; font-size: 13px; }
+
+.tag-filter__chips { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; margin-top: 10px; }
+/* Expanded is still bounded: dozens of tags scroll inside the panel instead of
+   pushing the question grid off the screen. */
+.tag-filter__chips--expanded { max-height: 216px; overflow-y: auto; overscroll-behavior-y: contain; padding: 4px; }
+
+.tag-filter__chip {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 34px;
+  padding: 4px 6px 4px 12px; border: 1px solid var(--color-divider); border-radius: 12px;
+  background: var(--color-bg); color: var(--color-text); font: inherit; font-size: 12px;
+  text-align: left; cursor: pointer;
+}
+.tag-filter__chip:hover { border-color: var(--color-accent); background: var(--color-accent-100); }
+.tag-filter__chip[aria-pressed="true"] {
+  border-color: var(--color-accent); background: var(--color-accent-200);
+  color: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+.tag-filter__chip:focus-visible, .tag-filter__more:focus-visible, .tag-filter__clear:focus-visible {
+  outline: 2px solid var(--color-accent); outline-offset: 2px;
+}
+/* The tick is the non-colour half of the selected state, for schemes and eyes
+   where the accent wash alone is a weak signal. It is shown and hidden
+   outright: animating it in cost a tenth of a second of ambiguity about
+   whether the chip had registered the click. */
+.tag-filter__check { flex: none; width: 12px; }
+.tag-filter__chip:not([aria-pressed="true"]) .tag-filter__check { display: none; }
+.tag-filter__name { min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.tag-filter__count {
+  flex: none; min-width: 22px; box-sizing: border-box; padding: 2px 6px; border-radius: 7px;
+  background: var(--color-neutral-200); font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.tag-filter__chip[aria-pressed="true"] .tag-filter__count { background: var(--color-accent); color: var(--color-bg); }
+
+.tag-filter__more {
+  margin-top: 10px; padding: 5px 12px; border: 1px dashed var(--color-divider); border-radius: 999px;
+  background: transparent; color: var(--color-text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.tag-filter__more:hover { border-color: var(--color-accent); color: var(--color-accent-800); background: var(--color-accent-100); }
+.tag-filter__empty { margin: 6px 4px; font-size: 13px; opacity: .7; overflow-wrap: anywhere; }
+.tag-filter__hint { margin: 10px 2px 0; font-size: 12px; opacity: .7; line-height: 1.5; }
+
+/* Phone width or a coarse pointer: the same 44px target `StudyTagFilter` and
+   the tag picker use. Width matters too — a small window is where these chips
+   are hardest to hit accurately. */
+@media (max-width: 600px), (hover: none), (pointer: coarse) {
+  .tag-filter__chip, .tag-filter__clear, .tag-filter__more { min-height: 44px; }
+}
