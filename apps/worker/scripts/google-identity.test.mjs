@@ -10,15 +10,19 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
+import { Hono } from "hono";
 
-async function bundle(path) {
-  const { outputFiles } = await build({
-    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
-    bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
-const { authorizeIdentity } = await bundle("../src/lib/authorizeIdentity.ts");
+const { outputFiles } = await build({
+  stdin: {
+    contents: `export * from './src/lib/authorizeIdentity.ts';
+      export * from './src/routes/adminUsers.ts';`,
+    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
+  },
+  bundle: true, write: false, platform: "browser", format: "esm", mainFields: ["browser", "module", "main"],
+});
+const { authorizeIdentity, adminUsersRouter } = await import(
+  `data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`
+);
 
 const migration = (name) => readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8");
 
@@ -50,7 +54,20 @@ function fixture(t) {
   t.after(() => sqlite.close());
   sqlite.exec(migration("0001_init.sql"));
   const env = { DB: d1(sqlite), KV: kv() };
-  return { sqlite, env };
+
+  // The Authorized Users screen's half of the FR-1.9 recovery, mounted behind
+  // a stand-in for the auth middleware that would normally populate the actor.
+  const app = new Hono();
+  app.use("*", async (c, next) => { c.set("user", { id: "admin-1", role: c.req.header("x-role") ?? "admin" }); await next(); });
+  app.route("/api/admin/users", adminUsersRouter);
+  const patchUser = async (id, body, role) => {
+    const res = await app.request(`https://example.test/api/admin/users/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json", ...(role ? { "x-role": role } : {}) },
+      body: JSON.stringify(body),
+    }, env);
+    return { status: res.status, body: await res.json() };
+  };
+  return { sqlite, env, patchUser };
 }
 
 function insertUser(sqlite, overrides = {}) {
@@ -148,6 +165,9 @@ test("an account bound to a different subject is not rebound by a matching email
 
   assert.equal(result.ok, false);
   assert.equal(result.email, "alice@example.test");
+  // Distinct from a plain denial: the address *is* authorized, so the login
+  // screen must not send this person off to ask for another invitation.
+  assert.equal(result.reason, "subject_conflict");
   assert.equal(userRow(sqlite).google_sub, "110000000000000000001");
 });
 
@@ -217,4 +237,52 @@ test("0032 clears provider subjects that cannot be Google subjects", async (t) =
   // Cleared, so bob's next Google sign-in re-arms the one-time email rebind
   // instead of being read as a conflicting binding.
   assert.equal(userRow(sqlite, "user-2").google_sub, null);
+});
+
+test("clearing the Google link lets the replaced account be claimed again", async (t) => {
+  const { sqlite, env, patchUser } = fixture(t);
+  insertUser(sqlite, {
+    status: "active", google_sub: "110000000000000000001", display_name: "Alice", avatar_url: "/custom.png",
+  });
+
+  // The Workspace-migration case: same person and address, but the Google
+  // account behind it was replaced, so its subject is new.
+  const replacement = google("220000000000000000002");
+  assert.equal((await authorizeIdentity(env, replacement, profile())).reason, "subject_conflict");
+
+  const patched = await patchUser("user-1", { googleSub: null });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.user.googleSub, null);
+
+  const result = await authorizeIdentity(env, replacement, profile());
+
+  assert.equal(result.ok, true);
+  // Same row, so every attempt, bookmark and note hanging off this id follows
+  // the user to their new Google account.
+  assert.equal(result.user.id, "user-1");
+  assert.equal(userRow(sqlite).google_sub, "220000000000000000002");
+});
+
+test("an Admin can clear a Google link but never choose one", async (t) => {
+  const { sqlite, patchUser } = fixture(t);
+  insertUser(sqlite, { status: "active", google_sub: "110000000000000000001", avatar_url: "/custom.png" });
+
+  // Accepting a subject here would make taking over an account a matter of
+  // typing the right number; only a JWKS-verified sign-in may write one.
+  const assigned = await patchUser("user-1", { googleSub: "220000000000000000002" });
+
+  assert.equal(assigned.status, 400);
+  assert.equal(userRow(sqlite).google_sub, "110000000000000000001");
+});
+
+test("clearing a Google link is admin-only and drops the cached row", async (t) => {
+  const { sqlite, env, patchUser } = fixture(t);
+  insertUser(sqlite, { status: "active", google_sub: "110000000000000000001", avatar_url: "/custom.png" });
+  env.KV.store.set("user-cache:id:user-1", JSON.stringify({ id: "user-1" }));
+
+  assert.equal((await patchUser("user-1", { googleSub: null }, "user")).status, 403);
+  assert.equal(userRow(sqlite).google_sub, "110000000000000000001");
+
+  assert.equal((await patchUser("user-1", { googleSub: null })).status, 200);
+  assert.equal(env.KV.store.has("user-cache:id:user-1"), false);
 });

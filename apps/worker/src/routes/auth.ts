@@ -72,9 +72,14 @@ authRouter.get("/google/callback", async (c) => {
   const secure = new URL(c.req.url).protocol === "https:";
   const clearOAuthCookie = clearOAuthStateCookie(secure);
 
-  const fail = (reason: "error" | "denied", email?: string) => {
+  // `conflict` is a denial like `denied`, but the two need opposite advice on
+  // the login screen: an unlisted address needs an invitation, while a
+  // conflicting one is already invited and needs an Admin to clear its stale
+  // Google binding (FR-1.9). Telling a conflicted user to "ask an admin to
+  // invite it" sends them down a path that dead-ends in a 409.
+  const fail = (reason: "error" | "denied" | "conflict", email?: string) => {
     c.header("Set-Cookie", clearOAuthCookie);
-    const qs = reason === "denied" && email ? `?auth=denied&email=${encodeURIComponent(email)}` : `?auth=${reason}`;
+    const qs = reason !== "error" && email ? `?auth=${reason}&email=${encodeURIComponent(email)}` : `?auth=${reason}`;
     return c.redirect(`/${qs}`, 302);
   };
 
@@ -123,7 +128,7 @@ authRouter.get("/google/callback", async (c) => {
     });
     return fail("error");
   }
-  if (!result.ok) return fail("denied", result.email);
+  if (!result.ok) return fail(result.reason === "subject_conflict" ? "conflict" : "denied", result.email);
 
   const token = await createSessionToken(result.user.id, c.env);
   c.header("Set-Cookie", buildSessionCookie(token, secure));

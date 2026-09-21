@@ -35,7 +35,16 @@ export interface AuthorizedIdentity {
   avatarUrl: string | null;
 }
 
-export type AuthorizeResult = { ok: true; user: AuthorizedIdentity } | { ok: false; email: string };
+// `subject_conflict` is kept apart from a plain `not_authorized` because the
+// two need opposite advice. An unlisted address needs an invitation; an
+// address whose row is already bound to a different Google account cannot be
+// invited again (it is already on the list) and needs an Admin to clear that
+// binding — see routes/adminUsers.ts's `googleSub: null` patch.
+export type DenialReason = "not_authorized" | "subject_conflict";
+
+export type AuthorizeResult =
+  | { ok: true; user: AuthorizedIdentity }
+  | { ok: false; email: string; reason: DenialReason };
 
 // Provider-scoped identity: a subject is only unique *within* the provider
 // that issued it, so it is always carried together with that provider. Only
@@ -70,7 +79,9 @@ export async function authorizeIdentity(
 
   let row: UserRow | null;
   if (subject) {
-    row = await resolveByGoogleSubject(env, subject, email);
+    const resolved = await resolveByGoogleSubject(env, subject, email);
+    if (resolved === "subject_conflict") return { ok: false, email, reason: "subject_conflict" };
+    row = resolved;
   } else {
     // Access mode has no persisted subject to match on, so it stays on the
     // email lookup — and keeps using the email cache, which is what makes an
@@ -79,7 +90,7 @@ export async function authorizeIdentity(
     // cached row carries no subject to match against anyway.
     const cached = await getCachedUserByEmail(env, email);
     if (cached) {
-      if (cached.status === "revoked") return { ok: false, email };
+      if (cached.status === "revoked") return { ok: false, email, reason: "not_authorized" };
       return { ok: true, user: toIdentity(cached) };
     }
     row = await selectUser(env, "email = ?", email);
@@ -89,7 +100,7 @@ export async function authorizeIdentity(
   // A valid Google account is not sufficient; the email must have been
   // invited by an Admin.
   if (!row || row.status === "revoked") {
-    return { ok: false, email };
+    return { ok: false, email, reason: "not_authorized" };
   }
 
   // Keep the stored email in step with the provider's verified one so the
@@ -132,7 +143,7 @@ export async function authorizeIdentity(
     )
       .bind(subject, storedEmail, displayName, avatarUrl, now, row.id)
       .first<CachedUserRow>();
-    if (!activated) return { ok: false, email };
+    if (!activated) return { ok: false, email, reason: "not_authorized" };
     cacheRow = activated;
   } else {
     const active = await env.DB.prepare(
@@ -140,7 +151,7 @@ export async function authorizeIdentity(
     )
       .bind(subject, storedEmail, now, row.id)
       .first<CachedUserRow>();
-    if (!active) return { ok: false, email };
+    if (!active) return { ok: false, email, reason: "not_authorized" };
     cacheRow = active;
   }
 
@@ -162,10 +173,14 @@ export async function authorizeIdentity(
 //
 // A row found by email that already carries a *different* subject is a
 // conflicting binding, not a match: two Google accounts that have at some
-// point shared an address (a renamed one and a recycled one, say) must not
-// collapse into a single PrepDeck account. Denying is the safe outcome — the
-// data stays put and an Admin can sort the invitations out.
-async function resolveByGoogleSubject(env: Env, subject: string, email: string): Promise<UserRow | null> {
+// point shared an address must not collapse into a single PrepDeck account.
+// The ID token cannot tell the two readings apart — a person whose Workspace
+// admin replaced their old account with a fresh one on a custom domain, and a
+// stranger who was handed a recycled address — so this denies rather than
+// guesses, and recovery is an explicit Admin act (clearing the binding from
+// the Authorized Users screen) rather than something a sign-in can do to
+// itself. Denying keeps the existing account's data where it is either way.
+async function resolveByGoogleSubject(env: Env, subject: string, email: string): Promise<UserRow | null | "subject_conflict"> {
   const bound = await selectUser(env, "google_sub = ?", subject);
   if (bound) return bound;
 
@@ -173,7 +188,7 @@ async function resolveByGoogleSubject(env: Env, subject: string, email: string):
   if (!byEmail) return null;
   if (byEmail.google_sub !== null) {
     console.warn("auth.identity.subject_conflict", { userId: byEmail.id });
-    return null;
+    return "subject_conflict";
   }
   return byEmail;
 }

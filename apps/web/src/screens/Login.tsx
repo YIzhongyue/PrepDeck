@@ -6,6 +6,8 @@ interface LoginProps {
   /** Set when a Google account signed in successfully but isn't on the
    * Authorized Users list (or was revoked) — FR-1.3. */
   deniedEmail?: string | null;
+  /** The address is on the Authorized Users list, but bound to a different Google account (FR-1.9). */
+  conflict?: boolean;
   /** Just came back from Sign Out. */
   signedOut?: boolean;
   /** The OAuth round trip didn't complete (bad state, token exchange failed). */
@@ -67,7 +69,7 @@ const noticeStyle: CSSProperties = {
 // either lands the user in the app or bounces back here with `?auth=denied`
 // / `?auth=error` (see routes/auth.ts and App.tsx, which parses those into
 // the props below).
-export default function Login({ deniedEmail, signedOut, error }: LoginProps) {
+export default function Login({ deniedEmail, conflict, signedOut, error }: LoginProps) {
   const [busy, setBusy] = useState(false);
   const denied = deniedEmail !== undefined && deniedEmail !== null;
   const mascot = denied ? MASCOT.denied : MASCOT.signin;
@@ -90,13 +92,15 @@ export default function Login({ deniedEmail, signedOut, error }: LoginProps) {
             <div className="login-fade" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 15, width: "100%" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 14px", borderRadius: 999, background: "var(--color-accent-100)", color: "var(--color-accent-800)", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>
                 <LockIcon size={14} />
-                Invite only
+                {conflict ? "Already linked" : "Invite only"}
               </span>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <h1 style={headingStyle}>Access not authorized</h1>
+                <h1 style={headingStyle}>{conflict ? "Linked to another account" : "Access not authorized"}</h1>
                 <p style={{ margin: 0, fontSize: 14, color: "var(--color-neutral-700)" }}>
-                  You signed in successfully, but this account isn't on PrepDeck's authorized list. Ask an admin to invite it, then try again.
+                  {conflict
+                    ? "This address is authorized, but it's already linked to a different Google account — so signing in with this one would have adopted someone else's data. Ask an admin to reset its Google link from Authorized Users, then sign in again."
+                    : "You signed in successfully, but this account isn't on PrepDeck's authorized list. Ask an admin to invite it, then try again."}
                 </p>
               </div>
 
