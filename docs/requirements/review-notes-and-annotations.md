@@ -27,7 +27,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-5-2"></a>
 
-- **FR-5.2 (M):** A user can browse their Wrong Question Book, filter it by exam/category, and launch a practice session scoped to exactly those questions.
+- **FR-5.2 (M):** A user can browse their Wrong Question Book, filter it by exam/category, and launch a practice session scoped to exactly those questions. The practice action always carries the filtered set, so "Practice these N" and the visible cards are the same questions. Tag filtering follows the [shared rules](#tag-filtering-on-the-review-lists).
 
 <a id="fr-5-3"></a>
 
@@ -41,7 +41,38 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-6-2"></a>
 
-- **FR-6.2 (M):** A dedicated Bookmarks page lists all bookmarked questions, filterable by exam/category, with the option to launch a practice session scoped to bookmarks.
+- **FR-6.2 (M):** A dedicated Bookmarks page lists all bookmarked questions, filterable by exam/category, with the option to launch a practice session scoped to bookmarks. It uses the same filter component and the same [tag rules](#tag-filtering-on-the-review-lists) as the Wrong Question Book, so the two pages behave identically.
+
+### Tag filtering on the review lists
+
+Both lists render the same control ([`TagFilterBar`](../../apps/web/src/components/TagFilterBar.tsx))
+over the same rules ([`lib/tagFilter.ts`](../../apps/web/src/lib/tagFilter.ts)),
+because a wrong book can carry dozens of tags while a bookmark list carries
+three, and the two must still behave the same way.
+
+- **Only tags on the page are offered.** Availability and the per-tag counts are
+  derived from the questions currently listed, never from the whole exam
+  catalog, so a tag appears and disappears with its questions.
+- **Several tags match any of them (OR).** This is the rule the practice pool
+  already applies to its own tag filter. Intersecting domain tags would
+  usually return nothing.
+- **A selected tag that leaves the list stops filtering.** Mastering or
+  un-bookmarking the last question behind an active tag retires the tag and the
+  filter it was applying, rather than leaving an invisible filter over an empty
+  page. It follows that a filtered page is never empty.
+- **Collapsed by default.** The bar shows the tags covering most of the list,
+  keeps every selected tag visible whatever the collapse state, and holds the
+  rest behind "Show N more"; past a dozen tags, expanding also offers a search
+  field. Expanded, the chip area scrolls rather than pushing the questions off
+  screen.
+- **Filter chips are controls, not metadata.** They are outlined, carry a count
+  and a selected tick, and are separated from the solid tag badges printed on
+  each question card; a card tag the filter matched carries the accent ring.
+- **The list actions follow the filter.** "Practice these N", Review, Remove
+  bookmark and Mark mastered all operate on the filtered result set.
+
+Switching between the two pages keeps whatever selection still applies and
+drops the rest, since the same component and state serve both.
 
 ## Annotations
 

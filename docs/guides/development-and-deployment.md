@@ -100,7 +100,8 @@ npm run build --workspace apps/web
 
 `npm test` only picks up `*.test.mjs`, so the component-level regressions in
 `apps/web/scripts/*.browser.mjs` — the exam workspace, the Knowledge Points
-editor, question authoring and MCP setup — run under `npm run test:browser`
+editor, question authoring, MCP setup and the Bookmarks/Wrong-book tag filter —
+run under `npm run test:browser`
 instead. Playwright is a dev dependency; `npx playwright install chromium`
 downloads the browser once (install scripts are not run automatically). CI runs
 this as its own job, because assertions nothing executes stop being tests.
