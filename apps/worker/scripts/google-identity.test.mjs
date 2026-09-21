@@ -6,7 +6,7 @@
 // google-avatar.test.mjs).
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
@@ -336,18 +336,41 @@ test("concurrent first sign-ins with different subjects bind exactly one", async
   assert.equal(results.find((r) => !r.ok).reason, "subject_conflict");
 });
 
-test("0032 keeps a Google subject that is not decimal", async (t) => {
+test("0032 keeps every subject that is not shaped like an Access UUID", async (t) => {
   const { sqlite } = fixture(t);
   // Google documents `sub` only as an ASCII string of at most 255 characters.
-  // It is decimal in practice, so this is a stand-in for the day it is not:
-  // clearing it would leave the row claimable by whoever next signs in with
-  // the address.
-  insertUser(sqlite, { status: "active", google_sub: "sub_2f8Az.Qk-90" });
-  insertUser(sqlite, { id: "user-2", email: "bob@example.test", status: "active", google_sub: "6A1F0E2C-0000-4000-8000-000000000000" });
+  // It is decimal in practice, so the second of these is a stand-in for the
+  // day it is not; the rest are 36-character near-misses. Clearing any of them
+  // would leave the row claimable by whoever next signs in with its address.
+  const kept = [
+    "110000000000000000001",
+    "sub_2f8Az.Qk-90",
+    "6a1f0e2c-0000-4000-8000-00000000000g", // right shape, not hex
+    "6a1f0e2c00004000800000000000000000zz", // right length, no hyphens
+    "1234-5678-90ab-cdef-1234567890abcdef", // right length, hyphens elsewhere
+  ];
+  kept.forEach((google_sub, i) => insertUser(sqlite, { id: `keep-${i}`, email: `keep-${i}@example.test`, status: "active", google_sub }));
+  // Uppercase hex is still an Access UUID.
+  insertUser(sqlite, { id: "access", email: "access@example.test", status: "active", google_sub: "6A1F0E2C-0000-4000-8000-000000000000" });
 
   sqlite.exec(migration("0032_google_sub_identity.sql"));
 
-  assert.equal(userRow(sqlite).google_sub, "sub_2f8Az.Qk-90");
-  // Uppercase hex is still an Access UUID.
-  assert.equal(userRow(sqlite, "user-2").google_sub, null);
+  kept.forEach((google_sub, i) => assert.equal(userRow(sqlite, `keep-${i}`).google_sub, google_sub));
+  assert.equal(userRow(sqlite, "access").google_sub, null);
+});
+
+test("no migration carries a LIKE or GLOB pattern D1 will refuse", async (t) => {
+  void t;
+  // D1 answers an over-long pattern with "LIKE or GLOB pattern too complex"
+  // (SQLITE_ERROR 7500) and fails the whole deploy. 0032 first spelled a UUID
+  // out as 32 `[0-9a-fA-F]` classes — 356 characters — and was rejected in
+  // production. The real ceiling is not documented, so this caps well under
+  // what is known to have failed rather than probing for it.
+  const patterns = readdirSync(new URL("../../../migrations/", import.meta.url))
+    .filter((name) => name.endsWith(".sql"))
+    .flatMap((name) => [...migration(name).matchAll(/\b(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)].map((m) => [name, m[1]]));
+
+  for (const [name, pattern] of patterns) {
+    assert.ok(pattern.length <= 64, `${name}: ${pattern.length}-character pattern is too long for D1`);
+  }
 });
