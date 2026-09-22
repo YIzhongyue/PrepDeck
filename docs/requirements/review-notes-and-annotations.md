@@ -73,6 +73,10 @@ three, and the two must still behave the same way.
   each question card; a card tag the filter matched carries the accent ring.
 - **The list actions follow the filter.** "Practice these N", Review, Remove
   bookmark and Mark mastered all operate on the filtered result set.
+- **Card actions sit in the bottom-right corner.** Review and its companion
+  (Mark mastered, or Remove bookmark) are anchored to the foot of the card
+  rather than to the end of the question text, so a grid of cards reads as one
+  column of controls whatever the stems do above them.
 
 Switching between the two pages keeps whatever selection still applies and
 drops the rest, since the same component and state serve both.

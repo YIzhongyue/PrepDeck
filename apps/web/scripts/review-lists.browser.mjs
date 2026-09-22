@@ -24,7 +24,11 @@ const DOMAINS = ["Networking", "Security", "Storage", "Compute", "Databases", "M
   "Serverless", "Containers", "Identity", "Analytics", "Resilience", "Governance"];
 const questions = DOMAINS.flatMap((domain, index) => {
   const base = { examId: "exam", type: "single_choice", chooseCount: 1, difficulty: "easy", points: 1, options: [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }] };
-  const rows = [{ ...base, id: `w${index + 1}`, externalId: `W${index + 1}`, sequenceNumber: index + 1, stem: `Wrong ${domain}`, tags: index === 0 ? [domain, "Security"] : [domain] }];
+  // The first stem runs long on purpose: it is what makes its card taller than
+  // the one beside it, which is the only way the card-action alignment below
+  // can be caught getting it wrong.
+  const stem = index === 0 ? `Wrong ${domain} — ${"a stem long enough to run past the line and push this card taller than the one next to it. ".repeat(3)}` : `Wrong ${domain}`;
+  const rows = [{ ...base, id: `w${index + 1}`, externalId: `W${index + 1}`, sequenceNumber: index + 1, stem, tags: index === 0 ? [domain, "Security"] : [domain] }];
   return rows;
 });
 // Bookmarks keep their own tag set, including one the wrong book never has.
@@ -88,6 +92,30 @@ try {
 
   // A 14-tag list opens as one compact bar, not as every tag it owns.
   assert.equal(await cards.count(), 14);
+
+  // Card actions live in the bottom-right corner, against the card's own
+  // padding, whatever the stem does above them — so the grid reads as a column
+  // of controls instead of a staircase following the text.
+  const actionCorners = () => cards.evaluateAll(nodes => nodes.map(card => {
+    const style = getComputedStyle(card);
+    const box = card.getBoundingClientRect();
+    const buttons = card.querySelectorAll("button");
+    const last = buttons[buttons.length - 1].getBoundingClientRect();
+    return {
+      id: card.querySelector(".tag-neutral").textContent,
+      bottomGap: box.bottom - parseFloat(style.paddingBottom) - last.bottom,
+      rightGap: box.right - parseFloat(style.paddingRight) - last.right,
+      gapToStem: last.top - card.querySelector("p").getBoundingClientRect().bottom,
+      stemHeight: card.querySelector("p").getBoundingClientRect().height,
+      bottom: Math.round(last.bottom),
+    };
+  }));
+  const corners = await actionCorners();
+  assert.deepEqual(corners.filter(c => Math.abs(c.bottomGap) > 1 || Math.abs(c.rightGap) > 1), [],
+    "every card parks its actions in the bottom-right corner");
+  assert.ok(corners.every(c => c.gapToStem >= 8), "actions keep clear of the question text");
+  assert.ok(corners[0].stemHeight > corners[1].stemHeight + 10, "the fixture pairs a long stem with a short one");
+  assert.equal(corners[0].bottom, corners[1].bottom, "two cards of different text lengths land their actions on one line");
   assert.equal(await chips.count(), 6, "collapsed bar shows a fixed handful of chips");
   const more = page.getByRole("button", { name: /^Show \d+ more$/ });
   assert.equal(await more.textContent(), "Show 8 more", "the bar says how much it is holding back");
@@ -195,6 +223,10 @@ try {
   // The same component on the short list: no overflow control at all.
   await open("bookmarks");
   assert.equal(await cards.count(), 4);
+  // Same component, so the same corner — Remove bookmark sits where Mark
+  // mastered does on the other list.
+  assert.deepEqual((await actionCorners()).filter(c => Math.abs(c.bottomGap) > 1 || Math.abs(c.rightGap) > 1), [],
+    "bookmark cards park their actions in the same corner");
   assert.deepEqual(await chipNames(), ["Storage", "Billing", "Networking"]);
   assert.equal(await page.getByRole("button", { name: /^Show \d+ more$/ }).count(), 0, "a three-tag list has nothing to collapse");
   assert.equal(await page.getByRole("searchbox", { name: "Search tags" }).count(), 0);
