@@ -49,7 +49,7 @@ try {
   const catalog = await request("/api/exams/local-exam/practice-catalog");
   assert.equal(catalog.questions.length, 3);
   const keys = await (await fetch(`${explorer}/storage/kv/namespaces/00000000000000000000000000000000/keys`)).json();
-  assert.ok(keys.result.some(key => key.name === "practice-questions:local-exam"), "practice catalog persisted through real local KV");
+  assert.ok(keys.result.some(key => key.name === "practice-questions:v2:local-exam"), "lightweight practice catalog persisted through real local KV");
   assert.deepEqual((await request("/api/exams/local-exam/practice-catalog")).questions, catalog.questions);
 
   const note = (await request("/api/knowledge-points", json("POST", {}), 201)).knowledgePoint;
