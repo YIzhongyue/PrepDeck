@@ -179,6 +179,46 @@ UI also sells PRO components; none are used here, and `npx untitledui login`
 is deliberately not part of any workflow. Identify a PRO component and its
 licence terms separately before introducing one.
 
+## Modals and the top layer
+
+A modal has to dim the whole window, and `position: fixed` cannot promise that:
+it is only ever as large as its containing block, and any ancestor with a
+`transform`, `filter` or `contain` becomes that block. Every screen here opens
+with a `pd-rise` transform animation, so a dialog rendered inside one dimmed
+its own content column and left the sidebar and page margins bright.
+
+[`components/ModalLayer.tsx`](../../apps/web/src/components/ModalLayer.tsx) is
+the way out. It renders a `<dialog>` and calls `showModal()`, which promotes the
+element to the browser's top layer — outside every ancestor's containing block,
+so the wash covers the window whatever the page behind it is laid out like. The
+top layer also makes the rest of the document inert and routes Escape to the
+dialog, which no `div` backdrop does. The `.modal-layer` rules in
+[`tokens.css`](../../apps/web/src/styles/tokens.css) stretch the box over the
+viewport and paint the wash through `::backdrop`; theme tokens still reach it by
+inheritance from where the component sits in the tree.
+
+Wrap the panel and pass `onClose` — the backdrop click and Escape both go
+through it, so the state that renders the dialog stays in step with the element:
+
+```tsx
+<ModalLayer label="Import questions" onClose={close}>
+  <div className="dialog">…</div>
+</ModalLayer>
+```
+
+`QuestionEditorDialog` drives its own `<dialog>` for the same reason, because it
+also needs a drawer animation and an unsaved-changes guard. The dialogs still on
+the plain `.dialog-backdrop` div — `ConfirmDialog`, the Knowledge Point modals
+and `StudyPlanDialog`, which portals to the document to escape the same problem
+— should move onto this layer as they are touched.
+
+Two things to keep in mind when adding a panel: keep it inside the layer's
+content box (`.modal-layer > *` caps it, since a centred box taller than its
+scroll container cannot be scrolled back to its own top edge), and prefer
+`animation-fill-mode: backwards` over `both` on any entrance animation, because
+a forwards fill leaves a transform applied and recreates exactly the containing
+block this section is about.
+
 ## Migration status
 
 `Settings` is migrated and is the reference for how these components are used:
@@ -255,6 +295,7 @@ npm run typecheck --workspace apps/web
 npm run build --workspace apps/web
 node apps/web/scripts/settings.browser.mjs
 node apps/web/scripts/statistics.browser.mjs
+node apps/web/scripts/admin-console.browser.mjs
 ```
 
 The browser suite renders the real `Settings` screen against a local HTTP
@@ -281,6 +322,15 @@ four distinct numbers, that empty and partial-failure states each have their
 own wording, that a practice action carries its whole filter set, that both
 charts expose a data table, and that all five schemes render at 1280/834/375px
 without page overflow.
+
+`admin-console.browser.mjs` covers the modal layer, and needs the whole shell to
+do it: it opens the Admin console's **New provider** dialog inside the real
+sidebar-and-content layout, measures the dimmed layer against the viewport, and
+hit-tests all four corners, because the failure it guards against is a backdrop
+that stops at the content column. It also checks that the wash is the app's own
+token-resolved color, that a background control takes neither focus nor a click,
+and that Escape and a backdrop click both close the dialog and hand the page
+back — at 1280px and at 390px.
 
 Set `SETTINGS_SCREENSHOTS`, `STATISTICS_SCREENSHOTS` (or `SCREENSHOT_DIR`) to
 write the captures in [`docs/screenshots/`](../screenshots/README.md).
