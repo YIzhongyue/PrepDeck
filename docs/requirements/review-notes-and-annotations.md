@@ -73,6 +73,10 @@ three, and the two must still behave the same way.
   each question card; a card tag the filter matched carries the accent ring.
 - **The list actions follow the filter.** "Practice these N", Review, Remove
   bookmark and Mark mastered all operate on the filtered result set.
+- **Card actions sit in the bottom-right corner.** Review and its companion
+  (Mark mastered, or Remove bookmark) are anchored to the foot of the card
+  rather than to the end of the question text, so a grid of cards reads as one
+  column of controls whatever the stems do above them.
 
 Switching between the two pages keeps whatever selection still applies and
 drops the rest, since the same component and state serve both.
@@ -98,6 +102,11 @@ drops the rest, since the same component and state serve both.
 <a id="fr-8-5"></a>
 
 - **FR-8.5 (M):** A user can edit or remove an existing annotation.
+
+Legacy stem/option marks retain their source coordinates after a 2.0 export and
+re-import when the converted content is a single Markdown block matching the
+original text. Complex component blocks do not reuse offsets from an unrelated
+text projection. The review-only visibility rules above remain unchanged.
 
 ## Question notes
 

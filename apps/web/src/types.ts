@@ -20,6 +20,8 @@ export interface Question {
   tags: string[];
   diff: Difficulty | null;
   stem: string;
+  hasContent?: boolean;
+  revision?: number;
   content?: QuestionContentModel;
   options: QuestionOption[] | null;
 }

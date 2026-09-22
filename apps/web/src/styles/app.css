@@ -34,6 +34,12 @@ a:hover { color: var(--color-accent-800); }
 #root { min-height: 100vh; }
 
 @keyframes pd-spin { to { transform: rotate(360deg); } }
+/* Screen entrance animations. Run these with `backwards`, never `both` or
+   `forwards`: a filling transform animation stays applied, and an element with
+   an applied transform animation becomes the containing block for its
+   `position: fixed` descendants — which clips any backdrop rendered inside the
+   screen to the screen's own column (see components/ModalLayer.tsx). The last
+   keyframe is the resting style anyway, so a backwards fill looks identical. */
 @keyframes pd-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pd-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pd-orbit { to { transform: rotate(360deg); } }
@@ -448,6 +454,12 @@ header .exam-selector--compact .exam-selector__menu {
 .authoring-option { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
 .authoring-option textarea { flex: 1; min-width: 0; }
 .authoring-identifier { font-size: 11px; opacity: .7; overflow-wrap: anywhere; user-select: text; }
+/* The review flag is a single boolean, so it reads as one clickable row
+   rather than a labelled control stacked above its input like the rest. */
+.authoring-checkbox { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.authoring-checkbox input { width: 15px; height: 15px; accent-color: var(--color-accent); cursor: pointer; margin: 0; }
+.authoring-checkbox span { font-size: 14px; color: var(--color-text); }
+.authoring-checkbox + .authoring-identifier { margin: 6px 0 0; }
 .authoring-errors { color: var(--color-danger, #b42318); font-size: 12px; overflow-wrap: anywhere; }
 .authoring-feedback { padding: 12px 18px; }
 .authoring-preview { border: 1px solid var(--color-divider); border-radius: 16px; padding: 16px; overflow-wrap: anywhere; }

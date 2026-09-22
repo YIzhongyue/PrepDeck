@@ -28,7 +28,7 @@ export type Interaction = { id: string } & (
 export interface ComponentItem {
   externalId: string; body: ContentBlock[]; stimulusRefs?: string[]; interaction: Interaction;
   scoring: { method: "exact"; correctAnswers: string[] };
-  explanation?: string | null; tags?: string[]; difficulty?: "easy" | "medium" | "hard" | null; points?: number;
+  explanation?: string | null; tags?: string[]; difficulty?: "easy" | "medium" | "hard" | null; needsReview?: boolean; points?: number;
 }
 export interface ComponentPackage {
   schemaVersion: "2.0"; exam: QuestionImportFile["exam"]; source?: QuestionImportFile["source"];
@@ -146,7 +146,7 @@ export function validateComponentPackage(data: unknown): ValidationIssue[] {
     // D1 stores both current columns and an import-baseline copy. Reserve room
     // for both plus identifiers/revisions under its 2,000,000-byte row limit.
     const payload = { content, externalId: q.externalId, ...componentProjection(content), correctAnswers: answers,
-      explanation: q.explanation ?? null, difficulty: q.difficulty ?? null, tags: q.tags ?? [], points: q.points ?? 1 };
+      explanation: q.explanation ?? null, difficulty: q.difficulty ?? null, tags: q.tags ?? [], needsReview: q.needsReview ?? false, points: q.points ?? 1 };
     if (encodeURIComponent(JSON.stringify(payload)).replace(/%[A-F\d]{2}/g, "x").length > 900000) error(path, "normalized question payload exceeds the 900000-byte storage budget; reduce assets or split the item");
   });
   // Unreferenced resources are rejected instead of being silently lost on import.
@@ -164,7 +164,11 @@ export function normalizeImportFile(data: unknown): QuestionImportFile {
   return { schemaVersion: "1.0", exam: file.exam, source: file.source, questions: file.questions.map(q => {
     const content = resolveContent(file, q);
     return { externalId: q.externalId, ...componentProjection(content), content, correctAnswers: q.scoring.correctAnswers,
-      explanation: q.explanation, tags: q.tags, difficulty: q.difficulty, points: q.points };
+      ...(q.explanation !== undefined ? { explanation: q.explanation } : {}),
+      ...(q.tags !== undefined ? { tags: q.tags } : {}),
+      ...(q.difficulty !== undefined ? { difficulty: q.difficulty } : {}),
+      ...(q.needsReview !== undefined ? { needsReview: q.needsReview } : {}),
+      ...(q.points !== undefined ? { points: q.points } : {}) };
   }) };
 }
 export function validateQuestionContent(content: unknown, row: QuestionImportRow): ValidationIssue[] {
@@ -172,7 +176,7 @@ export function validateQuestionContent(content: unknown, row: QuestionImportRow
   const c = content as QuestionContentModel;
   if (c.version !== "1.0" || !Array.isArray(c.stimuli) || !Array.isArray(c.assets) || c.stimuli.some(s => !s || typeof s.id !== "string") || Object.keys(c).some(k => !["version","body","stimuli","assets","interaction"].includes(k))) return [{ path: "$.content", message: "invalid content envelope" }];
   const issues = validateComponentPackage({ schemaVersion: "2.0", exam: { id: "validation", name: "Validation" }, assets: c.assets, stimuli: c.stimuli,
-    questions: [{ ...(row.explanation !== undefined ? { explanation: row.explanation } : {}), ...(row.tags !== undefined ? { tags: row.tags } : {}), ...(row.difficulty !== undefined ? { difficulty: row.difficulty } : {}), ...(row.points !== undefined ? { points: row.points } : {}), externalId: row.externalId ?? "question", body: c.body, stimulusRefs: c.stimuli.map(s => s.id), interaction: c.interaction, scoring: { method: "exact", correctAnswers: row.correctAnswers } }] });
+    questions: [{ ...(row.explanation !== undefined ? { explanation: row.explanation } : {}), ...(row.tags !== undefined ? { tags: row.tags } : {}), ...(row.difficulty !== undefined ? { difficulty: row.difficulty } : {}), ...(row.needsReview !== undefined ? { needsReview: row.needsReview } : {}), ...(row.points !== undefined ? { points: row.points } : {}), externalId: row.externalId ?? "question", body: c.body, stimulusRefs: c.stimuli.map(s => s.id), interaction: c.interaction, scoring: { method: "exact", correctAnswers: row.correctAnswers } }] });
   if (!issues.length) {
     const projection = componentProjection(c);
     for (const key of ["type","stem","options"] as const) if (JSON.stringify(row[key]) !== JSON.stringify(projection[key])) issues.push({ path: `$.${key}`, message: "must match component content; edit the structured source and re-import" });
@@ -180,18 +184,26 @@ export function validateQuestionContent(content: unknown, row: QuestionImportRow
   return issues;
 }
 
+export class MissingExportExternalIdError extends Error {
+  constructor() {
+    super("Assign a unique external ID to every question before exporting; questions without one cannot be safely re-imported into their source exam.");
+    this.name = "MissingExportExternalIdError";
+  }
+}
+
 export function exportComponentPackage(exam: ComponentPackage["exam"], questions: QuestionImportRow[]): ComponentPackage {
   const stimuli = new Map<string, Stimulus>(), assets = new Map<string, ContentAsset>();
-  const items = questions.map((q, index): ComponentItem => {
+  const items = questions.map((q): ComponentItem => {
+    if (!q.externalId?.trim()) throw new MissingExportExternalIdError();
     const c = q.content;
-    if (!c) return { externalId: q.externalId ?? `question-${index + 1}`, body: [{ id: "stem", type: "paragraph", format: "markdown", text: q.stem }],
+    if (!c) return { externalId: q.externalId, body: [{ id: "stem", type: "paragraph", format: "markdown", text: q.stem }],
       interaction: q.type === "fill_blank" ? { id: "response", type: "text" } : { id: "response", type: "choice", multiple: q.type === "multiple_choice", ...(q.type === "true_false" ? { variant: "true_false" as const } : {}), options: (q.options ?? []).map(o => ({ id: o.id, body: [{ id: `option-${o.id}`, type: "paragraph", format: "markdown", text: o.text }] })) },
-      scoring: { method: "exact", correctAnswers: q.correctAnswers }, explanation: q.explanation, tags: q.tags, difficulty: q.difficulty, points: q.points };
+      scoring: { method: "exact", correctAnswers: q.correctAnswers }, explanation: q.explanation, tags: q.tags, difficulty: q.difficulty, needsReview: q.needsReview, points: q.points };
     // Fail on incompatible snapshots rather than choosing an arbitrary winner.
     for (const s of c.stimuli) { if (stimuli.has(s.id) && JSON.stringify(stimuli.get(s.id)) !== JSON.stringify(s)) throw new Error(`Conflicting stimulus snapshots: ${s.id}; export these revisions separately`); stimuli.set(s.id, s); }
     for (const a of c.assets) { if (assets.has(a.id) && JSON.stringify(assets.get(a.id)) !== JSON.stringify(a)) throw new Error(`Conflicting asset: ${a.id}`); assets.set(a.id, a); }
-    return { externalId: q.externalId ?? `question-${index + 1}`, body: c.body, stimulusRefs: c.stimuli.map(s => s.id), interaction: c.interaction,
-      scoring: { method: "exact", correctAnswers: q.correctAnswers }, explanation: q.explanation, tags: q.tags, difficulty: q.difficulty, points: q.points };
+    return { externalId: q.externalId, body: c.body, stimulusRefs: c.stimuli.map(s => s.id), interaction: c.interaction,
+      scoring: { method: "exact", correctAnswers: q.correctAnswers }, explanation: q.explanation, tags: q.tags, difficulty: q.difficulty, needsReview: q.needsReview, points: q.points };
   });
   const file = JSON.parse(JSON.stringify({ schemaVersion: "2.0", exam, assets: [...assets.values()], stimuli: [...stimuli.values()], questions: items }));
   const issues = validateComponentPackage(file);

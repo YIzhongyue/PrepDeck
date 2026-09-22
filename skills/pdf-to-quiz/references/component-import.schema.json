@@ -1025,6 +1025,9 @@
         },
         "points": {
           "type": "number"
+        },
+        "needsReview": {
+          "type": "boolean"
         }
       },
       "required": [

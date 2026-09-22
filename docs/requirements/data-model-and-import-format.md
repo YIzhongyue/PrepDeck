@@ -12,7 +12,7 @@ already-applied migrations. DTOs and validators live in [shared code](../../pack
 | Domain | Records and relationships |
 | --- | --- |
 | Identity | `users` owns role/status/profile/preferences; invitations restrict membership. Provider and exam catalogs are shared. |
-| Questions | `questions` belongs to one exam; external IDs identify source rows and sequence numbers order learning. Revisions, import baselines and answer revisions are distinct. |
+| Questions | `questions` belongs to one exam; external IDs identify source rows and sequence numbers order learning. Revisions, import baselines and answer revisions are distinct. `needs_review` is the review-workflow flag; it is a column, never a tag. |
 | Explanations | `ai_explanations` is shared by question/provider/model with requester metadata, never API keys. |
 | Answering | `attempts` belongs to user + exam; `attempt_answers` stores selections, correctness and grading snapshots. Mock drafts/flags and completion timestamps support resume. |
 | Review | `wrong_question_book`, `bookmarks`, `annotations`, `notes` refer to a user and question. Only notes have optional sharing; annotation ranges have a target type/reference. |
@@ -50,7 +50,9 @@ historical full-content snapshots are not introduced.
 `source` metadata is optional. Files contain 1–1,000 questions. REST import bodies
 are bounded to 5 MiB and 32 nesting levels. Stems are nonblank and at most 20,000
 characters; options are at most 20, each text at most 10,000; explanations at most
-50,000; tags at most 50, each at most 200. Consult the schema for all constraints.
+50,000; tags at most 50, each at most 200. `needsReview` is an optional boolean
+marking a question as still awaiting manual review; omitting it means no review is
+pending. Consult the schema for all constraints.
 
 ```json
 {
@@ -65,6 +67,7 @@ characters; options are at most 20, each text at most 10,000; explanations at mo
     "explanation": null,
     "difficulty": "easy",
     "tags": ["arithmetic"],
+    "needsReview": false,
     "points": 1
   }]
 }
@@ -74,7 +77,12 @@ Reject duplicate external IDs within a file, duplicate option IDs, missing answe
 references and invalid type-specific option/answer cardinalities. True/false uses
 exactly the `true`/`false` options. Fill-blank omits `options`; multiple choice has
 at least two accepted option IDs. Existing external-ID conflicts require reviewed
-resolutions, not unconditional overwrite. Unknown source fields are not guaranteed
+resolutions, not unconditional overwrite. Review state is question workflow
+metadata, not classification metadata: it lives in `questions.needs_review`, and
+the question-bank tag catalog must not be used to express it. Because the flag is
+part of the compared payload, clearing it locally and then re-importing the same
+file surfaces a `locally_edited` conflict naming `needsReview` rather than
+silently reinstating the flag. Unknown source fields are not guaranteed
 round-trip persistence in normalized question records; raw archived input is not
 an extensible database column contract. Preserve meaningful provenance in the
 conversion evidence and import archive rather than inventing unsupported fields.

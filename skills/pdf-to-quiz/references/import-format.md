@@ -70,7 +70,7 @@ Each option is `{ "id": "A", "text": "..." }`. IDs must be unique within the que
 
 The final file must contain only the JSON object. Keep extraction uncertainties in the separate review artifact described in `SKILL.md`.
 
-The Python and shared TypeScript validators enforce the same import rules. Optional fields must be omitted rather than set to `null`, except `explanation` and `difficulty`. Timestamps require a real date, time and timezone (seconds 00–59). Source references and review state belong in the separate [evidence workspace](evidence-format.md), not the import file.
+The Python and shared TypeScript validators enforce the same import rules. Optional fields must be omitted rather than set to `null`, except `explanation` and `difficulty`. Timestamps require a real date, time and timezone (seconds 00–59). Source references belong in the separate [evidence workspace](evidence-format.md), not the import file. The schema accepts an optional boolean `needsReview` that flags an imported question as still awaiting a human check in the application; this pipeline never emits it, because a question it cannot resolve from the source stays in the review artifact instead of being exported flagged.
 
 ## Import size limits
 

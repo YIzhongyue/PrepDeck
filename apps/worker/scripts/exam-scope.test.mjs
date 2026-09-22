@@ -9,8 +9,8 @@ async function bundle(path) {
   const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
   return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
 }
-const [{ practiceCatalogRouter }, { examAttemptsRouter }, { bookmarksRouter }, { wrongBookMasteredRouter }, { annotationsRouter }, { notesRouter }] = await Promise.all([
-  bundle("../src/routes/practice.ts"), bundle("../src/routes/attempts.ts"), bundle("../src/routes/bookmarks.ts"), bundle("../src/routes/wrongBook.ts"), bundle("../src/routes/annotations.ts"), bundle("../src/routes/notes.ts")]);
+const [{ practiceCatalogRouter }, { examAttemptsRouter }, { bookmarksRouter }, { wrongBookMasteredRouter }, { annotationsRouter }, { notesRouter }, { setCachedPracticeQuestions, invalidatePracticeQuestions }] = await Promise.all([
+  bundle("../src/routes/practice.ts"), bundle("../src/routes/attempts.ts"), bundle("../src/routes/bookmarks.ts"), bundle("../src/routes/wrongBook.ts"), bundle("../src/routes/annotations.ts"), bundle("../src/routes/notes.ts"), bundle("../src/lib/practiceCache.ts")]);
 
 function setup() {
   const db = new DatabaseSync(":memory:");
@@ -31,7 +31,8 @@ function setup() {
     for (const visibility of ["private", "shared"]) db.prepare("INSERT INTO notes VALUES (?,?,?,?,?,'now','now')").run(`${user}-${q}-${visibility}`, user, q, 'A note', visibility);
   }
   const cache = new Map();
-  const DB = { prepare(sql) { let values = []; return {
+  const queries = [];
+  const DB = { prepare(sql) { queries.push(sql); let values = []; return {
     bind(...args) { values = args; return this; },
     async first() { return db.prepare(sql).get(...values) ?? null; },
     async all() { return { results: db.prepare(sql).all(...values) }; },
@@ -50,7 +51,7 @@ function setup() {
     const response = await app.request(`https://test${path}`, { method, headers: { "x-user": user, "Content-Type": "application/json" }, body: body && JSON.stringify(body) }, env);
     return { status: response.status, body: await response.json() };
   };
-  return { db, cache, request };
+  return { db, cache, request, queries };
 }
 
 test("catalog isolates two users and exams, including shared question-cache hits", async t => {
@@ -66,6 +67,53 @@ test("catalog isolates two users and exams, including shared question-cache hits
   }
   for (const payload of cache.values()) assert.ok(Array.isArray(JSON.parse(payload)), "only question arrays are cached");
   assert.equal((await request('/exams/missing/practice-catalog')).status, 404);
+});
+
+test("image-heavy catalogs stay small and cacheable; only opened question content is returned", async t => {
+  const { db, cache, request, queries } = setup(); t.after(() => db.close());
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1cAAAAASUVORK5CYII=", "base64");
+  const data = Buffer.concat([png, Buffer.alloc(240 * 1024 - png.length)]).toString("base64");
+  const content = { version: "1.0", body: [
+    { id: "first", type: "figure", assetId: "figure-1", alt: "First figure" },
+    { id: "second", type: "figure", assetId: "figure-2", alt: "Second figure" },
+  ], stimuli: [], assets: [1, 2].map(id => ({ id: `figure-${id}`, mediaType: "image/png", data })), interaction: { id: "answer", type: "text" } };
+  const snapshot = JSON.stringify(content);
+  assert.ok(Buffer.byteLength(snapshot) < 900000, "each snapshot fits the per-question storage budget");
+  assert.ok(Buffer.byteLength(snapshot) * 42 > 25 * 1024 * 1024, "the old full catalog exceeded KV's limit");
+  const insert = db.prepare("INSERT INTO questions(id,exam_id,type,stem,content_json,correct_answers_json,created_at,updated_at,sequence_number) VALUES (?, 'A', 'fill_blank', 'First figure\n\nSecond figure', ?, '[\"yes\"]', 'now', 'now', ?)");
+  for (let n = 0; n < 42; n++) insert.run(`large-${n}`, snapshot, n + 100);
+  cache.set("practice-questions:A", JSON.stringify([{ id: "obsolete", content }]));
+  const first = await request("/exams/A/practice-catalog");
+  assert.equal(first.status, 200);
+  assert.equal(first.body.questions.length, 45);
+  assert.equal(first.body.questions.find(q => q.id === "large-0").hasContent, true);
+  assert.equal(first.body.questions.find(q => q.id === "A1").hasContent, false);
+  assert.ok(first.body.questions.every(q => !Object.hasOwn(q, "content") && !Object.hasOwn(q, "correctAnswers") && !Object.hasOwn(q, "explanation")));
+  assert.ok(Buffer.byteLength(JSON.stringify(first.body)) < 25000);
+  assert.ok(cache.has("practice-questions:v2:A"));
+  const catalogReads = () => queries.filter(sql => sql.includes("ORDER BY sequence_number ASC"));
+  assert.equal(catalogReads().length, 1);
+  assert.match(catalogReads()[0], /content_json IS NOT NULL AS has_content/);
+  assert.doesNotMatch(catalogReads()[0], /stem, content_json,/);
+  assert.deepEqual((await request("/exams/A/practice-catalog")).body, first.body);
+  assert.equal(catalogReads().length, 1, "a cache hit does not query the exam-wide question rows again");
+  assert.deepEqual((await request("/exams/A/practice-catalog/large-0")).body, { content, revision: 1 });
+  assert.deepEqual((await request("/exams/A/practice-catalog/A1")).body, { content: null, revision: 1 });
+  assert.equal((await request("/exams/B/practice-catalog/large-0")).status, 404);
+  assert.equal((await request("/exams/A/practice-catalog/missing")).status, 404);
+});
+
+test("catalog cache measures UTF-8 bytes and invalidates both deployment versions", async () => {
+  const writes = [], deleted = [];
+  const env = { KV: { put: async (...args) => writes.push(args), delete: async key => deleted.push(key) } };
+  // The JSON characters fit but its UTF-8 bytes exceed the KV value limit.
+  await setCachedPracticeQuestions(env, "A", [{ stem: "界".repeat(9 * 1024 * 1024) }]);
+  assert.equal(writes.length, 0);
+  await setCachedPracticeQuestions(env, "A", [{ stem: "A small question", hasContent: true }]);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], "practice-questions:v2:A");
+  await invalidatePracticeQuestions(env, "A");
+  assert.deepEqual(deleted.sort(), ["practice-questions:A", "practice-questions:v2:A"].sort());
 });
 
 test("bulk practice accepts scoped bookmarks and rejects mixed-exam input", async t => {

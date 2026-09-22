@@ -64,6 +64,7 @@ const questionPayloadSchema = z.strictObject({
   explanation: z.string().nullable().optional(),
   difficulty: difficultySchema.nullable().optional(),
   tags: z.array(z.string()).optional(),
+  needsReview: z.boolean().optional(),
   points: z.number().optional(),
   content: z.record(z.string(), z.unknown()).optional(),
 });
@@ -77,19 +78,22 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
       "Get supported question components, interactions, limits, and JSON import schemas. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON.",
       z.strictObject({}), () => getImportSchemas()),
 
-    defineMcpTool("admin_export_questions", "Export a page of questions as a portable component package, including answer keys. Follow nextOffset for remaining questions. If snapshot identities conflict, export separately; if the 5 MiB package limit is exceeded, reduce limit.",
+    defineMcpTool("admin_export_questions", "Export a page of questions as a portable component package, including answer keys. Every question must have a unique external ID for safe re-import; assign missing IDs before exporting. Follow nextOffset for remaining questions. If snapshot identities conflict, export separately; if the 5 MiB package limit is exceeded, reduce limit.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }), input => services.exportQuestions(input)),
 
     // --- Question-bank reads (implementation) -------------------------------------
     defineMcpTool(
       "admin_search_questions",
-      "Search questions within one exam by text, id, type, difficulty, or tag.",
+      "Search questions within one exam by text, id, type, difficulty, tag, or pending-review state.",
       z.strictObject({
         examId: examIdSchema,
         q: z.string().min(1).max(200).optional(),
         type: questionTypeSchema.optional(),
         difficulty: difficultySchema.optional(),
         tag: z.string().min(1).max(200).optional(),
+        // Omitted = both; true = only questions still awaiting manual review,
+        // false = only questions already signed off (issue #15).
+        needsReview: z.boolean().optional(),
         ...paginationSchema.shape,
       }),
       (input) => services.searchQuestions(input),
@@ -166,6 +170,15 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     ),
 
     // --- Question-bank mutations (implementation) ---------------------------------
+    defineMcpTool(
+      "admin_preview_component_question",
+      "Preview one schemaVersion 2.0 component item with its referenced stimuli/assets. The server validates and derives type/stem/options; do not supply those projections yourself. Optional id previews an edit, preserving omitted metadata. Submit the returned payload unchanged to admin_create_question with proposalToken/proposalId, or admin_update_question with proposalToken/currentRevision as expectedRevision. No question is saved by this preview.",
+      z.strictObject({
+        examId: examIdSchema, id: questionIdSchema.optional(), question: z.record(z.string(), z.unknown()),
+        stimuli: z.array(z.unknown()).max(200).optional(), assets: z.array(z.unknown()).max(100).optional(),
+      }),
+      input => services.previewComponentQuestion(input),
+    ),
     defineMcpTool(
       "admin_validate_question_payload",
       "Preview a question create or edit without saving it. Validates the payload with the same rules as Admin/imports, and (with id) returns a before/after diff and whether the answer key would be revised. On success, returns a proposalToken that admin_create_question/admin_update_question require to commit this exact reviewed payload.",

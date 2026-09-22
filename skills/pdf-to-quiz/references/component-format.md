@@ -215,14 +215,28 @@ preview. Practice, Learning and Mock render the same content; order/match contro
 save and restore normal attempt responses. Exact grading stays server-side.
 
 Admin MCP uses `admin_preview_import` then `admin_execute_import` with the returned
-ID/token. `admin_export_questions` and Web UI **Export this page** return portable
+ID/token. For one item, `admin_preview_component_question` accepts
+`{ examId, id?, question, stimuli?, assets? }` with a 2.0 question and its referenced
+material. It validates and normalizes the item server-side and returns the
+`payload` to pass unchanged to `admin_create_question` or `admin_update_question`,
+using the existing proposal and revision bindings. Callers do not derive flattened
+stems, option text or answer projections themselves. Optional `needsReview`
+preserves the question's human-review state through 2.0 import/export.
+
+`admin_export_questions` and Web UI **Export this page** return portable
 2.0 packages; follow `nextOffset` for subsequent pages. Exports that exceed the
 5 MiB import limit are rejected; use a smaller API/MCP `limit` for image-heavy
-pages. Legacy rows that exceed 2.0 field limits also need explicit correction. Shared snapshots must agree
+pages. Every exported row must have an explicit, unique external ID; assign one
+before exporting legacy rows that lack it. REST returns 409 and MCP returns
+`export_requires_external_id` without emitting a partial package. Internal row
+IDs are never substituted, because re-import matches external IDs.
+Legacy rows that exceed 2.0 field limits also need explicit correction. Shared snapshots must agree
 within an exported page; conflicting stimulus revisions require separate exports.
 Ordinary users can prepare files and discover schemas; bank writes/exports require
 an administrator. No PDF-upload or hosted OCR endpoint is introduced.
 
-Inline text annotations currently apply to legacy Markdown questions only.
-Component text/figure annotations, a graphical block editor, complex table cells,
+Legacy Markdown annotations survive export/re-import when a stem or option has
+one Markdown block matching its original source exactly. The existing review-only
+visibility and source coordinates still apply. Annotations on complex component
+text/figures, a graphical block editor, complex table cells,
 partial credit, QTI import/export and hosted asset storage remain future work.

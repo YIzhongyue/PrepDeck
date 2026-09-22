@@ -136,7 +136,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
   const emptyCollection = state.items.length === 0 && !kp.hasActiveFilters && state.scope === "all" && allNotesCount === 0 && !state.listLoading;
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
           <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Personal knowledge</p>

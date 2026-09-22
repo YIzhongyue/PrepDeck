@@ -167,7 +167,8 @@ async function checkDeletionRecovery() {
       await dialog.getByRole("button", { name: "Delete note", exact: true }).click();
     } else if (scenario === "pending-save") {
       assert.equal(await dialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
-      await page.locator(".dialog-backdrop").click({ position: { x: 2, y: 2 } });
+      // The top-left corner of the window: the dimmed layer, well clear of the panel.
+      await page.mouse.click(2, 2);
       assert.equal(await dialog.isVisible(), true, "Pending deletion cannot dismiss into a different editor");
       await wait(() => deleteRequests > pendingDelete, "delete waits for the failed in-flight save");
       failSave = 0; delaySave = 0; deleteGate.resolve(); deleteGate = null;
@@ -340,8 +341,31 @@ try {
 
   // Review links do not create attempts; live practice input retains normal keys.
   await page.getByRole("button", { name: "Link a question", exact: true }).click();
-  await page.getByRole("dialog", { name: "Link a question", exact: true }).getByRole("button", { name: "Link", exact: true }).click();
-  await page.getByRole("dialog", { name: "Link a question", exact: true }).getByText("Linked", { exact: true }).waitFor();
+  const linkDialog = page.getByRole("dialog", { name: "Link a question", exact: true });
+  await linkDialog.waitFor();
+  // The editor opens with a transform animation, which used to make it the
+  // containing block for the modal's `position: fixed` backdrop and shrink the
+  // dimming to the editor column. Measure the whole window, and hit-test the
+  // corners the screen behind it used to keep.
+  await page.locator(".kp-editor").evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)).catch(() => {}));
+  // Whichever layer the dialog is dimmed with — the assertion is about what the
+  // user sees, not about which element paints it.
+  const wash = page.locator(".modal-layer, .dialog-backdrop");
+  const dimmed = await wash.evaluate((el, { width, height }) => ({
+    box: el.getBoundingClientRect().toJSON(),
+    corners: [[4, 4], [width - 4, 4], [4, height - 4], [width - 4, height - 4]]
+      .map(([x, y]) => document.elementFromPoint(x, y) === el)
+  }), page.viewportSize());
+  assert.deepEqual(
+    { x: Math.round(dimmed.box.x), y: Math.round(dimmed.box.y), width: Math.round(dimmed.box.width), height: Math.round(dimmed.box.height) },
+    { x: 0, y: 0, width: page.viewportSize().width, height: page.viewportSize().height },
+    "the dimming layer does not cover the viewport"
+  );
+  assert.deepEqual(dimmed.corners, [true, true, true, true], "the page behind the modal is not dimmed to the corners");
+  assert.equal(await page.getByRole("button", { name: "Delete this note", exact: true }).evaluate(el => { el.focus(); return document.activeElement === el; }), false,
+    "a control behind the modal still takes focus");
+  await linkDialog.getByRole("button", { name: "Link", exact: true }).click();
+  await linkDialog.getByText("Linked", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("button", { name: "Open", exact: true }).click();
   await page.waitForFunction(() => window.fixtureApp.state.screen === "learning" && window.fixtureApp.state.lStage === "live");
@@ -414,8 +438,12 @@ try {
       await page.getByRole("button", { name: label, exact: true }).first().click();
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${theme} 375px ${label} dialog overflow`);
-      await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab");
-      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement)), `${label} retains keyboard focus`);
+      await page.keyboard.press("Shift+Tab");
+      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement) && document.hasFocus()), `${label} retains keyboard focus on Shift+Tab`);
+      if (label === "Link a question") assert.ok(await dialog.getByRole("button", { name: "Done", exact: true }).evaluate(el => el === document.activeElement), "Shift+Tab wraps from the first to the last question-picker control");
+      await page.keyboard.press("Tab");
+      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement) && document.hasFocus()), `${label} retains keyboard focus on Tab`);
+      if (label === "Link a question") assert.ok(await dialog.getByRole("button", { name: "Close question picker", exact: true }).evaluate(el => el === document.activeElement), "Tab wraps from the last to the first question-picker control");
       await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     }
   }

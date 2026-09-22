@@ -30,7 +30,13 @@ These are three implemented layers, not a schema per exam or per book:
    structured editing, attempts/grading and export. Shared stimulus IDs/revisions
    are resolved into immutable per-question snapshots; editing one item does not
    silently update other items. Export rejects conflicting snapshots with the
-   same ID. Large inline catalogs bypass KV above its 25 MiB value limit.
+   same ID, and requires an explicit external ID on every exported question so
+   re-import can match the original row. The practice catalog carries text
+   projections and a content-presence flag; full snapshots and inline assets
+   load only for the opened question. Catalog caching stays independent of the
+   combined asset size of the bank. A revision mismatch between the catalog and
+   opened content asks for an exam refresh before answering; a failed content
+   fetch leaves navigation and the Mock timer/submission controls available.
 3. Native/OCR evidence extraction, external provider profiles, optional Docling
    layout extraction, reviewed segmentation and reusable assembly handlers. The
    application/MCP catalog advertises content capabilities, not provider names.
@@ -149,8 +155,10 @@ Inline raster assets make a bounded portable first implementation; large banks
 need batches. Source PDFs are not uploaded or parsed by the Worker. A future
 object-storage asset protocol can replace inline transport without changing the
 logical block reference model. Merged table cells, nested/composite interactions,
-partial credit, QTI interchange, component inline annotations and graphical block
-editing are not implemented. The current JSON editor exposes the complete model.
+partial credit, QTI interchange, annotations on complex component blocks and
+graphical block editing are not implemented. Legacy stem/option annotations
+remain usable after export and re-import when their single Markdown block still
+matches the original source. The current JSON editor exposes the complete model.
 AI explanations/search/email continue to use text projections, so figure-only
 content may require a textual description for those consumers; the question UI
 and component-aware MCP records retain the image. No production migration or

@@ -2,6 +2,7 @@ import QuestionContent from "./QuestionContent";
 import { useEffect, useState } from "react";
 import { normalizeImportFile, type ValidationIssue, type getImportSchemas } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
+import ModalLayer from "./ModalLayer";
 
 interface Conflict {
   questionId: string; externalId: string; expectedRevision: number; incomingToken: string; reason: string;
@@ -46,7 +47,7 @@ export default function QuestionImportDialog({ examId, onClose, onImported }: { 
     } catch (err) { setError(err instanceof Error ? err.message : "Import failed. Refresh the preview before retrying."); setPreview(null); }
     finally { setBusy(false); }
   };
-  return <div className="dialog-backdrop" style={{ zIndex: 70 }} onClick={close}><div className="dialog question-editor" role="dialog" aria-modal="true" aria-label="Import questions" onClick={e => e.stopPropagation()}>
+  return <ModalLayer label="Import questions" onClose={close}><div className="dialog question-editor">
     <h3>Import questions</h3><p>New questions are appended to this exam. Existing content is kept unless you explicitly apply an incoming version below.</p>
     <details>
       <summary>Prepare questions from a PDF</summary>
@@ -71,5 +72,5 @@ export default function QuestionImportDialog({ examId, onClose, onImported }: { 
       {result.outcomes.map((o, i) => <p key={i} className="authoring-identifier">{o.externalId ?? o.questionId}: {o.status}{o.reason && ` — ${o.reason}`}</p>)}
     </section>}
     <div className="dialog-actions"><button className="btn btn-secondary" type="button" disabled={busy} onClick={close}>Close</button><button className="btn btn-primary" type="button" disabled={busy || !preview?.valid || !!result} onClick={execute}>Import with selected resolutions</button></div>
-  </div></div>;
+  </div></ModalLayer>;
 }

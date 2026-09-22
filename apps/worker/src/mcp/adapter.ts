@@ -31,7 +31,7 @@ import {
   type ImportConflictResolution,
 } from "../lib/importExecution";
 import { assertBoundedDepth, IMPORT_JSON_MAX_DEPTH } from "../lib/importSecurity";
-import { normalizeImportFile, exportComponentPackage, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
 import {
   normalizeTagName, resolveOrCreateTags, fetchTagIdsForQuestions, buildTagLinkStatements,
   buildTagNameResolver, findTagCatalogRowByName, listTagCatalogNames,
@@ -689,6 +689,27 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     return row;
   }
 
+  async function validateQuestionPayload(input: { examId: string; id?: string; payload: Record<string, unknown> }) {
+    await requireExam(input.examId);
+    const row = input.id ? await requireQuestion(input.examId, input.id) : undefined;
+    const current = row ? toQuestion(row) : undefined;
+    const { payload, issues } = validatePayload(input.payload, current);
+    if (issues.length > 0) return { valid: false, issues };
+    const result: Record<string, unknown> = { valid: true, issues: [], payload };
+    if (current && row) {
+      result.currentRevision = row.revision;
+      result.answerRevised = answerKey(payloadOf(current)) !== answerKey(payload);
+      result.diff = diffPayload(current, payload);
+    }
+    result.proposalToken = await proposalToken({
+      examId: input.examId, questionId: input.id, expectedRevision: row?.revision, payload,
+    });
+    // A fresh id per preview call keeps retries distinct from separately
+    // reviewed creates with identical content. Updates use expectedRevision.
+    result.proposalId = crypto.randomUUID();
+    return result;
+  }
+
   // implementation — a stricter, mutation-specific write quota for Admin MCP,
   // distinct from the blanket per-account request quota already applied to
   // every call (including reads) in mcp/routes.ts. Content mutations are the
@@ -807,7 +828,10 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     ...identity,
 
     // --- Question-bank reads ------------------------------------------------
-    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; limit: number; offset: number }) {
+    // `needsReview` is Admin-only on purpose: it is import/authoring workflow
+    // state (issue #15), so it narrows this search but is never a filter the
+    // User MCP's own searchQuestions above accepts.
+    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; needsReview?: boolean; limit: number; offset: number }) {
       return searchQuestionsQuery(db, input.examId, input);
     },
 
@@ -951,29 +975,16 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     // same pattern in mcp/routes.ts) — a KV outage must never suppress an
     // already-committed mutation's audit record (both found in review of
     // this PR).
-    async validateQuestionPayload(input: { examId: string; id?: string; payload: Record<string, unknown> }) {
-      await requireExam(input.examId);
-      const row = input.id ? await requireQuestion(input.examId, input.id) : undefined;
-      const current = row ? toQuestion(row) : undefined;
-      const { payload, issues } = validatePayload(input.payload, current);
-      if (issues.length > 0) return { valid: false, issues };
-      const result: Record<string, unknown> = { valid: true, issues: [], payload };
-      if (current && row) {
-        result.currentRevision = row.revision;
-        result.answerRevised = answerKey(payloadOf(current)) !== answerKey(payload);
-        result.diff = diffPayload(current, payload);
-      }
-      result.proposalToken = await proposalToken({
-        examId: input.examId, questionId: input.id, expectedRevision: row?.revision, payload,
-      });
-      // A fresh id per preview call — not derived from payload content, unlike
-      // proposalToken — so it can serve as admin_create_question's/
-      // admin_batch_create_questions' caller-scoped idempotency key: a retry
-      // carrying the same proposalId replays the original create instead of
-      // inserting a duplicate. Not needed by update/delete, which are already
-      // idempotent via expectedRevision.
-      result.proposalId = crypto.randomUUID();
-      return result;
+    validateQuestionPayload,
+
+    async previewComponentQuestion(input: { examId: string; id?: string; question: Record<string, unknown>; stimuli?: unknown[]; assets?: unknown[] }) {
+      const file = { schemaVersion: "2.0", exam: { id: input.examId, name: "Component question" },
+        questions: [input.question], stimuli: input.stimuli ?? [], assets: input.assets ?? [] };
+      assertImportFileDepth(file);
+      const { issues } = validateImportFileContents(file);
+      if (issues.length) return { valid: false, issues };
+      const payload = normalizeImportFile(file).questions[0]!;
+      return validateQuestionPayload({ examId: input.examId, id: input.id, payload: { ...payload } });
     },
 
     async createQuestion(input: {
@@ -1526,8 +1537,8 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
       if (!result.questions.length) throw new McpApplicationError("not_found");
       const exam = (await getExamRecord(db, input.examId))!;
       let file;
-      try { file = exportComponentPackage({ id: exam.id, name: exam.name }, result.questions.map(q => ({ ...q, externalId: q.externalId ?? q.id, options: q.options ?? undefined }))); }
-      catch { throw new McpApplicationError("conflict"); }
+      try { file = exportComponentPackage({ id: exam.id, name: exam.name }, result.questions.map(payloadOf)); }
+      catch (error) { throw new McpApplicationError(error instanceof MissingExportExternalIdError ? "export_requires_external_id" : "conflict"); }
       return { file,
         total: result.total, offset: result.offset, nextOffset: result.offset + result.questions.length < result.total ? result.offset + result.questions.length : null };
     },

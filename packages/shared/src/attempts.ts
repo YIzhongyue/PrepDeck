@@ -15,12 +15,22 @@ export interface PracticeCatalogQuestion {
   sequenceNumber: number;
   type: QuestionType;
   stem: string;
+  // Full component snapshots (including figures) are loaded for the opened
+  // question, not copied into this exam-wide metadata catalog.
+  hasContent: boolean;
+  revision: number;
+  // Accepted from older servers during deployment; new catalogs omit this.
   content?: QuestionContentModel;
   options: QuestionOption[] | null;
   chooseCount: number | null;
   tags: string[];
   difficulty: Difficulty | null;
   points: number;
+}
+
+export interface PracticeQuestionContentResponse {
+  content: QuestionContentModel | null;
+  revision: number;
 }
 
 // FR-5.1: the running "times wrong" counter and "last wrong at" timestamp,

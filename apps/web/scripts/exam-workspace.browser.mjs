@@ -27,6 +27,12 @@ const domainQuestions = [
   { ...question('domains', 6), tags: [] },
   { ...question('domains', 7), tags: batchDomains },
 ];
+const longQuestion = Array.from({ length: 24 }, (_, i) => `Scenario ${i + 1}: Review this part of the deployment before selecting the correct answer.\n\n`).join('');
+const longExplanation = Array.from({ length: 32 }, (_, i) => `Explanation ${i + 1}: This requirement applies to the deployment and must be considered with the other requirements.\n\n`).join('');
+const scrollQuestions = [
+  { ...question('scroll', 1), stem: longQuestion },
+  { ...question('scroll', 2), stem: 'A short follow-up question.' },
+];
 let user = 'u1', exams = ['A', 'B', 'empty'], serial = 0;
 const attempts = new Map(), bookmarks = new Map([['u1:A', ['A1', 'A2']], ['u1:B', ['B1', 'B2', 'B3']], ['u2:A', ['A3']]]);
 const errors = [], requests = [], holds = new Map(), held = new Map();
@@ -72,7 +78,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/api/kp-images/kp-1') return json({ image: { id: 'img-1', url: '/api/kp-images/img-1', status: 'pending' } });
   if (url.pathname.endsWith('/practice-catalog')) {
     const exam = url.pathname.split('/')[3];
-    return json({ questions: exam === 'empty' ? [] : exam === 'domains' ? domainQuestions : [1, 2, 3].map(i => question(exam, i)), bookmarkedIds: bookmarks.get(`${user}:${exam}`) ?? [], wrongEntries: [], attemptedIds: [] });
+    return json({ questions: exam === 'empty' ? [] : exam === 'domains' ? domainQuestions : exam === 'scroll' ? scrollQuestions : [1, 2, 3].map(i => question(exam, i)), bookmarkedIds: bookmarks.get(`${user}:${exam}`) ?? [], wrongEntries: [], attemptedIds: [] });
   }
   if (url.pathname.endsWith('/learning/progress')) return json({ progress: { lastSequenceNumber: 1 } });
   if (url.pathname.endsWith('/learning-detail')) return json({ question: { correctAnswers: ['A'], explanation: 'Fresh explanation', answerRevision: 1 }, history: [] });
@@ -88,7 +94,7 @@ const server = createServer(async (req, res) => {
     if (!attempt) return json({ error: 'Missing attempt' }, 404);
     if (action === 'answers' && req.method === 'PUT') { attempt.selectedAnswers[qid] = payload.selectedAnswer; return json({ saved: true }); }
     if (action === 'flags') { attempt.flagged[qid] = payload.flagged; return json({ saved: true }); }
-    if (action === 'answers') { attempt.selectedAnswers[payload.questionId] = payload.selectedAnswer; return json({ isCorrect: false, correctAnswers: ['A'], explanation: 'Answer explanation', answerRevision: 1 }); }
+    if (action === 'answers') { attempt.selectedAnswers[payload.questionId] = payload.selectedAnswer; return json({ isCorrect: false, correctAnswers: ['A'], explanation: payload.questionId === 'scroll1' ? longExplanation : 'Answer explanation', answerRevision: 1 }); }
     if (action === 'complete') { attempt.completed = true; return json({ attemptId: id, mode: attempt.mode, score: 0, passed: false, correctCount: 0, totalQuestions: attempt.questionIds.length, durationSeconds: 10, breakdown: [] }); }
   }
   if (url.pathname.endsWith('/bookmark')) {
@@ -287,6 +293,157 @@ try {
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-domain-search-mobile.png`, fullPage: true });
   assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
   console.log('Passed: Practice search-result selection, replacement/idempotence, independent Learning, OR/source/difficulty session IDs, 80 results and mobile keyboard controls.');
+
+  // Keep wheel hit testing in the real Practice layout: programmatic scroll
+  // only positions the fixture at a boundary before an actual wheel gesture.
+  exams.push('scroll'); await invoke('retryWorkspace');
+  await page.waitForFunction(() => window.store.state.exams.some(e => e.id === 'scroll'));
+  await switchTo('scroll'); await invoke('begin', ['scroll1', 'scroll2']);
+  await page.getByRole('button', { name: 'Check answer', exact: true }).waitFor();
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.animationName === 'pd-rise').map(a => a.finished)); });
+  const measureScroll = () => page.evaluate(() => {
+    const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent))?.closest('.card');
+    const grid = panel.parentElement, right = grid.children[1];
+    const measure = el => {
+      const box = el.getBoundingClientRect(), css = getComputedStyle(el);
+      return { top: box.top, left: box.left, width: box.width, height: box.height, scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight, scrollHeight: el.scrollHeight, overflowY: css.overflowY,
+        overscrollY: css.overscrollBehaviorY, position: css.position, inlineHeight: el.style.height };
+    };
+    return { width: innerWidth, height: innerHeight, documentTop: grid.getBoundingClientRect().top + scrollY,
+      outer: measure(document.scrollingElement), grid: measure(grid), question: measure(panel), right: measure(right) };
+  });
+  const settleScroll = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const resizePractice = async (width, height) => { await page.setViewportSize({ width, height }); await settleScroll(); };
+  const resetScroll = async (questionTop = 0, rightTop = 0, outerTop = 0) => {
+    await page.evaluate(({ questionTop, rightTop, outerTop }) => {
+      const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.card');
+      panel.scrollTop = questionTop; panel.parentElement.children[1].scrollTop = rightTop;
+      document.scrollingElement.scrollTop = outerTop;
+    }, { questionTop, rightTop, outerTop });
+    await settleScroll();
+  };
+  const assertPracticeLayout = async bounded => {
+    const layout = await measureScroll();
+    const available = layout.height - layout.documentTop - 40;
+    assert.equal(layout.question.overflowY, bounded ? 'auto' : 'visible');
+    assert.equal(layout.right.overflowY, bounded ? 'auto' : 'visible');
+    assert.equal(layout.right.position, 'static', 'Natural-height explanations must not become sticky');
+    assert.equal(layout.question.overscrollY, 'auto'); assert.equal(layout.right.overscrollY, 'auto');
+    if (bounded) {
+      assert.ok(available >= 360);
+      assert.ok(Math.abs(layout.grid.height - available) <= 2, `Grid height must use document coordinates: ${JSON.stringify(layout)}`);
+    } else assert.equal(layout.grid.inlineHeight, '');
+    const horizontal = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll('main *')].filter(el => el.getBoundingClientRect().right > innerWidth + 1).slice(0, 10).map(el => ({ tag: el.tagName, text: el.textContent.slice(0, 100), right: el.getBoundingClientRect().right })) }));
+    if (horizontal.scrollWidth > horizontal.width && process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-overflow.png` });
+    assert.ok(horizontal.scrollWidth <= horizontal.width, JSON.stringify(horizontal));
+    return layout;
+  };
+  const wheelPractice = async (region, delta) => {
+    const before = await measureScroll(), box = before[region === 'outside' ? 'grid' : region];
+    const point = { x: region === 'outside' ? box.left - 16 : box.left + Math.min(100, box.width / 2),
+      y: Math.min(before.height - 110, Math.max(100, box.top + 120)) };
+    assert.equal(await page.evaluate(({ region, x, y }) => {
+      const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.card');
+      const grid = panel.parentElement, target = region === 'question' ? panel : grid.children[1], hit = document.elementFromPoint(x, y);
+      return region === 'outside' ? !grid.contains(hit) : target.contains(hit);
+    }, { region, ...point }), true, `Wheel pointer must land in ${region}`);
+    await page.mouse.move(point.x, point.y); await page.mouse.wheel(0, delta);
+    await page.waitForTimeout(250); // Chromium delivers wheel scrolling asynchronously.
+    return { before, after: await measureScroll() };
+  };
+  await resizePractice(1280, 900); await resetScroll(); await assertPracticeLayout(true);
+  await page.getByRole('button', { name: /B Choice B/ }).click(); await resetScroll();
+  let scrolled = await wheelPractice('question', 220);
+  assert.ok(scrolled.after.question.scrollTop > scrolled.before.question.scrollTop);
+  assert.equal(scrolled.after.outer.scrollTop, scrolled.before.outer.scrollTop);
+  assert.equal(scrolled.after.right.scrollTop, scrolled.before.right.scrollTop);
+  // A fixture footer supplies outer-page room to exercise native scroll chaining
+  // even when the normal desktop content fits entirely in the viewport.
+  await page.evaluate(() => { const tail = document.createElement('div'); tail.id = 'scroll-fixture-tail'; tail.style.height = '600px'; document.body.append(tail); });
+  await resetScroll(); scrolled = await wheelPractice('right', 220);
+  assert.equal(scrolled.before.right.scrollHeight, scrolled.before.right.clientHeight);
+  assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop, 'An empty right scroller must allow page scrolling');
+  await resetScroll(100000); scrolled = await wheelPractice('question', 220);
+  assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop, 'The question bottom chains down to the page');
+  await resetScroll(0, 0, 180); scrolled = await wheelPractice('question', -120);
+  assert.ok(scrolled.after.outer.scrollTop < scrolled.before.outer.scrollTop, 'The question top chains up to the page');
+  await resetScroll(); scrolled = await wheelPractice('outside', 180);
+  assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop);
+  assert.equal(scrolled.after.question.scrollTop, 0);
+  await page.locator('#scroll-fixture-tail').evaluate(el => el.remove()); await resetScroll();
+  await resizePractice(899, 650); await assertPracticeLayout(false); await resetScroll();
+  scrolled = await wheelPractice('question', 240);
+  assert.ok(scrolled.after.outer.scrollTop >= 200, 'Start the width transition with a genuinely scrolled document');
+  await resizePractice(1280, 650); await assertPracticeLayout(true);
+  const widened = await measureScroll();
+  assert.ok(widened.outer.scrollHeight - widened.outer.clientHeight <= 2, 'Widening must not add the old document scroll offset to panel height');
+  for (const width of [1099, 1100, 900, 1280]) { await resizePractice(width, 650); await assertPracticeLayout(true); }
+  await resizePractice(1280, 900); await assertPracticeLayout(true);
+  await resizePractice(1280, 450); await assertPracticeLayout(false); await resetScroll();
+  scrolled = await wheelPractice('question', 220);
+  assert.ok(scrolled.after.outer.scrollTop > 0); assert.equal(scrolled.after.question.scrollTop, 0);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-short-desktop.png` });
+  await resizePractice(1280, 900); await assertPracticeLayout(true); await resetScroll();
+  assert.deepEqual((await state()).sel.scroll1, ['B']); assert.equal((await state()).idx, 0);
+  failPath = '/api/questions/scroll1/bookmark'; await invoke('toggleBookmark');
+  await page.waitForFunction(() => window.store.state.actionError?.includes('bookmark')); await settleScroll();
+  const withError = await assertPracticeLayout(true);
+  failPath = null; await invoke('dismissActionError'); await settleScroll();
+  assert.ok((await assertPracticeLayout(true)).grid.height > withError.grid.height, 'Dismissing an above-grid error restores panel height');
+  await page.getByRole('button', { name: 'Check answer', exact: true }).click();
+  await page.waitForFunction(() => window.store.state.done.scroll1 === 'no'); await settleScroll();
+  await assertPracticeLayout(true); await resetScroll(100, 100);
+  scrolled = await wheelPractice('right', 220);
+  assert.ok(scrolled.after.right.scrollTop > scrolled.before.right.scrollTop, 'Long graded explanations scroll in their own panel');
+  assert.equal(scrolled.after.question.scrollTop, scrolled.before.question.scrollTop);
+  assert.equal(scrolled.after.outer.scrollTop, scrolled.before.outer.scrollTop);
+  await page.evaluate(() => { const tail = document.createElement('div'); tail.id = 'scroll-fixture-tail'; tail.style.height = '600px'; document.body.append(tail); });
+  await resetScroll(0, 100000); scrolled = await wheelPractice('right', 200);
+  assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop, 'Explanation bottom chains to the page');
+  await resetScroll(0, 0, 180); scrolled = await wheelPractice('right', -120);
+  assert.ok(scrolled.after.outer.scrollTop < scrolled.before.outer.scrollTop, 'Explanation top chains up to the page');
+  await page.locator('#scroll-fixture-tail').evaluate(el => el.remove()); await resetScroll();
+  await invoke('setNoteDraft', 'Preserve this note while resizing.');
+  for (const [width, height] of [[1280, 450], [375, 667], [1280, 900]]) {
+    await resizePractice(width, height); await assertPracticeLayout(width >= 900 && height >= 900);
+    assert.deepEqual((await state()).sel.scroll1, ['B']); assert.equal((await state()).done.scroll1, 'no');
+    assert.equal((await state()).noteDraft, 'Preserve this note while resizing.');
+    assert.equal((await state()).idx, 0);
+    if (width === 375) {
+      await resetScroll(); scrolled = await wheelPractice('question', 240);
+      assert.ok(scrolled.after.outer.scrollTop > 0); assert.equal(scrolled.after.question.scrollTop, 0);
+      if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-mobile.png` });
+      for (let gesture = 0; gesture < 12; gesture++) {
+        const target = await page.getByRole('button', { name: 'Next question', exact: true }).boundingBox();
+        if (target.y >= 75 && target.y + target.height <= 570) break;
+        await wheelPractice('question', Math.min(700, Math.max(120, target.y - 200)));
+      }
+      const nextBounds = await page.getByRole('button', { name: 'Next question', exact: true }).boundingBox();
+      assert.ok(nextBounds.y >= 75 && nextBounds.y + nextBounds.height <= 570, 'Wheel scrolling reaches the mobile next action above fixed navigation');
+      if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-mobile-actions.png` });
+    }
+  }
+  await resetScroll();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-desktop.png` });
+  // Refreshing away the active exam exposes both real above-grid notices;
+  // declining navigation must keep the session, answer and note draft intact.
+  exams = exams.filter(id => id !== 'scroll'); page.once('dialog', dialog => dialog.dismiss());
+  await invoke('retryWorkspace'); await page.waitForFunction(() => !!window.store.state.workspaceNotice && window.store.state.actionError?.includes('This exam is unavailable'));
+  await settleScroll(); await assertPracticeLayout(true);
+  assert.equal((await state()).noteDraft, 'Preserve this note while resizing.');
+  assert.deepEqual((await state()).sel.scroll1, ['B']);
+  exams.push('scroll'); await invoke('retryWorkspace'); await page.waitForFunction(() => window.store.state.exams.some(e => e.id === 'scroll'));
+  await invoke('dismissActionError'); await settleScroll(); await assertPracticeLayout(true);
+  await page.getByRole('button', { name: 'Next question', exact: true }).click();
+  await page.waitForFunction(() => window.store.state.idx === 1); await settleScroll(); await assertPracticeLayout(true);
+  assert.equal((await state()).notes.some(n => n.qid === 'scroll1' && n.text === 'Preserve this note while resizing.'), true);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.waitForFunction(() => window.store.state.idx === 0); await settleScroll(); await assertPracticeLayout(true);
+  assert.deepEqual((await state()).sel.scroll1, ['B']);
+  await invoke('endSession'); await page.waitForFunction(() => window.store.state.pStage === 'setup');
+  console.log('Passed: Practice wheel targets/chaining, scrolled resize and height/width breakpoints, long explanations, mobile reachability and retained answers/notes.');
 
   exams = ['B']; await page.reload(); await ready('B'); assert.ok((await state()).workspaceNotice);
   exams = []; await page.reload(); await page.waitForFunction(() => window.store?.state.workspaceStatus === 'empty');

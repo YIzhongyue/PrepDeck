@@ -30,7 +30,7 @@ questionsRouter.get("/export", async c => {
   if (!result.questions.length) return c.json({ error: "No questions in this page" }, 404);
   try {
     const exam = (await getExamRecord(c.env.DB, examId))!;
-    const file = exportComponentPackage({ id: examId, name: exam.name }, result.questions.map(q => ({ ...q, externalId: q.externalId ?? q.id, options: q.options ?? undefined })));
+    const file = exportComponentPackage({ id: examId, name: exam.name }, result.questions.map(q => ({ ...q, externalId: q.externalId ?? undefined, options: q.options ?? undefined })));
     return c.json({ file, total: result.total, offset: result.offset, nextOffset: result.offset + result.questions.length < result.total ? result.offset + result.questions.length : null });
   } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Cannot export snapshots" }, 409); }
 });

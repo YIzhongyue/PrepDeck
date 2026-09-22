@@ -104,6 +104,10 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
         <div className="field"><label htmlFor="question-tags">Tags</label><QuestionTagPicker tags={form.tags} invalid={fieldErrors("tags").length > 0}
           onAdd={name => setForm(f => f.tags.length >= IMPORT_LIMITS.maxTags || f.tags.some(tag => normalizeTagKey(tag) === normalizeTagKey(name)) ? f : { ...f, tags: [...f.tags, name] })}
           onRemove={name => setForm(f => ({ ...f, tags: f.tags.filter(tag => tag !== name) }))} />{errors("tags")}</div>
+        <div className="field"><label className="authoring-checkbox" htmlFor="question-needs-review">
+          <input id="question-needs-review" type="checkbox" checked={form.needsReview} onChange={e => change("needsReview", e.target.checked)} />
+          <span>Needs review</span></label>
+          <p className="authoring-identifier">Review state is stored on the question itself, not as a tag. Imports set it; clear it once the question has been checked.</p>{errors("needsReview")}</div>
       </fieldset>
       {preview && <section className="authoring-preview" aria-label="Markdown preview"><h4>Preview</h4><QuestionContent src={form.stem} />
         {form.type !== "fill_blank" && form.options.map(o => <div key={o.id}><strong>{o.id}{form.correctAnswers.includes(o.id) ? " ✓" : ""}</strong><QuestionContent src={o.text} /></div>)}

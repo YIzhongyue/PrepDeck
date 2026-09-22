@@ -15,7 +15,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "deploy": "npm run build --workspace apps/web && npm run deploy --workspace apps/worker",
     "test:pdf2json": "node --test tests/*.test.mjs && python3 -B -m unittest discover -s tests/pdf-to-quiz -v",
-    "test:browser": "node apps/web/scripts/exam-workspace.browser.mjs && node apps/web/scripts/knowledge-points.browser.mjs && node apps/web/scripts/question-authoring.browser.mjs && node apps/web/scripts/mcp-setup.browser.mjs && node apps/web/scripts/answer-state.browser.mjs && node apps/web/scripts/review-lists.browser.mjs && node apps/web/scripts/settings.browser.mjs && node apps/web/scripts/statistics.browser.mjs && node tests/pdf-to-quiz/review.browser.mjs",
+    "test:browser": "node apps/web/scripts/exam-workspace.browser.mjs && node apps/web/scripts/knowledge-points.browser.mjs && node apps/web/scripts/question-authoring.browser.mjs && node apps/web/scripts/mcp-setup.browser.mjs && node apps/web/scripts/answer-state.browser.mjs && node apps/web/scripts/review-lists.browser.mjs && node apps/web/scripts/settings.browser.mjs && node apps/web/scripts/statistics.browser.mjs && node apps/web/scripts/admin-console.browser.mjs && node apps/web/scripts/component-annotations.browser.mjs && node apps/web/scripts/question-content.browser.mjs && node tests/pdf-to-quiz/review.browser.mjs",
     "dev": "node scripts/local.mjs start",
     "dev:setup": "node scripts/local.mjs setup",
     "dev:reset": "node scripts/local.mjs reset",

@@ -211,6 +211,12 @@ def validate(data: Any) -> tuple[list[str], list[str]]:
             for tag_index, tag in enumerate(tags):
                 if utf16_length(tag) > IMPORT_LIMITS["maxTagLength"]:
                     errors.append(f"{path}.tags[{tag_index}]: exceeds {IMPORT_LIMITS['maxTagLength']} UTF-16 code units")
+        # Optional import-workflow flag (issue #15): the application stores it
+        # on the question row, not as a tag. This pipeline never emits it —
+        # unresolved questions stay in the review artifact rather than being
+        # exported flagged — but the contract this validator mirrors accepts it.
+        if "needsReview" in question and not isinstance(question.get("needsReview"), bool):
+            errors.append(f"{path}.needsReview: must be a boolean")
         points = question.get("points")
         if "points" in question and (isinstance(points, bool) or not isinstance(points, (int, float)) or abs(points) > sys.float_info.max or (isinstance(points, float) and not math.isfinite(points))):
             errors.append(f"{path}.points: must be a finite number")

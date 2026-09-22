@@ -22,7 +22,14 @@ function withoutTags(payload: QuestionPayload): Omit<QuestionPayload, "tags"> {
 // case implementation explicitly calls out). Only called once `row.import_baseline_json`
 // is known non-null.
 async function hasChangedSinceBaseline(db: D1Database, row: QuestionRow): Promise<boolean> {
-  const baseline = JSON.parse(row.import_baseline_json!) as QuestionPayload;
+  // Run the stored snapshot back through payloadOf rather than comparing the
+  // raw parsed JSON: a baseline written before issue #15 has no `needsReview`
+  // key at all, and a bare JSON.stringify of it would differ from every
+  // current payload purely because the field was added — turning every
+  // previously-imported question into a false "locally_edited" conflict.
+  // payloadOf fills the same defaults on both sides, so only real divergence
+  // shows up here.
+  const baseline = payloadOf(JSON.parse(row.import_baseline_json!) as QuestionPayload);
   const current = payloadOf(toQuestion(row));
   if (JSON.stringify(withoutTags(current)) !== JSON.stringify(withoutTags(baseline))) return true;
   const baselineTagIds: string[] = row.import_baseline_tag_ids_json ? JSON.parse(row.import_baseline_tag_ids_json) : [];

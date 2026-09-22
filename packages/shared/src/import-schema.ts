@@ -101,6 +101,12 @@ export const questionImportJsonSchema = {
           maxItems: 50,
           items: { type: "string", maxLength: 200 }
         },
+        needsReview: {
+          type: "boolean",
+          default: false,
+          description:
+            "Mark the question as still needing manual review after import. Workflow state, not a tag; omit it (or send false) for questions the producer considers final."
+        },
         points: {
           type: "number",
           default: 1
@@ -167,5 +173,6 @@ export interface QuestionImportRow {
   explanation?: string | null;
   difficulty?: "easy" | "medium" | "hard" | null;
   tags?: string[];
+  needsReview?: boolean;
   points?: number;
 }

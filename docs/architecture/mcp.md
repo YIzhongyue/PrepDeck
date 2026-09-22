@@ -309,8 +309,10 @@ independently unit-tested quality-control checks).
 
 Question-bank reads:
 
-- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, limit?, offset? }`,
-  the same exam-scoped search used by Admin's question list.
+- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, needsReview?, limit?, offset? }`,
+  the same exam-scoped search used by Admin's question list. `needsReview` is an
+  Admin-only filter over the review-workflow column (omitted = both states); the
+  User MCP's `user_search_questions` has no equivalent.
 - `admin_get_question` — `{ examId, id }`, the full stored `Question`.
 - `admin_list_exams` — `{ includeArchived? }`.
 - `admin_get_exam` — `{ id }`, including providers and question count.
@@ -373,6 +375,7 @@ server-side proposal storage); a mismatch means "refresh the preview,"
 never a silent reapply of stale content:
 
 - `admin_validate_question_payload` — `{ examId, id?, payload }`: previews a create or edit without writing, returns `proposalToken` and (for an edit) `diff`/`answerRevised`.
+- `admin_preview_component_question` — `{ examId, id?, question, stimuli?, assets? }`: validates one 2.0 item and its referenced material, then uses the same proposal flow. Returns the normalized `payload` for an unchanged create/update commit; edits retain the same revision guard. See the [component contract](../../skills/pdf-to-quiz/references/component-format.md#web-ui-and-mcp).
 - `admin_create_question` — commits a previewed create; a retry with the same `proposalId` replays the original result instead of duplicating (standalone idempotency ledger, `migrations/0020_admin_mcp_create_idempotency.sql`, independent of the `questions` table so a replay after deletion is still recognized).
 - `admin_update_question` — commits a previewed edit; requires `expectedRevision` to match (optimistic concurrency) and preserves implementation's answer-revision semantics.
 - `admin_delete_question` — requires `expectedRevision`; blocked (409) by a dependent attempt rather than cascading.

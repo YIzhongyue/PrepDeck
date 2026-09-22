@@ -67,6 +67,10 @@ export interface Question {
   explanation: string | null;
   difficulty: Difficulty | null;
   tags: string[];
+  // Workflow state, not classification metadata: an imported question that a
+  // human has not signed off on yet (issue #15, replacing the former
+  // `needs_review` question-bank tag). Tags stay descriptive.
+  needsReview: boolean;
   points: number;
   createdAt: string;
   updatedAt: string;

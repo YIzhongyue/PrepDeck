@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { componentProjection, exportComponentPackage, normalizeImportFile, validateComponentPackage } from './question-components.ts';
+import { componentProjection, exportComponentPackage, MissingExportExternalIdError, normalizeImportFile, validateComponentPackage } from './question-components.ts';
 import { validateImportFile, validateQuestionRow } from './import-validate.ts';
 import { isAnswerCorrect } from './grading.ts';
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), 'utf8'));
@@ -61,4 +61,35 @@ test('storage budget includes both structured content and the persisted import b
   file.assets = [0, 1, 2].map(n => ({ id: `chart-${n}`, mediaType: 'image/png', data }));
   file.questions[0].body = [file.questions[0].body[0], ...file.assets.map((a: any) => ({ id: a.id, type: 'figure', assetId: a.id, alt: 'Synthetic chart' }))];
   assert.ok(validateComponentPackage(file).some(i => /storage budget/.test(i.message)));
+});
+
+test('export requires stored external IDs instead of inventing round-trip identities', () => {
+  const legacy = { externalId: 'stable', type: 'fill_blank' as const, stem: 'Complete this.', correctAnswers: ['answer'] };
+  const structured = normalizeImportFile(fixture('reading')).questions[0]!;
+  for (const row of [legacy, structured]) {
+    for (const externalId of [undefined, '', ' \t']) {
+      assert.throws(() => exportComponentPackage({ id: 'exam', name: 'Exam' }, [legacy, { ...row, externalId }]), MissingExportExternalIdError);
+    }
+  }
+  assert.equal(exportComponentPackage({ id: 'exam', name: 'Exam' }, [legacy]).questions[0]!.externalId, 'stable');
+});
+
+test('component import, content validation and export preserve explicit review state', () => {
+  for (const needsReview of [true, false]) {
+    const file = fixture('reading');
+    file.questions[0].needsReview = needsReview;
+    assert.deepEqual(validateImportFile(file).issues, []);
+    const normalized = normalizeImportFile(file);
+    assert.equal(normalized.questions[0]!.needsReview, needsReview);
+    assert.deepEqual(validateQuestionRow(normalized.questions[0], '$'), []);
+    const exported = exportComponentPackage(file.exam, normalized.questions);
+    assert.equal(exported.questions[0]!.needsReview, needsReview);
+    assert.deepEqual(normalizeImportFile(exported), normalized);
+    const legacy = { externalId: 'legacy', type: 'fill_blank' as const, stem: 'Complete this.', correctAnswers: ['answer'], needsReview };
+    assert.equal(exportComponentPackage(file.exam, [legacy]).questions[0]!.needsReview, needsReview);
+  }
+  const invalid = fixture('reading'); invalid.questions[0].needsReview = 'true';
+  assert.ok(validateImportFile(invalid).issues.length);
+  const omitted = normalizeImportFile(fixture('code')).questions[0]!;
+  for (const field of ['needsReview', 'explanation', 'tags', 'difficulty', 'points']) assert.equal(Object.hasOwn(omitted, field), false);
 });

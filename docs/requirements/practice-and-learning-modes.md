@@ -38,6 +38,12 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-3.2 (M):** Questions are presented one at a time with immediate or end-of-session feedback (configurable), no time limit, and free navigation (skip, go back, end session early).
 
+  On desktop, questions and review details scroll independently when the viewport
+  has enough height. Short viewports use natural-height content and page scrolling;
+  mobile retains its single-column layout. Resizing after scrolling must not add
+  the page's scroll offset to the panel height. Panels allow native scrolling to
+  continue on the outer page at their boundaries when the page has room to scroll.
+
   A practice answer is graded and locked when it is first recorded. Re-submitting the same question replays the stored grading — including the answer key it was graded against, so the replayed result stays consistent with itself even if the key has since changed — rather than failing. That makes a retry after a lost response recover the feedback instead of leaving the client stuck on a question the server has already graded, while still refusing to revise the recorded answer.
 
 <a id="fr-3-3"></a>

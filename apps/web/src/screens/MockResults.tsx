@@ -16,7 +16,7 @@ export default function MockResults() {
   const minutesUsed = Math.round(result.durationSeconds / 60);
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <div className="card elev-sm" style={{ padding: 26, marginBottom: 16, position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: -80, bottom: -110, width: 240, height: 240, borderRadius: "50%", background: pass === false ? "var(--color-accent-200)" : "var(--color-accent-2-200)", opacity: 0.45 }} />
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>

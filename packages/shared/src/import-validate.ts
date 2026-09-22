@@ -168,6 +168,13 @@ export function validateQuestionRow(row: unknown, path: string): ValidationIssue
     }
   }
 
+  // Review state is a plain flag, not a tag (issue #15). Omitting it means
+  // "does not need review"; null is not accepted, so a producer that cannot
+  // decide leaves the field out rather than guessing.
+  if (r.needsReview !== undefined && typeof r.needsReview !== "boolean") {
+    issues.push({ path: `${path}.needsReview`, message: "must be a boolean" });
+  }
+
   if (r.points !== undefined && (typeof r.points !== "number" || !Number.isFinite(r.points))) {
     issues.push({ path: `${path}.points`, message: "must be a finite number" });
   }

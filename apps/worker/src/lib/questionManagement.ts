@@ -13,6 +13,9 @@ export interface QuestionRow {
   // Keeping the same shape here means toQuestion/payloadOf/canonical/
   // answerKey below, and every caller of them, never had to change.
   tags_json: string | null;
+  // 0 / 1 — the dedicated review-workflow flag that replaced the legacy
+  // `needs_review` question-bank tag (issue #15).
+  needs_review: number;
   points: number; created_at: string; updated_at: string;
   revision: number; answer_revision: number; answer_revised_at: string | null; import_baseline_json: string | null;
   // Sorted catalog tag ids linked to this question when import_baseline_json
@@ -22,7 +25,7 @@ export interface QuestionRow {
   import_baseline_tag_ids_json: string | null;
 }
 export type QuestionPayload = QuestionImportFile["questions"][number];
-export const editableFields = ["externalId", "type", "stem", "options", "correctAnswers", "explanation", "difficulty", "tags", "points", "content"] as const;
+export const editableFields = ["externalId", "type", "stem", "options", "correctAnswers", "explanation", "difficulty", "tags", "needsReview", "points", "content"] as const;
 
 // One column list shared by every `questions` read below, plus a correlated
 // subquery projected AS tags_json — same shape the old physical column had,
@@ -38,7 +41,7 @@ export function tagsJsonExpr(tableRef: string): string {
 }
 const QUESTION_COLUMNS = [
   "id", "exam_id", "external_id", "sequence_number", "type", "stem", "options_json", "correct_answers_json",
-  "explanation", "difficulty", "points", "created_at", "updated_at", "revision", "answer_revision",
+  "explanation", "difficulty", "needs_review", "points", "created_at", "updated_at", "revision", "answer_revision",
   "answer_revised_at", "import_baseline_json", "import_baseline_tag_ids_json", "content_json",
 ];
 export function questionSelectColumns(tableRef = "questions"): string {
@@ -51,7 +54,7 @@ export function toQuestion(row: QuestionRow): Question {
     ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
     type: row.type, stem: row.stem, options: row.options_json ? JSON.parse(row.options_json) : null,
     correctAnswers: JSON.parse(row.correct_answers_json), explanation: row.explanation, difficulty: row.difficulty,
-    tags: row.tags_json ? JSON.parse(row.tags_json) : [], points: row.points, createdAt: row.created_at,
+    tags: row.tags_json ? JSON.parse(row.tags_json) : [], needsReview: row.needs_review !== 0, points: row.points, createdAt: row.created_at,
     updatedAt: row.updated_at, revision: row.revision, answerRevision: row.answer_revision, answerRevisedAt: row.answer_revised_at };
 }
 
@@ -63,7 +66,8 @@ export function toQuestion(row: QuestionRow): Question {
 export function payloadOf(q: Question | QuestionPayload): QuestionPayload {
   return { ...(q.content ? { content: q.content } : {}), externalId: q.externalId ?? undefined, type: q.type, stem: q.stem,
     options: q.options ?? undefined, correctAnswers: q.correctAnswers, explanation: q.explanation ?? null,
-    difficulty: q.difficulty ?? null, tags: [...(q.tags ?? [])].sort((a, b) => a.localeCompare(b)), points: q.points ?? 1 };
+    difficulty: q.difficulty ?? null, tags: [...(q.tags ?? [])].sort((a, b) => a.localeCompare(b)),
+    needsReview: q.needsReview ?? false, points: q.points ?? 1 };
 }
 export function canonical(q: Question | QuestionPayload): string { return JSON.stringify(payloadOf(q)); }
 export function answerKey(q: QuestionPayload): string {
@@ -101,10 +105,10 @@ export function createStatement(
   imported = false, tagIdsForBaseline: string[] = [],
 ) {
   return db.prepare(`INSERT INTO questions (id, exam_id, external_id, sequence_number, type, stem, options_json,
-    correct_answers_json, explanation, difficulty, points, created_at, updated_at, import_baseline_json, import_baseline_tag_ids_json, content_json)
-    SELECT ?, ?, ?, COALESCE(MAX(sequence_number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM questions WHERE exam_id = ?`)
+    correct_answers_json, explanation, difficulty, needs_review, points, created_at, updated_at, import_baseline_json, import_baseline_tag_ids_json, content_json)
+    SELECT ?, ?, ?, COALESCE(MAX(sequence_number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM questions WHERE exam_id = ?`)
     .bind(id, examId, q.externalId ?? null, q.type, q.stem, q.options ? JSON.stringify(q.options) : null,
-      JSON.stringify(q.correctAnswers), q.explanation ?? null, q.difficulty ?? null,
+      JSON.stringify(q.correctAnswers), q.explanation ?? null, q.difficulty ?? null, q.needsReview ? 1 : 0,
       q.points ?? 1, now, now, imported ? canonical(q) : null,
       imported ? JSON.stringify([...tagIdsForBaseline].sort()) : null, q.content ? JSON.stringify(q.content) : null, examId);
 }
@@ -116,11 +120,11 @@ export function updateStatement(
   // A catalog merge can remap the baseline without changing row.revision.
   // Ordinary saves must preserve that current value, not the earlier snapshot.
   return db.prepare(`UPDATE questions SET external_id = ?, type = ?, stem = ?, options_json = ?, correct_answers_json = ?,
-    explanation = ?, difficulty = ?, points = ?, content_json = ?, updated_at = ?, revision = revision + 1,
+    explanation = ?, difficulty = ?, needs_review = ?, points = ?, content_json = ?, updated_at = ?, revision = revision + 1,
     answer_revision = answer_revision + ?, answer_revised_at = ?${imported ? ", import_baseline_json = ?, import_baseline_tag_ids_json = ?" : ""}
     WHERE id = ? AND exam_id = ? AND revision = ?`)
     .bind(q.externalId ?? null, q.type, q.stem, q.options ? JSON.stringify(q.options) : null, JSON.stringify(q.correctAnswers),
-      q.explanation ?? null, q.difficulty ?? null, q.points ?? 1, q.content ? JSON.stringify(q.content) : null, now,
+      q.explanation ?? null, q.difficulty ?? null, q.needsReview ? 1 : 0, q.points ?? 1, q.content ? JSON.stringify(q.content) : null, now,
       revised ? 1 : 0, revised ? now : row.answer_revised_at,
       ...(imported ? [canonical(q), JSON.stringify([...tagIdsForBaseline].sort())] : []),
       row.id, row.exam_id, row.revision);
@@ -136,7 +140,23 @@ export interface SearchQuestionsQuery {
   type?: string;
   difficulty?: string;
   tag?: string;
+  // "true"/"false" over the query string, a real boolean from an MCP tool
+  // input. Anything else (including an empty select in the admin filter bar)
+  // means "no review-state filter", not "needsReview = false".
+  needsReview?: string | number | boolean;
   q?: string;
+}
+
+// Shared by the REST filter and admin_search_questions so both spell the
+// filter the same way — and so `?needsReview=` (what the admin filter bar's
+// "Any review state" option sends) never narrows the result set.
+export function parseNeedsReviewFilter(value: SearchQuestionsQuery["needsReview"]): 0 | 1 | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  const text = String(value).trim().toLowerCase();
+  if (text === "true" || text === "1") return 1;
+  if (text === "false" || text === "0") return 0;
+  return null;
 }
 
 export async function searchQuestions(db: D1Database, examId: string, query: SearchQuestionsQuery) {
@@ -146,6 +166,8 @@ export async function searchQuestions(db: D1Database, examId: string, query: Sea
   const limit = Math.max(1, bounded(query.limit, 50, 200)), offset = bounded(query.offset, 0, Number.MAX_SAFE_INTEGER);
   const conditions = ["exam_id = ?"], params: unknown[] = [examId];
   for (const field of ["difficulty", "type"] as const) if (query[field]) { conditions.push(`${field} = ?`); params.push(query[field]); }
+  const needsReview = parseNeedsReviewFilter(query.needsReview);
+  if (needsReview !== null) { conditions.push("needs_review = ?"); params.push(needsReview); }
   // Matches by normalized identity (case-insensitive, trimmed — the same
   // key the catalog itself is keyed on), not a raw string compare against
   // whatever casing/whitespace a question happens to be tagged with — issue

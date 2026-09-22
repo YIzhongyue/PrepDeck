@@ -28,7 +28,7 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
   };
 
   return (
-    <div style={{ maxWidth: 720, animation: "pd-rise .28s ease both" }}>
+    <div style={{ maxWidth: 720, animation: "pd-rise .28s ease backwards" }}>
       <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Learning mode</p>
       <h1 style={{ margin: "0 0 22px", fontSize: 34 }}>Work through the bank in order</h1>
 

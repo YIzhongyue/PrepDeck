@@ -4,6 +4,7 @@ export const MCP_ERRORS = {
   invalid_input: { status: 400, message: "Invalid request input." },
   not_found: { status: 404, message: "The requested resource was not found." },
   conflict: { status: 409, message: "This operation conflicts with the current state (a stale revision, modified proposal, or existing dependency). Refresh and retry." },
+  export_requires_external_id: { status: 409, message: "Assign a unique external ID to every question before exporting; questions without one cannot be safely re-imported into their source exam." },
   rate_limited: { status: 429, message: "Too many requests for this operation. Wait and retry." },
   // implementation — distinct from "internal": this operation's own rate-limit
   // gate (or another dependency it needs) was unreachable, as opposed to an

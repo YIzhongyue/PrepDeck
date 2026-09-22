@@ -1,7 +1,9 @@
 // docs/requirements/practice-and-learning-modes.md — the read-only catalog that powers both Practice Setup
 // (FR-3.1 filters: tag/difficulty/type/unattempted/bookmarked/wrong-book) and
 // Mock Setup (question count for its default). Deliberately hands back every
-// non-archived question's full content EXCEPT correctAnswers/explanation —
+// question's text projections and filter metadata, without component assets or
+// correctAnswers/explanation. Full component snapshots load only on opening a
+// question through the answer-key-free detail endpoint below —
 // the client filters/picks locally from this, same as the existing UI
 // prototype did against its hardcoded mock array, and never sees an answer
 // key before it grades a specific question through the attempts API.
@@ -11,7 +13,7 @@ import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { getCachedPracticeQuestions, setCachedPracticeQuestions } from "../lib/practiceCache";
 import { tagsJsonExpr } from "../lib/questionManagement";
-import type { PracticeCatalogQuestion, PracticeCatalogResponse } from "@prepdeck/shared";
+import type { PracticeCatalogQuestion, PracticeCatalogResponse, PracticeQuestionContentResponse } from "@prepdeck/shared";
 
 interface QuestionRow {
   id: string;
@@ -19,7 +21,8 @@ interface QuestionRow {
   sequence_number: number;
   type: string;
   stem: string;
-  content_json: string | null;
+  has_content: number;
+  revision: number;
   options_json: string | null;
   correct_answers_json: string;
   difficulty: string | null;
@@ -61,7 +64,7 @@ practiceCatalogRouter.get("/", async (c) => {
     const { results: questionRows } = await c.env.DB.prepare(
       // FR-14.1: ordered by sequence_number so Learning Mode can walk the
       // exam's questions in order directly off this same catalog.
-      `SELECT id, external_id, sequence_number, type, stem, content_json, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points FROM questions WHERE exam_id = ? ORDER BY sequence_number ASC`
+      `SELECT id, external_id, sequence_number, type, stem, content_json IS NOT NULL AS has_content, revision, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points FROM questions WHERE exam_id = ? ORDER BY sequence_number ASC`
     )
       .bind(examId)
       .all<QuestionRow>();
@@ -74,7 +77,8 @@ practiceCatalogRouter.get("/", async (c) => {
         sequenceNumber: row.sequence_number,
         type: row.type as PracticeCatalogQuestion["type"],
         stem: row.stem,
-        ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
+        hasContent: !!row.has_content,
+        revision: row.revision,
         options: row.options_json ? JSON.parse(row.options_json) : null,
         chooseCount: row.type === "multiple_choice" ? correctAnswers.length : null,
         tags: row.tags_json ? JSON.parse(row.tags_json) : [],
@@ -97,5 +101,16 @@ practiceCatalogRouter.get("/", async (c) => {
     attemptedIds: (attemptedRows ?? []).map((r) => r.question_id),
   };
 
+  return c.json(response);
+});
+
+// Practice/Mock must not use learning-detail, which deliberately includes the
+// answer key. Keep the exam scope explicit even though question ids are unique.
+practiceCatalogRouter.get("/:questionId", async (c) => {
+  const row = await c.env.DB.prepare("SELECT content_json, revision FROM questions WHERE exam_id = ? AND id = ?")
+    .bind(c.req.param("examId")!, c.req.param("questionId"))
+    .first<{ content_json: string | null; revision: number }>();
+  if (!row) return c.json({ error: "Question not found" }, 404);
+  const response: PracticeQuestionContentResponse = { content: row.content_json ? JSON.parse(row.content_json) : null, revision: row.revision };
   return c.json(response);
 });

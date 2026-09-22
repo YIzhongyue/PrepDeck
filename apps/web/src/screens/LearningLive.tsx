@@ -4,6 +4,7 @@ import { CURATED_MODELS } from "@prepdeck/shared";
 import { buildLearningPrompt, copyText } from "../lib/practicePrompt";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import QuestionContent from "../components/QuestionContent";
+import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import MarkdownHighlightedText from "../components/MarkdownHighlightedText";
 import NoteCard from "../components/NoteCard";
@@ -141,26 +142,28 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
           <span className="sr-only" aria-live="polite">
             {copyStatus === "copied" ? "Markdown prompt copied to clipboard." : copyStatus === "error" ? "Could not copy the Markdown prompt." : ""}
           </span>
-          <div onMouseUp={() => capture(q.id, "stem")} style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6, textWrap: "pretty" }}>
-            <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={true} onRemoveMark={removeMark} />
-          </div>
+          <QuestionContentGate question={q} learning>
+            <div onMouseUp={() => capture(q.id, "stem")} style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6, textWrap: "pretty" }}>
+              <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={true} onRemoveMark={removeMark} />
+            </div>
 
-          <AnswerRevisionNotice revisedAt={detail?.answerRevisedAt} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {q.content && (q.type === "ordering" || q.type === "matching") ? <StructuredResponse content={q.content} selected={ready ? correctAnswers : []} onChange={() => {}} disabled correct={ready ? correctAnswers : undefined} /> : q.options
-              ? optionRows(q, state, correctAnswers, ready, capture, removeMark)
-              : (
-                <div style={{ padding: "13px 15px", borderRadius: 20, background: "var(--color-accent-2-100)", border: "1.5px solid var(--color-accent-2-500)" }}>
-                  <span style={{ display: "block", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.7, marginBottom: 6 }}>Accepted answer(s)</span>
-                  {ready ? (
-                    <span style={{ fontSize: 14.5 }}>{correctAnswers.join(" · ") || "—"}</span>
-                  ) : (
-                    <span style={{ fontSize: 13, opacity: 0.6 }}>Loading…</span>
-                  )}
-                </div>
-              )}
-          </div>
+            <AnswerRevisionNotice revisedAt={detail?.answerRevisedAt} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {q.content && (q.type === "ordering" || q.type === "matching") ? <StructuredResponse content={q.content} selected={ready ? correctAnswers : []} onChange={() => {}} disabled correct={ready ? correctAnswers : undefined} /> : q.options
+                ? optionRows(q, state, correctAnswers, ready, capture, removeMark)
+                : (
+                  <div style={{ padding: "13px 15px", borderRadius: 20, background: "var(--color-accent-2-100)", border: "1.5px solid var(--color-accent-2-500)" }}>
+                    <span style={{ display: "block", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.7, marginBottom: 6 }}>Accepted answer(s)</span>
+                    {ready ? (
+                      <span style={{ fontSize: 14.5 }}>{correctAnswers.join(" · ") || "—"}</span>
+                    ) : (
+                      <span style={{ fontSize: 13, opacity: 0.6 }}>Loading…</span>
+                    )}
+                  </div>
+                )}
+            </div>
 
+          </QuestionContentGate>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-secondary" onClick={learningPrev} disabled={state.lIdx === 0} style={{ padding: "8px 14px" }}>Back</button>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

@@ -6,6 +6,7 @@ import { SHOW_KEYBOARD_HINTS } from "../data/constants";
 import { buildPracticePrompt, copyText } from "../lib/practicePrompt";
 import { questionTypeLabel } from "../lib/questionTypes";
 import QuestionContent from "../components/QuestionContent";
+import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import MarkdownHighlightedText from "../components/MarkdownHighlightedText";
 import NoteCard from "../components/NoteCard";
@@ -27,7 +28,7 @@ function modelLabelFor(provider: "anthropic" | "openai", modelId: string): strin
 
 export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const {
-    state, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture,
+    state, width, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture,
     checkAiCache, genAi, useAlternateAi, setNoteDraft, addNote, setNoteVis, removeMark
   } = usePrepDeck();
   const q = curQ();
@@ -44,7 +45,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   // Desktop: cap the two-column area to the remaining viewport height so a
   // long AI explanation scrolls inside its own panel instead of stretching
   // the page (the question panel would otherwise end far above a big blank
-  // gap below it). Mobile stays a single natural-height column.
+  // gap below it). Short viewports use natural height, as mobile already does.
   const gridRef = useRef<HTMLDivElement>(null);
   const [gridHeight, setGridHeight] = useState<number | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -54,17 +55,24 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
     const el = gridRef.current;
     if (!el) return;
     const compute = () => {
-      const top = el.getBoundingClientRect().top;
-      setGridHeight(Math.max(360, window.innerHeight - top - 40));
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const available = window.innerHeight - top - 40;
+      setGridHeight(available >= 360 ? available : null);
+    };
+    let frame = 0;
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(compute);
     };
     compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, [bp.narrow, q?.id, graded]);
+    window.addEventListener("resize", schedule);
+    return () => { window.removeEventListener("resize", schedule); cancelAnimationFrame(frame); };
+  }, [bp.narrow, width, q?.id, graded, state.workspaceNotice, state.actionError]);
 
   if (!q) return null;
 
   const gradedAnswer = state.graded[q.id];
+  const contentPending = !!q.hasContent && !q.content;
   const chosen = state.sel[q.id] || [];
   const interaction = q.content?.interaction;
   const need = interaction?.type === "order" ? interaction.options.length : interaction?.type === "match" ? interaction.left.length : q.type === "multiple_choice" ? (q.chooseCount || 1) : 1;
@@ -72,7 +80,6 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
   const qNotes = state.notes.filter((n) => n.qid === q.id && (n.me || (n.vis === "shared" && state.showShared)));
-  const rail = !bp.narrow && state.screen === "practice";
   const liveCols = !bp.narrow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "1fr";
   const copyAsPrompt = async () => {
     if (!gradedAnswer) return;
@@ -85,7 +92,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   };
 
   return (
-    <div style={{ animation: "pd-rise .22s ease both" }}>
+    <div style={{ animation: "pd-rise .22s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
         <button type="button" className="btn btn-secondary" onClick={endSession} style={{ padding: "6px 14px" }}>End</button>
         <div style={{ flex: 1, minWidth: 140 }}>
@@ -120,16 +127,17 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
           className="card elev-sm"
           style={{
             padding: bp.phone ? 18 : "26px 28px",
+            minWidth: 0,
             minHeight: 0,
             overflowY: gridHeight ? "auto" : "visible",
-            overscrollBehavior: "contain"
+            overscrollBehavior: "auto"
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>{q.externalId}</span>
             <span className="tag tag-outline" style={{ whiteSpace: "nowrap" }}>{questionTypeLabel(q)}</span>
             {q.tags.map((t) => <span key={t} className="tag tag-accent-2" style={{ whiteSpace: "nowrap" }}>{t}</span>)}
-            {!!graded && (
+            {!!graded && !contentPending && (
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -148,24 +156,26 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
           <span className="sr-only" aria-live="polite">
             {copyStatus === "copied" ? "Markdown prompt copied to clipboard." : copyStatus === "error" ? "Could not copy the Markdown prompt." : ""}
           </span>
-          <div onMouseUp={() => { if (graded) capture(q.id, "stem"); }} style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6, textWrap: "pretty" }}>
-            <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />
-          </div>
+          <QuestionContentGate question={q}>
+            <div onMouseUp={() => { if (graded) capture(q.id, "stem"); }} style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6, textWrap: "pretty" }}>
+              <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />
+            </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <AnswerRevisionNotice revisedAt={gradedAnswer?.answerRevisedAt} />
-            {q.content && (q.type === "ordering" || q.type === "matching") ? <StructuredResponse content={q.content} selected={chosen} onChange={answer => pick(q, answer)} disabled={!!graded} correct={graded ? gradedAnswer?.correctAnswers : undefined} /> : q.type === "fill_blank" ? <label>Your answer<input className="input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />{graded && <p>Accepted answers: {gradedAnswer?.correctAnswers.join(", ")}</p>}</label> : optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark)}
-          </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <AnswerRevisionNotice revisedAt={gradedAnswer?.answerRevisedAt} />
+              {q.content && (q.type === "ordering" || q.type === "matching") ? <StructuredResponse content={q.content} selected={chosen} onChange={answer => pick(q, answer)} disabled={!!graded} correct={graded ? gradedAnswer?.correctAnswers : undefined} /> : q.type === "fill_blank" ? <label>Your answer<input className="input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />{graded && <p>Accepted answers: {gradedAnswer?.correctAnswers.join(", ")}</p>}</label> : optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark)}
+            </div>
 
+          </QuestionContentGate>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-secondary" onClick={prevQ} style={{ padding: "8px 14px" }}>Back</button>
             {!graded && (
-              <button type="button" className="btn btn-primary" onClick={submit} disabled={chosen.length !== need || incompleteOrder || !hasAnswer(q.type, chosen)} style={{ marginLeft: "auto" }}>
+              <button type="button" className="btn btn-primary" onClick={submit} disabled={contentPending || chosen.length !== need || incompleteOrder || !hasAnswer(q.type, chosen)} style={{ marginLeft: "auto" }}>
                 {q.type === "multiple_choice" ? `Check (${chosen.length}/${need})` : "Check answer"}
               </button>
             )}
             {graded && (
-              <span style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
                 <span className="tag" style={{ background: graded === "ok" ? "var(--color-accent-2-200)" : "var(--color-accent-200)", color: graded === "ok" ? "var(--color-accent-2-900)" : "var(--color-accent-800)", fontSize: 12, padding: "5px 12px" }}>
                   {graded === "ok" ? "Correct" : "Incorrect — added to wrong book"}
                 </span>
@@ -178,11 +188,10 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         <div
           style={{
             display: "flex", flexDirection: "column", gap: 14,
-            position: gridHeight ? "static" : rail ? "sticky" : "static",
-            top: 18,
+            minWidth: 0,
             minHeight: 0,
             overflowY: gridHeight ? "auto" : "visible",
-            overscrollBehavior: "contain"
+            overscrollBehavior: "auto"
           }}
         >
           {!graded && (
