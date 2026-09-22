@@ -17,6 +17,16 @@ createRoot(document.getElementById('root')).render(<React.StrictMode>{location.s
   bundle: true, write: false, outfile: 'fixture.js', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"development"' } });
 const question = (exam, index) => ({ id: `${exam}${index}`, examId: exam, externalId: `${exam}-${index}`, sequenceNumber: index,
   type: 'single_choice', stem: `Question ${exam}${index}`, options: [{ id: 'A', text: 'Choice A' }, { id: 'B', text: 'Choice B' }], tags: [exam], difficulty: 'easy', chooseCount: 1, points: 1 });
+const batchDomains = Array.from({ length: 80 }, (_, i) => `Batch domain ${String(i + 1).padStart(2, '0')}`);
+const domainQuestions = [
+  { ...question('domains', 1), tags: ['AWS Security', 'AWS Network'] },
+  { ...question('domains', 2), tags: ['AWS Security'], difficulty: 'medium' },
+  { ...question('domains', 3), tags: ['AWS Network'] },
+  { ...question('domains', 4), tags: ['Azure'] },
+  { ...question('domains', 5), tags: ['AWS Network'], difficulty: 'hard' },
+  { ...question('domains', 6), tags: [] },
+  { ...question('domains', 7), tags: batchDomains },
+];
 let user = 'u1', exams = ['A', 'B', 'empty'], serial = 0;
 const attempts = new Map(), bookmarks = new Map([['u1:A', ['A1', 'A2']], ['u1:B', ['B1', 'B2', 'B3']], ['u2:A', ['A3']]]);
 const errors = [], requests = [], holds = new Map(), held = new Map();
@@ -62,7 +72,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/api/kp-images/kp-1') return json({ image: { id: 'img-1', url: '/api/kp-images/img-1', status: 'pending' } });
   if (url.pathname.endsWith('/practice-catalog')) {
     const exam = url.pathname.split('/')[3];
-    return json({ questions: exam === 'empty' ? [] : [1, 2, 3].map(i => question(exam, i)), bookmarkedIds: bookmarks.get(`${user}:${exam}`) ?? [], wrongEntries: [], attemptedIds: [] });
+    return json({ questions: exam === 'empty' ? [] : exam === 'domains' ? domainQuestions : [1, 2, 3].map(i => question(exam, i)), bookmarkedIds: bookmarks.get(`${user}:${exam}`) ?? [], wrongEntries: [], attemptedIds: [] });
   }
   if (url.pathname.endsWith('/learning/progress')) return json({ progress: { lastSequenceNumber: 1 } });
   if (url.pathname.endsWith('/learning-detail')) return json({ question: { correctAnswers: ['A'], explanation: 'Fresh explanation', answerRevision: 1 }, history: [] });
@@ -196,6 +206,88 @@ try {
     await switchTo('A');
   }
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/exam-workspace-mobile.png`, fullPage: true });
+
+  // Domain search changes the visible chips; only the explicit Practice action
+  // replaces the selected filter set. Verify it against the real session pool.
+  exams.push('domains'); bookmarks.set('u1:domains', ['domains1', 'domains3', 'domains4', 'domains5']);
+  await invoke('retryWorkspace'); await page.waitForFunction(() => window.store.state.exams.some(e => e.id === 'domains'));
+  await switchTo('domains'); await page.reload(); await ready('domains'); await invoke('go', 'practice');
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const domainSearch = page.getByRole('searchbox', { name: 'Search domains', exact: true });
+  const domainGroup = page.getByRole('group', { name: 'Domain filters', exact: true });
+  const bulkDomains = page.getByRole('button', { name: /^Select all results \(/ });
+  const selectedDomains = async () => (await state()).tags.slice().sort();
+  const poolIds = () => page.evaluate(() => window.store.pool().map(q => q.id).sort());
+  const awsDomains = ['AWS Network', 'AWS Security'];
+  assert.equal(await bulkDomains.count(), 0);
+  await domainSearch.fill('   '); assert.equal(await bulkDomains.count(), 0);
+  await domainSearch.fill('aws');
+  assert.equal(await domainGroup.getByRole('button').count(), 2);
+  assert.deepEqual(await selectedDomains(), []);
+  assert.equal((await poolIds()).length, domainQuestions.length, 'Searching alone does not narrow the practice pool');
+  await domainSearch.fill('');
+  await domainGroup.getByRole('button', { name: 'Azure, 1 question', exact: true }).click();
+  await domainGroup.getByRole('button', { name: 'AWS Security, 2 questions', exact: true }).click();
+  await domainSearch.fill('  aWs  ');
+  await page.getByRole('button', { name: 'Select all results (2)', exact: true }).click();
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Replace selections outside the search as well as selecting every match');
+  await page.getByRole('button', { name: 'Select all results (2)', exact: true }).click();
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Repeating the action neither toggles nor duplicates selections');
+  assert.deepEqual(await poolIds(), ['domains1', 'domains2', 'domains3', 'domains5'], 'Tag matches use OR and each question appears once');
+  await domainGroup.getByRole('button', { name: 'AWS Security, 2 questions', exact: true }).click();
+  assert.deepEqual(await selectedDomains(), ['AWS Network']);
+  await domainGroup.getByRole('button', { name: 'AWS Security, 2 questions', exact: true }).click();
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Individual toggles still work after selecting all results');
+  await domainSearch.fill('no matching domain');
+  assert.equal(await page.getByRole('button', { name: 'Select all results (0)', exact: true }).isDisabled(), true);
+  assert.deepEqual(await selectedDomains(), awsDomains);
+  await domainSearch.fill('');
+  assert.equal(await bulkDomains.count(), 0);
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Clearing the search preserves selected filters');
+  await domainSearch.fill('wS');
+  assert.equal(await domainGroup.getByRole('button').count(), 2, 'Search retains case-insensitive substring matching');
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-domain-search-desktop.png`, fullPage: true });
+  const startDomainSession = async expected => {
+    await page.getByRole('button', { name: 'Start session', exact: true }).click();
+    await page.waitForFunction(() => window.store.state.pStage === 'live');
+    assert.deepEqual((await state()).queue.slice().sort(), expected);
+    const request = requests.filter(r => r.path === '/api/exams/domains/attempts' && r.method === 'POST').at(-1);
+    assert.deepEqual(request.payload.questionIds.slice().sort(), expected, 'The server receives the filtered, deduplicated question IDs');
+    await invoke('endSession'); await page.waitForFunction(() => window.store.state.pStage === 'setup');
+  };
+  await startDomainSession(['domains1', 'domains2', 'domains3', 'domains5']);
+  await page.getByRole('button', { name: 'Bookmarked 4', exact: true }).click();
+  await page.getByRole('button', { name: 'Easy', exact: true }).click();
+  assert.deepEqual(await poolIds(), ['domains1', 'domains3'], 'Source and difficulty intersect the selected domains');
+  await startDomainSession(['domains1', 'domains3']);
+  await invoke('toggleLearningTag', 'Azure'); await invoke('go', 'learning');
+  await domainSearch.fill('aws');
+  assert.equal(await bulkDomains.count(), 0, 'Learning retains its individual domain controls');
+  assert.deepEqual((await state()).lTags, ['Azure']);
+  await domainGroup.getByRole('button', { name: 'AWS Security, 2 questions', exact: true }).click();
+  assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Learning and Practice selections stay independent');
+  await invoke('go', 'practice');
+  await page.getByRole('button', { name: 'All 7', exact: true }).click();
+  await page.getByRole('button', { name: 'Any', exact: true }).click();
+  await domainSearch.fill('batch domain');
+  await page.getByRole('button', { name: 'Select all results (80)', exact: true }).click();
+  assert.deepEqual(await selectedDomains(), batchDomains, 'Selection includes matches below the scroll viewport');
+  assert.deepEqual(await poolIds(), ['domains7']);
+  await page.setViewportSize({ width: 375, height: 900 });
+  await domainSearch.fill('aws');
+  const mobileBulk = page.getByRole('button', { name: 'Select all results (2)', exact: true });
+  await mobileBulk.focus(); await page.keyboard.press('Enter');
+  assert.deepEqual(await selectedDomains(), awsDomains);
+  await mobileBulk.focus(); await page.keyboard.press('Space');
+  assert.deepEqual(await selectedDomains(), awsDomains);
+  const bulkBounds = await mobileBulk.boundingBox();
+  assert.ok(bulkBounds.height >= 44 && bulkBounds.width >= 44, 'Mobile batch selection offers a 44px touch target');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-domain-search-mobile.png`, fullPage: true });
+  assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
+  console.log('Passed: Practice search-result selection, replacement/idempotence, independent Learning, OR/source/difficulty session IDs, 80 results and mobile keyboard controls.');
+
   exams = ['B']; await page.reload(); await ready('B'); assert.ok((await state()).workspaceNotice);
   exams = []; await page.reload(); await page.waitForFunction(() => window.store?.state.workspaceStatus === 'empty');
   assert.equal((await state()).examId, null);

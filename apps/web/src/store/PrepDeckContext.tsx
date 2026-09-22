@@ -216,6 +216,7 @@ interface PrepDeckStore {
   setDiff: (id: Difficulty | "all") => void;
   setFeedback: (id: FeedbackMode) => void;
   toggleTag: (tag: string) => void;
+  setPracticeTags: (tags: string[]) => void;
   setCount: (n: number) => void;
   startPractice: () => void;
   openPracticeWithFilters: (filters: PracticeFilters) => void;
@@ -1139,6 +1140,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       return { tags: a };
     });
   }, [setState]);
+  const setPracticeTags = useCallback((tags: string[]) => setState({ tags: [...new Set(tags)] }), [setState]);
   const setCount = useCallback((n: number) => setState({ count: n }), [setState]);
   const startPractice = useCallback(() => {
     const p = pool();
@@ -1411,7 +1413,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const store: PrepDeckStore = {
     state, width, pool, curQ, mockQ,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
-    setSource, setDiff, setFeedback, toggleTag, setCount, startPractice, openPracticeWithFilters,
+    setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, useAlternateAi,
     learningPool, learningQ, setLearningStartInput, toggleLearningTag, setLearningDiff,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
