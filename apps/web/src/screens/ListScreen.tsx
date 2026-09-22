@@ -83,7 +83,11 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, opacity: 0.9 }}>{qq.stem}</p>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+              {/* `.card` is a flex column and grid cells stretch, so `marginTop: auto`
+                  drops the actions onto the floor of the card whatever the stem's
+                  length; `flex-end` keeps them in the corner, and wrapping them
+                  stacks them against the same edge on a narrow viewport. */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginTop: "auto", paddingTop: 2 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => begin([id])} style={{ padding: "6px 14px" }}>Review</button>
                 <button
                   type="button" className="btn btn-ghost"
