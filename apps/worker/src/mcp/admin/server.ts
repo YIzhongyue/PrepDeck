@@ -63,6 +63,7 @@ const questionPayloadSchema = z.strictObject({
   explanation: z.string().nullable().optional(),
   difficulty: difficultySchema.nullable().optional(),
   tags: z.array(z.string()).optional(),
+  needsReview: z.boolean().optional(),
   points: z.number().optional(),
 });
 
@@ -75,13 +76,16 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     // --- Question-bank reads (implementation) -------------------------------------
     defineMcpTool(
       "admin_search_questions",
-      "Search questions within one exam by text, id, type, difficulty, or tag.",
+      "Search questions within one exam by text, id, type, difficulty, tag, or pending-review state.",
       z.strictObject({
         examId: examIdSchema,
         q: z.string().min(1).max(200).optional(),
         type: questionTypeSchema.optional(),
         difficulty: difficultySchema.optional(),
         tag: z.string().min(1).max(200).optional(),
+        // Omitted = both; true = only questions still awaiting manual review,
+        // false = only questions already signed off (issue #15).
+        needsReview: z.boolean().optional(),
         ...paginationSchema.shape,
       }),
       (input) => services.searchQuestions(input),

@@ -70,6 +70,9 @@ invent those parameters. Obtain explicit approval for high-impact scope, such
 as archive/merging tags across questions, then call the actual tool schema.
 Prefer the available reversible archive operation; do not invent exam deletion.
 Question-bank tags are distinct from users' personal Knowledge Point tags.
+They are also distinct from review state: whether a question still needs a human
+check is the `needsReview` field on the question itself, filterable through
+`admin_search_questions`. Never express review state as a tag.
 
 Question deletion uses `expectedRevision` and can be blocked by attempts,
 bookmarks, notes or annotations. Report dependencies on conflict; never delete

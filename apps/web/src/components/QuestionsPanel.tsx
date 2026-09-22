@@ -17,7 +17,9 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
   const [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "" });
+  // `needsReview` is "" (no filter), "true" or "false" — the same spelling the
+  // API parses, so it goes straight into the query string below.
+  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "" });
   const [offset, setOffset] = useState(0), [refresh, setRefresh] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -58,6 +60,7 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
       <select className="input" aria-label="Filter by type" value={filters.type} onChange={e => { setOffset(0); setFilters(f => ({ ...f, type: e.target.value })); }}><option value="">All types</option><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple choice</option><option value="true_false">True / false</option><option value="fill_blank">Fill in the blank</option></select>
       <select className="input" aria-label="Filter by difficulty" value={filters.difficulty} onChange={e => { setOffset(0); setFilters(f => ({ ...f, difficulty: e.target.value })); }}><option value="">All difficulties</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
       <input className="input" aria-label="Filter by exact tag" placeholder="Exact tag" value={filters.tag} onChange={e => { setOffset(0); setFilters(f => ({ ...f, tag: e.target.value })); }} />
+      <select className="input" aria-label="Filter by review state" value={filters.needsReview} onChange={e => { setOffset(0); setFilters(f => ({ ...f, needsReview: e.target.value })); }}><option value="">Any review state</option><option value="true">Needs review</option><option value="false">Reviewed</option></select>
       <button className="btn btn-secondary" type="submit">Search</button>
     </form>
     {notice && <p role="status" className="authoring-feedback">{notice}</p>}
@@ -65,7 +68,7 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
     {loading ? <p className="authoring-feedback">Loading…</p> : <>
       {questions.length === 0 && <p className="authoring-feedback">No questions found. Add a question to start authoring, or adjust the filters.</p>}
       {questions.map(q => <div key={q.id} className="admin-question-row"><span className="admin-question-id">#{q.sequenceNumber}</span>
-        <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar"><span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
+        <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar"><span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.needsReview && <span className="tag tag-accent-2">Needs review</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
           <p className="authoring-identifier">ID: {q.id}{q.externalId && ` · External ID: ${q.externalId}`}</p><span className="admin-question-stem">{q.stem}</span></div>
         <div className="authoring-toolbar"><button type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
       </div>)}

@@ -3,13 +3,13 @@ import type { Question, QuestionType } from "@prepdeck/shared";
 export function blankQuestion(type: QuestionType = "single_choice") {
   return { type, stem: "", externalId: "", options: type === "fill_blank" ? [] : type === "true_false"
     ? [{ id: "true", text: "True" }, { id: "false", text: "False" }] : [{ id: "A", text: "" }, { id: "B", text: "" }],
-    correctAnswers: [] as string[], explanation: "", difficulty: "", tags: [] as string[], points: "1" };
+    correctAnswers: [] as string[], explanation: "", difficulty: "", tags: [] as string[], needsReview: false, points: "1" };
 }
 export type QuestionForm = ReturnType<typeof blankQuestion>;
 export function questionForm(q: Question): QuestionForm {
   return { type: q.type, stem: q.stem, externalId: q.externalId ?? "", options: q.options ?? [],
     correctAnswers: q.correctAnswers, explanation: q.explanation ?? "", difficulty: q.difficulty ?? "",
-    tags: [...q.tags], points: String(q.points) };
+    tags: [...q.tags], needsReview: q.needsReview, points: String(q.points) };
 }
 export function formPayload(form: QuestionForm) {
   return { ...form, externalId: form.externalId || undefined, options: form.type === "fill_blank" ? undefined : form.options,

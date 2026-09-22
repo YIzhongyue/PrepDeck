@@ -688,6 +688,38 @@
       }
     },
     {
+      "name": "needsReview true",
+      "valid": true,
+      "set": {
+        "/questions/0/needsReview": true
+      },
+      "remove": []
+    },
+    {
+      "name": "needsReview false",
+      "valid": true,
+      "set": {
+        "/questions/0/needsReview": false
+      },
+      "remove": []
+    },
+    {
+      "name": "needsReview must be a boolean",
+      "valid": false,
+      "set": {
+        "/questions/0/needsReview": "yes"
+      },
+      "remove": []
+    },
+    {
+      "name": "needsReview rejects null",
+      "valid": false,
+      "set": {
+        "/questions/0/needsReview": null
+      },
+      "remove": []
+    },
+    {
       "name": "array length /questions 1000",
       "valid": true,
       "set": {},
