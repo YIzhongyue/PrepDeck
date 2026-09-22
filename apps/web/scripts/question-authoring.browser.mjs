@@ -31,7 +31,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET") {
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
-      const filtered = rows.filter(q => !url.searchParams.get("q") || q.id === url.searchParams.get("q") || q.externalId === url.searchParams.get("q") || q.stem.includes(url.searchParams.get("q")));
+      const review = url.searchParams.get("needsReview");
+      const filtered = rows.filter(q => (!url.searchParams.get("q") || q.id === url.searchParams.get("q") || q.externalId === url.searchParams.get("q") || q.stem.includes(url.searchParams.get("q")))
+        // Only "true"/"false" narrow; the panel's "Any review state" option
+        // sends an empty value, which must not be read as needsReview=false.
+        && (review !== "true" && review !== "false" || Boolean(q.needsReview) === (review === "true")));
       const offset = Number(url.searchParams.get("offset") || 0);
       return json(200, { questions: filtered.slice(offset, offset + 50), total: filtered.length });
     }
@@ -356,6 +360,33 @@ try {
   await page.getByText("ID: page-153 · External ID: Q-153", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 4);
   assert.equal(await page.getByRole("button", { name: "Next", exact: true }).isDisabled(), true);
+  // Review state is a field on the question, not a tag: it has its own chip,
+  // its own filter, and the editor clears it without touching the tag chips.
+  rows[151].needsReview = true; rows[151].tags = ["tag-one"];
+  const flaggedPage = questionPageResponse(0);
+  await page.getByLabel("Filter by review state", { exact: true }).selectOption("true");
+  assert.equal((await flaggedPage).status(), 200);
+  await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  await page.getByText(`ID: ${rows[151].id}`, { exact: false }).waitFor();
+  // Scoped to the row chip: the filter's own option carries the same words.
+  const reviewChip = page.locator(".admin-question-row .tag", { hasText: "Needs review" });
+  assert.equal(await reviewChip.count(), 1);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const reviewBox = page.getByLabel("Needs review", { exact: true });
+  assert.equal(await reviewBox.isChecked(), true);
+  await reviewBox.uncheck();
+  const clearedPage = questionPageResponse(0);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  assert.equal((await clearedPage).status(), 200);
+  assert.equal(rows[151].needsReview, false);
+  assert.deepEqual(rows[151].tags, ["tag-one"], "clearing the review flag must not disturb the question's tags");
+  await page.getByText("No questions found. Add a question to start authoring, or adjust the filters.", { exact: true }).waitFor();
+  // Back to "Any review state": the empty value is not a filter.
+  const anyPage = questionPageResponse(0);
+  await page.getByLabel("Filter by review state", { exact: true }).selectOption("");
+  assert.equal((await anyPage).status(), 200);
+  await page.getByText("1–50 of 154", { exact: true }).waitFor();
+  assert.equal(await reviewChip.count(), 0);
   assert.deepEqual(errors, []);
-  console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, mobile layout, and pagination beyond 200.");
+  console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

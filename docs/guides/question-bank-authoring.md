@@ -25,9 +25,16 @@ The [import limits](../../packages/shared/src/import-validate.ts) also apply her
 See the [desktop and mobile captures](../screenshots/README.md#admin-question-tags)
 for the searchable selector and wrapping chips.
 
+A **Needs review** checkbox marks a question as still awaiting a human check.
+This is workflow state stored on the question row (`questions.needs_review`), not
+a tag: the tag catalog stays descriptive, and review state is filterable without
+joining through it. Imports can set it; an administrator clears it once the
+question has been checked. Questions still flagged carry a **Needs review** chip
+in the list.
+
 Lists have 50-question pages, type/difficulty/tag filters (matched by
 normalized identity — trimmed, case-insensitive — against the tag catalog,
-not a byte-exact string) and stem search.
+not a byte-exact string), a review-state filter and stem search.
 The search also matches an exact internal or external ID. Both IDs and the
 sequence number are visible. Mutations refresh Admin counts, the selected exam's
 practice catalog, learning details and client AI caches.
@@ -35,6 +42,9 @@ practice catalog, learning details and client AI caches.
 ## Storage and API contract
 
 Apply the entire ordered [migration chain](../../migrations) for the target Worker.
+Review state was moved off the tag catalog and onto `questions.needs_review` by
+`0033_question_needs_review.sql`, which backfills the column from any legacy
+`needs_review` tag and then deletes that tag and its links.
 Authoring was introduced by `0015_question_authoring.sql`; that migration is additive, preserves existing IDs and learning records, and
 does not guess legacy answer keys or import provenance. It does not require
 deduplicating historical external IDs to migrate successfully.
@@ -94,6 +104,12 @@ Identical matches are skipped. Imported records save a canonical baseline;
 manual edits preserve it, allowing conflicts to identify local edits. Missing
 baselines are reported as unknown provenance and preserved. Ambiguous external
 ID matches are always preserved until identities are corrected.
+`needsReview` is part of that canonical payload, so an import can flag a question
+for review, and an administrator who then clears the flag sees a `locally_edited`
+conflict naming `needsReview` on the next import of the same file instead of
+having their decision quietly reverted. Baselines written before the field
+existed are compared with the same defaults applied to both sides, so they are
+not mistaken for local edits.
 
 Execution reports `created`, `updated`, `skipped`, `failed`, unresolved conflicts
 and per-question `outcomes` (including IDs and reasons). `skipped` includes

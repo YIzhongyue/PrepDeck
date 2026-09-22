@@ -87,6 +87,9 @@ export interface QuestionSetStatistics {
   duplicateGroupCount: number;
   duplicateQuestionCount: number;
   answerRevisedCount: number;
+  // Questions still flagged for manual review (issue #15). Sits with the
+  // other quality counts rather than in byTag, because it is workflow state.
+  needsReviewCount: number;
 }
 
 // `scanLimit` is the bound the caller used to load `questions`; when the
@@ -99,6 +102,7 @@ export function buildQuestionSetStatistics(questions: readonly Question[], scanL
   let missingMetadataCount = 0;
   let invalidAnswerReferenceCount = 0;
   let answerRevisedCount = 0;
+  let needsReviewCount = 0;
   for (const q of questions) {
     byType[q.type]++;
     byDifficulty[q.difficulty ?? "unset"]++;
@@ -106,6 +110,7 @@ export function buildQuestionSetStatistics(questions: readonly Question[], scanL
     if (hasMissingMetadata(missingMetadataFlags(q))) missingMetadataCount++;
     if (findAnswerReferenceIssues(q).length > 0) invalidAnswerReferenceCount++;
     if (q.answerRevision > 1) answerRevisedCount++;
+    if (q.needsReview) needsReviewCount++;
   }
   const duplicateGroups = findDuplicateQuestions(questions);
   return {
@@ -119,5 +124,6 @@ export function buildQuestionSetStatistics(questions: readonly Question[], scanL
     duplicateGroupCount: duplicateGroups.length,
     duplicateQuestionCount: duplicateGroups.reduce((sum, group) => sum + group.questions.length, 0),
     answerRevisedCount,
+    needsReviewCount,
   };
 }

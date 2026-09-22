@@ -309,8 +309,10 @@ independently unit-tested quality-control checks).
 
 Question-bank reads:
 
-- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, limit?, offset? }`,
-  the same exam-scoped search used by Admin's question list.
+- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, needsReview?, limit?, offset? }`,
+  the same exam-scoped search used by Admin's question list. `needsReview` is an
+  Admin-only filter over the review-workflow column (omitted = both states); the
+  User MCP's `user_search_questions` has no equivalent.
 - `admin_get_question` — `{ examId, id }`, the full stored `Question`.
 - `admin_list_exams` — `{ includeArchived? }`.
 - `admin_get_exam` — `{ id }`, including providers and question count.

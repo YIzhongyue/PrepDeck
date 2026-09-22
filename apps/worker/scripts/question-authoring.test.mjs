@@ -125,6 +125,58 @@ test("pagination reaches beyond 200 and combines exact IDs, type, difficulty and
   assert.equal((await request("/exams/exam/questions?q=Q204")).data.total, 1);
   assert.equal((await request("/exams/exam/questions?tag=%25")).data.total, 0);
 });
+test("review state is a question field, not a tag: it round-trips, filters, and survives partial edits", async t => {
+  const { create, request, update, db } = setup(t);
+  const flagged = await create({ externalId: "R1", needsReview: true });
+  const clean = await create({ externalId: "R2" });
+  assert.equal(flagged.needsReview, true); assert.deepEqual(flagged.tags, []);
+  assert.equal(clean.needsReview, false);
+  // Nothing about the flag touches the tag catalog — that is the whole point
+  // of issue #15.
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM question_bank_tags").get().n, 0);
+  const only = await request("/exams/exam/questions?needsReview=true");
+  assert.deepEqual(only.data.questions.map(q => q.id), [flagged.id]);
+  assert.deepEqual((await request("/exams/exam/questions?needsReview=false")).data.questions.map(q => q.id), [clean.id]);
+  // An empty filter is "any review state", not needsReview=false.
+  assert.equal((await request("/exams/exam/questions?needsReview=")).data.total, 2);
+  assert.equal((await request("/exams/exam/questions?needsReview=nonsense")).data.total, 2);
+  // A PATCH that never mentions the flag preserves it; one that does clears it.
+  const edited = (await update(flagged, { explanation: "Checked the source" })).data.question;
+  assert.equal(edited.needsReview, true);
+  assert.equal((await update(edited, { needsReview: false })).data.question.needsReview, false);
+  assert.equal((await request("/exams/exam/questions?needsReview=true")).data.total, 0);
+  assert.equal((await request("/exams/exam/questions", "POST", { ...choice, externalId: "R3", needsReview: "yes" })).status, 422);
+});
+test("imports carry review state, and clearing it locally is a reviewable conflict rather than a silent reset", async t => {
+  const { request, file, db, update } = setup(t);
+  const incoming = { ...choice, externalId: "Q1", needsReview: true };
+  assert.equal((await request("/exams/exam/import", "POST", file([incoming]))).data.created, 1);
+  let q = (await request("/exams/exam/questions?q=Q1")).data.questions[0];
+  assert.equal(q.needsReview, true);
+  assert.equal(db.prepare("SELECT needs_review FROM questions WHERE id=?").get(q.id).needs_review, 1);
+  // Re-importing the same file is still an identical skip.
+  assert.equal((await request("/exams/exam/import", "POST", file([incoming]))).data.outcomes[0].reason, "identical");
+  // Once an admin signs the question off, the same file no longer overwrites
+  // that decision unattended: it surfaces as a conflict naming the field.
+  q = (await update(q, { needsReview: false })).data.question;
+  const again = await request("/exams/exam/import", "POST", file([incoming]));
+  assert.equal(again.data.updated, 0);
+  assert.equal(again.data.conflicts[0].reason, "locally_edited");
+  assert.deepEqual(again.data.conflicts[0].differences, [{ field: "needsReview", current: false, incoming: true }]);
+});
+test("a baseline written before the review field existed is not mistaken for a local edit", async t => {
+  const { request, file, db } = setup(t);
+  const incoming = { ...choice, externalId: "Q1" };
+  await request("/exams/exam/import", "POST", file([incoming]));
+  const q = (await request("/exams/exam/questions?q=Q1")).data.questions[0];
+  // Exactly what an import committed before issue #15 left behind: a baseline
+  // payload with no needsReview key at all.
+  const legacy = JSON.parse(db.prepare("SELECT import_baseline_json FROM questions WHERE id=?").get(q.id).import_baseline_json);
+  delete legacy.needsReview;
+  db.prepare("UPDATE questions SET import_baseline_json=? WHERE id=?").run(JSON.stringify(legacy), q.id);
+  const preview = await request("/exams/exam/import/validate", "POST", file([{ ...incoming, stem: "Incoming" }]));
+  assert.equal(preview.data.conflicts[0].reason, "incoming_changes");
+});
 test("answer revisions ignore formatting and order; content writes clear AI cache atomically", async t => {
   const { create, update, db } = setup(t);
   let q = await create({ type: "fill_blank", options: undefined, correctAnswers: ["Answer", "variant"] });
@@ -237,4 +289,39 @@ test("revision compare-and-set catches a race after reading the existing questio
   };
   assert.equal((await update(q, { stem: "Lost update" })).status, 409);
   assert.equal(db.prepare("SELECT stem FROM questions WHERE id=?").get(q.id).stem, "Concurrent edit");
+});
+
+// Issue #15's data migration, exercised on its own: `setup` above applies the
+// whole migration directory at once, which can never show that 0033 carries
+// pre-existing tag state across. Here the question is tagged FIRST, under the
+// schema as it stood at 0032, and only then is 0033 applied.
+test("0033 migrates legacy needs_review tag state onto the column and retires the tag", async t => {
+  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
+  const directory = new URL("../../../migrations/", import.meta.url);
+  const names = readdirSync(directory).filter(n => n.endsWith(".sql")).sort();
+  const migration = "0033_question_needs_review.sql";
+  for (const name of names.filter(n => n < migration)) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  db.exec("INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09')");
+  const question = (id, externalId) => db.prepare(
+    "INSERT INTO questions(id,exam_id,external_id,type,stem,correct_answers_json,created_at,updated_at) VALUES (?,?,?,'single_choice','Stem','[\"A\"]','2026-09-09','2026-09-09')",
+  ).run(id, "exam", externalId);
+  question("tagged", "Q1"); question("also-tagged", "Q2"); question("untagged", "Q3");
+  // Whatever casing/spacing an admin happened to create the tag with resolves
+  // to the same normalized identity 0026 keys the catalog on.
+  db.prepare("INSERT INTO question_bank_tags(id,name,normalized_name,revision,created_at,updated_at) VALUES ('t1','Needs Review','needs review',1,'2026-09-09','2026-09-09')").run();
+  db.prepare("INSERT INTO question_bank_tags(id,name,normalized_name,revision,created_at,updated_at) VALUES ('t2','AWS','aws',1,'2026-09-09','2026-09-09')").run();
+  for (const [questionId, tagId] of [["tagged", "t1"], ["tagged", "t2"], ["also-tagged", "t1"], ["untagged", "t2"]]) {
+    db.prepare("INSERT INTO question_tag_links(question_id,tag_id) VALUES (?,?)").run(questionId, tagId);
+  }
+
+  db.exec(readFileSync(new URL(migration, directory), "utf8"));
+
+  // node:sqlite hands back null-prototype rows; compare plain objects.
+  const rows = (sql) => db.prepare(sql).all().map(row => ({ ...row }));
+  assert.deepEqual(rows("SELECT id, needs_review FROM questions ORDER BY id"),
+    [{ id: "also-tagged", needs_review: 1 }, { id: "tagged", needs_review: 1 }, { id: "untagged", needs_review: 0 }]);
+  // The legacy tag is gone everywhere; unrelated taxonomy is untouched.
+  assert.deepEqual(rows("SELECT id FROM question_bank_tags ORDER BY id"), [{ id: "t2" }]);
+  assert.deepEqual(rows("SELECT question_id, tag_id FROM question_tag_links ORDER BY question_id"),
+    [{ question_id: "tagged", tag_id: "t2" }, { question_id: "untagged", tag_id: "t2" }]);
 });

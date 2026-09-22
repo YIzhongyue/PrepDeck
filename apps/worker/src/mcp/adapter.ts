@@ -807,7 +807,10 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     ...identity,
 
     // --- Question-bank reads ------------------------------------------------
-    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; limit: number; offset: number }) {
+    // `needsReview` is Admin-only on purpose: it is import/authoring workflow
+    // state (issue #15), so it narrows this search but is never a filter the
+    // User MCP's own searchQuestions above accepts.
+    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; needsReview?: boolean; limit: number; offset: number }) {
       return searchQuestionsQuery(db, input.examId, input);
     },
 
