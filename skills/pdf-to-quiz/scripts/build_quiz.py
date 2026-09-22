@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from validate_quiz import check_transport, nonempty, validate
-from subject_b import compile_cases
 
 
 class Invalid(ValueError):
@@ -107,7 +106,6 @@ def reconcile(document: Any, inventory: Any, root: Path, allow_pending: bool = F
                 target = (root / asset).resolve()
                 require(not Path(asset).is_absolute() and target.is_relative_to(root.resolve()) and target.is_file(), bid, "missing or unsafe image asset")
             blocks[bid] = block
-    inv = compile_cases(inv, blocks)
     if doc.get("issues"):
         string(inv.get("documentReview"), "inventory.documentReview")
     reviews = {}

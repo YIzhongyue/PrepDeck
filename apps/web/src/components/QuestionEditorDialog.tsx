@@ -1,3 +1,4 @@
+import ComponentQuestionEditor from "./ComponentQuestionEditor";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IMPORT_LIMITS, normalizeTagKey, validateQuestionRow, type Question, type QuestionType, type ValidationIssue } from "@prepdeck/shared";
 import { apiFetch, ApiError } from "../lib/api";
@@ -5,7 +6,7 @@ import { blankQuestion, formPayload, questionForm, type QuestionForm } from "../
 import QuestionContent from "./QuestionContent";
 import QuestionTagPicker from "./QuestionTagPicker";
 
-export default function QuestionEditorDialog({ examId, question, initialType, onClose, onSaved }: {
+function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, onSaved }: {
   examId: string; question: Question | null; initialType: QuestionType;
   onClose: () => void; onSaved: (question: Question, addNext: boolean) => void;
 }) {
@@ -118,4 +119,8 @@ export default function QuestionEditorDialog({ examId, question, initialType, on
       </footer>
     </div>
   </dialog>;
+}
+
+export default function QuestionEditorDialog(props: Parameters<typeof LegacyQuestionEditorDialog>[0]) {
+  return props.question?.content ? <ComponentQuestionEditor {...props} question={props.question} /> : <LegacyQuestionEditorDialog {...props} />;
 }

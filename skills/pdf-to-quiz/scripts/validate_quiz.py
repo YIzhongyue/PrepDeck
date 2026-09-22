@@ -97,6 +97,12 @@ def validate(data: Any) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     if not isinstance(data, dict):
         return (["$: must be an object"], warnings)
+    if data.get("schemaVersion") == "2.0":
+        try:
+            from components import validate_components
+            return validate_components(data), warnings
+        except ImportError:
+            return ["Component validation requires jsonschema: pip install 'jsonschema>=4,<5'"], warnings
     if data.get("schemaVersion") != "1.0":
         errors.append('$.schemaVersion: must be "1.0"')
     exam = data.get("exam")

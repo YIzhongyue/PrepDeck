@@ -1,3 +1,4 @@
+import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CURATED_MODELS, hasAnswer } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -65,7 +66,9 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
 
   const gradedAnswer = state.graded[q.id];
   const chosen = state.sel[q.id] || [];
-  const need = q.type === "multiple_choice" ? (q.chooseCount || 1) : 1;
+  const interaction = q.content?.interaction;
+  const need = interaction?.type === "order" ? interaction.options.length : interaction?.type === "match" ? interaction.left.length : q.type === "multiple_choice" ? (q.chooseCount || 1) : 1;
+  const incompleteOrder = interaction?.type === "order" && (chosen.some(id => !id) || new Set(chosen).size !== need);
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
   const qNotes = state.notes.filter((n) => n.qid === q.id && (n.me || (n.vis === "shared" && state.showShared)));
@@ -146,18 +149,18 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
             {copyStatus === "copied" ? "Markdown prompt copied to clipboard." : copyStatus === "error" ? "Could not copy the Markdown prompt." : ""}
           </span>
           <div onMouseUp={() => { if (graded) capture(q.id, "stem"); }} style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6, textWrap: "pretty" }}>
-            <QuestionContent src={q.stem} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />
+            <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <AnswerRevisionNotice revisedAt={gradedAnswer?.answerRevisedAt} />
-            {q.type === "fill_blank" ? <label>Your answer<input className="input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />{graded && <p>Accepted answers: {gradedAnswer?.correctAnswers.join(", ")}</p>}</label> : optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark)}
+            {q.content && (q.type === "ordering" || q.type === "matching") ? <StructuredResponse content={q.content} selected={chosen} onChange={answer => pick(q, answer)} disabled={!!graded} correct={graded ? gradedAnswer?.correctAnswers : undefined} /> : q.type === "fill_blank" ? <label>Your answer<input className="input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />{graded && <p>Accepted answers: {gradedAnswer?.correctAnswers.join(", ")}</p>}</label> : optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark)}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-secondary" onClick={prevQ} style={{ padding: "8px 14px" }}>Back</button>
             {!graded && (
-              <button type="button" className="btn btn-primary" onClick={submit} disabled={chosen.length !== need || !hasAnswer(q.type, chosen)} style={{ marginLeft: "auto" }}>
+              <button type="button" className="btn btn-primary" onClick={submit} disabled={chosen.length !== need || incompleteOrder || !hasAnswer(q.type, chosen)} style={{ marginLeft: "auto" }}>
                 {q.type === "multiple_choice" ? `Check (${chosen.length}/${need})` : "Check answer"}
               </button>
             )}
@@ -188,7 +191,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
               <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>Explanations, highlights and notes are hidden until you commit an answer.</p>
               {SHOW_KEYBOARD_HINTS && !bp.phone && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 4, fontSize: 12 }}>
-                  {SHORTCUTS.map((k) => (
+                  {SHORTCUTS.filter(k => (q.type !== "ordering" && q.type !== "matching") || k.key === "Enter").map((k) => (
                     <span key={k.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <kbd style={{ font: "inherit", fontSize: 10.5, padding: "2px 7px", borderRadius: 6, border: "1px solid var(--color-divider)", background: "var(--color-neutral-100)" }}>{k.key}</kbd>
                       <span style={{ opacity: 0.7 }}>{k.what}</span>
@@ -378,7 +381,7 @@ function optionRows(
       >
         <span style={{ width: 26, height: 26, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12.5, background: badgeBg, color: badgeFg }}>{mark}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <QuestionContent src={o.text} annotations={state.anns} qid={q.id} target={`opt:${o.id}`} show={!!graded} onRemoveMark={removeMark} />
+          <QuestionContent src={o.text} content={q.content} optionId={o.id} annotations={state.anns} qid={q.id} target={`opt:${o.id}`} show={!!graded} onRemoveMark={removeMark} />
         </div>
         {!graded && (
           <span style={{ flex: "none", fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid var(--color-divider)", color: "color-mix(in srgb, var(--color-text) 50%, transparent)" }}>{i + 1}</span>

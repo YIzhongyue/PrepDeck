@@ -1,10 +1,12 @@
+import { validateComponentPackage, normalizeImportFile, validateQuestionContent } from "./question-components.ts";
+import type { QuestionImportRow } from "./import-schema.ts";
 // Validation for the Question Import JSON Schema (docs/requirements/data-model-and-import-format.md#import-contract) and for
 // individual question rows (also reused when editing a single question — FR-2.3).
 // Hand-rolled rather than a generic JSON-Schema validator so error messages can
 // point at the exact row/field an Admin needs to fix (FR-2.2).
 
-const VALID_TYPES: string[] = ["single_choice", "multiple_choice", "true_false", "fill_blank"];
-const CHOICE_BASED_TYPES: string[] = ["single_choice", "multiple_choice", "true_false"];
+const VALID_TYPES: string[] = ["single_choice", "multiple_choice", "true_false", "fill_blank", "ordering", "matching"];
+const CHOICE_BASED_TYPES: string[] = ["single_choice", "multiple_choice", "true_false", "ordering"];
 const VALID_DIFFICULTIES: string[] = ["easy", "medium", "hard"];
 
 // These limits are deliberately exported so the Worker and companion tooling
@@ -170,6 +172,9 @@ export function validateQuestionRow(row: unknown, path: string): ValidationIssue
     issues.push({ path: `${path}.points`, message: "must be a finite number" });
   }
 
+  if (r.type === "ordering" && optionIds && Array.isArray(r.correctAnswers) && r.correctAnswers.length !== optionIds.size) issues.push({ path, message: "ordering requires every option exactly once" });
+  if ((r.type === "ordering" || r.type === "matching") && !r.content) issues.push({ path, message: "this interaction requires component content" });
+  if (r.content !== undefined) issues.push(...validateQuestionContent(r.content, r as unknown as QuestionImportRow).map(i => ({ ...i, path: path + i.path.slice(1) })));
   return issues;
 }
 
@@ -180,8 +185,17 @@ export interface ImportFileValidationResult {
 }
 
 export function validateImportFile(data: unknown): ImportFileValidationResult {
+  return validateImportEnvelope(data);
+}
+
+function validateImportEnvelope(data: unknown, normalized = false): ImportFileValidationResult {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return { issues: [{ path: "$", message: "must be an object" }], duplicateExternalIdsInFile: [], questionCount: 0 };
+  }
+  if ((data as Record<string, unknown>).schemaVersion === "2.0") {
+    const issues = validateComponentPackage(data);
+    if (issues.length) return { issues, duplicateExternalIdsInFile: [], questionCount: Array.isArray((data as any).questions) ? (data as any).questions.length : 0 };
+    return validateImportEnvelope(normalizeImportFile(data), true);
   }
   const d = data as Record<string, unknown>;
   const issues: ValidationIssue[] = [];
@@ -240,6 +254,7 @@ export function validateImportFile(data: unknown): ImportFileValidationResult {
     }
     const seen = new Map<string, number>();
     d.questions.forEach((q, i) => {
+      if (!normalized && q && typeof q === "object" && ("content" in q || q.type === "ordering" || q.type === "matching")) issues.push({ path: `$.questions[${i}]`, message: "structured content requires schemaVersion 2.0" });
       issues.push(...validateQuestionRow(q, `$.questions[${i}]`));
       const extId = typeof q === "object" && q !== null ? (q as Record<string, unknown>).externalId : undefined;
       if (typeof extId === "string" && extId) {

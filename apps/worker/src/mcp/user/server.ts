@@ -47,7 +47,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool("user_get_identity", "Inspect the authenticated User MCP identity.", z.strictObject({}),
       () => services.getIdentity()),
     defineMcpTool("user_get_import_schemas",
-      "Get PDF conversion layouts and the canonical question-import JSON Schema to prepare a reviewed import locally with pdf-to-quiz. Saving questions to the shared bank requires an administrator.",
+      "Get supported question components, interactions and JSON import schemas to prepare a reviewed import locally with pdf-to-quiz. Saving questions to the shared bank requires an administrator.",
       z.strictObject({}), () => getImportSchemas()),
 
     // --- Learning overview and statistics -----------------------------------

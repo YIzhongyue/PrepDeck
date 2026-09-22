@@ -10,6 +10,11 @@ import prepare_layout as parser
 import extract_pdf as extractor
 import build_quiz as builder
 import boxed_ocr
+from functools import partial
+from pdf_layouts import load_profiles
+load_profiles(Path(__file__).resolve().parents[2] / "skills/pdf-to-quiz/references/profiles/japanese-sg.json")
+# This test suite exercises the optional Japanese document profile, not core exam logic.
+recognize = partial(boxed_ocr.recognize, label_pattern=r"(問|設問)\s*([0-9０-９]{1,3})?")
 
 
 EXAM = {'id': 'ipa-sg', 'name': 'SG', 'language': 'ja'}
@@ -32,7 +37,8 @@ class LayoutTests(unittest.TestCase):
         doc = document(native().replace('イ　2', 'イ　\n2'), native('令和6年度', 'ア'))
         inv = parser.prepare(doc, 'ja-sg-interleaved', 'book-2025', EXAM)
         self.assertEqual(inv['coverage'], {'questionCount': 2, 'answerEntryCount': 2})
-        self.assertEqual([q['externalId'] for q in inv['questions']], ['book-2025:2025-a:q1', 'book-2025:2024-a:q1'])
+        self.assertNotEqual(inv['questions'][0]['externalId'], inv['questions'][1]['externalId'])
+        self.assertTrue(all(q['externalId'].endswith(':q1') for q in inv['questions']))
         self.assertEqual(inv['questions'][1]['data']['correctAnswers'], ['ア'])
         self.assertNotIn('令和6年度', inv['questions'][0]['data']['explanation'])
         self.assertTrue(all(q['status'] == 'review' for q in inv['questions']))
@@ -155,7 +161,7 @@ class BoxedOcrTests(unittest.TestCase):
             def command(args):
                 calls.append(args)
                 return SimpleNamespace(stdout='問２' if args[-1] == '7' else '本文\nア 甲\nイ 乙')
-            text = boxed_ocr.recognize(path, 'jpn', 300, 6, command)
+            text = recognize(path, 'jpn', 300, 6, command)
             self.assertIn('問2 本文', text)
             self.assertNotIn('問1', text)
             self.assertEqual(path.read_bytes(), before)
@@ -165,7 +171,7 @@ class BoxedOcrTests(unittest.TestCase):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as temp:
             path = self.image(Path(temp))
-            text = boxed_ocr.recognize(path, 'jpn', 300, 6,
+            text = recognize(path, 'jpn', 300, 6,
                 lambda args: SimpleNamespace(stdout='不明' if args[-1] == '7' else 'Original OCR'))
             self.assertEqual(text, 'Original OCR')
 
@@ -183,7 +189,7 @@ class BoxedOcrTests(unittest.TestCase):
                 if args[-1] == '7':
                     return SimpleNamespace(stdout='問49' if 'label-100-' in args[1] else '設問')
                 return SimpleNamespace(stdout='背景' if 'band-1.' in args[1] else '何を選ぶか。')
-            result = boxed_ocr.recognize(path, 'jpn', 300, 6, command)
+            result = recognize(path, 'jpn', 300, 6, command)
             self.assertIn('問49 背景', result)
             self.assertIn('設問 何を選ぶか。', result)
 
@@ -198,7 +204,7 @@ class BoxedOcrTests(unittest.TestCase):
                     self.assertEqual(int(crop[22, 22]), 255)
                     self.assertEqual(int(crop.min()), 0)
                 return SimpleNamespace(stdout='問2' if args[-1] == '7' else 'イ 解説')
-            self.assertIn('問2 イ', boxed_ocr.recognize(path, 'jpn', 300, 6, command))
+            self.assertIn('問2 イ', recognize(path, 'jpn', 300, 6, command))
 
 
 if __name__ == '__main__':

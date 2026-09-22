@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 import { normalizeTagName } from "../../../packages/shared/src/questionTags.ts";
-const pdfSchemas = JSON.parse(readFileSync(new URL("../../../skills/pdf-to-quiz/references/pdf-layouts.json", import.meta.url), "utf8"));
+import { normalizeImportFile, exportComponentPackage } from "../../../packages/shared/src/question-components.ts";
+import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
+const pdfSchemas = getImportSchemas();
 let importedFile = null, schemaFailures = 0;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
@@ -35,6 +37,7 @@ const server = createServer(async (req, res) => {
       if (tagFailures > 0) { tagFailures--; return json(503, { error: "Tag catalog unavailable" }); }
       return json(200, { tags: [...new Set([...catalog, ...rows.flatMap(q => q.tags)])] });
     }
+    if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
     if (req.method === "GET") {
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
@@ -370,7 +373,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Next", exact: true }).isDisabled(), true);
   await page.getByRole("button", { name: "Import JSON", exact: true }).click();
   await page.getByText("Prepare questions from a PDF", { exact: true }).click();
-  for (const layout of pdfSchemas.layouts) await page.getByText(layout.name, { exact: true }).waitFor();
+  await page.getByText(/Supported content: paragraph, heading, list, table, figure, code/).waitFor();
   assert.equal(await page.getByRole("link", { name: "Download conversion schemas" }).getAttribute("href"), "/api/import-schemas");
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/pdf-import-schemas-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -393,6 +396,44 @@ try {
   await page.getByRole("status").filter({ hasText: "PDF preparation formats could not be loaded" }).waitFor();
   assert.equal(await page.getByLabel("Question import JSON file").isEnabled(), true);
   await page.getByRole("button", { name: "Close", exact: true }).click();
+  const componentFile = JSON.parse(readFileSync(new URL("../../../tests/fixtures/components/case-with-figure.json", import.meta.url), "utf8"));
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByLabel("Question import JSON file").setInputFiles({ name: "components.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(componentFile)) });
+  await page.getByText("Preview imported questions", { exact: true }).click();
+  await page.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
+  await page.getByRole("button", { name: "Import with selected resolutions" }).click();
+  await page.getByText("Created 1 · Updated 0 · Skipped / conflicting 0 · Failed 0", { exact: true }).waitFor();
+  assert.deepEqual(importedFile.questions, componentFile.questions);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  rows = normalizeImportFile(componentFile).questions.map(q => ({ ...q, id: "structured", examId: "exam", sequenceNumber: 1, revision: 1, answerRevision: 1, tags: [] }));
+  await page.reload();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const structuredDialog = page.getByRole("dialog", { name: "Edit component question" });
+  await structuredDialog.waitFor();
+  await structuredDialog.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
+  const jsonEditor = page.getByRole("textbox", { name: "Question package JSON" });
+  const edited = JSON.parse(await jsonEditor.inputValue());
+  edited.questions[0].body[0].text = "Edited structured prompt";
+  await jsonEditor.fill(JSON.stringify(edited, null, 2));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".question-drawer").evaluate(async e => { await Promise.all(e.getAnimations().map(a => a.finished)); });
+  const componentBounds = await page.locator(".question-drawer").boundingBox();
+  assert.equal(Math.round(componentBounds.x), 0);
+  assert.equal(Math.round(componentBounds.width), 390);
+  await jsonEditor.evaluate(e => { e.scrollTop = 0; e.blur(); });
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-editor-mobile.png`, fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await structuredDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await structuredDialog.waitFor({ state: "detached" });
+  assert.equal(rows[0].content.body[0].text, "Edited structured prompt");
+  assert.deepEqual(rows[0].content.assets, componentFile.assets);
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export this page", exact: true }).click();
+  const download = await downloadEvent;
+  const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
+  assert.equal(exported.schemaVersion, "2.0");
+  assert.deepEqual(exported.assets, componentFile.assets);
+  console.log("PASS component import preview, structured edit with assets, mobile drawer and downloadable export");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

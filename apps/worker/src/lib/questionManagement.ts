@@ -3,6 +3,7 @@ import { normalizeTagKey } from "./questionBankTags";
 
 export interface QuestionRow {
   id: string; exam_id: string; external_id: string | null; sequence_number: number;
+  content_json?: string | null;
   type: Question["type"]; stem: string; options_json: string | null; correct_answers_json: string;
   explanation: string | null; difficulty: Question["difficulty"];
   // Not a physical column (see migrations/0027_drop_questions_tags_json.sql)
@@ -21,7 +22,7 @@ export interface QuestionRow {
   import_baseline_tag_ids_json: string | null;
 }
 export type QuestionPayload = QuestionImportFile["questions"][number];
-export const editableFields = ["externalId", "type", "stem", "options", "correctAnswers", "explanation", "difficulty", "tags", "points"] as const;
+export const editableFields = ["externalId", "type", "stem", "options", "correctAnswers", "explanation", "difficulty", "tags", "points", "content"] as const;
 
 // One column list shared by every `questions` read below, plus a correlated
 // subquery projected AS tags_json — same shape the old physical column had,
@@ -38,7 +39,7 @@ export function tagsJsonExpr(tableRef: string): string {
 const QUESTION_COLUMNS = [
   "id", "exam_id", "external_id", "sequence_number", "type", "stem", "options_json", "correct_answers_json",
   "explanation", "difficulty", "points", "created_at", "updated_at", "revision", "answer_revision",
-  "answer_revised_at", "import_baseline_json", "import_baseline_tag_ids_json",
+  "answer_revised_at", "import_baseline_json", "import_baseline_tag_ids_json", "content_json",
 ];
 export function questionSelectColumns(tableRef = "questions"): string {
   const prefix = tableRef ? `${tableRef}.` : "";
@@ -47,6 +48,7 @@ export function questionSelectColumns(tableRef = "questions"): string {
 
 export function toQuestion(row: QuestionRow): Question {
   return { id: row.id, examId: row.exam_id, externalId: row.external_id, sequenceNumber: row.sequence_number,
+    ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
     type: row.type, stem: row.stem, options: row.options_json ? JSON.parse(row.options_json) : null,
     correctAnswers: JSON.parse(row.correct_answers_json), explanation: row.explanation, difficulty: row.difficulty,
     tags: row.tags_json ? JSON.parse(row.tags_json) : [], points: row.points, createdAt: row.created_at,
@@ -59,14 +61,14 @@ export function toQuestion(row: QuestionRow): Question {
 // payload's tags may not) — see implementation's "compare tag sets independently
 // of input ordering".
 export function payloadOf(q: Question | QuestionPayload): QuestionPayload {
-  return { externalId: q.externalId ?? undefined, type: q.type, stem: q.stem,
+  return { ...(q.content ? { content: q.content } : {}), externalId: q.externalId ?? undefined, type: q.type, stem: q.stem,
     options: q.options ?? undefined, correctAnswers: q.correctAnswers, explanation: q.explanation ?? null,
     difficulty: q.difficulty ?? null, tags: [...(q.tags ?? [])].sort((a, b) => a.localeCompare(b)), points: q.points ?? 1 };
 }
 export function canonical(q: Question | QuestionPayload): string { return JSON.stringify(payloadOf(q)); }
 export function answerKey(q: QuestionPayload): string {
   const answers = q.correctAnswers.map(a => q.type === "fill_blank" ? a.trim().toLowerCase() : a);
-  return JSON.stringify([q.type, [...new Set(answers)].sort()]);
+  return JSON.stringify([q.type, q.type === "ordering" ? answers : [...new Set(answers)].sort()]);
 }
 export function validatePayload(input: unknown, current?: Question): { payload: QuestionPayload; issues: ValidationIssue[] } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -99,12 +101,12 @@ export function createStatement(
   imported = false, tagIdsForBaseline: string[] = [],
 ) {
   return db.prepare(`INSERT INTO questions (id, exam_id, external_id, sequence_number, type, stem, options_json,
-    correct_answers_json, explanation, difficulty, points, created_at, updated_at, import_baseline_json, import_baseline_tag_ids_json)
-    SELECT ?, ?, ?, COALESCE(MAX(sequence_number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM questions WHERE exam_id = ?`)
+    correct_answers_json, explanation, difficulty, points, created_at, updated_at, import_baseline_json, import_baseline_tag_ids_json, content_json)
+    SELECT ?, ?, ?, COALESCE(MAX(sequence_number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM questions WHERE exam_id = ?`)
     .bind(id, examId, q.externalId ?? null, q.type, q.stem, q.options ? JSON.stringify(q.options) : null,
       JSON.stringify(q.correctAnswers), q.explanation ?? null, q.difficulty ?? null,
       q.points ?? 1, now, now, imported ? canonical(q) : null,
-      imported ? JSON.stringify([...tagIdsForBaseline].sort()) : null, examId);
+      imported ? JSON.stringify([...tagIdsForBaseline].sort()) : null, q.content ? JSON.stringify(q.content) : null, examId);
 }
 export function updateStatement(
   db: D1Database, row: QuestionRow, q: QuestionPayload, now: string,
@@ -114,11 +116,11 @@ export function updateStatement(
   // A catalog merge can remap the baseline without changing row.revision.
   // Ordinary saves must preserve that current value, not the earlier snapshot.
   return db.prepare(`UPDATE questions SET external_id = ?, type = ?, stem = ?, options_json = ?, correct_answers_json = ?,
-    explanation = ?, difficulty = ?, points = ?, updated_at = ?, revision = revision + 1,
+    explanation = ?, difficulty = ?, points = ?, content_json = ?, updated_at = ?, revision = revision + 1,
     answer_revision = answer_revision + ?, answer_revised_at = ?${imported ? ", import_baseline_json = ?, import_baseline_tag_ids_json = ?" : ""}
     WHERE id = ? AND exam_id = ? AND revision = ?`)
     .bind(q.externalId ?? null, q.type, q.stem, q.options ? JSON.stringify(q.options) : null, JSON.stringify(q.correctAnswers),
-      q.explanation ?? null, q.difficulty ?? null, q.points ?? 1, now,
+      q.explanation ?? null, q.difficulty ?? null, q.points ?? 1, q.content ? JSON.stringify(q.content) : null, now,
       revised ? 1 : 0, revised ? now : row.answer_revised_at,
       ...(imported ? [canonical(q), JSON.stringify([...tagIdsForBaseline].sort())] : []),
       row.id, row.exam_id, row.revision);

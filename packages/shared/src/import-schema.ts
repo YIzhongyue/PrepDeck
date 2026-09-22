@@ -1,3 +1,4 @@
+import type { QuestionContentModel } from "./question-components.ts";
 // Question Import JSON Schema — docs/requirements/data-model-and-import-format.md#import-contract.
 // This is the schema the companion Claude Skill (skills/pdf-to-quiz) must produce,
 // and that the Worker's import endpoint (FR-2.2) must validate against.
@@ -158,7 +159,8 @@ export interface QuestionImportFile {
 
 export interface QuestionImportRow {
   externalId?: string;
-  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
+  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "ordering" | "matching";
+  content?: QuestionContentModel;
   stem: string;
   options?: { id: string; text: string }[];
   correctAnswers: string[];

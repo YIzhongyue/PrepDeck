@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "2.0",
+  "exam": {
+    "id": "exam",
+    "name": "reading"
+  },
+  "questions": [
+    {
+      "externalId": "reading-1",
+      "body": [
+        {
+          "id": "prompt",
+          "type": "paragraph",
+          "text": "Where did Mira go?"
+        }
+      ],
+      "interaction": {
+        "id": "response",
+        "type": "choice",
+        "multiple": false,
+        "options": [
+          {
+            "id": "A",
+            "body": [
+              {
+                "id": "option-A",
+                "type": "paragraph",
+                "text": "The library"
+              }
+            ]
+          },
+          {
+            "id": "B",
+            "body": [
+              {
+                "id": "option-B",
+                "type": "paragraph",
+                "text": "The park"
+              }
+            ]
+          }
+        ]
+      },
+      "scoring": {
+        "method": "exact",
+        "correctAnswers": [
+          "A"
+        ]
+      },
+      "stimulusRefs": [
+        "passage"
+      ]
+    },
+    {
+      "externalId": "reading-2",
+      "body": [
+        {
+          "id": "prompt",
+          "type": "paragraph",
+          "text": "What did Mira borrow?"
+        }
+      ],
+      "interaction": {
+        "id": "response",
+        "type": "text"
+      },
+      "scoring": {
+        "method": "exact",
+        "correctAnswers": [
+          "a book",
+          "book"
+        ]
+      },
+      "stimulusRefs": [
+        "passage"
+      ]
+    }
+  ],
+  "stimuli": [
+    {
+      "id": "passage",
+      "revision": 1,
+      "body": [
+        {
+          "id": "passage-text",
+          "type": "paragraph",
+          "text": "Mira went to the library and borrowed a book."
+        }
+      ]
+    }
+  ]
+}

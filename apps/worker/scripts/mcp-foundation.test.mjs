@@ -44,7 +44,7 @@ const schemaFiles = [
   "0017_mcp_credentials.sql", "0018_mcp_credential_names.sql", "0019_admin_mcp_audit_log.sql",
   "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
   "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql",
-  "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql",
+  "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0033_question_components.sql",
 ];
 // implementation's import tools write import_logs (0002 predates schemaFiles'
 // question-authoring cut, but import_logs itself is defined in 0001).
@@ -183,7 +183,7 @@ const USER_TOOL_NAMES = [
 
 // implementation — expected Admin MCP catalog, in registration order.
 const ADMIN_TOOL_NAMES = [
-  "admin_get_identity", "admin_get_import_schemas", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
+  "admin_get_identity", "admin_get_import_schemas", "admin_export_questions", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
   "admin_get_exam_statistics", "admin_find_duplicate_questions", "admin_find_questions_missing_explanations",
   "admin_find_questions_with_invalid_answer_references", "admin_find_questions_missing_metadata",
   "admin_get_question_bank_statistics", "admin_get_recent_content_changes", "admin_list_tags",
@@ -257,8 +257,8 @@ test("PDF schemas are discoverable in both MCP audiences without question-bank w
     results.push(response.result.structuredContent.data);
   }
   assert.deepEqual(results[0], results[1]);
-  assert.deepEqual(results[0].layouts.map(l => l.id), ["ja-sg-interleaved", "ja-sg-textbook-ocr", "ja-sg-subject-b"]);
-  assert.equal(results[0].caseSchemas["ja-sg-subject-b"].properties.caseSchemaVersion.const, "1.0");
+  assert.deepEqual(results[0].capabilities.interactions, ["choice", "text", "order", "match"]);
+  assert.equal(results[0].componentImportSchema.properties.schemaVersion.const, "2.0");
   assert.equal(results[0].importSchema.properties.schemaVersion.const, "1.0");
   assert.equal(results[0].importPermission, "admin");
   assert.equal(results[0].acceptsPdfUpload, false);
@@ -691,7 +691,7 @@ test("implementation: admin_get_exam_statistics summarizes type/difficulty/quali
   assert.equal(exam.id, "examA");
   assert.equal(statistics.scannedCount, 4);
   assert.equal(statistics.truncated, false);
-  assert.deepEqual(statistics.byType, { single_choice: 2, multiple_choice: 0, true_false: 1, fill_blank: 1 });
+  assert.deepEqual(statistics.byType, { single_choice: 2, multiple_choice: 0, true_false: 1, fill_blank: 1, ordering: 0, matching: 0 });
   assert.equal(statistics.byDifficulty.unset, 1);
   assert.equal(statistics.missingExplanationCount, 1);
   assert.equal(statistics.missingMetadataCount, 1);
@@ -2267,4 +2267,22 @@ test("implementation metrics: prod/development bindings are separate and telemet
   const config = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(config, /\[\[analytics_engine_datasets\]\]\s+binding = "MCP_METRICS"\s+dataset = "prepdeck_mcp_metrics"/);
   assert.match(config, /\[\[env\.development\.analytics_engine_datasets\]\]\s+binding = "MCP_METRICS"\s+dataset = "prepdeck_mcp_metrics_development"/);
+});
+
+for (const name of ["reading", "case-with-figure", ...(process.env.COMPONENT_SOURCE_FILES?.split(",") ?? [])]) test(`component ${name}: MCP preview, idempotent import and export preserve the package`, async t => {
+  const f = await fixture(t);
+  await callAdminTool(f, "admin_create_exam", { slug: "component-exam", name: "Components" }).then(result => { f.componentExamId = result.exam.id; });
+  const file = JSON.parse(await readFile(name.startsWith('/') ? name : new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), 'utf8'));
+  const preview = await callAdminTool(f, 'admin_preview_import', { examId: f.componentExamId, file });
+  assert.equal(preview.valid, true);
+  const args = { examId: f.componentExamId, file, importId: preview.importId, importToken: preview.importToken };
+  const imported = await callAdminTool(f, 'admin_execute_import', args);
+  assert.equal(imported.created, file.questions.length);
+  const replay = await callAdminTool(f, 'admin_execute_import', args);
+  assert.equal(replay.idempotentReplay, true);
+  const exported = await callAdminTool(f, 'admin_export_questions', { examId: f.componentExamId, limit: 1 });
+  assert.equal(exported.file.schemaVersion, '2.0'); assert.equal(exported.nextOffset, file.questions.length > 1 ? 1 : null);
+  assert.deepEqual(exported.file.stimuli, file.stimuli ?? []);
+  assert.deepEqual(exported.file.assets, file.assets ?? []);
+  assert.ok(exported.file.questions[0].scoring);
 });

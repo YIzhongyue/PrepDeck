@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pdf_layouts import LAYOUTS, get_layout
+from pdf_layouts import LAYOUTS, get_layout, load_profiles
 
 
 def command(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -99,7 +99,7 @@ def extract_native(pdf: Path, assets: Path) -> tuple[list[dict[str, Any]], list[
     return [], attempts
 
 
-def ocr_page(pdf: Path, page: int, language: str, dpi: int, psm: int = 3, boxed_headers: bool = False) -> str:
+def ocr_page(pdf: Path, page: int, language: str, dpi: int, psm: int = 3, boxed_headers: bool = False, header_pattern: str | None = None) -> str:
     has_fitz = importlib.util.find_spec("fitz") is not None
     required = ("tesseract",) if has_fitz else ("pdftoppm", "tesseract")
     missing = [name for name in required if not shutil.which(name)]
@@ -116,8 +116,17 @@ def ocr_page(pdf: Path, page: int, language: str, dpi: int, psm: int = 3, boxed_
                      "-r", str(dpi), "-png", str(pdf), str(prefix)])
         if boxed_headers:
             from boxed_ocr import recognize
-            return recognize(prefix.with_suffix(".png"), language, dpi, psm, command)
+            return recognize(prefix.with_suffix(".png"), language, dpi, psm, command, **({"label_pattern": header_pattern} if header_pattern else {}))
         return command(["tesseract", str(prefix) + ".png", "stdout", "-l", language, "--psm", str(psm)]).stdout
+
+
+def cached_ocr(pdf, number, language, dpi, psm, boxed_headers, cache, identity, header_pattern=None):
+    key = hashlib.sha256(f"v5:{identity}:{number}:{language}:{dpi}:{psm}:{boxed_headers}:{header_pattern}".encode()).hexdigest()
+    target = cache / f"{key}.json"
+    if target.is_file():
+        return
+    recognized = ocr_page(pdf, number, language, dpi, psm, boxed_headers, header_pattern)
+    write_json(target, {"text": recognized})
 
 
 def useful_characters(text: str) -> int:
@@ -135,7 +144,7 @@ def quality_signals(text: str, threshold: int) -> list[str]:
 
 def extract(pdf: Path, assets: Path, ocr: str = "auto", language: str = "eng",
             threshold: int = 40, dpi: int = 300, psm: int = 3,
-            cache: Path | None = None, boxed_headers: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
+            cache: Path | None = None, boxed_headers: bool = False, workers: int = 1, header_pattern: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     with pdf.open("rb") as source:
         identity = "sha256:" + hashlib.file_digest(source, "sha256").hexdigest()
     pages, attempts = extract_native(pdf, assets)
@@ -151,6 +160,16 @@ def extract(pdf: Path, assets: Path, ocr: str = "auto", language: str = "eng",
     if expected is not None:
         for _ in range(max(0, expected - len(pages))):
             pages.append(text_page("", "unavailable"))
+    if workers > 1 and ocr == "always":
+        if cache is None:
+            raise ValueError("parallel OCR requires --ocr-cache")
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        with ProcessPoolExecutor(max_workers=min(workers, 8)) as pool:
+            jobs = [pool.submit(cached_ocr, pdf, n, language, dpi, psm, boxed_headers, cache, identity, header_pattern) for n in range(1, len(pages) + 1)]
+            for n, job in enumerate(as_completed(jobs), 1):
+                try: job.result()
+                except (OSError, RuntimeError, ValueError): pass  # Retry once below and report per-page errors.
+                if n % 25 == 0: print(f"OCR cached {n}/{len(pages)} pages", flush=True)
     reports = []
     for number, page in enumerate(pages, 1):
         page["page"] = number
@@ -168,14 +187,14 @@ def extract(pdf: Path, assets: Path, ocr: str = "auto", language: str = "eng",
                                       any(s in signals for s in triggers))
         if use_ocr:
             try:
-                cache_key = hashlib.sha256(f"v5:{identity}:{number}:{language}:{dpi}:{psm}:{boxed_headers}".encode()).hexdigest()
+                cache_key = hashlib.sha256(f"v5:{identity}:{number}:{language}:{dpi}:{psm}:{boxed_headers}:{header_pattern}".encode()).hexdigest()
                 cache_file = cache / f"{cache_key}.json" if cache else None
                 if cache_file and cache_file.is_file():
                     recognized = json.loads(cache_file.read_text(encoding="utf-8"))["text"]
                     if not isinstance(recognized, str):
                         raise ValueError("invalid OCR cache text")
                 else:
-                    recognized = ocr_page(pdf, number, language, dpi, psm, boxed_headers)
+                    recognized = ocr_page(pdf, number, language, dpi, psm, boxed_headers, header_pattern)
                     if cache_file:
                         write_json(cache_file, {"text": recognized})
                 page["blocks"].append({"kind": "text", "text": recognized, "bbox": None, "method": "tesseract"})
@@ -233,7 +252,9 @@ def main() -> int:
     parser.add_argument("--output", "-o", type=Path, required=True, help="page-delimited UTF-8 text")
     parser.add_argument("--document", type=Path, help="default: OUTPUT stem + .document.json")
     parser.add_argument("--report", type=Path, help="default: OUTPUT stem + .report.json")
-    parser.add_argument("--layout", choices=tuple(LAYOUTS), help="PDF layout schema; explicit OCR flags override its defaults")
+    parser.add_argument("--workers", type=int, choices=range(1,9), default=1)
+    parser.add_argument("--profiles", type=Path, help="optional provider profile catalog")
+    parser.add_argument("--layout", help="PDF layout schema; explicit OCR flags override its defaults")
     parser.add_argument("--ocr", choices=("auto", "missing", "always", "never"))
     parser.add_argument("--ocr-lang")
     parser.add_argument("--ocr-threshold", type=int, default=40)
@@ -241,8 +262,9 @@ def main() -> int:
     parser.add_argument("--psm", type=int, choices=range(3, 14), help="Tesseract page segmentation mode")
     parser.add_argument("--ocr-cache", type=Path, help="resume OCR using per-document/page/language/DPI/PSM results")
     parser.add_argument("--boxed-headers", action=argparse.BooleanOptionalAction, default=None,
-                        help="read dark Japanese question-label boxes separately (requires OpenCV)")
+                        help="read dark question-label boxes using the selected profile separately (requires OpenCV)")
     args = parser.parse_args()
+    if args.profiles: load_profiles(args.profiles)
     defaults = get_layout(args.layout)["extraction"] if args.layout else {}
     args.ocr = args.ocr or defaults.get("ocr", "auto")
     args.ocr_lang = args.ocr_lang or defaults.get("language", "eng")
@@ -260,7 +282,7 @@ def main() -> int:
         parser.error("input, text, document and report paths must be distinct")
     try:
         document, report = extract(args.input, document_path.parent / (document_path.stem + ".assets"),
-                                   args.ocr, args.ocr_lang, args.ocr_threshold, args.dpi, args.psm, args.ocr_cache, args.boxed_headers)
+                                   args.ocr, args.ocr_lang, args.ocr_threshold, args.dpi, args.psm, args.ocr_cache, args.boxed_headers, args.workers, get_layout(args.layout).get("boxedHeaderPattern") if args.layout else None)
         if args.layout:
             document["layoutId"] = report["layoutId"] = args.layout
         write_json(document_path, document)

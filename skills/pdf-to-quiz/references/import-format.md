@@ -1,5 +1,9 @@
 # PrepDeck import format 1.0
 
+This reference owns legacy 1.0 imports. For structured content use the separate
+[2.0 component contract](component-format.md); do not add component fields to a
+1.0 file. Both versions use the same Web UI/Admin MCP import workflow.
+
 Use this self-contained contract when producing the final JSON. Unknown extra fields are tolerated by PrepDeck, but omit them unless the user needs them.
 
 ## Top-level object

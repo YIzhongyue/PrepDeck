@@ -69,31 +69,28 @@ deduplicating historical external IDs to migrate successfully.
 
 ## Re-import review
 
-### Japanese PDF preparation
+### PDF preparation and component questions
 
-The import dialog lists Japanese SG text collections
-with interleaved answers (`ja-sg-interleaved`) and scanned textbooks with separate
-answer sections (`ja-sg-textbook-ocr`). Use the
-[PDF conversion workflow](../../skills/pdf-to-quiz/references/japanese-sg-layouts.md)
-to prepare and review a standard 1.0 JSON file, then upload it here. PDFs are
-processed locally; this is not a PDF-upload/OCR endpoint. Unreadable or
-image-dependent questions stay in the local review report until resolved.
+Use the generic [PDF/component workflow](../../skills/pdf-to-quiz/references/component-format.md)
+for shared passages, tables, figures, code, combinations, ordering and matching.
+Both 1.0 Markdown and 2.0 component imports enter through **Import JSON** and the
+same preview/conflict/commit flow. The dialog can preview the first five items;
+review the complete source offline before importing. PDF extraction runs locally.
 
-`GET /api/import-schemas` returns the layout catalog and canonical import JSON
-Schema to authenticated users. MCP exposes the same result through
-`user_get_import_schemas` and `admin_get_import_schemas`. Users can prepare
-files; exam creation and question-bank imports retain administrator permissions.
-Admin MCP uses the existing `admin_preview_import` / `admin_execute_import`
-workflow. Scope external IDs by material, edition, section and printed number
-so the two SG books can coexist in the same exam without collisions.
+`GET /api/import-schemas`, `user_get_import_schemas` and
+`admin_get_import_schemas` expose both canonical schemas and supported components.
+Document/provider profiles stay in the offline converter. Users can prepare
+files; exam creation and shared-bank writes/exports require an administrator.
+Admin MCP uses `admin_preview_import` then `admin_execute_import`.
 
-For 科目B, use `ja-sg-subject-b` and its
-[case inventory schema](../../skills/pdf-to-quiz/references/subject-b-case.schema.json).
-It preserves shared passages, structured tables, required figures and scoped
-subquestions. The builder includes all shared material in each exported stem;
-table rows become labeled cells compatible with the existing annotatable
-question renderer. Review and compile the inventory to the existing 1.0 format
-before upload. See the [B workflow](../../skills/pdf-to-quiz/references/subject-b-cases.md).
+Structured questions open a JSON editor with a live preview and optimistic
+revision checks. Save the component source; changing only its derived flat stem
+or options is rejected. **Export this page** downloads a portable 2.0 package;
+`GET /api/exams/:examId/questions/export` and `admin_export_questions` expose
+paginated export with `nextOffset`. Export shared-material revisions separately
+when their IDs conflict. Legacy questions also export as components, preserving
+true/false identity. Component annotations and a graphical block editor are
+currently unsupported.
 
 ### Conflict handling
 

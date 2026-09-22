@@ -1,0 +1,47 @@
+{
+  "layouts": [
+    {
+      "id": "ja-sg-interleaved",
+      "name": "Japanese SG — questions with inline answers",
+      "description": "Text-based Japanese question collections with annual/subject sections and an answer plus explanation after each question (layout1).",
+      "extraction": {
+        "ocr": "missing",
+        "language": "jpn+eng",
+        "dpi": 300,
+        "psm": 3
+      },
+      "questionPattern": "^問\\s*([0-9０-９]+)\\s*$",
+      "answerPattern": "^問\\s*([0-9０-９]+)\\s*[:：]\\s*正答\\s*([アイウエオカキクケコサシスセソ]+)\\s*$",
+      "optionPattern": "^([アイウエオカキクケコサシスセソ])(?:[ \\t　]+(.+))?$",
+      "answerPlacement": "interleaved",
+      "sectionStrategy": "heading-pattern",
+      "answerLabels": "アイウエオカキクケコサシスセソ",
+      "unreadableAnswerPattern": "^問\\s*([0-9０-９]+)(?=[ \\t　|｜:：・.]|$)",
+      "subquestionPattern": "^設問[ \\t　]*([0-9０-９]+)?[ \\t　]*\\n?",
+      "sectionPattern": "^(?:(令和(?:元|[0-9０-９]+)年度|平成[0-9０-９]+年度)[ \\t　]*(春期|秋期)?\\n)?情報セキュリティマネジメント試験\\n(科目[ABＡＢ]|午前)[ \\t　の]*(公開問題|サンプル問題|問題)(?:\\n※公開日[:：]([0-9]+)年([0-9]+)月([0-9]+)日)?[ \\t　]*$",
+      "endPattern": "^著者について\\s*$",
+      "boxedHeaderPattern": "(問|設問)\\s*([0-9０-９]{1,3})?"
+    },
+    {
+      "id": "ja-sg-textbook-ocr",
+      "name": "Japanese SG — scanned textbook and separate answer keys",
+      "description": "Image-only Japanese textbooks containing chapter examples, mock/sample questions, answer tables and separate explanations (layout2).",
+      "extraction": {
+        "ocr": "always",
+        "language": "jpn",
+        "dpi": 300,
+        "psm": 6,
+        "boxedHeaders": true
+      },
+      "questionPattern": "^問\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$",
+      "answerPattern": "^問\\s*([0-9０-９]+)[ \\t　|｜:：・.]*([アイウエオカキクケコサシスセソ])(?:[ \\t　]+.*)?$",
+      "optionPattern": "^([アイウエオカキクケコサシスセソ])[ \\t　]+(.+)$",
+      "answerPlacement": "separate",
+      "sectionStrategy": "explicit-page-ranges",
+      "answerLabels": "アイウエオカキクケコサシスセソ",
+      "unreadableAnswerPattern": "^問\\s*([0-9０-９]+)(?=[ \\t　|｜:：・.]|$)",
+      "subquestionPattern": "^設問[ \\t　]*([0-9０-９]+)?[ \\t　]*\\n?",
+      "boxedHeaderPattern": "(問|設問)\\s*([0-9０-９]{1,3})?"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ interface QuestionRow {
   sequence_number: number;
   type: string;
   stem: string;
+  content_json: string | null;
   options_json: string | null;
   correct_answers_json: string;
   difficulty: string | null;
@@ -60,7 +61,7 @@ practiceCatalogRouter.get("/", async (c) => {
     const { results: questionRows } = await c.env.DB.prepare(
       // FR-14.1: ordered by sequence_number so Learning Mode can walk the
       // exam's questions in order directly off this same catalog.
-      `SELECT id, external_id, sequence_number, type, stem, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points FROM questions WHERE exam_id = ? ORDER BY sequence_number ASC`
+      `SELECT id, external_id, sequence_number, type, stem, content_json, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points FROM questions WHERE exam_id = ? ORDER BY sequence_number ASC`
     )
       .bind(examId)
       .all<QuestionRow>();
@@ -73,6 +74,7 @@ practiceCatalogRouter.get("/", async (c) => {
         sequenceNumber: row.sequence_number,
         type: row.type as PracticeCatalogQuestion["type"],
         stem: row.stem,
+        ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
         options: row.options_json ? JSON.parse(row.options_json) : null,
         chooseCount: row.type === "multiple_choice" ? correctAnswers.length : null,
         tags: row.tags_json ? JSON.parse(row.tags_json) : [],

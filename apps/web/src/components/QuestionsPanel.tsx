@@ -44,6 +44,14 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
     setRefresh(n => n + 1);
   };
   const mutated = (message: string) => { setNotice(message); setRefresh(n => n + 1); questionBankChanged(); };
+  const exportPage = async () => {
+    try {
+      const params = new URLSearchParams({ ...filters, offset: String(shownOffset), limit: String(limit) });
+      const { file } = await apiFetch<{ file: unknown }>(`/api/exams/${exam.id}/questions/export?${params}`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = url; link.download = `${exam.id}-questions-${shownOffset + 1}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not export questions"); }
+  };
   const remove = async (q: Question) => {
     if (!window.confirm("Delete this question permanently? Questions with attempts, bookmarks, notes or other learning records cannot be deleted.")) return;
     try { await apiFetch(`/api/exams/${exam.id}/questions/${q.id}`, { method: "DELETE" }); mutated(`Deleted question #${q.sequenceNumber}.`); }
@@ -51,11 +59,12 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
   };
   return <div className="admin-question-list">
     <div className="admin-question-list-head"><div style={{ marginRight: "auto" }}><h3>Questions</h3><span>{total ? `${shownOffset + 1}–${Math.min(shownOffset + limit, total)}` : "0"} of {total}</span></div>
+      <button type="button" className="btn btn-secondary" disabled={loading || !questions.length} onClick={exportPage}>Export this page</button>
       <button type="button" className="btn btn-secondary" onClick={() => setImporting(true)}>Import JSON</button>
       <button type="button" className="btn btn-primary" onClick={() => setEditor({ key: Date.now(), question: null, type: "single_choice" })}>Add question</button></div>
     <form className="authoring-toolbar authoring-filters" onSubmit={e => { e.preventDefault(); setOffset(0); setFilters(f => ({ ...f, q: search.trim() })); }}>
       <input className="input" aria-label="Search stem or exact internal / external ID" placeholder="Search stem or exact ID…" value={search} onChange={e => setSearch(e.target.value)} />
-      <select className="input" aria-label="Filter by type" value={filters.type} onChange={e => { setOffset(0); setFilters(f => ({ ...f, type: e.target.value })); }}><option value="">All types</option><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple choice</option><option value="true_false">True / false</option><option value="fill_blank">Fill in the blank</option></select>
+      <select className="input" aria-label="Filter by type" value={filters.type} onChange={e => { setOffset(0); setFilters(f => ({ ...f, type: e.target.value })); }}><option value="">All types</option><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple choice</option><option value="true_false">True / false</option><option value="fill_blank">Fill in the blank</option><option value="ordering">Ordering</option><option value="matching">Matching</option></select>
       <select className="input" aria-label="Filter by difficulty" value={filters.difficulty} onChange={e => { setOffset(0); setFilters(f => ({ ...f, difficulty: e.target.value })); }}><option value="">All difficulties</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
       <input className="input" aria-label="Filter by exact tag" placeholder="Exact tag" value={filters.tag} onChange={e => { setOffset(0); setFilters(f => ({ ...f, tag: e.target.value })); }} />
       <button className="btn btn-secondary" type="submit">Search</button>

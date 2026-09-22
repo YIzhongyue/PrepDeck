@@ -222,7 +222,7 @@ interface PrepDeckStore {
   openPracticeWithFilters: (filters: PracticeFilters) => void;
 
   begin: (ids: string[]) => void;
-  pick: (q: Question, oid: string) => void;
+  pick: (q: Question, oid: string | string[]) => void;
   submit: () => void;
   next: () => void;
   prevQ: () => void;
@@ -250,7 +250,7 @@ interface PrepDeckStore {
   setMockCount: (n: number) => void;
   setMockMinutes: (n: number) => void;
   beginMock: () => void;
-  mockPick: (q: Question, oid: string) => void;
+  mockPick: (q: Question, oid: string | string[]) => void;
   mockPrev: () => void;
   mockNext: () => void;
   mockGoto: (i: number) => void;
@@ -450,7 +450,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       const catalog: Question[] = data.questions.map(q => ({
         id: q.id, externalId: q.externalId, sequenceNumber: q.sequenceNumber, type: q.type,
-        chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options
+        chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options, content: q.content
       }));
       const catalogBy = Object.fromEntries(catalog.map(q => [q.id, q]));
       const count = defaultMockCount(catalog.length);
@@ -509,12 +509,13 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => update({ actionError: "Could not start practice. Please try again." }));
   }, [scopedState, requests]);
 
-  const pick = useCallback((q: Question, oid: string) => {
+  const pick = useCallback((q: Question, oid: string | string[]) => {
     if (stateRef.current.done[q.id] || stateRef.current.switching) return;
     setState((s) => {
       const cur = (s.sel[q.id] || []).slice();
       let nx: string[];
-      if (q.type === "multiple_choice") {
+      if (Array.isArray(oid)) nx = oid;
+      else if (q.type === "multiple_choice") {
         const i = cur.indexOf(oid);
         if (i >= 0) cur.splice(i, 1);
         else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
@@ -847,13 +848,14 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     });
   }, [requests]);
 
-  const mockPick = useCallback((q: Question, oid: string) => {
+  const mockPick = useCallback((q: Question, oid: string | string[]) => {
     // Serialize draft writes for this attempt, retaining the latest local selection.
     if (stateRef.current.switching) return;
     const update = scopedState();
     const cur = (stateRef.current.mSel[q.id] || []).slice();
     let nextSel: string[];
-    if (q.type === "multiple_choice") {
+    if (Array.isArray(oid)) nextSel = oid;
+    else if (q.type === "multiple_choice") {
       const i = cur.indexOf(oid);
       if (i >= 0) cur.splice(i, 1);
       else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
@@ -1382,7 +1384,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       if (s.switching || s.screen !== "practice" || s.pStage !== "live") return;
       const qid = s.queue[s.idx];
       const q = qid ? s.catalogBy[qid] : undefined;
-      if (!q || !q.options) return;
+      if (!q || !q.options || q.type === "ordering" || q.type === "matching") return;
       const k = e.key.toUpperCase();
       const hit = q.options.find((o) => o.id === k);
       if (hit) { e.preventDefault(); pick(q, hit.id); return; }

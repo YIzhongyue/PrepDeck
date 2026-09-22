@@ -9,10 +9,11 @@
     },
     {
       "id": "chapter-examples",
-      "role": "interleaved",
+      "role": "reference",
       "startPage": 39,
       "endPage": 422,
-      "questionPattern": "^出題例\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$"
+      "questionPattern": "^出題例\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$",
+      "reviewNote": "Chapter numbering restarts. Create chapter-specific scopes before importing these examples."
     },
     {
       "id": "mock-a",

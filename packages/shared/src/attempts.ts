@@ -1,3 +1,4 @@
+import type { QuestionContentModel } from "./question-components.ts";
 // DTOs for the Practice (3.3) / Mock Exam (3.4) API, shared between the
 // Worker's responses and the web client's fetch calls.
 
@@ -14,6 +15,7 @@ export interface PracticeCatalogQuestion {
   sequenceNumber: number;
   type: QuestionType;
   stem: string;
+  content?: QuestionContentModel;
   options: QuestionOption[] | null;
   chooseCount: number | null;
   tags: string[];

@@ -2,6 +2,8 @@
 // In particular, reloading must not change wrong-book membership or counts.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { normalizeImportFile } from "../../../packages/shared/src/question-components.ts";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
@@ -163,5 +165,48 @@ try {
   failDraft = false; expired = true; await complete();
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   console.log("PASS expired writes and retries cannot block submission of the server's saved answers");
+  // Exercise component rendering and actual provider draft persistence in Mock.
+  expired = false;
+  const componentRows = ["code", "case-with-figure", "combination"].flatMap(name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions);
+  questions.splice(0, questions.length, ...componentRows.map((row, n) => ({ ...row, correctAnswers: undefined, id: `component-${n}`, examId: "exam", sequenceNumber: n + 1, chooseCount: 1, tags: [] })));
+  await page.reload(); await ready(); await startMock();
+  await show("component-0");
+  await page.locator("pre code").filter({ hasText: "values = [1, 2, 3]" }).waitFor();
+  await page.getByRole("combobox", { name: "Position 1", exact: true }).selectOption("read");
+  await page.getByRole("combobox", { name: "Position 2", exact: true }).selectOption("sum");
+  await page.getByRole("combobox", { name: "Position 3", exact: true }).selectOption("print");
+  await show("component-1");
+  await page.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
+  assert.equal(await page.getByRole("img", { name: "After is twice as high as Before." }).evaluate(img => img.complete && img.naturalWidth > 0), true);
+  await page.getByRole("combobox", { name: "Match low", exact: true }).selectOption("before");
+  await page.getByRole("combobox", { name: "Match high", exact: true }).selectOption("after");
+  await invoke("go", "mock"); // drains outstanding drafts
+  await page.reload(); await ready(); await startMock();
+  await show("component-0");
+  assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).inputValue(), "read");
+  assert.equal(await page.getByRole("combobox", { name: "Position 3", exact: true }).inputValue(), "print");
+  await show("component-1");
+  assert.equal(await page.getByRole("combobox", { name: "Match high", exact: true }).inputValue(), "after");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.documentElement.scrollWidth <= 390);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-figure-match-mobile.png`, animations: "disabled", fullPage: false });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= 390, "Component screen overflows the mobile viewport");
+  await show("component-2"); await page.getByRole("table").waitFor();
+  assert.ok((await page.locator(".component-content").allTextContents()).some(text => text.includes("Isolate")));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-combination-desktop.png`, fullPage: true });
+  await invoke("begin", ["component-0"]);
+  await page.waitForFunction(() => window.store.state.pStage === "live");
+  await page.getByRole("combobox", { name: "Position 1", exact: true }).selectOption("read");
+  await page.getByRole("combobox", { name: "Position 2", exact: true }).selectOption("sum");
+  await page.getByRole("combobox", { name: "Position 3", exact: true }).selectOption("print");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("1");
+  assert.deepEqual((await state()).sel["component-0"], ["read", "sum", "print"], "Choice shortcuts must not replace a structured response");
+  await page.getByRole("button", { name: "Check answer", exact: true }).click();
+  await page.waitForFunction(() => !!window.store.state.done["component-0"]);
+  assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).isDisabled(), true);
+  console.log("PASS component figures/tables/code, order/match controls, restored drafts, practice grading state, keyboard isolation and mobile layout");
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

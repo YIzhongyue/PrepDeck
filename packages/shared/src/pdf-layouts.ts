@@ -1,18 +1,12 @@
-// Also shipped inside the standalone converter skill: one catalog for all clients.
-import catalog from "../../../skills/pdf-to-quiz/references/pdf-layouts.json" with { type: "json" };
-import subjectBCaseSchema from "../../../skills/pdf-to-quiz/references/subject-b-case.schema.json" with { type: "json" };
 import { questionImportJsonSchema } from "./import-schema.ts";
+import { componentImportSchema, componentCapabilities } from "./question-components.ts";
 
-export type PdfLayout = (typeof catalog.layouts)[number];
-export const pdfLayouts = catalog.layouts;
-
+// Discovery describes the question contract, independent of PDF providers.
 export function getImportSchemas() {
   return {
-    ...catalog,
-    importSchema: questionImportJsonSchema,
-    caseSchemas: { "ja-sg-subject-b": subjectBCaseSchema },
-    workflow: "Extract PDF locally with pdf-to-quiz, review evidence, build schemaVersion 1.0 JSON, then preview and import.",
-    importPermission: "admin",
-    acceptsPdfUpload: false,
+    version: "2.0", importSchema: questionImportJsonSchema, componentImportSchema,
+    capabilities: componentCapabilities,
+    workflow: "Prepare native or scanned documents locally, review source evidence, then preview and import JSON through the same Web UI or MCP services.",
+    importPermission: "admin", acceptsPdfUpload: false,
   };
 }

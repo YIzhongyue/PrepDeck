@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "2.0",
+  "exam": {
+    "id": "exam",
+    "name": "combination"
+  },
+  "questions": [
+    {
+      "externalId": "combination-1",
+      "body": [
+        {
+          "id": "prompt",
+          "type": "paragraph",
+          "text": "Select the combination of steps that preserves evidence."
+        },
+        {
+          "id": "steps",
+          "type": "list",
+          "entries": [
+            {
+              "id": "s1",
+              "text": "Isolate the host"
+            },
+            {
+              "id": "s2",
+              "text": "Delete the logs"
+            },
+            {
+              "id": "s3",
+              "text": "Preserve an image"
+            }
+          ]
+        },
+        {
+          "id": "counts",
+          "type": "table",
+          "caption": "Available copies",
+          "columns": [
+            "Source",
+            "Count"
+          ],
+          "rows": [
+            [
+              "Host",
+              "1"
+            ],
+            [
+              "Backup",
+              "0"
+            ]
+          ]
+        }
+      ],
+      "interaction": {
+        "id": "response",
+        "type": "choice",
+        "multiple": false,
+        "options": [
+          {
+            "id": "A",
+            "memberRefs": [
+              "s1",
+              "s3"
+            ]
+          },
+          {
+            "id": "B",
+            "memberRefs": [
+              "s2",
+              "s3"
+            ]
+          }
+        ]
+      },
+      "scoring": {
+        "method": "exact",
+        "correctAnswers": [
+          "A"
+        ]
+      }
+    }
+  ]
+}

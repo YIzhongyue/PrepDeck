@@ -1,4 +1,5 @@
-export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
+import type { QuestionContentModel } from "@prepdeck/shared";
+export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "ordering" | "matching";
 export type Difficulty = "easy" | "medium" | "hard";
 
 export interface QuestionOption {
@@ -19,6 +20,7 @@ export interface Question {
   tags: string[];
   diff: Difficulty | null;
   stem: string;
+  content?: QuestionContentModel;
   options: QuestionOption[] | null;
 }
 

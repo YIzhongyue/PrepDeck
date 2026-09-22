@@ -17,7 +17,11 @@ export async function getCachedPracticeQuestions(env: Env, examId: string): Prom
 }
 
 export async function setCachedPracticeQuestions(env: Env, examId: string, questions: PracticeCatalogQuestion[]): Promise<void> {
-  await env.KV.put(cacheKey(examId), JSON.stringify(questions), { expirationTtl: TTL_SECONDS });
+  const payload = JSON.stringify(questions);
+  // Inline figures may make a catalog exceed the KV value limit. The caller
+  // still returns the authoritative D1 result when this cache is bypassed.
+  if (new TextEncoder().encode(payload).byteLength > 25 * 1024 * 1024) return;
+  await env.KV.put(cacheKey(examId), payload, { expirationTtl: TTL_SECONDS });
 }
 
 export async function invalidatePracticeQuestions(env: Env, examId: string): Promise<void> {

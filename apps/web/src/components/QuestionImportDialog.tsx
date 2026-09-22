@@ -1,5 +1,6 @@
+import QuestionContent from "./QuestionContent";
 import { useEffect, useState } from "react";
-import { type ValidationIssue, type getImportSchemas } from "@prepdeck/shared";
+import { normalizeImportFile, type ValidationIssue, type getImportSchemas } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 
 interface Conflict {
@@ -50,9 +51,7 @@ export default function QuestionImportDialog({ examId, onClose, onImported }: { 
     <details>
       <summary>Prepare questions from a PDF</summary>
       <p>Convert your PDF with the pdf-to-quiz skill, check the questions and answers against the original pages, then upload the resulting JSON below.</p>
-      {schemas?.layouts.map(layout => <div key={layout.id}>
-        <strong>{layout.name}</strong><p>{layout.description}</p>
-      </div>)}
+      {schemas && <p>Supported content: {schemas.capabilities.blocks.join(", ")}. Answer interactions: {schemas.capabilities.interactions.join(", ")}. Legacy and component JSON imports are supported.</p>}
       {schemaError && <p role="status">PDF preparation formats could not be loaded. You can still import a prepared JSON file.</p>}
       {!schemas && !schemaError && <p role="status">Loading PDF preparation formats…</p>}
       <a href="/api/import-schemas" download="prepdeck-import-schemas.json">Download conversion schemas</a>
@@ -60,6 +59,7 @@ export default function QuestionImportDialog({ examId, onClose, onImported }: { 
     <input aria-label="Question import JSON file" type="file" accept=".json,application/json" disabled={busy} onChange={e => { const upload = e.target.files?.[0]; if (upload) void readFile(upload); e.target.value = ""; }} />
     {busy && <p role="status">Processing…</p>}{error && <p className="authoring-errors" role="alert">{error}</p>}
     {preview && !result && <><p>{preview.questionCount} incoming questions · {preview.conflicts.length} conflicts</p>
+      {preview.valid && file && <details><summary>Preview imported questions</summary>{normalizeImportFile(file).questions.slice(0, 5).map((q, i) => <section key={i} className="authoring-preview"><h4>{q.externalId ?? `Question ${i + 1}`}</h4><QuestionContent src={q.stem} content={q.content} />{q.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={q.content} optionId={o.id} /></div>)}<p>Correct response: {q.correctAnswers.join(", ")}</p></section>)}<p>Showing up to five questions. Review the complete source before importing.</p></details>}
       {preview.issues.map((i, n) => <p key={n} className="authoring-errors">{i.path}: {i.message}</p>)}
       {preview.conflicts.map(c => <section key={c.questionId} className="authoring-preview"><p className="authoring-identifier">{c.externalId} · {c.questionId} · revision {c.expectedRevision}</p><p>{c.reason.replaceAll("_", " ")}</p>
         {c.differences.map(d => <div key={d.field}><strong>{d.field}</strong><div className="authoring-toolbar"><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", flex: "1 1 250px" }}>Current: {JSON.stringify(d.current, null, 2)}</pre><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", flex: "1 1 250px" }}>Incoming: {JSON.stringify(d.incoming, null, 2)}</pre></div></div>)}

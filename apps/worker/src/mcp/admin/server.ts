@@ -11,7 +11,7 @@ import { MAX_MERGE_SOURCE_TAGS } from "../../lib/questionBankTags";
 
 const examIdSchema = z.string().min(1).max(200);
 const questionIdSchema = z.string().min(1).max(200);
-const questionTypeSchema = z.enum(["single_choice", "multiple_choice", "true_false", "fill_blank"]);
+const questionTypeSchema = z.enum(["single_choice", "multiple_choice", "true_false", "fill_blank", "ordering", "matching"]);
 const difficultySchema = z.enum(["easy", "medium", "hard"]);
 const revisionSchema = z.number().int().min(1);
 const proposalTokenSchema = z.string().length(64);
@@ -65,6 +65,7 @@ const questionPayloadSchema = z.strictObject({
   difficulty: difficultySchema.nullable().optional(),
   tags: z.array(z.string()).optional(),
   points: z.number().optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
 });
 
 export function createAdminMcpServer(principal: McpPrincipal, env: Env, observation?: McpObservation) {
@@ -73,8 +74,11 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool("admin_get_identity", "Inspect the authenticated Admin MCP identity.", z.strictObject({}),
       () => services.getIdentity()),
     defineMcpTool("admin_get_import_schemas",
-      "Get PDF conversion layouts and the canonical question-import JSON Schema. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON.",
+      "Get supported question components, interactions, limits, and JSON import schemas. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON.",
       z.strictObject({}), () => getImportSchemas()),
+
+    defineMcpTool("admin_export_questions", "Export a page of questions as a portable component package, including answer keys. Follow nextOffset for remaining questions. If snapshot identities conflict, export separately; if the 5 MiB package limit is exceeded, reduce limit.",
+      z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }), input => services.exportQuestions(input)),
 
     // --- Question-bank reads (implementation) -------------------------------------
     defineMcpTool(

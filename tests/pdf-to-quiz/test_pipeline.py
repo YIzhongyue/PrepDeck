@@ -82,9 +82,9 @@ class ContractTests(unittest.TestCase):
                    '2026-09-07T00:00:00', '2026-09-07 00:00:00Z',
                    '２０２６-09-07T00:00:00Z', '2026-09-07T00:00:00.１Z']
         script = """
-import {transformSync} from 'esbuild';
+import {build} from 'esbuild';
 import {readFileSync} from 'node:fs';
-const {code} = transformSync(readFileSync('packages/shared/src/import-validate.ts', 'utf8'), {loader: 'ts', format: 'esm'});
+const {outputFiles} = await build({entryPoints:['packages/shared/src/import-validate.ts'],bundle:true,write:false,format:'esm',platform:'neutral',mainFields:['module','main']}); const code=outputFiles[0].text;
 const {validateImportFile} = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
 const {base, values} = JSON.parse(readFileSync(0, 'utf8'));
 console.log(JSON.stringify(values.map(extractedAt => validateImportFile({
@@ -131,9 +131,10 @@ class SchemaTests(unittest.TestCase):
     def test_schema_agrees_on_structural_contract(self):
         import jsonschema
         script = """
-import {transformSync} from 'esbuild';
+import {build} from 'esbuild';
 import {readFileSync} from 'node:fs';
-const {code} = transformSync(readFileSync('packages/shared/src/import-schema.ts','utf8'), {loader:'ts', format:'esm'});
+const {outputFiles} = await build({entryPoints:['packages/shared/src/import-schema.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+const code=outputFiles[0].text;
 const module = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
 console.log(JSON.stringify(module.questionImportJsonSchema));
 """

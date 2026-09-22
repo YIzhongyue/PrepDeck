@@ -1,3 +1,4 @@
+import type { QuestionContentModel } from "./question-components.ts";
 // Core domain types shared between apps/web and apps/worker.
 // Mirrors docs/requirements/data-model-and-import-format.md (Core Entities) and docs/requirements/data-model-and-import-format.md (Question Types).
 
@@ -42,7 +43,7 @@ export interface Provider {
 }
 
 // Extensible per FR-10.3: new values may be added without breaking existing questions.
-export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
+export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "ordering" | "matching";
 
 export type Difficulty = "easy" | "medium" | "hard";
 
@@ -60,6 +61,7 @@ export interface Question {
   sequenceNumber: number;
   type: QuestionType;
   stem: string;
+  content?: QuestionContentModel;
   options: QuestionOption[] | null; // null for fill_blank
   correctAnswers: string[];
   explanation: string | null;

@@ -31,7 +31,7 @@ import {
   type ImportConflictResolution,
 } from "../lib/importExecution";
 import { assertBoundedDepth, IMPORT_JSON_MAX_DEPTH } from "../lib/importSecurity";
-import { validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, exportComponentPackage, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
 import {
   normalizeTagName, resolveOrCreateTags, fetchTagIdsForQuestions, buildTagLinkStatements,
   buildTagNameResolver, findTagCatalogRowByName, listTagCatalogNames,
@@ -1520,6 +1520,18 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     // atomically in admin_mcp_import_jobs (claimImportJob, above) so a
     // concurrent or replayed execute can't double-apply or silently diverge
     // from what was reviewed.
+    async exportQuestions(input: { examId: string; limit?: number; offset?: number }) {
+      await requireExam(input.examId);
+      const result = await searchQuestionsQuery(db, input.examId, { limit: input.limit ?? 50, offset: input.offset ?? 0 });
+      if (!result.questions.length) throw new McpApplicationError("not_found");
+      const exam = (await getExamRecord(db, input.examId))!;
+      let file;
+      try { file = exportComponentPackage({ id: exam.id, name: exam.name }, result.questions.map(q => ({ ...q, externalId: q.externalId ?? q.id, options: q.options ?? undefined }))); }
+      catch { throw new McpApplicationError("conflict"); }
+      return { file,
+        total: result.total, offset: result.offset, nextOffset: result.offset + result.questions.length < result.total ? result.offset + result.questions.length : null };
+    },
+
     async validateImport(input: { examId: string; file: unknown }) {
       await consumeImportRateLimit("validate", input.examId);
       await requireExam(input.examId);
@@ -1539,7 +1551,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
           duplicateExternalIdsInDb: [], creates: [], updates: [], skips: [], conflicts: [],
         };
       }
-      const file = input.file as QuestionImportFile;
+      const file = normalizeImportFile(input.file);
       const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
       const existing = externalIds.length ? await findQuestionRowsByExternalId(db, input.examId, externalIds) : [];
       const duplicateExternalIdsInDb = [...new Set(existing.map((r) => r.external_id!).filter(Boolean))];
@@ -1589,7 +1601,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
         });
         throw new McpApplicationError("invalid_input");
       }
-      const file = input.file as QuestionImportFile;
+      const file = normalizeImportFile(input.file);
       const resolutions = input.conflictResolutions ?? [];
       const fingerprint = await computeRequestFingerprint(computedFileToken, resolutions);
 
