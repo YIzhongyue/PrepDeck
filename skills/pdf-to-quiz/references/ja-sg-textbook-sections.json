@@ -40,14 +40,16 @@
       "id": "mock-a",
       "role": "answers",
       "startPage": 469,
-      "endPage": 488
+      "endPage": 488,
+      "answerSequence": "ascending-consecutive"
     },
     {
       "id": "mock-b",
       "role": "answers",
       "startPage": 489,
       "endPage": 498,
-      "subject": "B"
+      "subject": "B",
+      "answerSequence": "ascending-consecutive"
     },
     {
       "id": "sample-a",
@@ -74,14 +76,16 @@
       "id": "sample-a",
       "role": "answers",
       "startPage": 537,
-      "endPage": 552
+      "endPage": 552,
+      "answerSequence": "ascending-consecutive"
     },
     {
       "id": "sample-b",
       "role": "answers",
       "startPage": 553,
       "endPage": 563,
-      "subject": "B"
+      "subject": "B",
+      "answerSequence": "ascending-consecutive"
     },
     {
       "id": "backmatter",

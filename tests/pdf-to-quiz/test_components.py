@@ -138,6 +138,7 @@ class ComponentTests(unittest.TestCase):
             lambda i: i.update(pageReviews=[]),
             lambda i: i["pageReviews"][0].update(page=200),
             lambda i: i["reviews"][0].update(answerEvidence=[]),
+            lambda i: i["answerEntries"][0].update(boundaryIssues=["Missing source header"]),
             lambda i: i["answerEntries"].append(
                 {
                     "id": "conflict",

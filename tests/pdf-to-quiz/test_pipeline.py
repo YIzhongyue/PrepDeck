@@ -343,6 +343,11 @@ class InventoryTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(root / 'pdf-to-quiz/scripts/build_quiz.py'), 'document.json', 'inventory.json', '--output', 'quiz.json'], cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(validator.validate(json.loads((root / 'quiz.json').read_text()))[0])
+            component_inventory = {'documentId': doc['documentId'], 'package': {'questions': []}, 'reviews': [], 'answerEntries': []}
+            (root / 'components.json').write_text(json.dumps(component_inventory))
+            result = subprocess.run([sys.executable, str(root / 'pdf-to-quiz/scripts/review_components.py'), 'document.json', 'components.json', '-o', 'review.html'], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Question source review', (root / 'review.html').read_text())
 
     def test_cli_export_and_all_unresolved_rerun(self):
         with tempfile.TemporaryDirectory() as tmp:

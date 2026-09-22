@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pdf_layouts import LAYOUTS, get_layout, load_profiles
 from validate_quiz import validate
+from answer_evidence import collect as collect_answers
 
 
 def page_text(page: dict) -> tuple[str, list[str]]:
@@ -50,7 +51,27 @@ def stream(
     for page in document["pages"][start - 1 : end]:
         text, refs = page_text(page)
         parts.append(text + "\n")
-        ranges.append((offset, offset + len(text), refs, page["page"]))
+        index = {b["id"]: b for b in page["blocks"]}
+        cursor, spans = 0, []
+        for ref in refs:
+            value = index[ref].get("text", "").strip()
+            position = text.find(value, cursor) if value else -1
+            if position >= 0:
+                spans.append(
+                    (
+                        offset + position,
+                        offset + position + len(value),
+                        [ref],
+                        page["page"],
+                    )
+                )
+                cursor = position + len(value)
+        # Exact native/structured block spans retain local geometry. Whole-page
+        # OCR remains explicitly coarse instead of inventing word coordinates.
+        if len(spans) == len(refs) and spans:
+            ranges.extend(spans)
+        else:
+            ranges.append((offset, offset + len(text), refs, page["page"]))
         offset += len(text) + 1
     return "".join(parts), ranges
 
@@ -158,19 +179,6 @@ def prepare(
         answers = (
             list(apattern.finditer(chunk, left, right)) if role != "questions" else []
         )
-        unreadable = []
-        if role == "answers":
-            # A legible question number with an unreadable answer still closes
-            # the preceding explanation and remains in the answer inventory.
-            raw_headers = re.compile(
-                layout.get("unreadableAnswerPattern", layout["questionPattern"]), re.M
-            )
-            valid_starts = {a.start() for a in answers}
-            unreadable = [
-                a
-                for a in raw_headers.finditer(chunk, left, right)
-                if a.start() not in valid_starts
-            ]
         headers = (
             list(qpattern.finditer(chunk, left, right)) if role != "answers" else []
         )
@@ -185,7 +193,6 @@ def prepare(
                 right,
                 *(h.start() for h in headers),
                 *(a.start() for a in answers),
-                *(a.start() for a in unreadable),
             }
         )
         section_count = 0
@@ -248,50 +255,139 @@ def prepare(
             row["caseBody"] = body
             by_id[qid] = row
             section_count += 1
-        for match in answers:
-            printed = str(int(match.group(1)))
-            labels = list(match.group(2))
-            if (
-                not labels
-                or any(
-                    label
-                    not in layout.get("answerLabels", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-                    for label in labels
+        section_entries = []
+        if role == "answers":
+            # The selected pass determines question text, but answer evidence is
+            # reconciled across every retained OCR pass inside this answer scope.
+            variants = [(chunk, local_ranges, "selected")]
+            for page in document["pages"][
+                section["startPage"] - 1 : section["endPage"]
+            ]:
+                for block in page["blocks"]:
+                    if (
+                        block.get("method") == "tesseract"
+                        and block.get("text")
+                        and block["text"] != page.get("selectedText")
+                    ):
+                        variants.append(
+                            (
+                                block["text"],
+                                [(0, len(block["text"]), [block["id"]], page["page"])],
+                                block["id"],
+                            )
+                        )
+            grouped = {}
+            for variant, variant_ranges, origin in variants:
+                for region in collect_answers(
+                    variant,
+                    {
+                        **layout,
+                        "answerSequence": section.get(
+                            "answerSequence", layout.get("answerSequence")
+                        ),
+                    },
+                    section.get("answerPattern"),
+                ):
+                    printed = region["number"]
+                    observations = region["observations"] or [
+                        {
+                            "correctAnswers": None,
+                            "method": "unreadable",
+                            "start": region["start"],
+                            "end": region["end"],
+                        }
+                    ]
+                    for observation in observations:
+                        labels = observation["correctAnswers"]
+                        key = (printed, tuple(labels or []))
+                        refs, pages = evidence(
+                            variant_ranges, region["start"], region["end"]
+                        )
+                        entry = grouped.setdefault(
+                            key,
+                            {
+                                "sourceQuestionId": f"{sid} / {printed}",
+                                "blockRefs": [],
+                                "correctAnswers": labels,
+                                "questionId": None,
+                                "candidateQuestionId": f"{namespace}:{sid}:q{printed}",
+                                "explanation": region["explanation"],
+                                "reviewPages": [],
+                                "observations": [],
+                            },
+                        )
+                        entry["blockRefs"] = sorted(set(entry["blockRefs"] + refs))
+                        entry["reviewPages"] = sorted(set(entry["reviewPages"] + pages))
+                        observation_refs, _ = evidence(
+                            variant_ranges, observation["start"], observation["end"]
+                        )
+                        entry["observations"].append(
+                            {
+                                "method": observation["method"],
+                                "origin": origin,
+                                "blockRefs": observation_refs,
+                            }
+                        )
+                        if region["boundaryIssues"]:
+                            entry["boundaryIssues"] = sorted(
+                                set(
+                                    entry.get("boundaryIssues", [])
+                                    + region["boundaryIssues"]
+                                )
+                            )
+            readable_numbers = {number for number, labels in grouped if labels}
+            for (number, labels), entry in grouped.items():
+                if not labels and number in readable_numbers:
+                    # Preserve failed-pass provenance without treating a missing
+                    # observation as a contradictory answer.
+                    for (other_number, other_labels), other in grouped.items():
+                        if other_number == number and other_labels:
+                            other.setdefault("unreadableObservations", []).extend(
+                                entry["observations"]
+                            )
+                            if entry.get("boundaryIssues"):
+                                other["boundaryIssues"] = sorted(
+                                    set(
+                                        other.get("boundaryIssues", [])
+                                        + entry["boundaryIssues"]
+                                    )
+                                )
+                    continue
+                if not labels:
+                    entry["reason"] = (
+                        "Answer label could not be read; check the original page."
+                    )
+                section_entries.append(entry)
+        else:
+            for match in answers:
+                printed = str(int(match.group(1)))
+                labels = list(match.group(2))
+                if (
+                    not labels
+                    or any(
+                        label
+                        not in layout.get("answerLabels", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                        for label in labels
+                    )
+                    or len(set(labels)) != len(labels)
+                ):
+                    raise ValueError(f"{sid}: invalid answer labels")
+                stop = next(b for b in boundaries if b > match.start())
+                refs, pages = evidence(local_ranges, match.start(), stop)
+                section_entries.append(
+                    {
+                        "sourceQuestionId": f"{sid} / {printed}",
+                        "blockRefs": refs,
+                        "correctAnswers": labels,
+                        "questionId": None,
+                        "candidateQuestionId": f"{namespace}:{sid}:q{printed}",
+                        "explanation": chunk[match.end() : stop].strip(),
+                        "reviewPages": pages,
+                    }
                 )
-                or len(set(labels)) != len(labels)
-            ):
-                raise ValueError(f"{sid}: invalid answer labels")
-            stop = next(b for b in boundaries if b > match.start())
-            refs, pages = evidence(local_ranges, match.start(), stop)
-            entries.append(
-                {
-                    "id": f"answer-{len(entries) + 1}",
-                    "sourceQuestionId": f"{sid} / {printed}",
-                    "blockRefs": refs,
-                    "correctAnswers": labels,
-                    "questionId": None,
-                    "candidateQuestionId": f"{namespace}:{sid}:q{printed}",
-                    "explanation": chunk[match.end() : stop].strip(),
-                    "reviewPages": pages,
-                }
-            )
-        for match in unreadable:
-            printed = str(int(match.group(1)))
-            stop = next(b for b in boundaries if b > match.start())
-            refs, pages = evidence(local_ranges, match.start(), stop)
-            entries.append(
-                {
-                    "id": f"answer-{len(entries) + 1}",
-                    "sourceQuestionId": f"{sid} / {printed}",
-                    "blockRefs": refs,
-                    "correctAnswers": None,
-                    "questionId": None,
-                    "candidateQuestionId": f"{namespace}:{sid}:q{printed}",
-                    "reason": "Answer label could not be read; check the original page.",
-                    "explanation": chunk[match.start() : stop].strip(),
-                    "reviewPages": pages,
-                }
-            )
+        for entry in section_entries:
+            entry["id"] = f"answer-{len(entries) + 1}"
+            entries.append(entry)
         expected = section.get("expectedQuestions")
         if expected is not None and (type(expected) is not int or expected < 0):
             raise ValueError("expectedQuestions must be a nonnegative integer")
@@ -300,7 +396,13 @@ def prepare(
                 "section": sid,
                 "role": role,
                 "detectedQuestions": section_count,
-                "detectedAnswers": len(answers) + len(unreadable),
+                "detectedAnswers": sum(
+                    bool(e["correctAnswers"]) for e in section_entries
+                ),
+                "answerCandidates": len(section_entries),
+                "unreadableAnswers": sum(
+                    not e["correctAnswers"] for e in section_entries
+                ),
                 "expectedQuestions": expected,
             }
         )
@@ -308,7 +410,7 @@ def prepare(
             warnings.append(
                 f"{sid}: detected {section_count} of {expected} expected questions; repair missing OCR headers before export"
             )
-        if not headers and not answers:
+        if not headers and not section_entries:
             warnings.append(
                 f"{sid}: no question/answer headers detected; this is NOT evidence of an empty section"
             )
@@ -344,6 +446,40 @@ def prepare(
                 row["data"]["explanation"] = entry["explanation"]
                 row["sources"]["explanation"] = entry["blockRefs"]
         row["reviewPages"] = sorted(set(row["reviewPages"] + entry["reviewPages"]))
+    for row in questions:
+        matching = [
+            e
+            for e in entries
+            if e["questionId"] == row["externalId"] and e["correctAnswers"]
+        ]
+        boundary_entries = [
+            e
+            for e in entries
+            if e["questionId"] == row["externalId"] and e.get("boundaryIssues")
+        ]
+        if boundary_entries:
+            row["reason"] = (
+                "Uncertain answer boundaries; verify the printed numbers and complete region."
+            )
+            warnings.append(f"{row['externalId']}: uncertain answer boundaries")
+        if (
+            boundary_entries
+            or len({tuple(sorted(e["correctAnswers"])) for e in matching}) > 1
+        ):
+            row["data"]["correctAnswers"] = []
+            row["sources"]["correctAnswers"] = {}
+        elif matching:
+            row["sources"]["correctAnswers"] = {
+                label: sorted({ref for e in matching for ref in e["blockRefs"]})
+                for label in row["data"]["correctAnswers"]
+            }
+    for count in counts:
+        prefix = f"{namespace}:{count['section']}:"
+        count["questionsWithAnswers"] = sum(
+            bool(q["data"]["correctAnswers"])
+            for q in questions
+            if q["externalId"].startswith(prefix)
+        )
     for row in questions:
         errors, _ = validate(
             {"schemaVersion": "1.0", "exam": exam, "questions": [row["data"]]}

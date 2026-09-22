@@ -110,6 +110,14 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(report['counts']['exported'], 1)
         self.assertEqual(output['questions'][0]['correctAnswers'], ['イ'])
 
+    def test_explicit_option_conclusions_do_not_match_negative_explanations(self):
+        doc = document('問1 本文\nア 甲\nイ 乙',
+                       '問1 ?\nア : 不正解です。\nイ : 正解です。')
+        plan = {'sections': [{'id': 'paper', 'role': role, 'startPage': n, 'endPage': n}
+                            for n, role in [(1, 'questions'), (2, 'answers')]]}
+        inv = parser.prepare(doc, 'ja-sg-textbook-ocr', 'book', EXAM, plan)
+        self.assertEqual(inv['questions'][0]['data']['correctAnswers'], ['イ'])
+
     def test_conflicting_answer_entries_stay_in_review(self):
         doc = document('問1 本文\nア　甲\nイ　乙', '問1：ア\n解説', '問1：イ\n別解説')
         plan = {'sections': [{'id': 'sample-a', 'role': role, 'startPage': n, 'endPage': n}
@@ -205,6 +213,31 @@ class BoxedOcrTests(unittest.TestCase):
                     self.assertEqual(int(crop.min()), 0)
                 return SimpleNamespace(stdout='問2' if args[-1] == '7' else 'イ 解説')
             self.assertIn('問2 イ', recognize(path, 'jpn', 300, 6, command))
+
+    def test_wide_answer_bar_inverts_answer_pixels_not_only_number(self):
+        import cv2
+        import numpy as np
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'page.png'
+            pixels = np.full((600, 700), 255, dtype='uint8')
+            pixels[100:130, 60:620] = 140
+            pixels[108:122, 180:190] = 255
+            cv2.imwrite(str(path), pixels)
+            before = path.read_bytes()
+            checked = []
+            def command(args):
+                if args[-1] == '7':
+                    return SimpleNamespace(stdout='問49')
+                if 'band-1.' in args[1]:
+                    band = cv2.imread(args[1], cv2.IMREAD_GRAYSCALE)
+                    self.assertEqual(int(band[10, 185]), 0)
+                    self.assertEqual(int(band[10, 200]), 255)
+                    checked.append(True)
+                return SimpleNamespace(stdout='カ Explanation')
+            recognize(path, 'jpn', 300, 6, command)
+            self.assertTrue(checked)
+            self.assertEqual(path.read_bytes(), before)
 
 
 if __name__ == '__main__':

@@ -53,7 +53,7 @@ not certify an automatically converted full question bank.
 | Check | Native collection (`layout1.pdf`) | Scanned textbook (`layout2.pdf`) |
 | --- | --- | --- |
 | Complete page extraction | 551 pages, one blank/failed page to review | 575 pages, one blank/failed page to review |
-| Draft question inventory | 258 items / 258 answer entries (234 A, 24 B) | 111 / 120 expected paper questions; 99 answer entries after refinement |
+| Original draft question inventory | 258 items / 258 answer entries (234 A, 24 B) | 111 / 120 expected paper questions; 99 answer candidates, only 32 nonempty entries and 29 linked nonempty keys |
 | Draft structural validation | 0 structural issues; all still require source review | 20 reported issues (capped), missing questions/answers; full-book export blocked |
 | Refined scan scope | Native text | 138 selected question/answer pages at 240 DPI; original OCR retained |
 | Docling evaluation only | Pages 493–495, 516: 67 text, 3 table, 10 picture blocks; 15.64 s | Pages 443–445, 489: 96 text, 4 table, 2 picture blocks; 34.83 s |
@@ -69,6 +69,64 @@ structured adapter for difficult layouts, then review source pixels. The scan's
 chapter examples are reference scopes and are not included in its 120-paper-item
 expectation. Missing exam candidates must be repaired or explicitly inventoried
 as unresolved; never lower expected counts to approve the OCR survivors.
+
+### Recovery and independent source comparison
+
+The follow-up fix reconciles explicit answer conclusions and retained OCR passes,
+preserves stronger earlier evidence when refinement regresses, normalizes answer
+glyphs on dark bars and optionally checks consecutive answer-header boundaries.
+It distinguishes candidate records, readable keys, linked keys, conflicts and
+reviewed questions. Existing native/structured block spans are preserved instead
+of attaching every block on a page to each question. Structured tables with an
+unambiguous text span and explicit header cells dispatch to the table handler;
+uncertain figures/tables produce source-located review candidates.
+
+The scan was reprocessed on 57 answer pages (469–498 and 537–563) at 240 DPI,
+using the same complete extraction and original 120-question expectations:
+
+| Measurement | Before recovery | After recovery |
+| --- | --- | --- |
+| Detected source questions | 111 / 120 | 111 / 120 |
+| Nonempty linked keys, before independent table comparison | 29 | 59 |
+| B keys: mock / sample | 0 / 12 and 0 / 12 | 10 / 12 and 12 / 12 |
+| Answer candidates / readable entries | 99 / 32 | 104 / 81 |
+| Conflicting scoped answer readings | Not separately reported | 6 |
+| Uncertain numbered answer regions | Not separately reported | 15 |
+| Questions with fewer than two options | 23 | 23; explicitly listed for repair |
+| Whole-bank source approval | None | None; full export still blocked |
+
+All 59 candidate keys were compared with an independently transcribed source
+answer table (physical pages 468 and 536). **Two original-source disagreements**
+remained: mock A Q46 (table page 468 versus explanation page 488) and sample A
+Q16 (table page 536 versus explanation page 542). Both were checked visually;
+the discrepancy is present in the PDF. The new `--answer-reference` comparison
+retains both sources and withholds these keys, leaving **57 nonempty keys**.
+It does not fill missing answers from the transcription or decide which original
+source is correct. All 22 recovered B keys agree with the original answer tables;
+mock B Q51 and Q57 still need repair. These key checks do not certify question
+text, figures or options: 20 detected items still have candidate keys whose option
+labels were not completely recovered. All source questions remain pending review.
+
+The native document remains 258/258 candidate pairs, with no answer conflicts.
+Neither original plain-text full-book extraction gains typed tables merely by
+changing its schema. On the previously retained structured-backend evidence,
+the planner assembled all three native table blocks and two of four scan table
+blocks; two scan tables remained review candidates because their header structure
+was insufficient. This is component-level validation on those seven blocks,
+not automatic reconstruction of the full books or their question boundaries.
+
+Both existing reviewed B samples still pass source-gated export and actual local
+REST/MCP round trips. New synthetic regressions cover cross-pass conflicts,
+unreadable counts, explicit conclusions, uncertain boundaries, independent source
+disagreement, exact table assembly and evidence coordinates. The standalone
+source-review browser test checks desktop/mobile layouts, retained page images,
+unsafe text, filters, invalid corrections, downloads and shared-material review
+invalidation. The reviewer downloads an unapproved inventory; no source upload
+or automatic bank write is added. See the [source-review screenshots](../screenshots/component-questions.md#local-pdf-source-review).
+
+Local recovery artifacts are `tmp/component-validation/{native,scanned}/fixed.inventory.json`,
+`scanned/crosschecked.inventory.json` and each directory's `review.html`. The
+independent source transcription and all source images stay in ignored `tmp/`.
 
 Reproduce reviewed local API verification (only when the local imports exist):
 

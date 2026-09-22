@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 from extract_pdf import ocr_page
+from answer_evidence import select_refinement
 from pdf_layouts import load_profiles, get_layout
 
 
@@ -49,7 +50,12 @@ def refine(pdf, document, pages, profile, dpi=240, workers=4):
                         "method": "tesseract",
                     }
                 )
-                p["selectedText"] = text
+                p["selectedText"], decision = select_refinement(
+                    p.get("selectedText", ""), text, profile
+                )
+                p.setdefault("refinements", []).append(
+                    {"blockId": p["blocks"][-1]["id"], "selection": decision}
+                )
                 p["status"] = "review"
                 p["signals"].append("refined_ocr_requires_review")
             except Exception as error:

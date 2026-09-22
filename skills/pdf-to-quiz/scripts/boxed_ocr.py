@@ -41,12 +41,12 @@ def recognize(
             and area / (w * h) > 0.60
         ):
             label_width = min(int(w), round(h * 3)) if w / h >= 4 else int(w)
-            boxes.append((int(x), int(y), label_width, int(h)))
+            boxes.append((int(x), int(y), label_width, int(h), int(w)))
     headers = []
     # A pathological diagram must not trigger thousands of OCR subprocesses.
     if len(boxes) > 64:
         boxes = []
-    for x, y, w, h in boxes:
+    for x, y, w, h, bar_width in boxes:
         inset = max(1, round(dpi / 100))
         crop = 255 - gray[y + inset : y + h - inset, x + inset : x + w - inset]
         # Gray explanation labels are lighter than red question labels; one
@@ -73,7 +73,7 @@ def recognize(
                     )
                 )
         if len(readings) == 1:
-            headers.append((x, y, w, h, readings.pop()))
+            headers.append((x, y, w, h, readings.pop(), bar_width))
     if not headers:
         return command(
             ["tesseract", str(image), "stdout", "-l", language, "--psm", str(psm)]
@@ -92,7 +92,14 @@ def recognize(
         band = gray[top:bottom].copy()
         label = ""
         if i:
-            x, _, w, h, label = headers[i - 1]
+            x, _, w, h, label, bar_width = headers[i - 1]
+            # White answer glyphs elsewhere in a dark heading bar need the
+            # same inversion as the number. Keep them in body reading order.
+            if bar_width > w:
+                remainder = 255 - band[:h, x + w : x + bar_width]
+                band[:h, x + w : x + bar_width] = cv2.threshold(
+                    remainder, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU
+                )[1]
             band[:h, x : x + w] = 255
         target = image.with_name(f"band-{i}.png")
         cv2.imwrite(str(target), band)

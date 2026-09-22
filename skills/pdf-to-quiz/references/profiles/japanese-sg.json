@@ -41,7 +41,11 @@
       "answerLabels": "アイウエオカキクケコサシスセソ",
       "unreadableAnswerPattern": "^問\\s*([0-9０-９]+)(?=[ \\t　|｜:：・.]|$)",
       "subquestionPattern": "^設問[ \\t　]*([0-9０-９]+)?[ \\t　]*\\n?",
-      "boxedHeaderPattern": "(問|設問)\\s*([0-9０-９]{1,3})?"
+      "boxedHeaderPattern": "(問|設問)\\s*([0-9０-９]{1,3})?",
+      "answerConclusionPattern": "正解[ \\t　]*は[ \\t　]*([アイウエオカキクケコサシスセソ])[ \\t　]*(?:です|である|[。．])",
+      "answerConclusionPatterns": [
+        "^[ \\t　]*([アイウエオカキクケコサシスセソ])[ \\t　]*(?:は|[:：])[ \\t　、,．.]*正解です"
+      ]
     }
   ]
 }

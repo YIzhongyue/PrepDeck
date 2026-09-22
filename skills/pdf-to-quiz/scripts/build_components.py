@@ -76,6 +76,16 @@ def build(document, inventory):
         if any(blocks[r]["page"] not in reviewed_pages for r in refs):
             raise ValueError("ready item uses an unreviewed source page")
         linked = [answers.get(i) for i in review.get("answerEntries", [])]
+        if any(
+            a.get("boundaryIssues")
+            and not (
+                a.get("boundaryReview", {}).get("status") == "reviewed"
+                and str(a.get("boundaryReview", {}).get("reason", "")).strip()
+            )
+            for a in answers.values()
+            if a.get("sourceQuestionId") == review["sourceQuestionId"]
+        ):
+            raise ValueError("answer boundary issues require explicit source review")
         if not linked or any(
             not a
             or a.get("sourceQuestionId") != review["sourceQuestionId"]

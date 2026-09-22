@@ -83,6 +83,14 @@ All commands run locally, before importing reviewed JSON.
    `subquestionPattern` splits prompts and retains shared material; subquestions
    need independently reconciled answers. Explicit plans are needed where
    headings repeat. No component or source page is automatically approved.
+   Preparation now retains exact native/structured block spans where available.
+   A uniquely located structured table with explicit source header cells is
+   dispatched to the table handler automatically. `reviews[].compositionCandidates`
+   records original pages, coordinates, proposed handlers and unresolved placement.
+   Plain OCR text is not guessed into a table; figures still need reviewed
+   placement/crops and useful alt text. If transport provenance exceeds 30 block
+   references, it becomes page-level provenance without dropping later pages;
+   full block IDs remain in the inventory.
 3. Inspect pages, question boundaries and answer keys before choosing handlers.
    Paragraph/code handlers combine selected text; the table handler consumes
    structured cells; the figure handler makes a bounded display copy of original
@@ -129,6 +137,74 @@ book preparation, or explicitly review/export a selected subset. Table recogniti
 is useful, but Docling success is not an answer-key correctness guarantee.
 `refine_ocr.py` can append a higher-resolution OCR pass for selected pages while
 preserving the first pass; its `--help` describes profile and page-range options.
+It selects a new pass only when it preserves detected question/answer identities
+and does not substantially truncate text. Rejected passes remain available as
+evidence. Dark-bar preprocessing also inverts answer glyphs beside boxed numbers.
+
+## Answer recovery and quality reporting
+
+In separate answer scopes, preparation reconciles the selected text and retained
+OCR alternatives by scoped printed number. Profiles may define
+`answerConclusionPattern` or `answerConclusionPatterns` (each regex has exactly
+one label capture) for explicit official conclusions inside numbered answer
+regions. Conclusions without a numbered region are not assigned. Unknown glyphs
+are never substituted with plausible option labels. Conflicting readings retain
+both entries and clear candidate scoring.
+
+An answer section can opt into `"answerSequence": "ascending-consecutive"` when
+the original material guarantees that order. Gaps, repeats and backwards jumps
+mark the preceding region's association as uncertain and withhold its key.
+This is not the default: arbitrary answer order is still supported. A ready item
+with `boundaryIssues` needs an explicit `boundaryReview` on the answer entry,
+with `status: "reviewed"` and a source-based `reason`, as well as normal page and
+answer review. This check does not detect every possible misread number.
+
+`report.quality` separates answer candidates, readable/unreadable entries,
+conflicting source questions, uncertain boundaries, questions with nonempty
+keys, missing/unknown option labels and reviewed items. A nonempty key is **not**
+proof of question correctness. `componentIssues` is an explicitly labelled sample
+of validation errors, not a total error count. Full-book expected counts remain
+mandatory even when a selected subset looks correct.
+
+Use `--answer-reference REFERENCE.json` to compare candidate keys with an
+independently reviewed answer table or another official key. For example:
+
+```json
+{
+  "documentId": "sha256:the-original-document-hash",
+  "review": { "status": "reviewed", "reason": "Transcribed and compared the original answer table." },
+  "entries": [
+    { "sourceQuestionId": "paper / 1", "correctAnswers": ["B"], "blockRefs": ["p8-b1"] }
+  ]
+}
+```
+
+References must belong to the same document and retained blocks. This comparison
+does not fill missing keys or approve items. Disagreement appends the independent
+evidence, clears scoring and records a conflict in `report.answerCrosscheck`.
+Original sources can disagree; do not silently prefer the table or explanation.
+
+## Local source-review workbench
+
+```bash
+python scripts/review_components.py WORK/document.json WORK/inventory.json \
+  -o WORK/review.html
+```
+
+Open the generated HTML locally. It displays retained source images and extracted
+text beside question/shared-material JSON, answer observations and component
+candidates. Filters find missing/conflicting answers, insufficient options and
+visuals needing review. Images link to the retained full-resolution files; pages
+without images explicitly request comparison with the original PDF. It uses no
+network service and should stay beside the evidence workspace.
+
+Keep corrections with a note, then download `corrected.inventory.json`. Editing
+shared material resets every referencing item to `review`; edits do not approve
+pages or source answers. Displayed extraction metrics are labelled as pre-edit
+metrics, and the downloaded report has `qualityStale: true`. Check the complete
+inventory with the builder/validator after reconciling evidence. The workbench
+does not change block references, figure assets or shared identities; crop/asset
+assembly and final source approval remain explicit workflow steps.
 
 ## Web UI and MCP
 

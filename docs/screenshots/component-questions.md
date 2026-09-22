@@ -28,3 +28,17 @@ Regenerate screenshots with `SCREENSHOT_DIR` set when running
 `node apps/web/scripts/answer-state.browser.mjs`. CI retains screenshots as a
 `browser-screenshots` artifact. The fixtures use isolated HTTP services and never
 write to a production question bank.
+
+## Local PDF source review
+
+The standalone browser workbench compares retained original pages with draft
+components and answer evidence. Corrections download as unapproved inventories;
+changing shared material returns all referencing questions to review. This is
+separate from the hosted question editor and requires no source upload.
+
+![Source review on desktop](component-questions/source-review-desktop.png)
+
+![Source review on mobile](component-questions/source-review-mobile.png)
+
+Regenerate these synthetic screenshots with
+`node tests/pdf-to-quiz/review.browser.mjs` (also included in `npm run test:browser`).

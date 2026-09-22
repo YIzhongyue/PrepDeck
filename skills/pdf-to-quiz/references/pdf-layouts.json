@@ -17,7 +17,8 @@
       "answerLabels": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
       "subquestionPattern": "^Part\\s+(\\d+)\\s*",
       "answerPlacement": "interleaved",
-      "sectionStrategy": "explicit-page-ranges"
+      "sectionStrategy": "explicit-page-ranges",
+      "answerConclusionPattern": "(?:The correct answer is|Correct answer:)[ \\t]+([A-Z]+)(?:[.]|[ \\t]*$)"
     },
     {
       "id": "scanned-separate",
@@ -35,7 +36,8 @@
       "answerLabels": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
       "subquestionPattern": "^Part\\s+(\\d+)\\s*",
       "answerPlacement": "separate",
-      "sectionStrategy": "explicit-page-ranges"
+      "sectionStrategy": "explicit-page-ranges",
+      "answerConclusionPattern": "(?:The correct answer is|Correct answer:)[ \\t]+([A-Z]+)(?:[.]|[ \\t]*$)"
     }
   ]
 }
