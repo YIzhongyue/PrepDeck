@@ -10,7 +10,7 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
   const resumable = !!state.activeMockAttempt;
 
   return (
-    <div style={{ maxWidth: 640, animation: "pd-rise .28s ease both" }}>
+    <div style={{ maxWidth: 640, animation: "pd-rise .28s ease backwards" }}>
       <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Mock exam</p>
       <h1 style={{ margin: "0 0 22px", fontSize: 34 }}>Simulate the real thing</h1>
       <div className="card elev-sm" style={{ padding: 22, gap: 18 }}>

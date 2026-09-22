@@ -197,6 +197,15 @@ textarea.input { min-height: 90px; resize: vertical; }
 .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
 
 .dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4); background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent); }
+/* The top-layer twin of `.dialog-backdrop` (see components/ModalLayer.tsx): the
+   `<dialog>` box is stretched over the viewport and the wash is painted by
+   `::backdrop`, which covers the page however the layout behind it is built. */
+.modal-layer { position: fixed; inset: 0; margin: 0; padding: var(--space-4); border: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; overflow: auto; background: transparent; color: var(--color-text); font-family: var(--font-body); }
+.modal-layer[open] { display: grid; place-items: center; }
+.modal-layer::backdrop { background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent); }
+/* A centred box taller than its scroll container cannot be scrolled back to
+   its own top edge, so keep the panel inside the layer's content box. */
+.modal-layer > * { max-height: 100%; overflow-y: auto; }
 .dialog { width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-radius: var(--pd-radius-lg); background: var(--color-surface); box-shadow: var(--pd-shadow-lg); }
 .dialog-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 20px; }
 .dialog-body { font-size: 14px; opacity: 0.85; }

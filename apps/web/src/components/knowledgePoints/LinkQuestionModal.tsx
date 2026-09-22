@@ -2,8 +2,8 @@
 // can access (never the answer key — see routes/knowledgePointQuestionSearch.ts)
 // and links/unlinks them to the currently open note.
 
-import { useEffect, useRef, useState } from "react";
-import { useDialogFocus } from "./useDialogFocus";
+import { useEffect, useState } from "react";
+import ModalLayer from "../ModalLayer";
 import type { LinkableQuestionSummary } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
@@ -18,8 +18,6 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
   const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,8 +40,8 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
   };
 
   return (
-    <div className="dialog-backdrop" style={{ zIndex: 80 }} onClick={onClose}>
-      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Link a question" tabIndex={-1} style={{ width: "min(620px, 100%)", maxHeight: "86vh" }} onClick={(e) => e.stopPropagation()}>
+    <ModalLayer label="Link a question" onClose={onClose}>
+      <div className="dialog" style={{ width: "min(620px, 100%)", maxHeight: "86vh" }}>
         {error && <p role="alert">{error}</p>}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}>
           <span style={{ width: 40, height: 40, flex: "none", display: "grid", placeItems: "center", borderRadius: 13, background: "var(--color-accent-100)", color: "var(--color-accent-600)" }}>
@@ -123,6 +121,6 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
           <button type="button" className="btn btn-secondary" onClick={onClose}>Done</button>
         </div>
       </div>
-    </div>
+    </ModalLayer>
   );
 }

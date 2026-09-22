@@ -1,6 +1,6 @@
 import type { KnowledgePointDetail } from "@prepdeck/shared";
-import { useRef, useState } from "react";
-import { useDialogFocus } from "./useDialogFocus";
+import { useState } from "react";
+import ModalLayer from "../ModalLayer";
 
 export default function DeleteKnowledgePointDialog({
   note,
@@ -13,14 +13,12 @@ export default function DeleteKnowledgePointDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, () => { if (!busy) onCancel(); });
   const imageCount = note.images.filter((i) => i.status !== "orphaned").length;
   const linkedCount = note.linkedQuestions.length;
 
   return (
-    <div className="dialog-backdrop" style={{ zIndex: 90 }} onClick={() => { if (!busy) onCancel(); }}>
-      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Delete knowledge point" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+    <ModalLayer label="Delete knowledge point" onClose={() => { if (!busy) onCancel(); }}>
+      <div className="dialog">
         {error && <p role="alert">{error}</p>}
         <span className="dialog-title">Delete &ldquo;{note.title || "Untitled knowledge point"}&rdquo;?</span>
         <div className="dialog-body">
@@ -44,6 +42,6 @@ export default function DeleteKnowledgePointDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalLayer>
   );
 }

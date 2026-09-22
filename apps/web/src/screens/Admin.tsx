@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type {
   AdminOverviewResponse,
   AdminUsersListResponse,
@@ -10,6 +10,7 @@ import type {
   User,
   UserStatus
 } from "@prepdeck/shared";
+import ModalLayer from "../components/ModalLayer";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import { apiFetch, ApiError } from "../lib/api";
@@ -52,20 +53,21 @@ function AdminModal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const titleId = useId();
   return (
-    <div className="dialog-backdrop" style={{ zIndex: 70 }} onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+    <ModalLayer labelledBy={titleId} onClose={onClose}>
+      <div className="admin-modal">
         <div className="admin-modal-head">
           <span className="admin-modal-icon"><AdminIcon name={icon} /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3>{title}</h3>
+            <h3 id={titleId}>{title}</h3>
             <p>{subtitle}</p>
           </div>
           <button type="button" className="admin-modal-close" onClick={onClose}>✕</button>
         </div>
         {children}
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 
@@ -96,8 +98,9 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
     { id: "mcp", label: "MCP tokens", count: null }
   ];
 
+  // `backwards`, not `both` — see the note on `@keyframes pd-rise` in app.css.
   return (
-    <div className="admin-shell" style={{ animation: "pd-rise .28s ease both" }}>
+    <div className="admin-shell" style={{ animation: "pd-rise .28s ease backwards" }}>
       <header className="admin-header">
         <div className="admin-header-copy">
           <div className="admin-header-eyebrow"><span className="admin-header-eyebrow-icon"><AdminIcon name="shield" /></span> Admin workspace</div>
