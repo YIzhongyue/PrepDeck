@@ -5,9 +5,10 @@ interface StudyTagFilterProps {
   questions: readonly { tags: readonly string[] }[];
   selected: readonly string[];
   onToggle: (tag: string) => void;
+  onSelectResults?: (tags: string[]) => void;
 }
 
-export default function StudyTagFilter({ questions, selected, onToggle }: StudyTagFilterProps) {
+export default function StudyTagFilter({ questions, selected, onToggle, onSelectResults }: StudyTagFilterProps) {
   const [search, setSearch] = useState("");
   const id = useId();
   const tags = useMemo(() => {
@@ -36,7 +37,19 @@ export default function StudyTagFilter({ questions, selected, onToggle }: StudyT
         aria-label="Search domains" aria-describedby={`${id}-hint`}
         value={search} onChange={(event) => setSearch(event.target.value)}
       />
-      <p id={`${id}-hint`} className="study-tags__hint">Select one or more. Counts show questions in this bank.</p>
+      {onSelectResults && query && (
+        <button
+          type="button" className="btn btn-secondary study-tags__select-results"
+          disabled={!visible.length} aria-describedby={`${id}-hint`}
+          onClick={() => { if (visible.length) onSelectResults(visible.map(({ name }) => name)); }}
+        >
+          Select all results ({visible.length})
+        </button>
+      )}
+      <p id={`${id}-hint`} className="study-tags__hint">
+        Select one or more. Counts show questions in this bank.
+        {onSelectResults && query && " Select all results replaces your current domain selection."}
+      </p>
       <div className="study-tags__list" role="group" aria-label="Domain filters" tabIndex={0}>
         {visible.map(({ name, count }) => (
           <button

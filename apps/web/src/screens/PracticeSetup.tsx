@@ -26,7 +26,7 @@ function segFg(on: boolean) { return on ? "var(--color-bg)" : "var(--color-text)
 function segBd(on: boolean) { return on ? "var(--color-accent)" : "var(--color-divider)"; }
 
 export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
-  const { state, setSource, setDiff, setFeedback, toggleTag, setCount, startPractice, pool } = usePrepDeck();
+  const { state, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, pool } = usePrepDeck();
   const wrongCount = reviewIds(state, "wrong").length;
   const bmCount = reviewIds(state, "bm").length;
   const attemptedCount = Object.keys(state.attempted).length;
@@ -68,7 +68,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
           </div>
         </div>
 
-        <StudyTagFilter questions={state.catalog} selected={state.tags} onToggle={toggleTag} />
+        <StudyTagFilter questions={state.catalog} selected={state.tags} onToggle={toggleTag} onSelectResults={setPracticeTags} />
 
         <div style={{ display: "grid", gridTemplateColumns: bp.phone ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 18 }}>
           <div>

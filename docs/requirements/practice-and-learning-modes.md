@@ -26,6 +26,14 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-3.1 (M):** A user starts practice in the active exam, filtering by tags, difficulty and source (all, unattempted, bookmarked or wrong questions). Question-type filtering remains part of the original intent but has no dedicated control in the current Practice setup UI; treat that part as a gap.
 
+  Domains search filters the displayed choices without changing the selection.
+  For a non-empty search, **Select all results** replaces the current selection
+  with every matching domain, including results outside the visible scroll area.
+  Matching ignores case and surrounding whitespace. The action is disabled when
+  there are no matches; clearing the search retains the selection. Selected
+  domains match questions using OR, combined with the source and difficulty
+  filters. Selecting no domains leaves the domain filter unrestricted.
+
 <a id="fr-3-2"></a>
 
 - **FR-3.2 (M):** Questions are presented one at a time with immediate or end-of-session feedback (configurable), no time limit, and free navigation (skip, go back, end session early).
