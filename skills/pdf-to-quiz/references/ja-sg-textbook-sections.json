@@ -1,0 +1,92 @@
+{
+  "description": "Starting plan for the inspected 575-page 2025 textbook (PDF page numbers, not printed folios). Verify against your edition. Chapter examples and answer tables still require independent visual inventory/reconciliation.",
+  "sections": [
+    {
+      "id": "frontmatter",
+      "role": "reference",
+      "startPage": 1,
+      "endPage": 38
+    },
+    {
+      "id": "chapter-examples",
+      "role": "interleaved",
+      "startPage": 39,
+      "endPage": 422,
+      "questionPattern": "^出題例\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$"
+    },
+    {
+      "id": "mock-a",
+      "role": "questions",
+      "startPage": 424,
+      "endPage": 442,
+      "expectedQuestions": 48
+    },
+    {
+      "id": "mock-b",
+      "role": "questions",
+      "startPage": 443,
+      "endPage": 467,
+      "expectedQuestions": 12,
+      "subject": "B"
+    },
+    {
+      "id": "mock-answer-table",
+      "role": "reference",
+      "startPage": 468,
+      "endPage": 468
+    },
+    {
+      "id": "mock-a",
+      "role": "answers",
+      "startPage": 469,
+      "endPage": 488
+    },
+    {
+      "id": "mock-b",
+      "role": "answers",
+      "startPage": 489,
+      "endPage": 498,
+      "subject": "B"
+    },
+    {
+      "id": "sample-a",
+      "role": "questions",
+      "startPage": 500,
+      "endPage": 515,
+      "expectedQuestions": 48
+    },
+    {
+      "id": "sample-b",
+      "role": "questions",
+      "startPage": 516,
+      "endPage": 535,
+      "expectedQuestions": 12,
+      "subject": "B"
+    },
+    {
+      "id": "sample-answer-table",
+      "role": "reference",
+      "startPage": 536,
+      "endPage": 536
+    },
+    {
+      "id": "sample-a",
+      "role": "answers",
+      "startPage": 537,
+      "endPage": 552
+    },
+    {
+      "id": "sample-b",
+      "role": "answers",
+      "startPage": 553,
+      "endPage": 563,
+      "subject": "B"
+    },
+    {
+      "id": "backmatter",
+      "role": "reference",
+      "startPage": 564,
+      "endPage": 575
+    }
+  ]
+}

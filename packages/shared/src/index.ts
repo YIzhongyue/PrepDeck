@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./questionTags.ts";
 export * from "./import-schema.ts";
+export * from "./pdf-layouts.ts";
 export * from "./import-validate.ts";
 export * from "./grading.ts";
 export * from "./attempts.ts";

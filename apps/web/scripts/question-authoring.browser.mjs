@@ -3,8 +3,11 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 import { normalizeTagName } from "../../../packages/shared/src/questionTags.ts";
+const pdfSchemas = JSON.parse(readFileSync(new URL("../../../skills/pdf-to-quiz/references/pdf-layouts.json", import.meta.url), "utf8"));
+let importedFile = null, schemaFailures = 0;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -22,6 +25,10 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (status, body) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (url.pathname.startsWith("/api/")) {
+    if (req.method === "GET" && url.pathname === "/api/import-schemas") {
+      if (schemaFailures > 0) { schemaFailures--; return json(503, { error: "Schema catalog unavailable" }); }
+      return json(200, pdfSchemas);
+    }
     if (req.method === "GET" && url.pathname === "/api/admin/question-tags") {
       tagRequests++;
       if (tagRequests === 1) await initialCatalog.promise;
@@ -37,6 +44,11 @@ const server = createServer(async (req, res) => {
     }
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || "{}");
+    if (url.pathname === "/api/exams/exam/import/validate") return json(200, { valid: true, questionCount: body.questions.length, issues: [], conflicts: [] });
+    if (url.pathname === "/api/exams/exam/import") {
+      importedFile = body;
+      return json(201, { created: body.questions.length, updated: 0, skipped: 0, failed: 0, outcomes: [] });
+    }
     if (Array.isArray(body.tags)) body.tags = body.tags.map(normalizeTagName).filter(Boolean);
     if (body.stem === "server reject") return json(422, { error: "Server rejected stem", issues: [{ path: "$.stem", message: "Please correct this stem" }] });
     if (req.method === "POST") {
@@ -356,6 +368,31 @@ try {
   await page.getByText("ID: page-153 · External ID: Q-153", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 4);
   assert.equal(await page.getByRole("button", { name: "Next", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByText("Prepare questions from a PDF", { exact: true }).click();
+  for (const layout of pdfSchemas.layouts) await page.getByText(layout.name, { exact: true }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Download conversion schemas" }).getAttribute("href"), "/api/import-schemas");
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/pdf-import-schemas-desktop.png`, fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/pdf-import-schemas-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const converted = { schemaVersion: "1.0", exam: { id: "exam", name: "SG", language: "ja" }, questions: [{
+    externalId: "book:2025-a:q1", type: "single_choice", stem: "正しい数はどれか。",
+    options: [{ id: "ア", text: "1" }, { id: "イ", text: "2" }], correctAnswers: ["イ"],
+  }] };
+  await page.getByLabel("Question import JSON file").setInputFiles({ name: "sg-import.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(converted)) });
+  await page.getByText("1 incoming questions · 0 conflicts", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Import with selected resolutions" }).click();
+  await page.getByText("Created 1 · Updated 0 · Skipped / conflicting 0 · Failed 0", { exact: true }).waitFor();
+  assert.deepEqual(importedFile.questions, converted.questions);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  schemaFailures = 1;
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByText("Prepare questions from a PDF", { exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "PDF preparation formats could not be loaded" }).waitFor();
+  assert.equal(await page.getByLabel("Question import JSON file").isEnabled(), true);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

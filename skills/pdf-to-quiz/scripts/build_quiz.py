@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from validate_quiz import check_transport, nonempty, validate
+from subject_b import compile_cases
 
 
 class Invalid(ValueError):
@@ -106,6 +107,7 @@ def reconcile(document: Any, inventory: Any, root: Path, allow_pending: bool = F
                 target = (root / asset).resolve()
                 require(not Path(asset).is_absolute() and target.is_relative_to(root.resolve()) and target.is_file(), bid, "missing or unsafe image asset")
             blocks[bid] = block
+    inv = compile_cases(inv, blocks)
     if doc.get("issues"):
         string(inv.get("documentReview"), "inventory.documentReview")
     reviews = {}
@@ -195,6 +197,18 @@ def reconcile(document: Any, inventory: Any, root: Path, allow_pending: bool = F
         ready.append((order, data))
 
     require(orders == set(range(1, len(questions) + 1)), "inventory.questions.order", "must be contiguous source order starting at 1")
+    # Layout drafts retain independently known source counts. Adding a few
+    # reviewed OCR survivors must not silently erase missing questions.
+    for expectation in array(inv.get("sourceExpectations", []), "inventory.sourceExpectations"):
+        expectation = obj(expectation, "sourceExpectation")
+        section = string(expectation.get("section"), "sourceExpectation.section")
+        expected = integer(expectation.get("questionCount"), "sourceExpectation.questionCount")
+        unit = expectation.get("unit", "questions")
+        require(unit in ("questions", "cases"), section, "unknown source expectation unit")
+        require(unit != "cases" or "cases" in inv, section, "case expectation requires a case inventory")
+        counted_sources = [case["sourceQuestionId"] for case in inv["cases"]] if unit == "cases" else source_ids.values()
+        actual = sum(source.startswith(section + " / ") for source in counted_sources)
+        require(actual == expected, section, f"source inventory has {actual} questions; expected {expected}; repair missing OCR headers")
     entries = array(inv.get("answerEntries"), "inventory.answerEntries")
     require(integer(coverage.get("answerEntryCount"), "coverage.answerEntryCount") == len(entries), "coverage.answerEntryCount", "does not match answer entries")
     entry_ids, matched = set(), {}

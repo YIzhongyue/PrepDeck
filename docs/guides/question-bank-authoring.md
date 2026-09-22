@@ -69,6 +69,34 @@ deduplicating historical external IDs to migrate successfully.
 
 ## Re-import review
 
+### Japanese PDF preparation
+
+The import dialog lists Japanese SG text collections
+with interleaved answers (`ja-sg-interleaved`) and scanned textbooks with separate
+answer sections (`ja-sg-textbook-ocr`). Use the
+[PDF conversion workflow](../../skills/pdf-to-quiz/references/japanese-sg-layouts.md)
+to prepare and review a standard 1.0 JSON file, then upload it here. PDFs are
+processed locally; this is not a PDF-upload/OCR endpoint. Unreadable or
+image-dependent questions stay in the local review report until resolved.
+
+`GET /api/import-schemas` returns the layout catalog and canonical import JSON
+Schema to authenticated users. MCP exposes the same result through
+`user_get_import_schemas` and `admin_get_import_schemas`. Users can prepare
+files; exam creation and question-bank imports retain administrator permissions.
+Admin MCP uses the existing `admin_preview_import` / `admin_execute_import`
+workflow. Scope external IDs by material, edition, section and printed number
+so the two SG books can coexist in the same exam without collisions.
+
+For 科目B, use `ja-sg-subject-b` and its
+[case inventory schema](../../skills/pdf-to-quiz/references/subject-b-case.schema.json).
+It preserves shared passages, structured tables, required figures and scoped
+subquestions. The builder includes all shared material in each exported stem;
+table rows become labeled cells compatible with the existing annotatable
+question renderer. Review and compile the inventory to the existing 1.0 format
+before upload. See the [B workflow](../../skills/pdf-to-quiz/references/subject-b-cases.md).
+
+### Conflict handling
+
 The JSON file format and PDF conversion workflow remain compatible.
 **Import JSON** first validates the file and shows per-field current/incoming
 differences for existing matches. Each conflict defaults to **Keep current**;

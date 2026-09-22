@@ -165,6 +165,7 @@ function rpc(env, audience, token, method = "tools/list", params, options = {}) 
 // implementation adds the Knowledge Points tools at the end.
 const USER_TOOL_NAMES = [
   "user_get_identity",
+  "user_get_import_schemas",
   "user_get_learning_overview", "user_get_exam_progress", "user_get_learning_stats",
   "user_list_attempts", "user_get_attempt", "user_get_recent_attempts",
   "user_get_wrong_questions", "user_get_bookmarked_questions", "user_get_unattempted_questions",
@@ -182,7 +183,7 @@ const USER_TOOL_NAMES = [
 
 // implementation — expected Admin MCP catalog, in registration order.
 const ADMIN_TOOL_NAMES = [
-  "admin_get_identity", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
+  "admin_get_identity", "admin_get_import_schemas", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
   "admin_get_exam_statistics", "admin_find_duplicate_questions", "admin_find_questions_missing_explanations",
   "admin_find_questions_with_invalid_answer_references", "admin_find_questions_missing_metadata",
   "admin_get_question_bank_statistics", "admin_get_recent_content_changes", "admin_list_tags",
@@ -243,6 +244,28 @@ test("production root MCP endpoints bypass SPA fallback and each consume one IP 
     assert.equal(unknown.status, 404);
     assert.equal((await payload(unknown)).error.code, "not_found");
   }
+});
+
+test("PDF schemas are discoverable in both MCP audiences without question-bank writes", async (t) => {
+  const f = await fixture(t);
+  const results = [];
+  for (const [audience, credential] of [["user", f.alice], ["admin", f.admin]]) {
+    const response = await payload(await rpc(f.env, audience, credential.token, "tools/call", {
+      name: `${audience}_get_import_schemas`, arguments: {},
+    }));
+    assert.equal(response.result.structuredContent.ok, true);
+    results.push(response.result.structuredContent.data);
+  }
+  assert.deepEqual(results[0], results[1]);
+  assert.deepEqual(results[0].layouts.map(l => l.id), ["ja-sg-interleaved", "ja-sg-textbook-ocr", "ja-sg-subject-b"]);
+  assert.equal(results[0].caseSchemas["ja-sg-subject-b"].properties.caseSchemaVersion.const, "1.0");
+  assert.equal(results[0].importSchema.properties.schemaVersion.const, "1.0");
+  assert.equal(results[0].importPermission, "admin");
+  assert.equal(results[0].acceptsPdfUpload, false);
+  assert.equal(f.sqlite.prepare("SELECT count(*) AS n FROM questions").get().n, 0);
+  assert.equal(f.bucketObjects.size, 0);
+  const unauthenticated = await worker.fetch(new Request(`${f.env.APP_BASE_URL}/api/import-schemas`), f.env);
+  assert.equal(unauthenticated.status, 401);
 });
 
 test("both root MCP endpoints reject traffic before authentication when circuit or IP gates deny it, using the same throttling envelope tool-level rejections use", async (t) => {

@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "outputSchemaVersion": "1.0",
+  "layouts": [
+    {
+      "id": "ja-sg-interleaved",
+      "name": "Japanese SG — questions with inline answers",
+      "description": "Text-based Japanese question collections with annual/subject sections and an answer plus explanation after each question (layout1).",
+      "extraction": {
+        "ocr": "missing",
+        "language": "jpn+eng",
+        "dpi": 300,
+        "psm": 3
+      },
+      "questionPattern": "^問\\s*([0-9０-９]+)\\s*$",
+      "answerPattern": "^問\\s*([0-9０-９]+)\\s*[:：]\\s*正答\\s*([アイウエオカキクケコサシスセソ]+)\\s*$",
+      "optionPattern": "^([アイウエオカキクケコサシスセソ])[ \\t　]+(.+)$",
+      "answerPlacement": "interleaved",
+      "sectionStrategy": "year-subject-or-dated-sample",
+      "reviewNotes": [
+        "Namespace IDs by material, year/sample edition, subject and printed question number; question numbers restart.",
+        "Preserve Japanese option IDs. A combination such as ア = (一), (三) is one choice, not a multiple-choice answer.",
+        "Join cross-page stems and explanations; check diagrams, option tables and case-study passages against the page images."
+      ]
+    },
+    {
+      "id": "ja-sg-textbook-ocr",
+      "name": "Japanese SG — scanned textbook and separate answer keys",
+      "description": "Image-only Japanese textbooks containing chapter examples, mock/sample questions, answer tables and separate explanations (layout2).",
+      "extraction": {
+        "ocr": "always",
+        "language": "jpn",
+        "dpi": 300,
+        "psm": 6,
+        "boxedHeaders": true
+      },
+      "questionPattern": "^問\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$",
+      "answerPattern": "^問\\s*([0-9０-９]+)[ \\t　|｜:：・.]*([アイウエオカキクケコサシスセソ])(?:[ \\t　]+.*)?$",
+      "optionPattern": "^([アイウエオカキクケコサシスセソ])[ \\t　]+(.+)$",
+      "answerPlacement": "separate",
+      "sectionStrategy": "explicit-page-ranges",
+      "reviewNotes": [
+        "Use PDF bookmarks and original pages to define separate example/mock/sample and subject scopes. Never interpret textbook Q&A or the contents as exam questions.",
+        "Match question and explanation headers by scoped printed number, never position. Independently check the answer tables and report disagreements.",
+        "OCR may lose boxed 問 labels, confuse イ/エ and omit table cells. Every candidate requires visual review; absent or ambiguous answers stay withheld.",
+        "Keep shared case material with each subquestion. Do not infer free-text answers from a missing option table."
+      ]
+    },
+    {
+      "id": "ja-sg-subject-b",
+      "name": "Japanese SG — Subject B case studies",
+      "description": "Subject B cases with shared cross-page passages, structured tables, figures and independently keyed subquestions. Compiles reviewed cases into standard import JSON.",
+      "extraction": {
+        "ocr": "missing",
+        "language": "jpn",
+        "dpi": 300,
+        "psm": 6,
+        "boxedHeaders": true
+      },
+      "questionPattern": "^問\\s*([0-9０-９]+)(?:[ \\t　]+(.*))?$",
+      "answerPattern": "^問\\s*([0-9０-９]+)[ \\t　|｜:：・.]*([アイウエオカキクケコサシスセソ])(?:[ \\t　]+.*)?$",
+      "optionPattern": "^([アイウエオカキクケコサシスセソ])(?:[ \\t　]+(.+)|[ \\t　]*$)",
+      "answerPlacement": "case-scoped",
+      "sectionStrategy": "subject-b-cases",
+      "caseSchema": "subject-b-case.schema.json",
+      "reviewNotes": [
+        "Preserve shared case material once in the inventory; the builder includes it in every subquestion stem.",
+        "Represent table headers and rows explicitly. Image-dependent material requires a reviewed sufficient text description or remains withheld.",
+        "Use case-scoped subquestion IDs. Never distribute one parent answer across multiple subquestions.",
+        "Combination answer rows remain single-choice when the source selects one kana option. Missing table cells or uncertain subquestion boundaries require review."
+      ]
+    }
+  ]
+}

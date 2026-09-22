@@ -36,3 +36,6 @@ apps/worker/src/prompts/generated/
 # `git worktree remove <path>`, not `rm -rf`, so Git's own registration in
 # .git/worktrees goes with it.
 .worktrees/
+
+# Local source PDFs and conversion workspaces.
+/tmp/

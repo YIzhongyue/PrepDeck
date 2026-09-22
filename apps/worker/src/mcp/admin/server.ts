@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getImportSchemas } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -71,6 +72,9 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
   return createCatalogServer("prepdeck-admin-mcp", [
     defineMcpTool("admin_get_identity", "Inspect the authenticated Admin MCP identity.", z.strictObject({}),
       () => services.getIdentity()),
+    defineMcpTool("admin_get_import_schemas",
+      "Get PDF conversion layouts and the canonical question-import JSON Schema. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON.",
+      z.strictObject({}), () => getImportSchemas()),
 
     // --- Question-bank reads (implementation) -------------------------------------
     defineMcpTool(

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getImportSchemas } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -45,6 +46,9 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
   return createCatalogServer("prepdeck-user-mcp", [
     defineMcpTool("user_get_identity", "Inspect the authenticated User MCP identity.", z.strictObject({}),
       () => services.getIdentity()),
+    defineMcpTool("user_get_import_schemas",
+      "Get PDF conversion layouts and the canonical question-import JSON Schema to prepare a reviewed import locally with pdf-to-quiz. Saving questions to the shared bank requires an administrator.",
+      z.strictObject({}), () => getImportSchemas()),
 
     // --- Learning overview and statistics -----------------------------------
     defineMcpTool(
