@@ -75,7 +75,7 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
   const totalNotes = state.groups.reduce((sum: number, g: KnowledgePointGroup) => sum + g.noteCount, 0) + state.ungroupedCount;
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }} style={{ display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 16, fontSize: 12.5, fontWeight: 600, color: "var(--color-accent-700)", textDecoration: "none" }}>
         <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         Knowledge points

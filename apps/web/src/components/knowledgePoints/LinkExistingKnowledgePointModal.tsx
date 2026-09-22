@@ -3,8 +3,8 @@
 // chosen one to the current question. Mirrors LinkQuestionModal.tsx's
 // search-and-act pattern, inverted (searching notes, not questions).
 
-import { useEffect, useRef, useState } from "react";
-import { useDialogFocus } from "./useDialogFocus";
+import { useEffect, useState } from "react";
+import ModalLayer from "../ModalLayer";
 import type { KnowledgePointSummary } from "@prepdeck/shared";
 import { linkQuestionToKnowledgePoint, listKnowledgePoints } from "../../lib/knowledgePoints";
 
@@ -14,8 +14,6 @@ export default function LinkExistingKnowledgePointModal({ questionId, onClose }:
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,8 +34,8 @@ export default function LinkExistingKnowledgePointModal({ questionId, onClose }:
   };
 
   return (
-    <div className="dialog-backdrop" style={{ zIndex: 80 }} onClick={onClose}>
-      <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-label="Link an existing note" tabIndex={-1} style={{ width: "min(560px, 100%)", maxHeight: "80vh" }} onClick={(e) => e.stopPropagation()}>
+    <ModalLayer label="Link an existing note" onClose={onClose}>
+      <div className="dialog" style={{ width: "min(560px, 100%)", maxHeight: "80vh" }}>
         {error && <p role="alert">{error}</p>}
         <span className="dialog-title">Link an existing note</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", border: "1px solid var(--color-divider)", borderRadius: 999, background: "var(--color-bg)" }}>
@@ -77,6 +75,6 @@ export default function LinkExistingKnowledgePointModal({ questionId, onClose }:
           <button type="button" className="btn btn-secondary" onClick={onClose}>Done</button>
         </div>
       </div>
-    </div>
+    </ModalLayer>
   );
 }

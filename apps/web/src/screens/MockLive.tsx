@@ -18,7 +18,7 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
   const mSel = state.mSel[mq.id] || [];
 
   return (
-    <div style={{ animation: "pd-rise .22s ease both" }}>
+    <div style={{ animation: "pd-rise .22s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "8px 16px", borderRadius: 999, background: lowTime ? "var(--color-accent-700)" : "var(--color-surface)", color: lowTime ? "var(--color-bg)" : "var(--color-text)", fontVariantNumeric: "tabular-nums", fontFamily: "var(--font-heading)", fontSize: 19 }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round">

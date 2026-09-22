@@ -184,8 +184,12 @@ licence terms separately before introducing one.
 A modal has to dim the whole window, and `position: fixed` cannot promise that:
 it is only ever as large as its containing block, and any ancestor with a
 `transform`, `filter` or `contain` becomes that block. Every screen here opens
-with a `pd-rise` transform animation, so a dialog rendered inside one dimmed
-its own content column and left the sidebar and page margins bright.
+with a `pd-rise` transform animation, and those screens used to run it with
+`animation-fill-mode: both` — a fill that leaves the transform applied forever.
+So a dialog rendered inside one dimmed its own content column and left the
+sidebar and page margins bright. They all run `backwards` now, which is the
+note on `@keyframes pd-rise` in `app.css`; use it for any new entrance
+animation.
 
 [`components/ModalLayer.tsx`](../../apps/web/src/components/ModalLayer.tsx) is
 the way out. It renders a `<dialog>` and calls `showModal()`, which promotes the
@@ -206,18 +210,24 @@ through it, so the state that renders the dialog stays in step with the element:
 </ModalLayer>
 ```
 
-`QuestionEditorDialog` drives its own `<dialog>` for the same reason, because it
-also needs a drawer animation and an unsaved-changes guard. The dialogs still on
-the plain `.dialog-backdrop` div — `ConfirmDialog`, the Knowledge Point modals
-and `StudyPlanDialog`, which portals to the document to escape the same problem
-— should move onto this layer as they are touched.
+The top layer also replaces what a `div` backdrop has to hand-roll. The three
+Knowledge Point modals dropped `useDialogFocus` when they moved here: initial
+focus, the Tab trap, Escape and focus restore are all what `showModal()` already
+does, and `inert` covers the screen reader as well, which `aria-modal` alone
+never did.
 
-Two things to keep in mind when adding a panel: keep it inside the layer's
-content box (`.modal-layer > *` caps it, since a centred box taller than its
-scroll container cannot be scrolled back to its own top edge), and prefer
-`animation-fill-mode: backwards` over `both` on any entrance animation, because
-a forwards fill leaves a transform applied and recreates exactly the containing
-block this section is about.
+`QuestionEditorDialog` drives its own `<dialog>` for the same reason, because it
+also needs a drawer animation and an unsaved-changes guard. The overlays left on
+a plain fixed `div` are not broken, but each of them avoids the problem its own
+way: `ConfirmDialog`, the `TabBar` sheet and the exam-switching status render at
+the application root, above the animated screens rather than inside one, while
+`StudyPlanDialog` and `MediaDialog` portal out to reach that same place — and
+`MediaDialog` then marks its new siblings `inert` by hand. Fold them into this
+layer when you touch them; the top layer does all of that by itself.
+
+One thing to keep in mind when adding a panel: keep it inside the layer's
+content box. `.modal-layer > *` caps it, because a centred box taller than its
+scroll container cannot be scrolled back to its own top edge.
 
 ## Migration status
 
@@ -324,7 +334,8 @@ charts expose a data table, and that all five schemes render at 1280/834/375px
 without page overflow.
 
 `admin-console.browser.mjs` covers the modal layer, and needs the whole shell to
-do it: it opens the Admin console's **New provider** dialog inside the real
+do it (`knowledge-points.browser.mjs` makes the same measurement against the
+Knowledge Point editor, which is the other screen that hosts its own modals): it opens the Admin console's **New provider** dialog inside the real
 sidebar-and-content layout, measures the dimmed layer against the viewport, and
 hit-tests all four corners, because the failure it guards against is a backdrop
 that stops at the content column. It also checks that the wash is the app's own

@@ -82,7 +82,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   };
 
   return (
-    <div style={{ animation: "pd-rise .22s ease both" }}>
+    <div style={{ animation: "pd-rise .22s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
         <button type="button" className="btn btn-secondary" onClick={endSession} style={{ padding: "6px 14px" }}>End</button>
         <div style={{ flex: 1, minWidth: 140 }}>

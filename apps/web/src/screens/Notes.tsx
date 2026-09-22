@@ -42,7 +42,7 @@ export default function Notes() {
   state.notes.forEach((n) => { if (annQids.indexOf(n.qid) < 0) annQids.push(n.qid); });
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Review</p>
       <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>My annotations</h1>
       <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: 0.7, maxWidth: 620 }}>

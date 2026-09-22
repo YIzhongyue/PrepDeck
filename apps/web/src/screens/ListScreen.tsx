@@ -44,7 +44,7 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
   };
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
           <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>{isBookmarks ? "Saved" : "Targeted review"}</p>

@@ -34,6 +34,12 @@ a:hover { color: var(--color-accent-800); }
 #root { min-height: 100vh; }
 
 @keyframes pd-spin { to { transform: rotate(360deg); } }
+/* Screen entrance animations. Run these with `backwards`, never `both` or
+   `forwards`: a filling transform animation stays applied, and an element with
+   an applied transform animation becomes the containing block for its
+   `position: fixed` descendants — which clips any backdrop rendered inside the
+   screen to the screen's own column (see components/ModalLayer.tsx). The last
+   keyframe is the resting style anyway, so a backwards fill looks identical. */
 @keyframes pd-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pd-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pd-orbit { to { transform: rotate(360deg); } }

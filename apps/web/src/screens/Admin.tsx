@@ -98,11 +98,7 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
     { id: "mcp", label: "MCP tokens", count: null }
   ];
 
-  // `backwards`, not `both` (the same note sits on `.admin-content` in app.css):
-  // a forwards fill leaves the animation applied, and an element with an applied
-  // transform animation is the containing block for its `position: fixed`
-  // descendants — which is what pinned dialog backdrops to this column. The last
-  // keyframe is the resting style anyway, so nothing moves.
+  // `backwards`, not `both` — see the note on `@keyframes pd-rise` in app.css.
   return (
     <div className="admin-shell" style={{ animation: "pd-rise .28s ease backwards" }}>
       <header className="admin-header">

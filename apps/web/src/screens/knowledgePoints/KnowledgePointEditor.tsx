@@ -119,7 +119,7 @@ export default function KnowledgePointEditor({
   );
 
   return (
-    <div style={{ animation: "pd-rise .28s ease both" }}>
+    <div style={{ animation: "pd-rise .28s ease backwards" }}>
       {showLinkModal && <LinkQuestionModal knowledgePointId={editing.id} onClose={() => setShowLinkModal(false)} />}
       {showDeleteDialog && (
         <DeleteKnowledgePointDialog
