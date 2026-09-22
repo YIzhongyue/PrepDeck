@@ -44,7 +44,13 @@ practice catalog, learning details and client AI caches.
 Apply the entire ordered [migration chain](../../migrations) for the target Worker.
 Review state was moved off the tag catalog and onto `questions.needs_review` by
 `0033_question_needs_review.sql`, which backfills the column from any legacy
-`needs_review` tag and then deletes that tag and its links.
+`needs_review` tag and then deletes that tag and its links. It also translates
+each stored import baseline into the same representation — recording whether the
+baseline itself carried the tag, and dropping the retired tag from both the
+baseline payload and its id snapshot — so the migration does not turn every
+previously-imported, review-tagged question into a `locally_edited` conflict on
+its next import. A question imported clean and tagged for review afterwards is a
+real local edit and still reports as one.
 Authoring was introduced by `0015_question_authoring.sql`; that migration is additive, preserves existing IDs and learning records, and
 does not guess legacy answer keys or import provenance. It does not require
 deduplicating historical external IDs to migrate successfully.
