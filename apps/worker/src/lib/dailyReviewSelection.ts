@@ -7,7 +7,7 @@
 // must not expose answers by default (implementation), so leaking one would be an
 // immediately-visible query/type error rather than a silent rendering bug.
 
-import type { DailyEmailSource, QuestionOption } from "@prepdeck/shared";
+import type { DailyEmailSource, QuestionOption, QuestionContentModel } from "@prepdeck/shared";
 import { tagsJsonExpr } from "./questionManagement";
 
 export interface DailyReviewQuestion {
@@ -20,6 +20,7 @@ export interface DailyReviewQuestion {
   type: string;
   stem: string;
   options: QuestionOption[] | null;
+  content?: QuestionContentModel;
   tags: string[];
 }
 
@@ -33,6 +34,7 @@ export interface QuestionRow {
   type: string;
   stem: string;
   options_json: string | null;
+  content_json?: string | null;
   tags_json: string | null;
 }
 
@@ -42,7 +44,7 @@ export interface QuestionRow {
 // — see that file's header comment for why it doesn't reuse
 // selectDailyReviewQuestions itself.
 export const SELECT_COLUMNS =
-  `q.id, q.exam_id, e.name AS exam_name, e.slug AS exam_slug, q.external_id, q.sequence_number, q.type, q.stem, q.options_json, ${tagsJsonExpr("q")} AS tags_json`;
+  `q.id, q.exam_id, e.name AS exam_name, e.slug AS exam_slug, q.external_id, q.sequence_number, q.type, q.stem, q.options_json, q.content_json, ${tagsJsonExpr("q")} AS tags_json`;
 
 export function toDailyReviewQuestion(row: QuestionRow): DailyReviewQuestion {
   return {
@@ -55,6 +57,7 @@ export function toDailyReviewQuestion(row: QuestionRow): DailyReviewQuestion {
     type: row.type,
     stem: row.stem,
     options: row.options_json ? JSON.parse(row.options_json) : null,
+    ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
     tags: row.tags_json ? JSON.parse(row.tags_json) : []
   };
 }

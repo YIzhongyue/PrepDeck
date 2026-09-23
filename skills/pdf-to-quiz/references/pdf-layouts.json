@@ -1,0 +1,43 @@
+{
+  "version": "2.0",
+  "layouts": [
+    {
+      "id": "native-interleaved",
+      "name": "Native text with inline answers",
+      "extraction": {
+        "ocr": "missing",
+        "language": "eng",
+        "dpi": 200,
+        "psm": 3
+      },
+      "questionPattern": "^Question\\s+(\\d+)(?:[ \\t]+(.*))?$",
+      "answerPattern": "^Answer\\s+(\\d+):\\s*([A-Z]+)\\s*$",
+      "optionPattern": "^([A-Z])[.)][ \\t]+(.+)$",
+      "unreadableAnswerPattern": "^Answer\\s+(\\d+):",
+      "answerLabels": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "subquestionPattern": "^Part\\s+(\\d+)\\s*",
+      "answerPlacement": "interleaved",
+      "sectionStrategy": "explicit-page-ranges",
+      "answerConclusionPattern": "(?:The correct answer is|Correct answer:)[ \\t]+([A-Z]+)(?:[.]|[ \\t]*$)"
+    },
+    {
+      "id": "scanned-separate",
+      "name": "Scanned pages with separate answers",
+      "extraction": {
+        "ocr": "always",
+        "language": "eng",
+        "dpi": 200,
+        "psm": 6
+      },
+      "questionPattern": "^Question\\s+(\\d+)(?:[ \\t]+(.*))?$",
+      "answerPattern": "^Answer\\s+(\\d+):\\s*([A-Z]+)\\s*$",
+      "optionPattern": "^([A-Z])[.)][ \\t]+(.+)$",
+      "unreadableAnswerPattern": "^Answer\\s+(\\d+):",
+      "answerLabels": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "subquestionPattern": "^Part\\s+(\\d+)\\s*",
+      "answerPlacement": "separate",
+      "sectionStrategy": "explicit-page-ranges",
+      "answerConclusionPattern": "(?:The correct answer is|Correct answer:)[ \\t]+([A-Z]+)(?:[.]|[ \\t]*$)"
+    }
+  ]
+}

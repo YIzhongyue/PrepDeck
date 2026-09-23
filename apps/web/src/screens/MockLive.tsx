@@ -1,4 +1,6 @@
+import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
+import QuestionContentGate from "../components/QuestionContentGate";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -43,27 +45,30 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
             <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>Question {state.mIdx + 1}</span>
             <span className="tag tag-outline" style={{ whiteSpace: "nowrap" }}>{questionTypeLabel(mq)}</span>
           </div>
-          <div style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6 }}><QuestionContent src={mq.stem} /></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {mq.type === "fill_blank" && <label>Your answer<input className="input" value={mSel[0] ?? ""} onChange={e => mockPick(mq, e.target.value)} /></label>}
-            {(mq.options ?? []).map((o) => {
-              const on = mSel.indexOf(o.id) >= 0;
-              return (
-                <button
-                  key={o.id} type="button" onClick={() => mockPick(mq, o.id)}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: 13, textAlign: "left", width: "100%", padding: "13px 15px",
-                    borderRadius: 20, cursor: "pointer", font: "inherit", fontSize: 14.5, lineHeight: 1.5,
-                    background: on ? "var(--color-accent-100)" : "var(--color-neutral-100)",
-                    border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`, color: "var(--color-text)"
-                  }}
-                >
-                  <span style={{ width: 26, height: 26, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12.5, background: on ? "var(--color-accent)" : "var(--color-neutral-200)", color: on ? "var(--color-bg)" : "var(--color-neutral-800)" }}>{o.id}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}><QuestionContent src={o.text} /></div>
-                </button>
-              );
-            })}
-          </div>
+          <QuestionContentGate question={mq}>
+            <div style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6 }}><QuestionContent src={mq.stem} content={mq.content} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {mq.type === "fill_blank" && <label>Your answer<input className="input" value={mSel[0] ?? ""} onChange={e => mockPick(mq, e.target.value)} /></label>}
+              {mq.content && (mq.type === "ordering" || mq.type === "matching") && <StructuredResponse content={mq.content} selected={mSel} onChange={answer => mockPick(mq, answer)} />}
+              {((mq.type === "ordering" || mq.type === "matching") ? [] : mq.options ?? []).map((o) => {
+                const on = mSel.indexOf(o.id) >= 0;
+                return (
+                  <button
+                    key={o.id} type="button" onClick={() => mockPick(mq, o.id)}
+                    style={{
+                      display: "flex", alignItems: "flex-start", gap: 13, textAlign: "left", width: "100%", padding: "13px 15px",
+                      borderRadius: 20, cursor: "pointer", font: "inherit", fontSize: 14.5, lineHeight: 1.5,
+                      background: on ? "var(--color-accent-100)" : "var(--color-neutral-100)",
+                      border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`, color: "var(--color-text)"
+                    }}
+                  >
+                    <span style={{ width: 26, height: 26, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12.5, background: on ? "var(--color-accent)" : "var(--color-neutral-200)", color: on ? "var(--color-bg)" : "var(--color-neutral-800)" }}>{o.id}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}><QuestionContent src={o.text} content={mq.content} optionId={o.id} /></div>
+                  </button>
+                );
+              })}
+            </div>
+          </QuestionContentGate>
           <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
             <button type="button" className="btn btn-secondary" onClick={mockPrev}>Back</button>
             <button type="button" className="btn btn-primary" onClick={mockNext} style={{ marginLeft: "auto" }}>Next</button>

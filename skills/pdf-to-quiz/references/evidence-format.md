@@ -23,6 +23,15 @@ Do not invent coordinates for text-only backends or change raw blocks to match t
 
 ## Inventory and source coverage
 
+For Japanese SG materials, use the [layout workflow](japanese-sg-layouts.md).
+`extract_pdf.py --layout` selects OCR defaults; explicit flags override them.
+`--ocr missing` only OCRs missing/suspect text and retains visual-review flags.
+`--ocr-cache` resumes completed OCR pages. PyMuPDF can render OCR input without
+Poppler; Tesseract and the selected language data are still required. Available
+PDF bookmarks are retained as section-planning hints, not trusted boundaries.
+Layout draft `sourceExpectations` hold independent per-section question counts;
+the builder checks them against the completed inventory before export.
+
 Create the master inventory by inspecting the entire PDF, including answer tables, before filling question data. Record every discovered question with a contiguous `order` starting at 1. `externalId` must be stable and non-empty; preserve existing IDs on re-import. Use a meaningful source/section prefix where printed question numbers restart. Do not use filenames or file hashes as a substitute for a stable source namespace.
 
 ```json

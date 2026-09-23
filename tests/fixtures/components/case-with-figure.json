@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "2.0",
+  "exam": {
+    "id": "exam",
+    "name": "case-with-figure"
+  },
+  "questions": [
+    {
+      "externalId": "case-1",
+      "body": [
+        {
+          "id": "prompt",
+          "type": "paragraph",
+          "text": "Match each observation to the corresponding label."
+        },
+        {
+          "id": "chart",
+          "type": "figure",
+          "assetId": "chart",
+          "alt": "After is twice as high as Before.",
+          "caption": "Synthetic observations"
+        }
+      ],
+      "interaction": {
+        "id": "response",
+        "type": "match",
+        "left": [
+          {
+            "id": "low",
+            "body": [
+              {
+                "id": "option-low",
+                "type": "paragraph",
+                "text": "Lower observation"
+              }
+            ]
+          },
+          {
+            "id": "high",
+            "body": [
+              {
+                "id": "option-high",
+                "type": "paragraph",
+                "text": "Higher observation"
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "before",
+            "body": [
+              {
+                "id": "option-before",
+                "type": "paragraph",
+                "text": "Before"
+              }
+            ]
+          },
+          {
+            "id": "after",
+            "body": [
+              {
+                "id": "option-after",
+                "type": "paragraph",
+                "text": "After"
+              }
+            ]
+          }
+        ]
+      },
+      "scoring": {
+        "method": "exact",
+        "correctAnswers": [
+          "[\"low\",\"before\"]",
+          "[\"high\",\"after\"]"
+        ]
+      }
+    }
+  ],
+  "assets": [
+    {
+      "id": "chart",
+      "mediaType": "image/png",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAUAAAAB4CAIAAAAMrLyJAAAElElEQVR4nO3bzytsfxzH8Q9OzKCQhSQbysKCWIiEIWNBkYUNFjTyD9hcf4Efd2dDkcWsJwpluBYWlNiQBSlqErHyc9QUc+5i7neavtx7617jeHWfj9WZ5pzp3fl4znyGpNi2bQBoSnV6AAB/joABYQQMCCNgQBgBA8IIGBBGwIAwAgaEETAgjIABYQQMCCNgQBgBA8IIGBBGwIAwAgaEETAgjIABYQQMCLOcHgBO2vjidXqEj9Y6/s3pEd4Tn8CAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCrOS9tPfLRvJe/HP6Nt7q9Aj4t/AJDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEEDAgjYEAYAQPCCBgQRsCAMAIGhBEwIIyAAWEptm07PQOAP8QnMCCMgAFhBAwII2BAmPMBHx8fT0xM3N3dOT0IfmBFhCQ34MzMTI/H09TUVFVVtby8/OY53d3dbrfbsqykToJfmJuby8jIuL6+jj2Mr8j4+Lizg+G3kvtnpNzc3NvbW2PMwcFBZ2dnKBR6fU5eXt7NzU3yZsBvdXV1lZWVlZeXDw4OmoQViS8fPq0P2kJXVFRYlnVzc9Pf39/a2trY2Li7u2uMmZ6efnh48Hg8p6en7e3tjY2N7e3tV1dXxpjc3NzBwcGpqanXV+EdPT09hcPhoaGhlZUVk7Aio6Ojj4+PbW1tb97/+Oo4OjuMsZMpJycndrCxsbG0tOTz+XZ2dmzbDoVClZWVief09vb6/X7btv1+f19fn23bLpcrGAzatv3mVXgvCwsLX79+tW27uro6EonYCasWO3jz/sdXB85K7hY6MzOzpqYmEons7e21tLQcHR2VlpbGnrq4uDg+Pk5LS4vt04qKis7OzjIyMiKRSElJycXFRXZ29v39fWpqanFx8eurkjfzv2ZgYGB/f9/lcoVCIb/f7/V64zvn2MGb9z++Ok6ODmOS+6uj9PT0zc1NY8zh4WFDQ4Pb7Q4Ggy6XKxqNbm1tJXb4+n3EsqzYz8fz8/PPrsJfenl5OTk52d/fN8asra2trKx4vd7/nfPm/Y+vDpz1QWuQn59fWlpaX1+/uLhojFldXR0bG0s8obm5ORAIGGMCgYDH40l86hdX4S9tb29XVlbGjhsaGtbX1xOfjUaj0WiU+/+ZfcQWOvZWPTk5WVBQMDw8/PT0ZFnW7OxsSUmJ+W+fdnl56fP5wuFwVlbW/Px8YWFhfCN3fn7++iq8i5GRkdra2p6entjDpqammZmZurq62J3v6OhISUmZnp7+2ao5Nzh+4L+RAGF8jQGEETAgjIABYQQMCPsOEkDeQDSfp58AAAAASUVORK5CYII="
+    }
+  ]
+}

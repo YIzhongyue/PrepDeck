@@ -65,7 +65,8 @@ test("all four types can be created in an empty exam with stable IDs and sequent
     await create({ type: "fill_blank", options: undefined, correctAnswers: ["answer", "variant"] })];
   assert.deepEqual(rows.map(q => q.sequenceNumber), [1, 2, 3, 4]); assert.equal(new Set(rows.map(q => q.id)).size, 4);
   assert.ok(rows.every(q => q.revision === 1 && q.answerRevision === 1 && q.answerRevisedAt === null));
-  assert.equal(invalidations.length, 4);
+  assert.equal(invalidations.filter(key => key === 'practice-questions:v2:exam').length, 4);
+  assert.equal(invalidations.filter(key => key === 'practice-questions:exam').length, 4);
 });
 test("invalid payloads and non-admin writes cannot persist anything", async t => {
   const { request, db } = setup(t);
@@ -299,6 +300,93 @@ test("revision compare-and-set catches a race after reading the existing questio
   assert.equal(db.prepare("SELECT stem FROM questions WHERE id=?").get(q.id).stem, "Concurrent edit");
 });
 
+for (const name of ["reading", "code", "case-with-figure", "combination", ...(process.env.COMPONENT_SOURCE_FILES?.split(",") ?? [])]) test(`component ${name}: REST preview/import/storage/export and server grading preserve semantics`, async t => {
+  const f = setup(t);
+  const file = JSON.parse(readFileSync(name.startsWith("/") ? name : new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"));
+  const preview = await f.request('/exams/exam/import/validate', 'POST', file);
+  assert.equal(preview.data.valid, true, JSON.stringify(preview.data));
+  const imported = await f.request('/exams/exam/import', 'POST', file);
+  assert.equal(imported.status, 201, JSON.stringify(imported.data));
+  assert.equal(imported.data.created, file.questions.length);
+  const stored = (await f.request('/exams/exam/questions')).data.questions;
+  assert.ok(stored.every(q => q.content && !JSON.stringify(q.content).includes('correctAnswers')));
+  const exported = await f.request('/exams/exam/questions/export');
+  assert.equal(exported.status, 200);
+  assert.deepEqual(exported.data.file.questions.map(q => q.interaction), file.questions.map(q => q.interaction));
+  assert.deepEqual(exported.data.file.assets, file.assets ?? []);
+  assert.deepEqual(exported.data.file.stimuli, file.stimuli ?? []);
+  const again = await f.request('/exams/exam/import', 'POST', exported.data.file);
+  assert.equal(again.data.created, 0); assert.equal(again.data.skipped, stored.length);
+  const attempt = await f.request('/exams/exam/attempts', 'POST', { mode: 'practice', questionIds: stored.map(q => q.id) });
+  assert.equal(attempt.status, 201, JSON.stringify(attempt.data));
+  for (const q of stored) {
+    const graded = await f.request(`/attempts/${attempt.data.attemptId}/answers`, 'POST', { questionId: q.id, selectedAnswer: q.correctAnswers });
+    assert.equal(graded.status, 200, JSON.stringify(graded.data)); assert.equal(graded.data.isCorrect, true);
+  }
+  const q = stored[0];
+  const changed = structuredClone(q.content); changed.body[0].text += ' revised';
+  assert.equal((await f.update(q, { stem: 'flattened replacement' })).status, 422);
+  assert.equal((await f.request('/exams/exam/questions/export', 'GET', undefined, 'user')).status, 403);
+});
+
+test('component export requires stable external IDs and re-import preserves legacy row identities and review state', async t => {
+  const { create, update, request, db } = setup(t);
+  const legacy = await create({ needsReview: true });
+  const identified = await create({ externalId: 'existing-id' });
+  const before = db.prepare('SELECT * FROM questions ORDER BY id').all();
+  const blocked = await request('/exams/exam/questions/export');
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.data.error, /external ID/i);
+  assert.equal(blocked.data.file, undefined);
+  assert.deepEqual(db.prepare('SELECT * FROM questions ORDER BY id').all(), before);
+
+  assert.equal((await update(legacy, { externalId: 'legacy-id' })).status, 200);
+  const exported = await request('/exams/exam/questions/export');
+  assert.equal(exported.status, 200, JSON.stringify(exported.data));
+  assert.equal(exported.data.file.questions.find(q => q.externalId === 'legacy-id').needsReview, true);
+  const preview = await request('/exams/exam/import/validate', 'POST', exported.data.file);
+  assert.equal(preview.data.valid, true);
+  assert.equal(preview.data.conflicts.length, 2);
+  const conflictResolutions = preview.data.conflicts.map(({ questionId, expectedRevision, incomingToken }) => ({ questionId, expectedRevision, incomingToken, action: 'apply' }));
+  const imported = await request('/exams/exam/import', 'POST', { ...exported.data.file, conflictResolutions });
+  assert.equal(imported.status, 201, JSON.stringify(imported.data));
+  assert.equal(imported.data.created, 0);
+  assert.equal(imported.data.updated, 2);
+  const stored = (await request('/exams/exam/questions')).data.questions;
+  assert.deepEqual(stored.map(q => q.id).sort(), [legacy.id, identified.id].sort());
+  assert.equal(stored.find(q => q.id === legacy.id).needsReview, true);
+  const again = await request('/exams/exam/import', 'POST', (await request('/exams/exam/questions/export')).data.file);
+  assert.equal(again.data.created, 0);
+  assert.equal(again.data.skipped, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM questions').get().n, 2);
+});
+
+test('component re-import requires reviewed conflicts and preserves earlier grading after an ordering correction', async t => {
+  const f = setup(t);
+  const file = JSON.parse(readFileSync(new URL('../../../tests/fixtures/components/code.json', import.meta.url), 'utf8'));
+  assert.equal((await f.request('/exams/exam/import', 'POST', file)).status, 201);
+  const q = (await f.request('/exams/exam/questions')).data.questions[0];
+  const attemptId = (await f.request('/exams/exam/attempts', 'POST', { mode: 'practice', questionIds: [q.id] })).data.attemptId;
+  await f.request(`/attempts/${attemptId}/answers`, 'POST', { questionId: q.id, selectedAnswer: q.correctAnswers });
+  await f.request(`/attempts/${attemptId}/complete`, 'POST');
+  file.questions[0].scoring.correctAnswers.reverse();
+  file.questions[0].body[0].text = 'Revised ordering task';
+  const preview = await f.request('/exams/exam/import/validate', 'POST', file);
+  assert.equal(preview.data.conflicts.length, 1);
+  const conflict = preview.data.conflicts[0];
+  assert.ok(conflict.differences.some(d => d.field === 'content'));
+  assert.equal((await f.request('/exams/exam/import', 'POST', file)).data.skipped, 1);
+  const applied = await f.request('/exams/exam/import', 'POST', { ...file, conflictResolutions: [{ questionId: q.id, expectedRevision: conflict.expectedRevision, incomingToken: conflict.incomingToken, action: 'apply' }] });
+  assert.equal(applied.data.updated, 1, JSON.stringify(applied.data));
+  const revised = (await f.request(`/exams/exam/questions/${q.id}`)).data.question;
+  assert.equal(revised.answerRevision, q.answerRevision + 1);
+  assert.deepEqual(revised.correctAnswers, file.questions[0].scoring.correctAnswers);
+  const detail = (await f.request(`/attempts/${attemptId}/complete`, "POST")).data;
+  assert.equal(detail.breakdown[0].isCorrect, true);
+  assert.deepEqual(detail.breakdown[0].gradedAnswers, q.correctAnswers);
+  assert.deepEqual(detail.breakdown[0].correctAnswers, revised.correctAnswers);
+});
+
 // Issue #15's data migration, exercised on its own: `setup` above applies the
 // whole migration directory at once, which can never show that 0033 carries
 // pre-existing tag state across. Here the questions are tagged and given import
@@ -349,6 +437,7 @@ test("0033 migrates legacy needs_review tag state onto the column and retires th
   }
 
   db.exec(readFileSync(new URL(migration, directory), "utf8"));
+  db.exec(readFileSync(new URL("0034_question_components.sql", directory), "utf8"));
 
   // node:sqlite hands back null-prototype rows; compare plain objects.
   const rows = (sql) => db.prepare(sql).all().map(row => ({ ...row }));

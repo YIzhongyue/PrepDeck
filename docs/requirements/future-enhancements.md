@@ -62,9 +62,9 @@ and a focused architecture/proposal document before calling either implemented.
   a product decision changes it.
 - **Resolved old questions:** direct Google OAuth is default; the shared BYOK
   cache is intentional; curated models plus custom identifiers exist; questions
-  use constrained Markdown; avatar formats/size and AI request/rate guards are
+  use legacy Markdown or versioned components (including ordering and matching); avatar formats/size and AI request/rate guards are
   implemented. These no longer belong in an unanswered decision list.
-- **Still optional future scope:** richer types (essay, matching, ordering and
+- **Still optional future scope:** richer types (essay and
   AI-assisted free response), spaced repetition, opted-in team statistics,
   multilingual UI, native apps and registration beyond invitations. Knowledge
   Point collaboration, nested groups, file import/export, version history, offline

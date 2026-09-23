@@ -85,6 +85,31 @@ deduplicating historical external IDs to migrate successfully.
 
 ## Re-import review
 
+### PDF preparation and component questions
+
+Use the generic [PDF/component workflow](../../skills/pdf-to-quiz/references/component-format.md)
+for shared passages, tables, figures, code, combinations, ordering and matching.
+Both 1.0 Markdown and 2.0 component imports enter through **Import JSON** and the
+same preview/conflict/commit flow. The dialog can preview the first five items;
+review the complete source offline before importing. PDF extraction runs locally.
+
+`GET /api/import-schemas`, `user_get_import_schemas` and
+`admin_get_import_schemas` expose both canonical schemas and supported components.
+Document/provider profiles stay in the offline converter. Users can prepare
+files; exam creation and shared-bank writes/exports require an administrator.
+Admin MCP uses `admin_preview_import` then `admin_execute_import`.
+
+Structured questions open a JSON editor with a live preview and optimistic
+revision checks. Save the component source; changing only its derived flat stem
+or options is rejected. **Export this page** downloads a portable 2.0 package;
+`GET /api/exams/:examId/questions/export` and `admin_export_questions` expose
+paginated export with `nextOffset`. Export shared-material revisions separately
+when their IDs conflict. Legacy questions also export as components, preserving
+true/false identity. Component annotations and a graphical block editor are
+currently unsupported.
+
+### Conflict handling
+
 The JSON file format and PDF conversion workflow remain compatible.
 **Import JSON** first validates the file and shows per-field current/incoming
 differences for existing matches. Each conflict defaults to **Keep current**;
@@ -168,14 +193,17 @@ this is not a full CommonMark implementation. Raw HTML is displayed as text.
 Question annotations retain raw source coordinates through a source-offset map;
 the existing AI-explanation annotation coordinate system stays unchanged.
 
-For future richer content, add an explicit content format/version with a default
-of `markdown-v1` for all existing strings. Adapt richer nodes at `QuestionContent`,
-and add typed editor controls alongside the current Markdown fields. Image nodes
-should reference validated upload asset IDs; tables should use structured nodes
-or an intentionally supported Markdown table grammar. Custom tags must use a
-controlled node renderer and tag/attribute allowlist. Never pass authored content
-to arbitrary executable HTML. New format migrations must preserve or explicitly
-translate annotation coordinates; existing Markdown can remain unchanged.
+Version 2.0 imports add structured content through the same `QuestionContent`
+boundary and a JSON editor with live preview. Validated image references, tables,
+code and interactions use controlled renderers; authored HTML is never executed.
+See [component questions](../architecture/component-questions.md) for the contract
+and limits. Converting legacy text to a matching single Markdown block preserves
+its stem/option annotation coordinates. Complex blocks do not reuse those offsets.
+
+**Export this page** requires an explicit external ID on every selected row;
+assign missing IDs before exporting. This lets a reviewed re-import update the
+same records instead of creating duplicates. Follow pagination and preview any
+re-import conflicts before applying them.
 
 ## Deferred scope
 
@@ -183,8 +211,8 @@ Admin MCP servers, credentials, proposal previews/commits, batch mutations and
 mutation auditing are implemented through implementation–implementation. See [MCP architecture](../architecture/mcp.md)
 for the distinct proposal/revision/import-job contracts and [connection setup](mcp-and-skills.md).
 REST import conflict resolutions and MCP proposal tokens are different contracts;
-do not substitute one for the other. Richer versioned content remains a future
-extension, not a shipped rendering format.
+do not substitute one for the other. A graphical component editor and annotations
+on complex component blocks remain deferred.
 
 ## Verification
 

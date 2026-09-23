@@ -17,6 +17,7 @@ import type {
   NoteResponse,
   NotesListResponse,
   PracticeCatalogResponse,
+  PracticeQuestionContentResponse,
   ProfileResponse,
   StartAttemptResponse,
   SubmitPracticeAnswerResponse,
@@ -80,6 +81,8 @@ export interface AppState {
   examId: string | null;
   catalog: Question[];
   catalogBy: Record<string, Question>;
+  catalogRevision: number;
+  questionContent: Record<string, { status: "loading" | "error"; error?: string }>;
   workspaceStatus: "loading" | "ready" | "error" | "empty";
   workspaceError: string | null;
   workspaceNotice: string | null;
@@ -173,7 +176,7 @@ const initialState: AppState = {
 
   me: null,
 
-  exams: [], examId: null, catalog: [], catalogBy: {},
+  exams: [], examId: null, catalog: [], catalogBy: {}, catalogRevision: 0, questionContent: {},
   workspaceStatus: "loading", workspaceError: null, workspaceNotice: null,
   actionError: null, switching: false, workspaceGeneration: 0, activityRevision: 0,
 
@@ -203,6 +206,8 @@ interface PrepDeckStore {
   pool: () => Question[];
   curQ: () => Question | undefined;
   mockQ: () => Question | undefined;
+  loadQuestionContent: (questionId: string) => void;
+  loadLearningDetail: (questionId: string) => void;
 
   go: (id: ScreenId, options?: { newMock?: boolean }) => void;
   openMore: () => void;
@@ -222,7 +227,7 @@ interface PrepDeckStore {
   openPracticeWithFilters: (filters: PracticeFilters) => void;
 
   begin: (ids: string[]) => void;
-  pick: (q: Question, oid: string) => void;
+  pick: (q: Question, oid: string | string[]) => void;
   submit: () => void;
   next: () => void;
   prevQ: () => void;
@@ -250,7 +255,7 @@ interface PrepDeckStore {
   setMockCount: (n: number) => void;
   setMockMinutes: (n: number) => void;
   beginMock: () => void;
-  mockPick: (q: Question, oid: string) => void;
+  mockPick: (q: Question, oid: string | string[]) => void;
   mockPrev: () => void;
   mockNext: () => void;
   mockGoto: (i: number) => void;
@@ -450,17 +455,18 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       const catalog: Question[] = data.questions.map(q => ({
         id: q.id, externalId: q.externalId, sequenceNumber: q.sequenceNumber, type: q.type,
-        chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options
+        chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options,
+        hasContent: q.hasContent, revision: q.revision, content: q.content
       }));
       const catalogBy = Object.fromEntries(catalog.map(q => [q.id, q]));
       const count = defaultMockCount(catalog.length);
-      update({ catalog, catalogBy, workspaceStatus: "ready", workspaceError: null,
+      update(s => ({ catalog, catalogBy, catalogRevision: s.catalogRevision + 1, questionContent: {}, lDetail: {}, workspaceStatus: "ready", workspaceError: null,
         bookmarks: Object.fromEntries(data.bookmarkedIds.filter(id => catalogBy[id]).map(id => [id, true])),
         wrong: Object.fromEntries(data.wrongEntries.filter(e => catalogBy[e.questionId]).map(e => [e.questionId, { c: e.wrongCount, at: e.lastWrongAt }])),
         mastered: {}, attempted: Object.fromEntries(data.attemptedIds.map(id => [id, true])),
         mockCount: count, mockMinutes: defaultMockMinutes(count), activeMockAttempt: attempt,
         lResume: progress.lastSequenceNumber, anns: annotations.map(fromSharedAnnotation), notes: notes.map(fromSharedNote)
-      });
+      }));
     }).catch(() => {
       if (!cancelled) update(s => s.workspaceStatus === "ready"
         ? { actionError: "Could not refresh this exam. Your current work is retained; please retry." }
@@ -492,6 +498,31 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     return id ? state.catalogBy[id] : undefined;
   }, [state.mQueue, state.mIdx, state.catalogBy]);
 
+  const loadQuestionContent = useCallback((qid: string) => {
+    const { examId, catalogBy, catalogRevision, questionContent } = stateRef.current;
+    const requested = catalogBy[qid];
+    if (!examId || !requested?.hasContent || requested.content || questionContent[qid]?.status === "loading") return;
+    const update = scopedState(`questionContent:${qid}`);
+    update(s => ({ questionContent: { ...s.questionContent, [qid]: { status: "loading" } } }));
+    apiFetch<PracticeQuestionContentResponse>(`/api/exams/${encodeURIComponent(examId)}/practice-catalog/${encodeURIComponent(qid)}`, { cache: "no-store" })
+      .then(({ content, revision }) => {
+        if (!content || (requested.revision !== undefined && requested.revision !== revision)) {
+          throw new Error("This question changed. Refresh the exam and try again.");
+        }
+        update(s => {
+          // Ignore snapshots requested before a same-exam catalog refresh,
+          // while allowing Learning and Practice to hydrate the same row.
+          if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
+          const question = { ...requested, content };
+          const pending = { ...s.questionContent }; delete pending[qid];
+          return { catalog: s.catalog.map(q => q.id === qid ? question : q),
+            catalogBy: { ...s.catalogBy, [qid]: question }, questionContent: pending };
+        });
+      }).catch(error => update(s => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : {
+        questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : "Could not load this question. Please retry." } }
+      }));
+  }, [scopedState]);
+
   // Shared by "start a filtered practice session," "practice this list of
   // wrong/bookmarked questions," and "review a single question" — all create
   // a real attempt server-side so submit() has something to grade against.
@@ -509,12 +540,14 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => update({ actionError: "Could not start practice. Please try again." }));
   }, [scopedState, requests]);
 
-  const pick = useCallback((q: Question, oid: string) => {
-    if (stateRef.current.done[q.id] || stateRef.current.switching) return;
+  const pick = useCallback((q: Question, oid: string | string[]) => {
+    const current = stateRef.current.catalogBy[q.id];
+    if (!current || (current.hasContent && !current.content) || stateRef.current.done[q.id] || stateRef.current.switching) return;
     setState((s) => {
       const cur = (s.sel[q.id] || []).slice();
       let nx: string[];
-      if (q.type === "multiple_choice") {
+      if (Array.isArray(oid)) nx = oid;
+      else if (q.type === "multiple_choice") {
         const i = cur.indexOf(oid);
         if (i >= 0) cur.splice(i, 1);
         else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
@@ -555,6 +588,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const s = stateRef.current;
     const qid = s.queue[s.idx];
     if (!qid || !s.attemptId || s.switching || s.done[qid] || requests.has(`answer:${s.attemptId}:${qid}`)) return;
+    const question = s.catalogBy[qid];
+    if (question?.hasContent && !question.content) return;
     const update = scopedState();
     void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
       .catch(() => update({ actionError: "Could not save your answer. Please submit it again." }));
@@ -722,18 +757,31 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // answer history — unlike Practice's graded state, this is loaded as soon
   // as a question is viewed, with no reveal step.
   const loadLearningDetail = useCallback((qid: string) => {
+    const { catalogBy, catalogRevision, lDetail } = stateRef.current;
+    const requested = catalogBy[qid];
+    if (!requested || lDetail[qid]?.status === "loading") return;
     const setState = scopedState("loadLearningDetail" + qid);
     setState((s) => ({ lDetail: { ...s.lDetail, [qid]: { status: "loading" } } }));
-    apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`).then(({ question, history }) => {
-      setState((s) => ({
-        lDetail: {
-          ...s.lDetail,
-          [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt }
-        }
-      }));
+    apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`, { cache: "no-store" }).then(({ question, history }) => {
+      if (requested.revision !== undefined && requested.revision !== question.revision) {
+        throw new Error("This question changed. Refresh the exam and try again.");
+      }
+      if (requested.hasContent && !question.content) throw new Error("Could not load this question. Please retry.");
+      setState((s) => {
+        if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
+        const hydrated = { ...s.catalogBy[qid], content: question.content ?? s.catalogBy[qid].content };
+        return {
+          catalog: s.catalog.map(q => q.id === qid ? hydrated : q),
+          catalogBy: { ...s.catalogBy, [qid]: hydrated },
+          lDetail: {
+            ...s.lDetail,
+            [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt }
+          }
+        };
+      });
     }).catch((err) => {
-      setState((s) => ({
-        lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof ApiError ? err.message : "Could not load this question." } }
+      setState((s) => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : ({
+        lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
       }));
     });
   }, [scopedState]);
@@ -847,13 +895,15 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     });
   }, [requests]);
 
-  const mockPick = useCallback((q: Question, oid: string) => {
+  const mockPick = useCallback((q: Question, oid: string | string[]) => {
     // Serialize draft writes for this attempt, retaining the latest local selection.
-    if (stateRef.current.switching) return;
+    const current = stateRef.current.catalogBy[q.id];
+    if (!current || (current.hasContent && !current.content) || stateRef.current.switching) return;
     const update = scopedState();
     const cur = (stateRef.current.mSel[q.id] || []).slice();
     let nextSel: string[];
-    if (q.type === "multiple_choice") {
+    if (Array.isArray(oid)) nextSel = oid;
+    else if (q.type === "multiple_choice") {
       const i = cur.indexOf(oid);
       if (i >= 0) cur.splice(i, 1);
       else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
@@ -1014,7 +1064,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       const next: Partial<AppState> = {};
       // Only exam/session fields reset; account preferences and personal
       // Knowledge Points remain available across exams.
-      const keys = ["catalog", "catalogBy", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
+      const keys = ["catalog", "catalogBy", "catalogRevision", "questionContent", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
         "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingKnowledgePointId",
         "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
         "bookmarks", "wrong", "attempted", "mastered", "ai", "anns", "notes", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
@@ -1382,7 +1432,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       if (s.switching || s.screen !== "practice" || s.pStage !== "live") return;
       const qid = s.queue[s.idx];
       const q = qid ? s.catalogBy[qid] : undefined;
-      if (!q || !q.options) return;
+      if (!q || (q.hasContent && !q.content) || !q.options || q.type === "ordering" || q.type === "matching") return;
       const k = e.key.toUpperCase();
       const hit = q.options.find((o) => o.id === k);
       if (hit) { e.preventDefault(); pick(q, hit.id); return; }
@@ -1411,7 +1461,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [setState, finishMock]);
 
   const store: PrepDeckStore = {
-    state, width, pool, curQ, mockQ,
+    state, width, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
     setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, useAlternateAi,

@@ -18,7 +18,10 @@ proposed changes before any high-impact edit.
    retain each `revision` for `expectedRevision`.
 2. Call `admin_validate_question_payload` with the exact target/payload. Present
    validation issues, before/after diff and answer-key changes. A valid create
-   preview returns `proposalToken` and `proposalId`; preserve both.
+   preview returns `proposalToken` and `proposalId`; preserve both. For a single
+   2.0 component item, use `admin_preview_component_question` with the question
+   and referenced stimuli/assets instead; use its returned normalized `payload`
+   unchanged in the same commit flow below.
 3. Obtain explicit approval of the reviewed AI edit/create proposal. Call
    `admin_create_question` or `admin_update_question` with unchanged payload and
    returned bindings. For multiple selected questions, validate each then use

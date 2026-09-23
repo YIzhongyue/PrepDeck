@@ -3,8 +3,13 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 import { normalizeTagName } from "../../../packages/shared/src/questionTags.ts";
+import { normalizeImportFile, exportComponentPackage } from "../../../packages/shared/src/question-components.ts";
+import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
+const pdfSchemas = getImportSchemas();
+let importedFile = null, schemaFailures = 0;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -22,12 +27,17 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (status, body) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (url.pathname.startsWith("/api/")) {
+    if (req.method === "GET" && url.pathname === "/api/import-schemas") {
+      if (schemaFailures > 0) { schemaFailures--; return json(503, { error: "Schema catalog unavailable" }); }
+      return json(200, pdfSchemas);
+    }
     if (req.method === "GET" && url.pathname === "/api/admin/question-tags") {
       tagRequests++;
       if (tagRequests === 1) await initialCatalog.promise;
       if (tagFailures > 0) { tagFailures--; return json(503, { error: "Tag catalog unavailable" }); }
       return json(200, { tags: [...new Set([...catalog, ...rows.flatMap(q => q.tags)])] });
     }
+    if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
     if (req.method === "GET") {
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
@@ -41,6 +51,11 @@ const server = createServer(async (req, res) => {
     }
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || "{}");
+    if (url.pathname === "/api/exams/exam/import/validate") return json(200, { valid: true, questionCount: body.questions.length, issues: [], conflicts: [] });
+    if (url.pathname === "/api/exams/exam/import") {
+      importedFile = body;
+      return json(201, { created: body.questions.length, updated: 0, skipped: 0, failed: 0, outcomes: [] });
+    }
     if (Array.isArray(body.tags)) body.tags = body.tags.map(normalizeTagName).filter(Boolean);
     if (body.stem === "server reject") return json(422, { error: "Server rejected stem", issues: [{ path: "$.stem", message: "Please correct this stem" }] });
     if (req.method === "POST") {
@@ -387,6 +402,69 @@ try {
   assert.equal((await anyPage).status(), 200);
   await page.getByText("1–50 of 154", { exact: true }).waitFor();
   assert.equal(await reviewChip.count(), 0);
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByText("Prepare questions from a PDF", { exact: true }).click();
+  await page.getByText(/Supported content: paragraph, heading, list, table, figure, code/).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Download conversion schemas" }).getAttribute("href"), "/api/import-schemas");
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/pdf-import-schemas-desktop.png`, fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/pdf-import-schemas-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const converted = { schemaVersion: "1.0", exam: { id: "exam", name: "SG", language: "ja" }, questions: [{
+    externalId: "book:2025-a:q1", type: "single_choice", stem: "正しい数はどれか。",
+    options: [{ id: "ア", text: "1" }, { id: "イ", text: "2" }], correctAnswers: ["イ"],
+  }] };
+  await page.getByLabel("Question import JSON file").setInputFiles({ name: "sg-import.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(converted)) });
+  await page.getByText("1 incoming questions · 0 conflicts", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Import with selected resolutions" }).click();
+  await page.getByText("Created 1 · Updated 0 · Skipped / conflicting 0 · Failed 0", { exact: true }).waitFor();
+  assert.deepEqual(importedFile.questions, converted.questions);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  schemaFailures = 1;
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByText("Prepare questions from a PDF", { exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "PDF preparation formats could not be loaded" }).waitFor();
+  assert.equal(await page.getByLabel("Question import JSON file").isEnabled(), true);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  const componentFile = JSON.parse(readFileSync(new URL("../../../tests/fixtures/components/case-with-figure.json", import.meta.url), "utf8"));
+  await page.getByRole("button", { name: "Import JSON", exact: true }).click();
+  await page.getByLabel("Question import JSON file").setInputFiles({ name: "components.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(componentFile)) });
+  await page.getByText("Preview imported questions", { exact: true }).click();
+  await page.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
+  await page.getByRole("button", { name: "Import with selected resolutions" }).click();
+  await page.getByText("Created 1 · Updated 0 · Skipped / conflicting 0 · Failed 0", { exact: true }).waitFor();
+  assert.deepEqual(importedFile.questions, componentFile.questions);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  rows = normalizeImportFile(componentFile).questions.map(q => ({ ...q, id: "structured", examId: "exam", sequenceNumber: 1, revision: 1, answerRevision: 1, tags: [] }));
+  await page.reload();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const structuredDialog = page.getByRole("dialog", { name: "Edit component question" });
+  await structuredDialog.waitFor();
+  await structuredDialog.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
+  const jsonEditor = page.getByRole("textbox", { name: "Question package JSON" });
+  const edited = JSON.parse(await jsonEditor.inputValue());
+  edited.questions[0].body[0].text = "Edited structured prompt";
+  await jsonEditor.fill(JSON.stringify(edited, null, 2));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".question-drawer").evaluate(async e => { await Promise.all(e.getAnimations().map(a => a.finished)); });
+  const componentBounds = await page.locator(".question-drawer").boundingBox();
+  assert.equal(Math.round(componentBounds.x), 0);
+  assert.equal(Math.round(componentBounds.width), 390);
+  await jsonEditor.evaluate(e => { e.scrollTop = 0; e.blur(); });
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-editor-mobile.png`, fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await structuredDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await structuredDialog.waitFor({ state: "detached" });
+  assert.equal(rows[0].content.body[0].text, "Edited structured prompt");
+  assert.deepEqual(rows[0].content.assets, componentFile.assets);
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export this page", exact: true }).click();
+  const download = await downloadEvent;
+  const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
+  assert.equal(exported.schemaVersion, "2.0");
+  assert.deepEqual(exported.assets, componentFile.assets);
+  console.log("PASS component import preview, structured edit with assets, mobile drawer and downloadable export");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

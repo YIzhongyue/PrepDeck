@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "2.0",
+  "exam": {
+    "id": "exam",
+    "name": "code"
+  },
+  "questions": [
+    {
+      "externalId": "code-1",
+      "body": [
+        {
+          "id": "prompt",
+          "type": "paragraph",
+          "text": "Order these actions to compute and display the sum."
+        },
+        {
+          "id": "program",
+          "type": "code",
+          "language": "python",
+          "text": "values = [1, 2, 3]\n# Complete the steps"
+        }
+      ],
+      "interaction": {
+        "id": "response",
+        "type": "order",
+        "options": [
+          {
+            "id": "print",
+            "body": [
+              {
+                "id": "option-print",
+                "type": "paragraph",
+                "text": "Print the sum"
+              }
+            ]
+          },
+          {
+            "id": "sum",
+            "body": [
+              {
+                "id": "option-sum",
+                "type": "paragraph",
+                "text": "Sum the values"
+              }
+            ]
+          },
+          {
+            "id": "read",
+            "body": [
+              {
+                "id": "option-read",
+                "type": "paragraph",
+                "text": "Read the values"
+              }
+            ]
+          }
+        ]
+      },
+      "scoring": {
+        "method": "exact",
+        "correctAnswers": [
+          "read",
+          "sum",
+          "print"
+        ]
+      }
+    }
+  ]
+}

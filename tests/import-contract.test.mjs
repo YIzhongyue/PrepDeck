@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { transformSync } from 'esbuild';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 
-// Load these dependency-free TS modules without depending on Node's TS support.
+// Bundle dependencies so this test covers the actual shared validator.
 async function loadTypeScript(path) {
-  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  const { code } = transformSync(source, { loader: 'ts', format: 'esm', target: 'es2022' });
-  return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'] });
+  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 }
 const { validateImportFile, IMPORT_LIMITS } = await loadTypeScript('../packages/shared/src/import-validate.ts');
 const { IMPORT_BODY_MAX_BYTES, IMPORT_JSON_MAX_DEPTH } = await loadTypeScript('../apps/worker/src/lib/importSecurity.ts');

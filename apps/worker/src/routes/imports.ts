@@ -9,7 +9,7 @@ import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody, runD1Batches } from "../lib/importSecurity";
-import { validateImportFile, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, validateImportFile, type QuestionImportFile } from "@prepdeck/shared";
 
 import { canonical, createStatement, toQuestion, updateStatement, type QuestionRow } from "../lib/questionManagement";
 import { importConflict, type ImportConflict } from "../lib/importConflicts";
@@ -48,7 +48,7 @@ importsRouter.post("/validate", async (c) => {
   let duplicateExternalIdsInDb: string[] = [];
   const conflicts: ImportConflict[] = [];
   if (issues.length === 0) {
-    const file = parsed.data as QuestionImportFile;
+    const file = normalizeImportFile(parsed.data);
     const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
     if (externalIds.length > 0) {
       const existing = await findQuestionRows(c, examId, externalIds);
@@ -93,7 +93,7 @@ importsRouter.post("/", async (c) => {
     return c.json({ error: "Validation failed", issues, duplicateExternalIdsInFile }, 422);
   }
 
-  const file = parsed.data as QuestionImportFile;
+  const file = normalizeImportFile(parsed.data);
 
   const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
   const existing = externalIds.length ? await findQuestionRows(c, examId, externalIds) : [];

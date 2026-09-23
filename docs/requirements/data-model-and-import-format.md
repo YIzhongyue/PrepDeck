@@ -29,13 +29,24 @@ infer a missing historical key from the current question.
 
 ## Import contract
 
-The canonical schema is [import-schema.ts](../../packages/shared/src/import-schema.ts),
+The legacy canonical schema is [import-schema.ts](../../packages/shared/src/import-schema.ts),
 with semantic checks in [import-validate.ts](../../packages/shared/src/import-validate.ts).
 The [converter reference](../../skills/pdf-to-quiz/references/import-format.md)
 explains the offline output contract; [authoring](../guides/question-bank-authoring.md)
 defines preview, conflict resolution and commit behavior.
 
-`schemaVersion` is currently `1.0`; `exam.id` and `exam.name` are required.
+`schemaVersion` accepts legacy `1.0` or component `2.0`; `exam.id` and `exam.name` are required.
+The [2.0 schema](../../skills/pdf-to-quiz/references/component-import.schema.json)
+and [component reference](../../skills/pdf-to-quiz/references/component-format.md)
+define reusable content and choice/text/order/match interactions. Ordering and
+matching are implemented through 2.0; legacy imports retain their four types.
+Migration 0033 adds nullable `questions.content_json`: a resolved per-question
+snapshot with shared-material IDs/revisions, provenance and inline raster assets.
+It never contains the answer key. Flat fields remain projections for existing
+search/review consumers; component-aware clients render the snapshot. Import
+baselines/revision checks include structured content, and edits invalidate AI
+explanations. Historical attempt grading remains snapshotted independently;
+historical full-content snapshots are not introduced.
 `source` metadata is optional. Files contain 1–1,000 questions. REST import bodies
 are bounded to 5 MiB and 32 nesting levels. Stems are nonblank and at most 20,000
 characters; options are at most 20, each text at most 10,000; explanations at most

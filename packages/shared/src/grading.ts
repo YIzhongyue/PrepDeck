@@ -33,6 +33,7 @@ export function isAnswerCorrect(type: string, selected: string[], correct: strin
       return correct.some((c) => c.trim().toLowerCase() === normalized);
     });
   }
+  if (type === "ordering") return selected.length === correct.length && selected.every((v, i) => v === correct[i]);
   // Choice-based types (single_choice/multiple_choice/true_false): set equality.
   if (selected.length !== correct.length) return false;
   const a = selected.slice().sort();

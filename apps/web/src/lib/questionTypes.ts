@@ -14,6 +14,8 @@ export function questionTypeLabel(question: { type: QuestionType; chooseCount?: 
     case "multiple_choice": return `Choose ${question.chooseCount || 1}`;
     case "single_choice": return "Single choice";
     case "true_false": return "True / false";
+    case "ordering": return "Order the items";
+    case "matching": return "Match the items";
     case "fill_blank": return "Fill in the blank";
   }
 }

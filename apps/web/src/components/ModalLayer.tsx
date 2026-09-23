@@ -48,6 +48,20 @@ export default function ModalLayer({ label, labelledBy, onClose, children }: {
       aria-modal="true"
       aria-label={label}
       aria-labelledby={labelledBy}
+      // Native modal dialogs keep the page inert, but Tab can still leave the
+      // document for browser controls. Keep both keyboard boundaries inside.
+      onKeyDown={(e) => {
+        if (e.key !== "Tab" || e.defaultPrevented) return;
+        const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href], [tabindex], [contenteditable=true]"))
+          .filter(el => (el.tabIndex >= 0 || (el.isContentEditable && !el.hasAttribute("tabindex")))
+            && !el.matches(":disabled") && !el.closest("[inert]") && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden");
+        const first = items[0], last = items.at(-1), active = document.activeElement;
+        if (!first) { e.preventDefault(); e.currentTarget.focus(); return; }
+        const target = e.shiftKey
+          ? (active === first || active === e.currentTarget ? last : undefined)
+          : (active === last ? first : undefined);
+        if (target) { e.preventDefault(); target.focus(); }
+      }}
       // Escape closes through the caller instead of behind its back: the
       // browser's own close would leave the state that renders this saying
       // the dialog is still open.

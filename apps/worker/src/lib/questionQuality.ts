@@ -96,7 +96,7 @@ export interface QuestionSetStatistics {
 // scanned count reaches it, the report is flagged `truncated` so callers
 // never mistake a bounded scan for a complete one.
 export function buildQuestionSetStatistics(questions: readonly Question[], scanLimit: number): QuestionSetStatistics {
-  const byType: QuestionSetStatistics["byType"] = { single_choice: 0, multiple_choice: 0, true_false: 0, fill_blank: 0 };
+  const byType: QuestionSetStatistics["byType"] = { single_choice: 0, multiple_choice: 0, true_false: 0, fill_blank: 0, ordering: 0, matching: 0 };
   const byDifficulty: QuestionSetStatistics["byDifficulty"] = { easy: 0, medium: 0, hard: 0, unset: 0 };
   let missingExplanationCount = 0;
   let missingMetadataCount = 0;

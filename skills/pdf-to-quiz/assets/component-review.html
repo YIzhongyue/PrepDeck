@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Question source review</title>
+<style>
+body{font:16px system-ui;margin:0;background:#f6f7f9;color:#19212b}header{padding:16px;background:white;border-bottom:1px solid #ccc}h1{font-size:22px;margin:0 0 8px}button,select,input{font:inherit;padding:8px;max-width:100%}nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.layout{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px;align-items:start}section{min-width:0}article{background:white;padding:14px;margin-bottom:12px;border:1px solid #d3d8df}img{width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}textarea{box-sizing:border-box;width:100%;min-height:350px;font:14px monospace;padding:12px}#message{min-height:24px}summary{cursor:pointer;padding:8px}.muted{color:#4b5563}label{display:block;margin:8px 0}#source{max-height:85vh;overflow:auto}a{color:#124c9e}@media(max-width:760px){.layout{grid-template-columns:1fr;padding:10px}#source{max-height:none}}
+</style>
+<header><h1>Question source review</h1><p class="muted">Compare original pages, answer evidence and component candidates. Corrections stay pending source review. This page makes no network requests.</p>
+<details><summary>Extraction quality (before edits)</summary><pre id="quality"></pre></details>
+<nav><label>Filter <select id="filter"><option value="all">All questions</option><option value="answer">Missing / conflicting answers</option><option value="options">Incomplete choice options</option><option value="visual">Visual components to review</option></select></label>
+<label>Question <select id="question"></select></label><button id="previous">Previous</button><button id="next">Next</button><button id="download">Download review inventory</button></nav><p id="message" role="status"></p></header>
+<main class="layout"><section><h2 id="identity"></h2><pre id="evidence"></pre><details><summary>Component candidates and source coordinates</summary><pre id="candidates"></pre></details><label>Question and shared materials JSON<textarea id="editor" spellcheck="false"></textarea></label><label>Correction note <input id="note" style="width:90%"></label><button id="apply">Keep correction pending review</button></section>
+<section><h2>Original source evidence</h2><div id="source"></div></section></main>
+<script>
+"use strict";
+const data = /* REVIEW_DATA */;
+const inv=data.inventory, $=id=>document.getElementById(id);
+let current=null, dirty=false, edited=false, visible=[];
+const message=text=>{$('message').textContent=text;};
+$('quality').textContent=JSON.stringify(inv.report?.quality??inv.coverage,null,2);
+function review(id){return inv.reviews.find(r=>r.externalId===id);}
+function allowed(q){const r=review(q.externalId);switch($('filter').value){case 'answer':return !q.scoring.correctAnswers.length;case 'options':return q.interaction.type==='choice'&&q.interaction.options.length<2;case 'visual':return (r.compositionCandidates??[]).some(c=>c.status==='review');default:return true;}}
+function populate(){visible=inv.package.questions.filter(allowed);$('question').replaceChildren(...visible.map(q=>{const o=document.createElement('option');o.value=q.externalId;o.textContent=q.externalId;return o;}));}
+function show(id){current=id;dirty=false;$('source').replaceChildren();$('note').value='';
+ const q=inv.package.questions.find(q=>q.externalId===id);if(!q){$('identity').textContent='No matching questions';$('editor').value='';$('evidence').textContent='';$('candidates').textContent='';return;}
+ $('question').value=id;const r=review(id);$('identity').textContent=id;
+ $('editor').value=JSON.stringify({question:q,stimuli:(inv.package.stimuli??[]).filter(s=>(q.stimulusRefs??[]).includes(s.id))},null,2);
+ $('evidence').textContent=JSON.stringify({status:r.status,reason:r.reason,answers:inv.answerEntries.filter(e=>(r.answerEntries??[]).includes(e.id))},null,2);
+ $('candidates').textContent=JSON.stringify(r.compositionCandidates??[],null,2);
+ const refs=[...(r.questionEvidence??[]),...(r.answerEvidence??[]),...(r.visualEvidence??[])];
+ const pages=new Set(refs.map(ref=>data.blockPages[ref]));
+ for(const p of data.pages.filter(p=>pages.has(p.page))){const a=document.createElement('article'),h=document.createElement('h3');h.textContent='PDF page '+p.page;a.append(h);
+  for(const img of p.images){const link=document.createElement('a');link.href=img.url;link.target='_blank';link.rel='noopener';const el=document.createElement('img');el.src=img.url;el.alt='Source page '+p.page+' · '+img.id;el.loading='lazy';link.append(el);a.append(link);}
+  if(!p.images.length){const warning=document.createElement('p');warning.textContent='No retained page image. Compare this physical page in the original PDF.';a.append(warning);}
+  const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');summary.textContent='Selected extracted text';text.textContent=p.text;details.append(summary,text);a.append(details);$('source').append(a);}
+}
+function canLeave(){if(!dirty)return true;message('Keep the correction before changing questions, or reload to discard it.');return false;}
+function apply(){if(!current)return false;try{const value=JSON.parse($('editor').value),q=value.question;
+ if(!q||q.externalId!==current||!Array.isArray(q.body)||!q.interaction||!Array.isArray(q.scoring?.correctAnswers)||!Array.isArray(value.stimuli))throw Error('Preserve the question identity, body, interaction, scoring and stimuli array.');
+ const old=inv.package.questions.find(q=>q.externalId===current),ids=new Set(old.stimulusRefs??[]);
+ if(JSON.stringify(q.stimulusRefs??[])!==JSON.stringify(old.stimulusRefs??[])||value.stimuli.length!==ids.size||new Set(value.stimuli.map(s=>s.id)).size!==ids.size||value.stimuli.some(s=>!ids.has(s.id)||!Array.isArray(s.body)))throw Error('Preserve shared-material references and IDs in this editor.');
+ if(!$('note').value.trim())throw Error('Add a correction note.');
+ inv.package.questions[inv.package.questions.findIndex(q=>q.externalId===current)]=q;
+ for(const s of value.stimuli){inv.package.stimuli[inv.package.stimuli.findIndex(old=>old.id===s.id)]=s;}
+ for(const affected of inv.package.questions.filter(item=>item.externalId===current||(item.stimulusRefs??[]).some(id=>ids.has(id)))){const r=review(affected.externalId);r.status='review';r.reason='Draft corrected; compare components and answers with original source.';r.correctionNote=$('note').value.trim();}
+ inv.report={...inv.report,requiresReview:true,qualityStale:true};dirty=false;edited=true;message('Correction retained. Shared-material users also require review; schema and source validation still required.');return true;
+ }catch(e){message(e.message);return false;}}
+$('editor').addEventListener('input',()=>{dirty=true;});$('note').addEventListener('input',()=>{dirty=true;});$('apply').onclick=apply;
+$('question').onchange=()=>{const next=$('question').value;if(canLeave())show(next);else $('question').value=current;};
+let previousFilter='all';$('filter').onchange=()=>{if(!canLeave()){$('filter').value=previousFilter;return;}previousFilter=$('filter').value;populate();show(visible[0]?.externalId);};
+for(const [id,delta] of [['previous',-1],['next',1]])$(id).onclick=()=>{if(!canLeave())return;const i=visible.findIndex(q=>q.externalId===current);const q=visible[i+delta];if(q)show(q.externalId);};
+$('download').onclick=()=>{if(dirty&&!apply())return;const blob=new Blob([JSON.stringify(inv,null,2)+'\n'],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='corrected.inventory.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);edited=false;message('Downloaded review inventory. Validate and review evidence before building an import.');};
+addEventListener('beforeunload',e=>{if(dirty||edited){e.preventDefault();e.returnValue='';}});
+populate();show(visible[0]?.externalId);
+</script></html>

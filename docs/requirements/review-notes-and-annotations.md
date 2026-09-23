@@ -103,6 +103,11 @@ drops the rest, since the same component and state serve both.
 
 - **FR-8.5 (M):** A user can edit or remove an existing annotation.
 
+Legacy stem/option marks retain their source coordinates after a 2.0 export and
+re-import when the converted content is a single Markdown block matching the
+original text. Complex component blocks do not reuse offsets from an unrelated
+text projection. The review-only visibility rules above remain unchanged.
+
 ## Question notes
 
 <a id="fr-11-1"></a>

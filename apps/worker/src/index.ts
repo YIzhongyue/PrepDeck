@@ -7,6 +7,7 @@ import { examBadgesRouter, examsRouter } from "./routes/exams";
 import { questionsRouter } from "./routes/questions";
 import { questionTagsRouter } from "./routes/questionTags";
 import { importsRouter } from "./routes/imports";
+import { importSchemasRouter } from "./routes/importSchemas";
 import { practiceCatalogRouter } from "./routes/practice";
 import { examAttemptsRouter, attemptsRouter } from "./routes/attempts";
 import { learningDetailRouter, learningProgressRouter } from "./routes/learning";
@@ -86,6 +87,7 @@ api.route("/provider-icons", providerIconsRouter);
 api.route("/exam-badges", examBadgesRouter);
 api.route("/exams/:examId/questions", questionsRouter);
 api.route("/exams/:examId/import", importsRouter);
+api.route("/import-schemas", importSchemasRouter);
 
 // docs/requirements/practice-and-learning-modes.md — Practice Mode & Mock Exam Mode.
 api.route("/exams/:examId/practice-catalog", practiceCatalogRouter);

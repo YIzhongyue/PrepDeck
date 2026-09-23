@@ -1,6 +1,8 @@
+import { exportComponentPackage } from "@prepdeck/shared";
 import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
+import { getExam as getExamRecord } from "../lib/examManagement";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody } from "../lib/importSecurity";
@@ -22,6 +24,16 @@ function auditRejection(db: D1Database, context: QuestionMutationContext, reason
 export const questionsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
 questionsRouter.use("*", requireAdmin);
 questionsRouter.get("/", async c => c.json(await searchQuestions(c.env.DB, c.req.param("examId")!, c.req.query())));
+questionsRouter.get("/export", async c => {
+  const examId = c.req.param("examId")!;
+  const result = await searchQuestions(c.env.DB, examId, c.req.query());
+  if (!result.questions.length) return c.json({ error: "No questions in this page" }, 404);
+  try {
+    const exam = (await getExamRecord(c.env.DB, examId))!;
+    const file = exportComponentPackage({ id: examId, name: exam.name }, result.questions.map(q => ({ ...q, externalId: q.externalId ?? undefined, options: q.options ?? undefined })));
+    return c.json({ file, total: result.total, offset: result.offset, nextOffset: result.offset + result.questions.length < result.total ? result.offset + result.questions.length : null });
+  } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Cannot export snapshots" }, 409); }
+});
 questionsRouter.get("/:id", async c => {
   const row = await getQuestion(c.env.DB, c.req.param("examId")!, c.req.param("id"));
   return row ? c.json({ question: toQuestion(row) }) : c.json({ error: "Question not found" }, 404);

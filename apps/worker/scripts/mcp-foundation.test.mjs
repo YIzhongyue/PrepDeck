@@ -45,7 +45,7 @@ const schemaFiles = [
   "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
   "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql",
   "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql",
-  "0033_question_needs_review.sql",
+  "0033_question_needs_review.sql", "0034_question_components.sql",
 ];
 // implementation's import tools write import_logs (0002 predates schemaFiles'
 // question-authoring cut, but import_logs itself is defined in 0001).
@@ -166,6 +166,7 @@ function rpc(env, audience, token, method = "tools/list", params, options = {}) 
 // implementation adds the Knowledge Points tools at the end.
 const USER_TOOL_NAMES = [
   "user_get_identity",
+  "user_get_import_schemas",
   "user_get_learning_overview", "user_get_exam_progress", "user_get_learning_stats",
   "user_list_attempts", "user_get_attempt", "user_get_recent_attempts",
   "user_get_wrong_questions", "user_get_bookmarked_questions", "user_get_unattempted_questions",
@@ -183,11 +184,11 @@ const USER_TOOL_NAMES = [
 
 // implementation — expected Admin MCP catalog, in registration order.
 const ADMIN_TOOL_NAMES = [
-  "admin_get_identity", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
+  "admin_get_identity", "admin_get_import_schemas", "admin_export_questions", "admin_search_questions", "admin_get_question", "admin_list_exams", "admin_get_exam",
   "admin_get_exam_statistics", "admin_find_duplicate_questions", "admin_find_questions_missing_explanations",
   "admin_find_questions_with_invalid_answer_references", "admin_find_questions_missing_metadata",
   "admin_get_question_bank_statistics", "admin_get_recent_content_changes", "admin_list_tags",
-  "admin_validate_question_payload", "admin_create_question", "admin_update_question", "admin_delete_question",
+  "admin_preview_component_question", "admin_validate_question_payload", "admin_create_question", "admin_update_question", "admin_delete_question",
   "admin_batch_create_questions", "admin_batch_update_questions",
   // implementation
   "admin_create_exam", "admin_update_exam", "admin_archive_exam",
@@ -244,6 +245,28 @@ test("production root MCP endpoints bypass SPA fallback and each consume one IP 
     assert.equal(unknown.status, 404);
     assert.equal((await payload(unknown)).error.code, "not_found");
   }
+});
+
+test("PDF schemas are discoverable in both MCP audiences without question-bank writes", async (t) => {
+  const f = await fixture(t);
+  const results = [];
+  for (const [audience, credential] of [["user", f.alice], ["admin", f.admin]]) {
+    const response = await payload(await rpc(f.env, audience, credential.token, "tools/call", {
+      name: `${audience}_get_import_schemas`, arguments: {},
+    }));
+    assert.equal(response.result.structuredContent.ok, true);
+    results.push(response.result.structuredContent.data);
+  }
+  assert.deepEqual(results[0], results[1]);
+  assert.deepEqual(results[0].capabilities.interactions, ["choice", "text", "order", "match"]);
+  assert.equal(results[0].componentImportSchema.properties.schemaVersion.const, "2.0");
+  assert.equal(results[0].importSchema.properties.schemaVersion.const, "1.0");
+  assert.equal(results[0].importPermission, "admin");
+  assert.equal(results[0].acceptsPdfUpload, false);
+  assert.equal(f.sqlite.prepare("SELECT count(*) AS n FROM questions").get().n, 0);
+  assert.equal(f.bucketObjects.size, 0);
+  const unauthenticated = await worker.fetch(new Request(`${f.env.APP_BASE_URL}/api/import-schemas`), f.env);
+  assert.equal(unauthenticated.status, 401);
 });
 
 test("both root MCP endpoints reject traffic before authentication when circuit or IP gates deny it, using the same throttling envelope tool-level rejections use", async (t) => {
@@ -669,7 +692,7 @@ test("implementation: admin_get_exam_statistics summarizes type/difficulty/quali
   assert.equal(exam.id, "examA");
   assert.equal(statistics.scannedCount, 4);
   assert.equal(statistics.truncated, false);
-  assert.deepEqual(statistics.byType, { single_choice: 2, multiple_choice: 0, true_false: 1, fill_blank: 1 });
+  assert.deepEqual(statistics.byType, { single_choice: 2, multiple_choice: 0, true_false: 1, fill_blank: 1, ordering: 0, matching: 0 });
   assert.equal(statistics.byDifficulty.unset, 1);
   assert.equal(statistics.missingExplanationCount, 1);
   assert.equal(statistics.missingMetadataCount, 1);
@@ -1350,6 +1373,7 @@ test("implementation: User MCP credentials cannot invoke any Admin MCP mutation 
   const f = await questionBankFixture(t);
   const fields = { type: "single_choice", stem: "Q?", options: [{ id: "a", text: "A" }, { id: "b", text: "B" }], correctAnswers: ["a"] };
   const calls = [
+    ["admin_preview_component_question", { examId: "examA", question: {} }],
     ["admin_validate_question_payload", { examId: "examA", payload: fields }],
     ["admin_create_question", { examId: "examA", payload: fields, proposalToken: "0".repeat(64), proposalId: crypto.randomUUID() }],
     ["admin_update_question", { examId: "examA", id: "q1", expectedRevision: 1, payload: fields, proposalToken: "0".repeat(64) }],
@@ -2245,4 +2269,135 @@ test("implementation metrics: prod/development bindings are separate and telemet
   const config = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(config, /\[\[analytics_engine_datasets\]\]\s+binding = "MCP_METRICS"\s+dataset = "prepdeck_mcp_metrics"/);
   assert.match(config, /\[\[env\.development\.analytics_engine_datasets\]\]\s+binding = "MCP_METRICS"\s+dataset = "prepdeck_mcp_metrics_development"/);
+});
+
+for (const name of ["reading", "case-with-figure", ...(process.env.COMPONENT_SOURCE_FILES?.split(",") ?? [])]) test(`component ${name}: MCP preview, idempotent import and export preserve the package`, async t => {
+  const f = await fixture(t);
+  await callAdminTool(f, "admin_create_exam", { slug: "component-exam", name: "Components" }).then(result => { f.componentExamId = result.exam.id; });
+  const file = JSON.parse(await readFile(name.startsWith('/') ? name : new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), 'utf8'));
+  const preview = await callAdminTool(f, 'admin_preview_import', { examId: f.componentExamId, file });
+  assert.equal(preview.valid, true);
+  const args = { examId: f.componentExamId, file, importId: preview.importId, importToken: preview.importToken };
+  const imported = await callAdminTool(f, 'admin_execute_import', args);
+  assert.equal(imported.created, file.questions.length);
+  const replay = await callAdminTool(f, 'admin_execute_import', args);
+  assert.equal(replay.idempotentReplay, true);
+  const exported = await callAdminTool(f, 'admin_export_questions', { examId: f.componentExamId, limit: 1 });
+  assert.equal(exported.file.schemaVersion, '2.0'); assert.equal(exported.nextOffset, file.questions.length > 1 ? 1 : null);
+  assert.deepEqual(exported.file.stimuli, file.stimuli ?? []);
+  assert.deepEqual(exported.file.assets, file.assets ?? []);
+  assert.ok(exported.file.questions[0].scoring);
+});
+
+test("MCP export rejects missing external IDs without writing and preserves assigned identities on re-import", async t => {
+  const f = await fixture(t);
+  const { exam } = await callAdminTool(f, "admin_create_exam", { slug: "round-trip", name: "Round trip" });
+  const fields = { type: "fill_blank", stem: "Complete this.", correctAnswers: ["answer"], needsReview: true };
+  const preview = await callAdminTool(f, "admin_validate_question_payload", { examId: exam.id, payload: fields });
+  const { question } = await callAdminTool(f, "admin_create_question", {
+    examId: exam.id, payload: preview.payload, proposalToken: preview.proposalToken, proposalId: preview.proposalId,
+  });
+  const before = f.sqlite.prepare("SELECT * FROM questions").all();
+  const error = await callAdminToolExpectingError(f, "admin_export_questions", { examId: exam.id });
+  assert.equal(error.code, "export_requires_external_id");
+  assert.match(error.message, /Assign a unique external ID/);
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), before);
+  const identity = await callAdminTool(f, "admin_validate_question_payload", { examId: exam.id, id: question.id, payload: { externalId: "manual-1" } });
+  await callAdminTool(f, "admin_update_question", {
+    examId: exam.id, id: question.id, expectedRevision: identity.currentRevision, payload: identity.payload, proposalToken: identity.proposalToken,
+  });
+  const { file } = await callAdminTool(f, "admin_export_questions", { examId: exam.id });
+  assert.equal(file.questions[0].externalId, "manual-1");
+  assert.equal(file.questions[0].needsReview, true);
+  const imported = await callAdminTool(f, "admin_preview_import", { examId: exam.id, file });
+  assert.equal(imported.creates.length, 0);
+  assert.equal(imported.conflicts[0].questionId, question.id);
+  const result = await callAdminTool(f, "admin_execute_import", {
+    examId: exam.id, file, importId: imported.importId, importToken: imported.importToken,
+    conflictResolutions: imported.conflicts.map(({ questionId, expectedRevision, incomingToken }) => ({ questionId, expectedRevision, incomingToken, action: "apply" })),
+  });
+  assert.equal(result.created, 0);
+  assert.equal(result.updated, 1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, 1);
+  assert.equal(f.sqlite.prepare("SELECT needs_review FROM questions WHERE id = ?").get(question.id).needs_review, 1);
+});
+
+for (const name of ["reading", "code", "case-with-figure"]) test(`single component ${name}: preview derives a committable payload and reuses create idempotency`, async t => {
+  const f = await questionBankFixture(t);
+  const file = JSON.parse(await readFile(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"));
+  const question = { ...file.questions[0], needsReview: true };
+  const preview = await callAdminTool(f, "admin_preview_component_question", {
+    examId: "examA", question, stimuli: file.stimuli, assets: file.assets,
+  });
+  assert.equal(preview.valid, true, JSON.stringify(preview));
+  assert.equal(preview.payload.type, { reading: "single_choice", code: "ordering", "case-with-figure": "matching" }[name]);
+  assert.ok(preview.payload.stem);
+  assert.deepEqual(preview.payload.content.stimuli, file.stimuli ?? []);
+  assert.deepEqual(preview.payload.content.assets, file.assets ?? []);
+  assert.equal(preview.payload.needsReview, true);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, f.questionRowCount);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM admin_mcp_audit_log").get().n, 0);
+  const args = { examId: "examA", payload: preview.payload, proposalToken: preview.proposalToken, proposalId: preview.proposalId };
+  assert.equal((await callAdminToolExpectingError(f, "admin_create_question", { ...args, payload: { ...preview.payload, needsReview: false } })).code, "conflict");
+  const created = await callAdminTool(f, "admin_create_question", args);
+  assert.equal(created.question.needsReview, true);
+  assert.deepEqual(created.question.content.interaction, question.interaction);
+  const replay = await callAdminTool(f, "admin_create_question", args);
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(replay.question.id, created.question.id);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, f.questionRowCount + 1);
+  assert.ok(f.limits.some(({ key }) => key === "mcp:admin:admin:mutation"));
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM admin_mcp_audit_log WHERE tool='admin_create_question' AND outcome='success'").get().n, 1);
+});
+
+test("single component edits preserve omitted metadata across JSON and reject stale revisions", async t => {
+  const f = await questionBankFixture(t);
+  const file = JSON.parse(await readFile(new URL("../../../tests/fixtures/components/code.json", import.meta.url), "utf8"));
+  f.sqlite.prepare("UPDATE questions SET needs_review=1 WHERE id='q1'").run();
+  const preview = await callAdminTool(f, "admin_preview_component_question", { examId: "examA", id: "q1", question: file.questions[0] });
+  assert.equal(preview.valid, true, JSON.stringify(preview));
+  assert.equal(preview.currentRevision, 1);
+  assert.equal(preview.answerRevised, true);
+  assert.equal(preview.payload.needsReview, true);
+  assert.equal(preview.payload.explanation, "Because 2+2=4.");
+  assert.equal(preview.payload.difficulty, "easy");
+  assert.deepEqual(preview.payload.tags, ["math"]);
+  const args = { examId: "examA", id: "q1", expectedRevision: preview.currentRevision, payload: preview.payload, proposalToken: preview.proposalToken };
+  const updated = await callAdminTool(f, "admin_update_question", args);
+  assert.equal(updated.question.type, "ordering");
+  assert.equal(updated.question.answerRevision, 2);
+  assert.equal(updated.question.needsReview, true);
+  assert.equal((await callAdminToolExpectingError(f, "admin_update_question", args)).code, "conflict");
+  const reviewed = await callAdminTool(f, "admin_preview_component_question", {
+    examId: "examA", id: "q1", question: { ...file.questions[0], needsReview: false },
+  });
+  assert.equal(reviewed.answerRevised, false);
+  const signedOff = await callAdminTool(f, "admin_update_question", {
+    examId: "examA", id: "q1", expectedRevision: reviewed.currentRevision, payload: reviewed.payload, proposalToken: reviewed.proposalToken,
+  });
+  assert.equal(signedOff.question.needsReview, false);
+  assert.equal(signedOff.question.answerRevision, 2);
+  assert.deepEqual(signedOff.question.tags, ["math"]);
+});
+
+test("single component preview rejects invalid references, metadata and wrong exam targets without proposals or writes", async t => {
+  const f = await questionBankFixture(t);
+  const file = JSON.parse(await readFile(new URL("../../../tests/fixtures/components/reading.json", import.meta.url), "utf8"));
+  for (const input of [
+    { question: file.questions[0] },
+    { question: { ...file.questions[0], needsReview: "true" }, stimuli: file.stimuli },
+    { question: { ...file.questions[0], scoring: { method: "exact", correctAnswers: ["missing"] } }, stimuli: file.stimuli },
+  ]) {
+    const result = await callAdminTool(f, "admin_preview_component_question", { examId: "examA", ...input });
+    assert.equal(result.valid, false);
+    assert.ok(result.issues.length);
+    assert.equal(result.proposalToken, undefined);
+    assert.equal(result.proposalId, undefined);
+  }
+  const input = { question: file.questions[0], stimuli: file.stimuli };
+  for (const target of [{ examId: "missing" }, { examId: "examB", id: "q1" }]) {
+    assert.equal((await callAdminToolExpectingError(f, "admin_preview_component_question", { ...target, ...input })).code, "not_found");
+  }
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, f.questionRowCount);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM admin_mcp_audit_log").get().n, 0);
 });

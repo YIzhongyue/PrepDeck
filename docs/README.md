@@ -30,6 +30,7 @@ records the gaps between the original specification, current code and open issue
 | Document | Read it for |
 | --- | --- |
 | [System overview](architecture/system-overview.md) | Worker assets, authentication boundaries, services, caches and background jobs. |
+| [Component questions](architecture/component-questions.md) | Generic import model, pipeline boundaries and verified limits. |
 | [MCP](architecture/mcp.md) | Separate audiences, lifecycle, runtime catalogs, proposal/revision contracts and audit. |
 
 ## Contributor and operator guides
@@ -49,6 +50,7 @@ records the gaps between the original specification, current code and open issue
 | [Observability](operations/observability-runbook.md) | Current log/audit inventory, gaps, sampling and retention targets. |
 | [Content mutation audit](operations/content-mutation-audit.md) | Actor, entry point, target and outcome across browser, import and MCP writes. |
 | [Scheduled jobs](operations/scheduled-jobs.md) | Review email, unsubscribe, image cleanup and operational caveats. |
+| [Component question UI](screenshots/component-questions.md) | Synthetic desktop/mobile evidence for component rendering, answering and editing. |
 | [Screenshot policy](screenshots/README.md) | Where to add current, sanitized visual evidence. |
 | [Login layout](screenshots/login-layout.md) | Desktop/mobile login layout and browser verification. |
 

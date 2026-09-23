@@ -438,8 +438,12 @@ try {
       await page.getByRole("button", { name: label, exact: true }).first().click();
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${theme} 375px ${label} dialog overflow`);
-      await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab");
-      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement)), `${label} retains keyboard focus`);
+      await page.keyboard.press("Shift+Tab");
+      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement) && document.hasFocus()), `${label} retains keyboard focus on Shift+Tab`);
+      if (label === "Link a question") assert.ok(await dialog.getByRole("button", { name: "Done", exact: true }).evaluate(el => el === document.activeElement), "Shift+Tab wraps from the first to the last question-picker control");
+      await page.keyboard.press("Tab");
+      assert.ok(await dialog.evaluate(el => el.contains(document.activeElement) && document.hasFocus()), `${label} retains keyboard focus on Tab`);
+      if (label === "Link a question") assert.ok(await dialog.getByRole("button", { name: "Close question picker", exact: true }).evaluate(el => el === document.activeElement), "Tab wraps from the last to the first question-picker control");
       await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     }
   }
