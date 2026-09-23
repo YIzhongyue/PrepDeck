@@ -1,3 +1,4 @@
+import QuestionClassificationFilters from "./QuestionClassificationFilters";
 import { useEffect, useState } from "react";
 import type { Question, QuestionType } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
@@ -7,20 +8,27 @@ import QuestionEditorDialog from "./QuestionEditorDialog";
 import QuestionImportDialog from "./QuestionImportDialog";
 
 export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
+  // Changing exams discards the old exam's filter/page/draft state before any
+  // new requests, rather than sending its classification IDs to another bank.
+  return <ExamQuestionsPanel key={exam.id} exam={exam} />;
+}
+
+function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   // `offset` is the page being FETCHED; `page` is the page on screen. They were
   // one value, so clicking Next re-rendered the "Page 5 of 5" label and the
   // 201–205 range over page 4's rows for the frame between the click and the
   // effect that loads them. Keeping the rows, their offset and their total in
   // one state object means no label can describe a page that is not rendered.
-  const [page, setPage] = useState<{ offset: number; questions: Question[]; total: number }>({ offset: 0, questions: [], total: 0 });
+  const [page, setPage] = useState<{ offset: number; questions: Question[]; total: number; query: string }>({ offset: 0, questions: [], total: 0, query: "" });
   const { offset: shownOffset, questions, total } = page;
   const [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   // `needsReview` is "" (no filter), "true" or "false" — the same spelling the
   // API parses, so it goes straight into the query string below.
-  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "" });
+  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "", classifications: "" });
   const [offset, setOffset] = useState(0), [refresh, setRefresh] = useState(0);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
   const [importing, setImporting] = useState(false);
   const limit = 50;
@@ -34,7 +42,7 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
           setOffset(Math.max(0, Math.floor((data.total - 1) / limit) * limit));
           return;
         }
-        setPage({ offset, questions: data.questions, total: data.total });
+        setPage({ offset, questions: data.questions, total: data.total, query: query.toString() });
         setLoading(false);
       })
       .catch(err => { if (!controller.signal.aborted) { setError(err.message); setLoading(false); } });
@@ -45,11 +53,12 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
     // A failed request leaves the same target offset ready to retry.
     setRefresh(n => n + 1);
   };
-  const mutated = (message: string) => { setNotice(message); setRefresh(n => n + 1); questionBankChanged(); };
+  const mutated = (message: string) => { setNotice(message); setRefresh(n => n + 1); setCatalogRevision(n => n + 1); questionBankChanged(); };
   const exportPage = async () => {
     try {
-      const params = new URLSearchParams({ ...filters, offset: String(shownOffset), limit: String(limit) });
-      const { file } = await apiFetch<{ file: unknown }>(`/api/exams/${exam.id}/questions/export?${params}`);
+      // Export the successfully displayed selection, including after a newer
+      // filter request failed and the previous page remains on screen.
+      const { file } = await apiFetch<{ file: unknown }>(`/api/exams/${exam.id}/questions/export?${page.query}`);
       const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }));
       const link = document.createElement("a"); link.href = url; link.download = `${exam.id}-questions-${shownOffset + 1}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not export questions"); }
@@ -70,6 +79,7 @@ export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
       <select className="input" aria-label="Filter by difficulty" value={filters.difficulty} onChange={e => { setOffset(0); setFilters(f => ({ ...f, difficulty: e.target.value })); }}><option value="">All difficulties</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
       <input className="input" aria-label="Filter by exact tag" placeholder="Exact tag" value={filters.tag} onChange={e => { setOffset(0); setFilters(f => ({ ...f, tag: e.target.value })); }} />
       <select className="input" aria-label="Filter by review state" value={filters.needsReview} onChange={e => { setOffset(0); setFilters(f => ({ ...f, needsReview: e.target.value })); }}><option value="">Any review state</option><option value="true">Needs review</option><option value="false">Reviewed</option></select>
+      <QuestionClassificationFilters examId={exam.id} revision={catalogRevision} selected={JSON.parse(filters.classifications || "{}")} onChange={selected => { setOffset(0); setFilters(f => ({ ...f, classifications: JSON.stringify(selected) })); }} />
       <button className="btn btn-secondary" type="submit">Search</button>
     </form>
     {notice && <p role="status" className="authoring-feedback">{notice}</p>}

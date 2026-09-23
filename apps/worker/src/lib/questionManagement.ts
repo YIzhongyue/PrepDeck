@@ -1,5 +1,6 @@
 import { validateQuestionRow, type Question, type QuestionImportFile, type ValidationIssue } from "@prepdeck/shared";
 import { normalizeTagKey } from "./questionBankTags";
+import { questionClassificationConditions } from "./questionClassifications";
 
 export interface QuestionRow {
   id: string; exam_id: string; external_id: string | null; sequence_number: number;
@@ -135,6 +136,7 @@ export function updateStatement(
 // tool input object (a concrete zod-inferred type, used by mcp/adapter.ts)
 // are structurally assignable without a cast.
 export interface SearchQuestionsQuery {
+  classifications?: string;
   limit?: string | number;
   offset?: string | number;
   type?: string;
@@ -165,6 +167,8 @@ export async function searchQuestions(db: D1Database, examId: string, query: Sea
   };
   const limit = Math.max(1, bounded(query.limit, 50, 200)), offset = bounded(query.offset, 0, Number.MAX_SAFE_INTEGER);
   const conditions = ["exam_id = ?"], params: unknown[] = [examId];
+  const classifications = await questionClassificationConditions(db, examId, query.classifications);
+  conditions.push(...classifications.conditions); params.push(...classifications.params);
   for (const field of ["difficulty", "type"] as const) if (query[field]) { conditions.push(`${field} = ?`); params.push(query[field]); }
   const needsReview = parseNeedsReviewFilter(query.needsReview);
   if (needsReview !== null) { conditions.push("needs_review = ?"); params.push(needsReview); }

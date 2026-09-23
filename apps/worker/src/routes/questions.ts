@@ -9,6 +9,7 @@ import { parseJsonBody } from "../lib/importSecurity";
 import { createStatement, getQuestion, searchQuestions, toQuestion, updateStatement, validatePayload } from "../lib/questionManagement";
 import { buildTagLinkStatements, fetchTagIdsForQuestion, resolveOrCreateTags } from "../lib/questionBankTags";
 import { questionMutationAuditStatement, type QuestionMutationContext } from "../lib/questionMutationAudit";
+import { questionClassificationCatalog, QuestionClassificationError } from "../lib/questionClassifications";
 
 // Audits that accompany a REJECTED request, written on their own rather than
 // inside the mutation's batch. The handler has already decided the response by
@@ -22,8 +23,13 @@ function auditRejection(db: D1Database, context: QuestionMutationContext, reason
 }
 
 export const questionsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+questionsRouter.onError((error, c) => {
+  if (error instanceof QuestionClassificationError) return c.json({ error: error.message }, error.status);
+  throw error;
+});
 questionsRouter.use("*", requireAdmin);
 questionsRouter.get("/", async c => c.json(await searchQuestions(c.env.DB, c.req.param("examId")!, c.req.query())));
+questionsRouter.get("/classifications", async c => c.json(await questionClassificationCatalog(c.env.DB, c.req.param("examId")!)));
 questionsRouter.get("/export", async c => {
   const examId = c.req.param("examId")!;
   const result = await searchQuestions(c.env.DB, examId, c.req.query());

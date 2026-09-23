@@ -1,0 +1,25 @@
+[
+  {
+    "examSlugs": ["sg", "ipa-sg", "information-security-management"],
+    "examTags": ["SG", "科目A", "科目B"],
+    "dimensions": [{
+      "id": "subject", "label": "Subject / 科目", "allLabel": "All subjects",
+      "values": [
+        { "id": "a", "label": "科目A", "tags": ["科目A", "科目 A"] },
+        { "id": "b", "label": "科目B", "tags": ["科目B", "科目 B"] }
+      ]
+    }]
+  },
+  {
+    "examSlugs": ["ip", "ipa-ip", "it-passport"],
+    "examTags": ["IP"],
+    "dimensions": [{
+      "id": "field", "label": "Field / 分野", "allLabel": "All fields",
+      "values": [
+        { "id": "strategy", "label": "ストラテジ系", "tags": ["ストラテジ", "ストラテジ系"] },
+        { "id": "management", "label": "マネジメント系", "tags": ["マネジメント", "マネジメント系"] },
+        { "id": "technology", "label": "テクノロジ系", "tags": ["テクノロジ", "テクノロジ系"] }
+      ]
+    }]
+  }
+]

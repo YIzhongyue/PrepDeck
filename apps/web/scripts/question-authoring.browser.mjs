@@ -1,5 +1,6 @@
 // Optional browser regression: PLAYWRIGHT_MODULE may point to a bundled Playwright module.
 // Runs the actual authoring components against an isolated HTTP fixture; never touches a real bank.
+import "./question-classifications.browser.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
@@ -37,6 +38,7 @@ const server = createServer(async (req, res) => {
       if (tagFailures > 0) { tagFailures--; return json(503, { error: "Tag catalog unavailable" }); }
       return json(200, { tags: [...new Set([...catalog, ...rows.flatMap(q => q.tags)])] });
     }
+    if (req.method === "GET" && url.pathname.endsWith("/questions/classifications")) return json(200, { dimensions: [] });
     if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
     if (req.method === "GET") {
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }

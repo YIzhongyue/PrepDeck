@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
 import { Hono } from "hono";
+import { normalizeImportFile } from "../../../packages/shared/src/question-components.ts";
 
 async function bundle(path) {
   const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
@@ -31,6 +32,56 @@ function d1(db) {
   } };
 }
 const choice = { type: "single_choice", stem: "**Which** value is even?", options: [{ id: "A", text: "2" }, { id: "B", text: "3" }], correctAnswers: ["A"] };
+
+test("exam classifications use full-bank metadata before pagination and share export predicates", async t => {
+  const { db, request, create } = setup(t);
+  await create({ externalId: "a", tags: ["SG", "科目A"] });
+  await create({ externalId: "aliases", tags: ["科目A", "科目 A"] });
+  for (let i = 0; i < 52; i++) await create({ externalId: `b-${i}`, stem: `B question ${i}${i === 3 ? " needle" : ""}`,
+    tags: [i === 51 ? "科目 B" : "科目B", ...(i === 3 ? ["focus"] : [])], difficulty: i === 3 ? "hard" : "easy", needsReview: i === 3 });
+  const component = normalizeImportFile(JSON.parse(readFileSync(new URL("../../../tests/fixtures/components/reading.json", import.meta.url), "utf8"))).questions[0];
+  await create({ ...component, externalId: "component-b", tags: ["科目B"] });
+  await create({ externalId: "missing", tags: [] });
+  await create({ externalId: "ambiguous", tags: ["科目A", "科目B"] });
+  const before = db.prepare("SELECT total_changes() AS n").get().n;
+  const catalog = await request("/exams/exam/questions/classifications");
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(catalog.data.dimensions[0].values.map(v => [v.id, v.count]), [["a", 2], ["b", 53]]);
+  assert.equal(catalog.data.dimensions[0].unclassifiedCount, 2);
+  const query = new URLSearchParams({ classifications: JSON.stringify({ subject: "b" }), limit: "50", offset: "50" });
+  const page = await request(`/exams/exam/questions?${query}`);
+  assert.equal(page.data.total, 53);
+  assert.deepEqual(page.data.questions.map(q => q.externalId), ["b-50", "b-51", "component-b"]);
+  const exported = await request(`/exams/exam/questions/export?${query}`);
+  assert.deepEqual(exported.data.file.questions.map(q => q.externalId), page.data.questions.map(q => q.externalId));
+  assert.equal(exported.data.total, 53);
+  query.set("offset", "0"); query.set("q", "needle"); query.set("difficulty", "hard"); query.set("type", "single_choice"); query.set("tag", "FOCUS"); query.set("needsReview", "true");
+  const combined = await request(`/exams/exam/questions?${query}`);
+  assert.equal(combined.data.total, 1); assert.equal(combined.data.questions[0].externalId, "b-3");
+  const unclassified = await request(`/exams/exam/questions?${new URLSearchParams({ classifications: JSON.stringify({ subject: "__unclassified" }) })}`);
+  assert.deepEqual(unclassified.data.questions.map(q => q.externalId), ["missing", "ambiguous"]);
+  assert.equal(db.prepare("SELECT total_changes() AS n").get().n, before, "classification reads preserve tags and stored questions");
+  for (const classifications of ['{"field":"technology"}', '{"subject":"unknown"}', "[]", "{", "null", '{"subject":{}}']) {
+    for (const path of ["questions", "questions/export"]) assert.equal((await request(`/exams/exam/${path}?${new URLSearchParams({ classifications })}`)).status, 400);
+  }
+});
+
+test("another configured exam exposes different categories without leaking SG values or allowing unauthorized discovery", async t => {
+  const { db, request, create } = setup(t);
+  await create({ tags: ["SG", "科目A"] });
+  db.exec("INSERT INTO exams (id,slug,name,created_at) VALUES ('ip','it-passport','IP','2026-09-23'),('other','other','Other','2026-09-23')");
+  const added = await request("/exams/ip/questions", "POST", { ...choice, tags: ["テクノロジ系"], externalId: "ip-tech" });
+  assert.equal(added.status, 201);
+  const catalog = await request("/exams/ip/questions/classifications");
+  assert.deepEqual(catalog.data.dimensions.map(d => d.id), ["field"]);
+  assert.deepEqual(catalog.data.dimensions[0].values.map(v => v.count), [0, 0, 1]);
+  const selected = new URLSearchParams({ classifications: JSON.stringify({ field: "technology" }) });
+  assert.equal((await request(`/exams/ip/questions?${selected}`)).data.questions[0].externalId, "ip-tech");
+  assert.equal((await request(`/exams/exam/questions?${selected}`)).status, 400);
+  assert.deepEqual((await request("/exams/other/questions/classifications")).data.dimensions, []);
+  assert.equal((await request("/exams/missing/questions/classifications")).status, 404);
+  assert.equal((await request("/exams/ip/questions/classifications", "GET", undefined, "user")).status, 403);
+});
 function setup(t) {
   const db = new DatabaseSync(":memory:"); t.after(() => db.close());
   const directory = new URL("../../../migrations/", import.meta.url);
