@@ -12,11 +12,12 @@ export interface McpTool {
 /** Strict schemas and fixed errors prevent caller-supplied keys/values or
  * service exception messages from being echoed in validation errors.
  */
-export function defineMcpTool<S extends z.ZodRawShape>(
+export function defineMcpTool<S extends z.ZodRawShape, R>(
   name: string,
   description: string,
   schema: z.ZodObject<S>,
-  operation: (input: z.infer<typeof schema>) => unknown | Promise<unknown>,
+  operation: (input: z.infer<typeof schema>) => R | Promise<R>,
+  formatResult: (data: R) => CallToolResult = (data) => toolResult({ ok: true, data }),
 ): McpTool {
   const strictSchema = schema.strict();
   return {
@@ -28,7 +29,7 @@ export function defineMcpTool<S extends z.ZodRawShape>(
       try {
         const parsed = strictSchema.safeParse(input ?? {});
         if (!parsed.success) throw new McpApplicationError("invalid_input");
-        return toolResult({ ok: true, data: await operation(parsed.data) });
+        return formatResult(await operation(parsed.data));
       } catch (error) {
         return toolResult(errorEnvelope(error), true);
       }
@@ -36,8 +37,8 @@ export function defineMcpTool<S extends z.ZodRawShape>(
   };
 }
 
-export function createCatalogServer(name: string, tools: readonly McpTool[], observation?: McpObservation) {
-  const server = new Server({ name, version: "0.1.0" }, { capabilities: { tools: {} } });
+export function createCatalogServer(name: string, tools: readonly McpTool[], observation?: McpObservation, instructions?: string) {
+  const server = new Server({ name, version: "0.1.0" }, { capabilities: { tools: {} }, instructions });
   server.setRequestHandler("tools/list", async (request) => {
     if (request.params?.cursor) throw new ProtocolError(-32602, "Invalid request input.");
     return { tools: tools.map((tool) => tool.definition) };

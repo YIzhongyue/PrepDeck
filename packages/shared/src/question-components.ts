@@ -41,6 +41,22 @@ export interface QuestionContentModel {
   version: "1.0"; body: ContentBlock[]; stimuli: Stimulus[]; assets: ContentAsset[]; interaction: Interaction;
 }
 const validator = new Validator(schema as Schema, "7");
+// Validate the answer-free snapshot without reading or manufacturing scoring.
+// Reference/asset integrity is checked separately by the consumer so it can
+// report missing visual material instead of silently using a text projection.
+const contentStructureValidator = new Validator({
+  type: "object", additionalProperties: false,
+  required: ["version", "body", "stimuli", "assets", "interaction"],
+  properties: {
+    version: { const: "1.0" },
+    body: { type: "array", items: { $ref: "#/definitions/block" }, minItems: 1, maxItems: 100 },
+    stimuli: schema.properties.stimuli, assets: schema.properties.assets,
+    interaction: { $ref: "#/definitions/interaction" },
+  }, definitions: schema.definitions,
+} as Schema, "7");
+export function isQuestionContentStructure(value: unknown): value is QuestionContentModel {
+  try { return contentStructureValidator.validate(value).valid; } catch { return false; }
+}
 export const componentCapabilities = {
   importVersions: ["1.0", "2.0"], contentVersion: "1.0",
   blocks: ["paragraph", "heading", "list", "table", "figure", "code"],
