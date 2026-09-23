@@ -19,6 +19,7 @@ let rows = [], writes = 0, tagFailures = 0, tagRequests = 0;
 // Lets a test hold the question-list response open, so an assertion can run
 // while a page is still in flight instead of racing it.
 let heldQuestions = null, questionPageFailures = 0;
+const questionRequests = [];
 const holdQuestions = (offset = null) => (heldQuestions = { offset, gate: Promise.withResolvers(), arrived: Promise.withResolvers() });
 const releaseQuestions = () => { const held = heldQuestions; heldQuestions = null; held.gate.resolve(); };
 const catalog = ["tag-one", "Cloud, data", "Cloud security", "Other exam tag"];
@@ -39,6 +40,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
     if (req.method === "GET") {
+      questionRequests.push(Object.fromEntries(url.searchParams));
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
       const review = url.searchParams.get("needsReview");
@@ -294,12 +296,50 @@ try {
   rows[0].type = "multiple_choice"; rows[0].correctAnswers = ["A", "B"];
   await page.reload();
   await page.locator(".admin-question-row").first().getByText("Choose 2", { exact: true }).waitFor();
-  rows = Array.from({ length: 205 }, (_, i) => ({ ...rows[0], id: `page-${i}`, sequenceNumber: i + 1, externalId: `Q-${i}` }));
+  rows = Array.from({ length: 205 }, (_, i) => ({ ...rows[0], id: `page-${i}`, sequenceNumber: i + 1, externalId: `Q-${i}`, stem: `Pagination fixture ${i < 110 ? "selected" : "other"}` }));
   await page.reload(); await page.getByText("Page 1 of 5", { exact: true }).waitFor();
   const questionPageResponse = offset => page.waitForResponse(r => {
     const url = new URL(r.url());
     return r.request().method() === "GET" && url.pathname === "/api/exams/exam/questions" && url.searchParams.get("offset") === String(offset);
   });
+  const destination = page.getByLabel("Go to page", { exact: true }), go = page.getByRole("button", { name: "Go", exact: true });
+  const beforeInvalid = questionRequests.length;
+  for (const invalid of ["", "0", "6", "-1", "1.5", "1e0", "abc"]) {
+    await destination.fill(invalid); await destination.press("Enter");
+    await page.getByRole("alert").filter({ hasText: "Enter a whole page number from 1 to 5." }).waitFor();
+  }
+  assert.equal(questionRequests.length, beforeInvalid);
+  await destination.fill("1"); await destination.press("Enter");
+  assert.equal(await go.isDisabled(), true);
+  assert.equal(questionRequests.length, beforeInvalid);
+  const heldJump = holdQuestions(150), jumpedPage = questionPageResponse(150);
+  await destination.fill("4"); await destination.press("Enter"); await heldJump.arrived.promise;
+  assert.equal(await destination.isDisabled(), true); assert.equal(await go.isDisabled(), true);
+  await page.getByText("Page 1 of 5", { exact: true }).waitFor();
+  assert.equal(questionRequests.length, beforeInvalid + 1);
+  releaseQuestions(); await jumpedPage;
+  await page.getByText("Page 4 of 5", { exact: true }).waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.getByRole("form", { name: "Question pages" }).screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-page-jump-desktop.png` });
+  questionPageFailures = 1;
+  await destination.fill("2"); const failedJump = questionPageResponse(50); await go.click();
+  assert.equal((await failedJump).status(), 503);
+  await page.getByRole("alert").filter({ hasText: "Question page unavailable" }).waitFor();
+  await page.getByText("Page 4 of 5", { exact: true }).waitFor();
+  const retryJump = questionPageResponse(50); await go.click(); await retryJump;
+  await page.getByText("Page 2 of 5", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.getByRole("form", { name: "Question pages" }).evaluate(el => el.scrollWidth <= el.clientWidth));
+  if (process.env.SCREENSHOT_DIR) await page.getByRole("form", { name: "Question pages" }).screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-page-jump-mobile.png` });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const searchInput = page.getByLabel("Search stem or exact internal / external ID");
+  await searchInput.fill("selected"); await searchInput.press("Enter");
+  await page.getByText("Page 1 of 3", { exact: true }).waitFor();
+  await destination.fill("3"); await go.click();
+  await page.getByText("101–110 of 110", { exact: true }).waitFor();
+  assert.equal(questionRequests.at(-1).q, "selected"); assert.equal(questionRequests.at(-1).limit, "50");
+  await searchInput.fill(""); await searchInput.press("Enter");
+  await page.getByText("Page 1 of 5", { exact: true }).waitFor();
+  console.log("PASS direct page navigation: Enter/Go, bounds, no redundant requests, loading, retry, filtered totals and mobile wrapping");
   // A failed target is still the next page from the rows being shown. The
   // next click must retry it, not skip a page or become a no-op.
   questionPageFailures = 1;
@@ -382,6 +422,9 @@ try {
   await page.getByLabel("Filter by review state", { exact: true }).selectOption("true");
   assert.equal((await flaggedPage).status(), 200);
   await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  await destination.fill("2"); await destination.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "Enter a whole page number from 1 to 1." }).waitFor();
+  await destination.fill("1");
   await page.getByText(`ID: ${rows[151].id}`, { exact: false }).waitFor();
   // Scoped to the row chip: the filter's own option carries the same words.
   const reviewChip = page.locator(".admin-question-row .tag", { hasText: "Needs review" });
@@ -396,6 +439,7 @@ try {
   assert.equal(rows[151].needsReview, false);
   assert.deepEqual(rows[151].tags, ["tag-one"], "clearing the review flag must not disturb the question's tags");
   await page.getByText("No questions found. Add a question to start authoring, or adjust the filters.", { exact: true }).waitFor();
+  assert.equal(await destination.isDisabled(), true); assert.equal(await go.isDisabled(), true);
   // Back to "Any review state": the empty value is not a filter.
   const anyPage = questionPageResponse(0);
   await page.getByLabel("Filter by review state", { exact: true }).selectOption("");
