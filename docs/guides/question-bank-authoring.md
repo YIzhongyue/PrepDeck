@@ -39,6 +39,14 @@ The search also matches an exact internal or external ID. Both IDs and the
 sequence number are visible. Mutations refresh Admin counts, the selected exam's
 practice catalog, learning details and client AI caches.
 
+Use **Go to page** and **Go** (or Enter) to jump directly within the filtered
+50-question pages. Only whole page numbers in the displayed range are accepted.
+Navigation is disabled while loading; a failed request keeps the previous page
+number and can be retried. Filtering resets to the first page, and shrinking
+results are clamped to the last available page. Empty results disable navigation.
+See the [desktop](../screenshots/question-page-jump-desktop.png) and
+[mobile](../screenshots/question-page-jump-mobile.png) browser captures.
+
 ## Storage and API contract
 
 Apply the entire ordered [migration chain](../../migrations) for the target Worker.
