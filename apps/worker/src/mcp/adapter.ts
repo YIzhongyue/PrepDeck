@@ -2,6 +2,7 @@ import type { Env } from "../bindings";
 import type { McpAudience, McpPrincipal } from "./credentials";
 import { McpApplicationError } from "./errors";
 import { pageResult } from "./conventions";
+import { presentQuestion, type ImageMode, type PresentationRow } from "./questionPresentation";
 import { buildAdminMutationAuditStatement, buildConditionalAdminMutationAuditStatement, recordAdminMutationAudit } from "./audit";
 import {
   examExists, getExam as getExamRecord, getExamAttemptCounts, listExams as listExamRecords,
@@ -366,6 +367,15 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
       const row = await getQuestionRow(db, input.examId, input.id);
       if (!row) throw new McpApplicationError("not_found");
       return { question: toQuestion(row) };
+    },
+
+    async presentQuestion(input: { examId: string; id: string; imageMode: ImageMode }) {
+      // Deliberately never select grading, explanation, annotation or import
+      // baseline columns. Candidate text cannot substitute for content_json.
+      const row = await db.prepare(`SELECT id, exam_id, revision, type, stem, options_json, content_json
+        FROM questions WHERE exam_id = ? AND id = ?`).bind(input.examId, input.id).first<PresentationRow>();
+      if (!row) throw new McpApplicationError("not_found");
+      return presentQuestion(row, input.imageMode);
     },
 
     // No includeArchived param — matches routes/exams.ts, which only lets

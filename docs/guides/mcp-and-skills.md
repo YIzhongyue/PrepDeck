@@ -19,6 +19,16 @@ deployment. Source registrations are [User](../../apps/worker/src/mcp/user/serve
 and [Admin](../../apps/worker/src/mcp/admin/server.ts), not a manually copied list
 in an agent prompt.
 
+For a quiz, select a question and then use `user_present_question` when available.
+It returns the full material as formatted text and images without grading keys;
+answers/explanations can be fetched after the learner responds. The
+[presentation workflow](../../skills/prepdeck/references/question-presentation.md)
+defines tables, figures, code and fallback behavior. A host that cannot display
+images should request text-only mode and disclose missing visual material before
+continuing. Existing flattened records still need source review to recover lost
+layout; formatting alone does not repair the bank. See the
+[synthetic output examples](../screenshots/mcp-presentation.md).
+
 ## Configure a connection
 
 Skill installation and MCP access are separate. Install the optional packages

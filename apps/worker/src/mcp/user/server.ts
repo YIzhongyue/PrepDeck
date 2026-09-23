@@ -6,6 +6,7 @@ import type { McpObservation } from "../observability";
 import { createUserMcpAdapter } from "../adapter";
 import { createCatalogServer, defineMcpTool } from "../catalog";
 import { paginationSchema } from "../conventions";
+import { STUDY_PRESENTATION_INSTRUCTIONS } from "../questionPresentation";
 
 const examIdSchema = z.string().min(1).max(200);
 const questionIdSchema = z.string().min(1).max(200);
@@ -130,9 +131,16 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     ),
     defineMcpTool(
       "user_get_question",
-      "Fetch one question by exam and question id, including the correct answer(s) and explanation.",
+      "Fetch one question by exam and question id, including the correct answer(s) and explanation. For a quiz use user_present_question first; fetch this record after the learner responds and check its revision before grading.",
       z.strictObject({ examId: examIdSchema, id: questionIdSchema }),
       (input) => services.getQuestion(input),
+    ),
+    defineMcpTool(
+      "user_present_question",
+      "Present one complete question without grading keys, explanations or annotations. Returns ordered Markdown text and original MCP images from full components/shared material (or preserved legacy Markdown), plus metadata/warnings. Keep tables, code, figure captions and option labels intact; never replace images with lists. Use imageMode=text-only if the client cannot show images and disclose missing visual material. An incomplete presentation must be reviewed before answering. Read-only; does not inspect the original PDF or change the bank.",
+      z.strictObject({ examId: examIdSchema, id: questionIdSchema, imageMode: z.enum(["inline", "text-only"]).default("inline") }),
+      (input) => services.presentQuestion(input),
+      (result) => result,
     ),
     defineMcpTool(
       "user_list_exams",
@@ -156,13 +164,13 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     // --- Study selection ------------------------------------------------------
     defineMcpTool(
       "user_get_recommended_questions",
-      "A blended pick of what to study next — drawn from your wrong-question book, then bookmarks, then unattempted questions, in that order, with no duplicates. Never includes the correct answer.",
+      "A blended pick of what to study next — drawn from your wrong-question book, then bookmarks, then unattempted questions, in that order, with no duplicates. Never includes the correct answer. These are selection projections; call user_present_question for complete material before quizzing.",
       z.strictObject({ examId: examIdSchema.optional(), limit: candidateLimitSchema }),
       (input) => services.getRecommendedQuestions(input),
     ),
     defineMcpTool(
       "user_get_questions_for_review",
-      "A random sample of questions due for review — from your wrong-question book, your bookmarks, or both (`source`, default \"both\"). Never includes the correct answer.",
+      "A random sample of questions due for review — from your wrong-question book, your bookmarks, or both (`source`, default \"both\"). Never includes the correct answer. These are selection projections; call user_present_question for complete material before quizzing.",
       z.strictObject({
         examId: examIdSchema.optional(), source: reviewSourceSchema.default("both"),
         type: questionTypeSchema.optional(), difficulty: difficultySchema.optional(),
@@ -172,7 +180,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     ),
     defineMcpTool(
       "user_get_practice_candidates",
-      "A random, filterable pool of questions to practice. unattemptedOnly/wrongOnly/bookmarkedOnly may be combined; when more than one is set, a question must satisfy all of them. Never includes the correct answer.",
+      "A random, filterable pool of questions to practice. unattemptedOnly/wrongOnly/bookmarkedOnly may be combined; when more than one is set, a question must satisfy all of them. Never includes the correct answer. These are selection projections; call user_present_question for complete material before quizzing.",
       z.strictObject({
         examId: examIdSchema.optional(), type: questionTypeSchema.optional(), difficulty: difficultySchema.optional(),
         tag: z.string().min(1).max(200).optional(), unattemptedOnly: z.boolean().optional(),
@@ -325,5 +333,5 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
       z.strictObject({ id: knowledgePointIdSchema, beforeId: knowledgePointIdSchema.nullable(), expectedOrderRevision: z.number().int().min(1) }),
       (input) => services.reorderKnowledgePoints(input),
     ),
-  ], observation);
+  ], observation, STUDY_PRESENTATION_INSTRUCTIONS);
 }

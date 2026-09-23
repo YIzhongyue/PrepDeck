@@ -17,6 +17,12 @@ limitation to report, not permission to invent a tool or fall back to Admin MCP,
 HTTP APIs, SQL, or application internals. The checked examples below are guidance,
 not an exhaustive catalog.
 
+For quizzes, follow [question presentation](references/question-presentation.md):
+fetch complete material with `user_present_question` when available, preserve
+tables/code and original figure images, and disclose missing visual material.
+Withhold answers, explanations and answer-revealing annotations until the learner
+responds. Formatting a conversation does not authorize question-bank edits.
+
 Read [workflows](references/workflows.md) for study, history, question discovery
 and Knowledge Point tasks. Reads do not record an attempt, mark a question studied,
 or change progress/bookmarks. Use only explicit personal-note mutation tools for

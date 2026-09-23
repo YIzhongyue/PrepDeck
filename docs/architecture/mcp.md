@@ -151,6 +151,11 @@ Successful tools return matching MCP `structuredContent` and JSON text content:
 {"ok":true,"data":{"userId":"user-id","server":"user"}}
 ```
 
+`user_present_question` keeps that metadata envelope in `structuredContent` and
+the first text block, then appends ordered Markdown text and native MCP image
+blocks. Image bytes occur only in image blocks, not duplicated in the envelope.
+This follows the [MCP tool content contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+
 Tool failures set MCP `isError: true`, with matching structured/text content
 (`retryAfter`, seconds, is present only for `rate_limited`/`unavailable`
 when the underlying limiter provided one):
@@ -263,10 +268,49 @@ where no REST equivalent did:
 - `user_list_attempts`, `user_get_attempt`, `user_get_recent_attempts` — attempt history and per-attempt detail.
 - `user_get_wrong_questions`, `user_get_bookmarked_questions`, `user_get_unattempted_questions` — the three review pools.
 - `user_search_questions`, `user_get_question`, `user_list_exams`, `user_get_exam`, `user_list_question_tags` — question-bank reads (full answer key included — a deliberate product decision, since these are read via the user's own MCP token).
+- `user_present_question` — `{examId, id, imageMode?: "inline" | "text-only"}`,
+  default inline. A read-only quiz presentation of full component/shared material
+  and referenced assets, or preserved legacy Markdown. Its SQL selects only ID,
+  exam, revision, type, stem, options and content; never scoring, explanation,
+  annotation or import-baseline columns. Existing detail tools remain unchanged.
 - `user_get_recommended_questions`, `user_get_questions_for_review`, `user_get_practice_candidates` — practice-selection tools combining the pools above.
 - `user_list_annotations`, `user_get_annotations_for_question` — the user's own highlight/underline/bold annotations.
 
 Tests: `apps/worker/scripts/mcp-user-learning.test.mjs`.
+
+### Quiz presentation
+
+User initialization instructions and selection/detail tool descriptions direct
+clients to `user_present_question` before a quiz; the maintained
+[Skill workflow](../../skills/prepdeck/references/question-presentation.md) defines
+the same rules. No MCP prompts capability or implicit image-capability detection
+is required. Callers explicitly select text-only mode when necessary.
+
+`data` contains `questionId`, `examId`, `revision`, `format` (`components` or
+`legacy-markdown`), `imageMode`, `status` (`available` or `incomplete`),
+`sourceLayoutVerified: false`, `warnings`, and `figures`. Each figure records its
+block/asset IDs, alt/caption and `imageContentIndex` (null if unavailable). The
+index refers to the complete content array, including the first metadata block.
+Repeated references reuse one image block. Subsequent text/image blocks follow
+shared material, question and option order. Simple tables use GFM; multiline
+cells use `<br>`. Codes use fences long enough to preserve embedded backticks.
+Merged tables/forms/flows require retained images; this renderer does not infer
+their geometry or convert extracted lists back into diagrams.
+
+Malformed snapshots, ambiguous IDs, inconsistent table rows, broken option
+references, missing/invalid rasters or text-only figures produce explicit
+incomplete warnings. The client must resolve these before quizzing/grading.
+Legacy text carries `legacy_layout_unverified`; intact Markdown remains usable,
+but flattened layout cannot be recovered by this tool. No source PDF is fetched
+or verified, and raster signature checks do not establish fidelity or inspect
+pixels for embedded answer markings. Clients must check material for those
+markings; personal annotation overlays are never fetched by this tool. Actual
+image display still depends on the host. Formatting never mutates the bank.
+
+Tests: `apps/worker/scripts/mcp-presentation.test.mjs` (rendering and fallback),
+`mcp-foundation.test.mjs` (real SDK transports, scope, safe fields and no bank
+writes), and `apps/web/scripts/mcp-presentation.browser.mjs` (visible output in
+a synthetic Markdown/image host). See [examples and screenshots](../screenshots/mcp-presentation.md).
 
 ## User MCP: Knowledge Points (implementation)
 

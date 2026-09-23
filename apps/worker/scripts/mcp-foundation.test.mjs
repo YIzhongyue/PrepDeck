@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test, { after } from "node:test";
 import { build } from "esbuild";
+import { componentQuestion } from "../../../tests/fixtures/mcp-presentation/question.mjs";
 
 // Exercise the real Worker entry and SDK (Workers export conditions), not
 // a hand-written JSON-RPC imitation or a mock token verifier.
@@ -170,7 +171,7 @@ const USER_TOOL_NAMES = [
   "user_get_learning_overview", "user_get_exam_progress", "user_get_learning_stats",
   "user_list_attempts", "user_get_attempt", "user_get_recent_attempts",
   "user_get_wrong_questions", "user_get_bookmarked_questions", "user_get_unattempted_questions",
-  "user_search_questions", "user_get_question", "user_list_exams", "user_get_exam", "user_list_question_tags",
+  "user_search_questions", "user_get_question", "user_present_question", "user_list_exams", "user_get_exam", "user_list_question_tags",
   "user_get_recommended_questions", "user_get_questions_for_review", "user_get_practice_candidates",
   "user_list_annotations", "user_get_annotations_for_question",
   "user_list_knowledge_points", "user_search_knowledge_points", "user_get_knowledge_point",
@@ -211,7 +212,9 @@ test("dedicated endpoints initialize and publish independent catalogs", async (t
       protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "boundary-test", version: "1.0" },
     });
     assert.equal(initialize.status, 200);
-    assert.equal((await payload(initialize)).result.serverInfo.name, `prepdeck-${audience}-mcp`);
+    const initialized = (await payload(initialize)).result;
+    assert.equal(initialized.serverInfo.name, `prepdeck-${audience}-mcp`);
+    if (audience === "user") assert.match(initialized.instructions, /user_present_question/);
     const response = await rpc(f.env, audience, credential.token);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("Cache-Control"), "no-store");
@@ -639,6 +642,41 @@ async function callAdminTool(f, name, args = {}) {
   assert.equal(result.isError, undefined, `${name} unexpectedly failed: ${JSON.stringify(result)}`);
   return result.structuredContent.data;
 }
+
+test("quiz presentation crosses both SDK transports with full images, safe columns and no bank writes", async (t) => {
+  const f = await questionBankFixture(t), snapshot = componentQuestion();
+  f.sqlite.prepare("UPDATE questions SET content_json = ?, explanation = 'EXPLANATION_SENTINEL', correct_answers_json = '[\"KEY_SENTINEL\"]' WHERE id = 'q1'")
+    .run(JSON.stringify(snapshot));
+  const before = f.sqlite.prepare("SELECT * FROM questions ORDER BY id").all();
+  f.queries.length = 0;
+  for (const protocol of ["2025-11-25", "2026-07-28"]) {
+    const invoke = async args => (await payload(await rpc(f.env, "user", f.alice.token, "tools/call",
+      { name: "user_present_question", arguments: args }, { headers: { "MCP-Protocol-Version": protocol } }))).result;
+    const result = await invoke({ examId: "examA", id: "q1" });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent.data.status, "available");
+    assert.equal(result.structuredContent.data.imageMode, "inline");
+    assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+    assert.equal(result.content.filter(c => c.type === "image").length, 2);
+    assert.equal(result.content.find(c => c.type === "image").data, snapshot.assets[0].data);
+    assert.doesNotMatch(JSON.stringify(result), /SENTINEL|correctAnswers|explanation|annotations/);
+    const fallback = await invoke({ examId: "examA", id: "q1", imageMode: "text-only" });
+    assert.equal(fallback.structuredContent.data.status, "incomplete");
+    assert.equal(fallback.content.some(c => c.type === "image"), false);
+    assert.equal((await invoke({ examId: "examB", id: "q1" })).structuredContent.error.code, "not_found");
+    assert.equal((await invoke({ examId: "examA", id: "q1", imageMode: "unsupported" })).structuredContent.error.code, "invalid_input");
+    const legacy = await invoke({ examId: "examB", id: "q5" });
+    assert.equal(legacy.structuredContent.data.format, "legacy-markdown");
+  }
+  const bankQueries = f.queries.filter(q => /\bquestions\b/i.test(q.sql));
+  assert.ok(bankQueries.length > 0);
+  for (const { sql } of bankQueries) {
+    assert.match(sql, /^SELECT id, exam_id, revision, type, stem, options_json, content_json/);
+    assert.doesNotMatch(sql, /correct_answers|explanation|annotations|baseline/i);
+  }
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions ORDER BY id").all(), before);
+  assert.equal(f.metrics.some(metric => metric.blobs?.includes("user_present_question")), true);
+});
 
 async function callAdminToolExpectingError(f, name, args = {}) {
   const result = (await payload(await rpc(f.env, "admin", f.admin.token, "tools/call", { name, arguments: args }))).result;
