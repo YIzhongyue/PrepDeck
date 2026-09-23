@@ -98,6 +98,47 @@ deduplicating historical external IDs to migrate successfully.
   reference the question. This includes ungraded attempts' question lists.
   No learning records are deleted or cascaded.
 
+## Exam classification filters
+
+The Questions overview adds named selectors for the current exam's configured
+classifications. SG subject metadata exposes **Subject / 科目**, **科目A** and
+**科目B**. IP demonstrates a different **Field / 分野** dimension. Counts cover
+the full exam bank, not only the loaded page or the other active filters.
+Selections combine with search, type, difficulty, exact tag and review state
+before backend pagination. Changing a selection resets to page one; switching
+exams clears incompatible filters. Export uses the successfully displayed page's
+selection, including when a later filter request fails.
+
+Classification reads existing tag identities. Multiple aliases for one value
+still mean one category. A question with no matching value or with several
+different matching values appears under **Unclassified / ambiguous**; the system
+does not infer a subject from the stem or silently assign conflicting metadata.
+Legacy and component imports need no re-import or tag rewrite.
+
+Maintain [question-classifications.json](../../apps/worker/src/config/question-classifications.json)
+as deployment configuration. Each profile selects an exam by exact `examIds`,
+`examSlugs`, or any `examTags` found in that exam's full bank. Selectors use OR;
+tag comparisons reuse normalized tag identity. A profile defines `dimensions`
+with stable `id`, `label`, `allLabel`, and `values` containing stable `id`, display
+`label` and tag aliases. Earlier profiles win when they define the same dimension;
+place exact-exam overrides first. IDs must be unique within a dimension, and
+`__unclassified` is reserved. Add another exam/dimension by changing configuration,
+without UI/backend exam-name checks. This is deployment configuration, not a new
+admin configuration editor; deploy configuration edits to apply them. Update
+aliases when deliberately renaming classification tags.
+
+`GET /api/exams/:examId/questions/classifications` returns admin-only definitions,
+value counts and `unclassifiedCount`. Search and export accept `classifications`
+as a JSON object, for example `{"subject":"b"}` or
+`{"subject":"__unclassified"}`. Unknown dimensions/values or malformed input
+return HTTP 400. Omit the parameter or send `{}` for all classifications. Existing
+MCP tool schemas are unchanged; this change covers the Questions overview API.
+
+Browser examples: [desktop](../screenshots/question-classifications-desktop.png)
+and [mobile](../screenshots/question-classifications-mobile.png). Reproduce with
+`node apps/web/scripts/question-classifications.browser.mjs`; the authoring browser
+suite also runs it automatically.
+
 ## Re-import review
 
 ### PDF preparation and component questions
