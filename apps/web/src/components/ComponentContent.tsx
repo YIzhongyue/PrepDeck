@@ -1,13 +1,14 @@
 import MarkdownHighlightedText from "./MarkdownHighlightedText";
 import type { ContentBlock, QuestionContentModel } from "@prepdeck/shared";
 import { allContentBlocks } from "@prepdeck/shared";
+import { reflowPlainProse } from "../lib/prose";
 
 export default function ComponentContent({ content, blocks }: { content: QuestionContentModel; blocks?: ContentBlock[] }) {
   return <div className="component-content">{(blocks ?? [...content.stimuli.flatMap(s => s.body), ...content.body]).map(block => {
     switch (block.type) {
       case "heading": return <h4 key={block.id}>{block.text}</h4>;
-      case "paragraph": if (block.format === "markdown") return <MarkdownHighlightedText key={block.id} src={block.text} annotations={[]} qid="component" target="stem" show={false} />;
-        return <p key={block.id} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{block.text}</p>;
+      case "paragraph": if (block.format === "markdown") return <MarkdownHighlightedText key={block.id} src={block.text} reflowProse annotations={[]} qid="component" target="stem" show={false} />;
+        return <p key={block.id} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{reflowPlainProse(block.text)}</p>;
       case "code": return <pre key={block.id} style={{ overflowX: "auto", padding: 12, background: "var(--color-neutral-100)" }}><code>{block.text}</code></pre>;
       case "list": return <ul key={block.id}>{block.entries.map(e => <li key={e.id}><strong>{e.id}</strong> {e.text}</li>)}</ul>;
       case "table": return <div key={block.id} role="region" aria-label={block.caption || "Question table"} tabIndex={0} style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>

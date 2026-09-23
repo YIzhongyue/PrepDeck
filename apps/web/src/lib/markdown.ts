@@ -1,4 +1,5 @@
 import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../types";
+import { isProseLine, proseLineSeparator } from "./prose";
 
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
 // italic, inline code, fenced code blocks, unordered/ordered lists, and
@@ -13,7 +14,11 @@ import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../typ
 // system keep addressing the same text it always has (see
 // MarkdownHighlightedText.tsx / lib/annotations.ts's mdSegsFor), instead of
 // annotations breaking the moment formatting markers are stripped for display.
-export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMarkdown {
+export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false): ParsedMarkdown {
+  // Keep existing AI display-coordinate annotations unchanged. Question callers
+  // opt in and retain sourceOffsets, including gaps left by removed layout LFs.
+  // Display-math regions remain conservative until they have a typed renderer.
+  reflowProse = reflowProse && !/^\s*(?:\$\$|\\\[|\\\]|~~~)/m.test(src);
   const sourceOffsets: number[] = [];
   let lineOffset = 0, blockOffset = 0, codeOffset = 0;
   const lines = src.split("\n");
@@ -21,9 +26,9 @@ export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMar
   const blocks: MdBlock[] = [];
   const inline: MdInlineRange[] = [];
 
-  const pushInlineBlock = (type: MdBlockType, text: string) => {
+  const pushInlineBlock = (type: MdBlockType, text: string, inputOffsets?: number[]) => {
     const start = plainText.length;
-    plainText += parseInline(text, start, inline, sourceCoordinates ? sourceOffsets : undefined, blockOffset);
+    plainText += parseInline(text, start, inline, sourceCoordinates ? sourceOffsets : undefined, blockOffset, inputOffsets);
     if (plainText.length > start) blocks.push({ type, start, end: plainText.length });
   };
   const pushRaw = (type: MdBlockType, text: string) => {
@@ -35,8 +40,15 @@ export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMar
 
   let inCodeFence = false;
   let codeFenceText = "";
+  let pendingProse: { text: string; offsets: number[] } | null = null;
+  const flushProse = () => {
+    if (pendingProse) pushInlineBlock("p", pendingProse.text, pendingProse.offsets);
+    pendingProse = null;
+  };
 
   for (const raw of lines) {
+    const prose = reflowProse && !inCodeFence && Boolean(raw.trim()) && isProseLine(raw) && !/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim());
+    if (!prose) flushProse();
     blockOffset = lineOffset;
     lineOffset += raw.length + 1;
     if (/^\s*```/.test(raw)) {
@@ -57,7 +69,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMar
       continue;
     }
 
-    const line = raw.trim();
+    let line = raw.trim();
     blockOffset += raw.length - raw.trimStart().length;
     if (!line) continue; // blank line: paragraph separator only
 
@@ -84,8 +96,20 @@ export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMar
       pushInlineBlock("oli", numbered[1]!);
       continue;
     }
-    pushInlineBlock("p", line);
+    const hardBreak = / {2,}\r?$/.test(raw) || (raw.match(/\\+\r?$/)?.[0].replace(/\r$/, "").length ?? 0) % 2 === 1;
+    if (prose && hardBreak && line.endsWith("\\")) line = line.slice(0, -1);
+    if (prose) {
+      if (pendingProse) {
+        const separator = proseLineSeparator(parseInline(pendingProse.text, 0, []), parseInline(line, 0, []));
+        pendingProse.text += separator;
+        if (separator) pendingProse.offsets.push(src.lastIndexOf("\n", blockOffset - 1));
+      } else pendingProse = { text: "", offsets: [] };
+      pendingProse.text += line;
+      for (let n = 0; n < line.length; n++) pendingProse.offsets.push(blockOffset + n);
+      if (hardBreak) flushProse();
+    } else pushInlineBlock("p", line);
   }
+  flushProse();
   if (inCodeFence && codeFenceText) pushRaw("code", codeFenceText);
 
   return { plainText, blocks, inline, ...(sourceCoordinates ? { sourceOffsets } : {}) };
@@ -96,7 +120,8 @@ export function parseMarkdown(src: string, sourceCoordinates = false): ParsedMar
 // `base` + how far into `text` each match starts) and returning the
 // marker-free string. Single-pass and greedy — not spec-correct for
 // adversarial/nested markdown, but matches real LLM output reliably.
-function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0): string {
+function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0, inputOffsets?: number[]): string {
+  const sourceAt = (index: number) => inputOffsets?.[index] ?? sourceBase + index;
   let out = "";
   let i = 0;
   while (i < text.length) {
@@ -107,7 +132,7 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         const inner = text.slice(i + 2, close);
         const start = base + out.length;
         out += inner;
-        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceBase + i + 2 + n);
+        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceAt(i + 2 + n));
         inline.push({ start, end: start + inner.length, kind: "bold" });
         i = close + 2;
         continue;
@@ -120,7 +145,7 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         const inner = text.slice(i + 1, close);
         const start = base + out.length;
         out += inner;
-        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceBase + i + 1 + n);
+        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceAt(i + 1 + n));
         inline.push({ start, end: start + inner.length, kind: "italic" });
         i = close + 1;
         continue;
@@ -132,14 +157,14 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         const inner = text.slice(i + 1, close);
         const start = base + out.length;
         out += inner;
-        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceBase + i + 1 + n);
+        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceAt(i + 1 + n));
         inline.push({ start, end: start + inner.length, kind: "code" });
         i = close + 1;
         continue;
       }
     }
     out += one;
-    offsets?.push(sourceBase + i);
+    offsets?.push(sourceAt(i));
     i++;
   }
   return out;

@@ -31,6 +31,7 @@ records the gaps between the original specification, current code and open issue
 | --- | --- |
 | [System overview](architecture/system-overview.md) | Worker assets, authentication boundaries, services, caches and background jobs. |
 | [Component questions](architecture/component-questions.md) | Generic import model, pipeline boundaries and verified limits. |
+| [Question prose examples](screenshots/question-prose.md) | Reflowed extraction lines, preserved formatting and annotation-coordinate checks. |
 | [MCP](architecture/mcp.md) | Separate audiences, lifecycle, runtime catalogs, proposal/revision contracts and audit. |
 
 ## Contributor and operator guides

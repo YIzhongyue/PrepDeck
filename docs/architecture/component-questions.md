@@ -48,6 +48,39 @@ is an optional document parser, not an answer detector or grading engine.
 Only exact scoring is implemented. A shared case with independent subquestions
 is several items, while an answer selecting an operation combination is one item.
 
+## Prose layout and stored coordinates
+
+Question renderers treat single layout line endings in ordinary prose as soft
+wraps. Japanese/CJK boundaries join without an inserted space; Latin words keep
+a separating space. Blank lines remain paragraph boundaries. Typed code, lists,
+tables and figures retain their own renderers; code indentation and table-cell
+line breaks are untouched. Plain paragraphs containing indented, list/table-like
+or equation-like material remain conservative. Legacy question Markdown opts
+into prose reflow while retaining explicit two-space/backslash hard breaks and
+backtick code fences. Display-math/unsupported tilde-fence regions keep the
+previous conservative behavior; this does not add a full Markdown/math renderer.
+
+The reported `hostsファ` / `イル` split is reproducible in the retained native
+evidence and component inventory under ignored `tmp/component-validation/native`.
+On physical page 430, these are adjacent extracted text blocks. The page-text
+assembly joins blocks with LF, and `prepare_components.py` retains that LF in a
+plain paragraph; `component_handlers.py` similarly joins selected text evidence
+with LF. The UI previously forced those line endings with `pre-wrap`; the legacy
+Markdown parser also emitted a new paragraph for every line. The fix changes
+display semantics, not extraction evidence or question wording.
+
+Existing imports and future imports use the same renderer; no re-import,
+migration or bank rewrite is required for these ordinary prose wraps. Raw text,
+revision and annotation coordinates are unchanged. Reflowed legacy Markdown maps
+each displayed character back to its source offset, including removed CJK LFs
+and Latin separator spaces, so persisted marks and new selection capture retain
+their original coordinates. AI Markdown keeps its previous display-coordinate
+mode. Ambiguous mixed/preformatted paragraphs are not guessed into prose: use
+the normal reviewed editor/import workflow to split them into typed blocks when
+needed, reconciling annotations if the stored wording is actually edited.
+
+See [synthetic rendering and coordinate verification](../screenshots/question-prose.md).
+
 ## Current-material verification
 
 The following local check used the two supplied PDFs on 2026-09-22. Source books,
