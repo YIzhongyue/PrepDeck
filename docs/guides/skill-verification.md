@@ -8,6 +8,33 @@ token-shaped secrets, unexpected archive members and generated archive drift.
 Tests create synthetic secrets in temporary fixtures; diagnostics never echo them.
 Package generation is reproducible and covers all `skills/*/SKILL.md` directories.
 
+## Skills releases
+
+The release workflow publishes titles starting at `Skills v0.0.1`. Each new
+release increments only the patch number, using the highest existing Skills
+release version across all pages of release history. Legacy hash-based titles
+do not contribute to the version counter. The `skills-<commit SHA>` tags,
+`.skill` filenames and download URLs retain their existing format. Rerunning
+the workflow for an existing tag replaces its artifacts without changing its
+version or notes.
+
+To bump a minor or major version explicitly, edit
+`.github/scripts/skills-version.txt` on `master` to the desired minimum version,
+resetting lower components: for example, `0.0.123` to `0.1.0`, or `0.1.42` to
+`1.0.0`. This file triggers a release. The new baseline is used if it is higher
+than the next automatic patch; leaving it unchanged never rolls versions back.
+
+Notes list commits since the previous published Skills release reachable from
+the target commit, newest first. Only the first 10 appear directly; the remainder
+are under **Older changes**. A full comparison link is included, or a commit
+history link for the first release. Other release types do not set this boundary.
+
+Run release and packaging regression tests without publishing:
+
+```bash
+python -m unittest discover -s .github/scripts -p 'test_*skills.py'
+```
+
 Run the existing Worker smoke-check tests for read-only initialization, tool
 discovery, identity/data reads, audience isolation and credential redaction:
 

@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Python for Skill validation
         uses: actions/setup-python@v7
@@ -37,7 +39,7 @@ jobs:
         run: python -m pip install 'PyYAML>=6,<7'
 
       - name: Test Skill validation
-        run: python -m unittest discover -s .github/scripts -p 'test_validate_skills.py'
+        run: python -m unittest discover -s .github/scripts -p 'test_*skills.py'
 
       - name: Package skill directories
         run: bash .github/scripts/package-skills.sh
@@ -45,16 +47,4 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: skills-${{ github.sha }}
-        run: |
-          short_sha="${GITHUB_SHA:0:12}"
-          release_title="Skills ${short_sha}"
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/skills/*.skill --clobber
-          else
-            gh release create "$RELEASE_TAG" dist/skills/*.skill \
-              --target "$GITHUB_SHA" \
-              --title "$release_title" \
-              --generate-notes
-          fi
+        run: python .github/scripts/release_skills.py
