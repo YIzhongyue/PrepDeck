@@ -10,6 +10,7 @@ import { normalizeImportFile, exportComponentPackage } from "../../../packages/s
 import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
 const pdfSchemas = getImportSchemas();
 let importedFile = null, schemaFailures = 0;
+let heldComponentSave = null;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -63,6 +64,10 @@ const server = createServer(async (req, res) => {
       rows.push(q); return json(201, { question: q });
     }
     if (req.method === "PATCH") {
+      if (heldComponentSave) {
+        heldComponentSave.arrived.resolve(); await heldComponentSave.gate.promise;
+        heldComponentSave = null; return json(503, { error: "Save temporarily unavailable" });
+      }
       const q = rows.find(q => q.id === url.pathname.split("/").at(-1));
       if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving." });
       Object.assign(q, body, { revision: q.revision + 1 }); return json(200, { question: q });
@@ -465,6 +470,75 @@ try {
   assert.equal(exported.schemaVersion, "2.0");
   assert.deepEqual(exported.assets, componentFile.assets);
   console.log("PASS component import preview, structured edit with assets, mobile drawer and downloadable export");
+  // The component drawer uses the same cancel guard for genuine backdrop
+  // presses. Selection gestures that merely end outside are not dismissal.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  rows = Array.from({ length: 60 }, (_, i) => ({ ...rows[0], id: `component-${i}`, externalId: `CASE-${i}`, sequenceNumber: i + 1 }));
+  await page.reload();
+  await page.getByLabel("Filter by type", { exact: true }).selectOption("matching");
+  await page.getByText("Page 1 of 2", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+  const opener = page.getByRole("button", { name: "Edit", exact: true }).last();
+  await opener.scrollIntoViewIfNeeded(); await opener.focus();
+  const overviewScroll = await page.evaluate(() => scrollY);
+  const openComponent = async () => {
+    await opener.click(); await structuredDialog.waitFor();
+    await page.locator(".question-drawer").evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
+  };
+  const assertOverview = async () => {
+    await structuredDialog.waitFor({ state: "detached" });
+    assert.equal(await opener.evaluate(el => el === document.activeElement), true);
+    assert.equal(await page.getByLabel("Filter by type").inputValue(), "matching");
+    await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => scrollY), overviewScroll);
+    assert.equal(await page.evaluate(() => document.body.style.overflow), "");
+  };
+  await page.evaluate(() => {
+    window.backgroundClicks = 0;
+    const button = document.createElement("button"); button.id = "background-target";
+    button.textContent = "Background"; button.style = "position:fixed;left:0;top:0;width:100px;height:50px";
+    button.onclick = () => window.backgroundClicks++; document.body.append(button);
+  });
+  await openComponent();
+  await jsonEditor.click(); await structuredDialog.getByRole("heading", { name: "Edit component question" }).click();
+  await structuredDialog.locator('section[aria-label="Component question preview"]').click({ position: { x: 10, y: 10 } });
+  await jsonEditor.scrollIntoViewIfNeeded();
+  assert.equal(await structuredDialog.count(), 1);
+  const start = await jsonEditor.boundingBox();
+  await page.mouse.move(start.x + 20, start.y + 30); await page.mouse.down();
+  await page.mouse.move(20, 100); await page.mouse.up();
+  assert.equal(await structuredDialog.count(), 1, "selection ending outside must not cancel");
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-backdrop-desktop.png` });
+  await page.mouse.click(20, 20); await assertOverview();
+  assert.equal(await page.evaluate(() => window.backgroundClicks), 0, "dismissal does not click through");
+  await openComponent();
+  const originalJson = await jsonEditor.inputValue(), draftJson = `${originalJson}\n`;
+  await jsonEditor.fill(draftJson);
+  page.once("dialog", dialog => dialog.dismiss()); await page.mouse.click(20, 20);
+  assert.equal(await jsonEditor.inputValue(), draftJson);
+  assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden");
+  page.once("dialog", dialog => dialog.accept()); await page.mouse.click(20, 20); await assertOverview();
+  await openComponent(); assert.equal(await jsonEditor.inputValue(), originalJson);
+  await page.keyboard.press("Escape"); await assertOverview();
+  await openComponent(); await jsonEditor.fill(draftJson);
+  heldComponentSave = { gate: Promise.withResolvers(), arrived: Promise.withResolvers() };
+  await structuredDialog.getByRole("button", { name: "Save", exact: true }).click(); await heldComponentSave.arrived.promise;
+  await page.mouse.click(20, 20); await page.keyboard.press("Escape");
+  assert.equal(await structuredDialog.count(), 1);
+  assert.equal(await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
+  heldComponentSave.gate.resolve();
+  await structuredDialog.getByRole("alert").filter({ hasText: "Save temporarily unavailable" }).waitFor();
+  page.once("dialog", dialog => dialog.accept()); await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click(); await assertOverview();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await openComponent(); await page.touchscreen.tap(12, 100); await structuredDialog.waitFor({ state: "detached" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openComponent();
+  assert.equal(Math.round((await page.locator(".question-drawer").boundingBox()).x), 0);
+  await jsonEditor.tap(); assert.equal(await structuredDialog.count(), 1);
+  await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).tap(); await structuredDialog.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.backgroundClicks), 0);
+  console.log("PASS component backdrop cancellation: clean/dirty guards, selection, focus/scroll/filter restoration, pending save, Escape and touch");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
-} finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
+} finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); heldComponentSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
