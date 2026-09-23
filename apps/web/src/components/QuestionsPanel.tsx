@@ -6,6 +6,7 @@ import { questionBankChanged } from "../lib/questionAuthoring";
 import { questionTypeLabel } from "../lib/questionTypes";
 import QuestionEditorDialog from "./QuestionEditorDialog";
 import QuestionImportDialog from "./QuestionImportDialog";
+import QuestionPageNavigation from "./QuestionPageNavigation";
 
 export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
   // Changing exams discards the old exam's filter/page/draft state before any
@@ -49,6 +50,8 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
     return () => controller.abort();
   }, [exam.id, filters, offset, refresh]);
   const requestPage = (nextOffset: number) => {
+    if (loading || nextOffset === shownOffset || nextOffset < 0 || nextOffset >= total) return;
+    setLoading(true);
     setOffset(nextOffset);
     // A failed request leaves the same target offset ready to retry.
     setRefresh(n => n + 1);
@@ -92,8 +95,7 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
         <div className="authoring-toolbar"><button type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
       </div>)}
     </>}
-    <div className="authoring-toolbar authoring-feedback"><button type="button" className="btn btn-secondary" disabled={loading || shownOffset === 0} onClick={() => requestPage(Math.max(0, shownOffset - limit))}>Previous</button>
-      <span>Page {Math.floor(shownOffset / limit) + 1} of {Math.max(1, Math.ceil(total / limit))}</span><button type="button" className="btn btn-secondary" disabled={loading || shownOffset + limit >= total} onClick={() => requestPage(shownOffset + limit)}>Next</button></div>
+    <QuestionPageNavigation offset={shownOffset} total={total} limit={limit} loading={loading} onRequest={requestPage} />
     {editor && <QuestionEditorDialog key={editor.key} examId={exam.id} question={editor.question} initialType={editor.type} onClose={() => setEditor(null)} onSaved={(q, next) => {
       mutated(`Saved question #${q.sequenceNumber}${q.externalId ? ` (${q.externalId})` : ""}.`);
       setEditor(next ? { key: editor.key + 1, question: null, type: q.type } : null);

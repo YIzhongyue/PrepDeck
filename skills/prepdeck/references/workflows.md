@@ -7,6 +7,10 @@ complete. Resolve exam names to IDs rather than guessing them.
 
 ## Study and history
 
+- **Quiz:** select IDs with a practice/review/recommendation tool, then fetch
+  each full question with `user_present_question`. Follow
+  [question presentation](question-presentation.md) for tables, images, code,
+  missing material, legacy deployments and grading after the learner responds.
 - **Review today:** get learning overview, resolve the relevant exam if supplied,
   then request recommended questions or a review set. Recommendations blend wrong
   questions, bookmarks and unattempted questions with deduplication; review sets

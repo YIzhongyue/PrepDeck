@@ -31,6 +31,7 @@ records the gaps between the original specification, current code and open issue
 | --- | --- |
 | [System overview](architecture/system-overview.md) | Worker assets, authentication boundaries, services, caches and background jobs. |
 | [Component questions](architecture/component-questions.md) | Generic import model, pipeline boundaries and verified limits. |
+| [Question prose examples](screenshots/question-prose.md) | Reflowed extraction lines, preserved formatting and annotation-coordinate checks. |
 | [MCP](architecture/mcp.md) | Separate audiences, lifecycle, runtime catalogs, proposal/revision contracts and audit. |
 
 ## Contributor and operator guides
@@ -41,6 +42,7 @@ records the gaps between the original specification, current code and open issue
 | [Public/private repository workflow](guides/public-private-sync.md) | History-free export, readiness checks and one-way upstream synchronization. |
 | [Question authoring](guides/question-bank-authoring.md) | Drawer workflow, import review, historical grading and content extension. |
 | [MCP and Skills](guides/mcp-and-skills.md) | Secure client setup, safe verification and shipped versus planned Skills. |
+| [MCP presentation examples](screenshots/mcp-presentation.md) | Synthetic quiz output, table/figure fidelity and text-only fallback verification. |
 | [Skill verification](guides/skill-verification.md) | Safe client verification and packaged User/Admin Skill checks. |
 | [Knowledge Point editor](guides/knowledge-point-editor.md) | Visual authoring, Markdown fallback and recovery. |
 | [Shared UI components](guides/ui-components.md) | Vendored Untitled UI primitives, the design-token mapping behind the five color schemes, and remaining migration scope. |

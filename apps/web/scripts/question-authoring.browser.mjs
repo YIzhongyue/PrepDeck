@@ -11,6 +11,7 @@ import { normalizeImportFile, exportComponentPackage } from "../../../packages/s
 import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
 const pdfSchemas = getImportSchemas();
 let importedFile = null, schemaFailures = 0;
+let heldComponentSave = null;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -20,6 +21,7 @@ let rows = [], writes = 0, tagFailures = 0, tagRequests = 0;
 // Lets a test hold the question-list response open, so an assertion can run
 // while a page is still in flight instead of racing it.
 let heldQuestions = null, questionPageFailures = 0;
+const questionRequests = [];
 const holdQuestions = (offset = null) => (heldQuestions = { offset, gate: Promise.withResolvers(), arrived: Promise.withResolvers() });
 const releaseQuestions = () => { const held = heldQuestions; heldQuestions = null; held.gate.resolve(); };
 const catalog = ["tag-one", "Cloud, data", "Cloud security", "Other exam tag"];
@@ -41,6 +43,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname.endsWith("/questions/classifications")) return json(200, { dimensions: [] });
     if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
     if (req.method === "GET") {
+      questionRequests.push(Object.fromEntries(url.searchParams));
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
       const review = url.searchParams.get("needsReview");
@@ -65,6 +68,10 @@ const server = createServer(async (req, res) => {
       rows.push(q); return json(201, { question: q });
     }
     if (req.method === "PATCH") {
+      if (heldComponentSave) {
+        heldComponentSave.arrived.resolve(); await heldComponentSave.gate.promise;
+        heldComponentSave = null; return json(503, { error: "Save temporarily unavailable" });
+      }
       const q = rows.find(q => q.id === url.pathname.split("/").at(-1));
       if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving." });
       Object.assign(q, body, { revision: q.revision + 1 }); return json(200, { question: q });
@@ -296,12 +303,50 @@ try {
   rows[0].type = "multiple_choice"; rows[0].correctAnswers = ["A", "B"];
   await page.reload();
   await page.locator(".admin-question-row").first().getByText("Choose 2", { exact: true }).waitFor();
-  rows = Array.from({ length: 205 }, (_, i) => ({ ...rows[0], id: `page-${i}`, sequenceNumber: i + 1, externalId: `Q-${i}` }));
+  rows = Array.from({ length: 205 }, (_, i) => ({ ...rows[0], id: `page-${i}`, sequenceNumber: i + 1, externalId: `Q-${i}`, stem: `Pagination fixture ${i < 110 ? "selected" : "other"}` }));
   await page.reload(); await page.getByText("Page 1 of 5", { exact: true }).waitFor();
   const questionPageResponse = offset => page.waitForResponse(r => {
     const url = new URL(r.url());
     return r.request().method() === "GET" && url.pathname === "/api/exams/exam/questions" && url.searchParams.get("offset") === String(offset);
   });
+  const destination = page.getByLabel("Go to page", { exact: true }), go = page.getByRole("button", { name: "Go", exact: true });
+  const beforeInvalid = questionRequests.length;
+  for (const invalid of ["", "0", "6", "-1", "1.5", "1e0", "abc"]) {
+    await destination.fill(invalid); await destination.press("Enter");
+    await page.getByRole("alert").filter({ hasText: "Enter a whole page number from 1 to 5." }).waitFor();
+  }
+  assert.equal(questionRequests.length, beforeInvalid);
+  await destination.fill("1"); await destination.press("Enter");
+  assert.equal(await go.isDisabled(), true);
+  assert.equal(questionRequests.length, beforeInvalid);
+  const heldJump = holdQuestions(150), jumpedPage = questionPageResponse(150);
+  await destination.fill("4"); await destination.press("Enter"); await heldJump.arrived.promise;
+  assert.equal(await destination.isDisabled(), true); assert.equal(await go.isDisabled(), true);
+  await page.getByText("Page 1 of 5", { exact: true }).waitFor();
+  assert.equal(questionRequests.length, beforeInvalid + 1);
+  releaseQuestions(); await jumpedPage;
+  await page.getByText("Page 4 of 5", { exact: true }).waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.getByRole("form", { name: "Question pages" }).screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-page-jump-desktop.png` });
+  questionPageFailures = 1;
+  await destination.fill("2"); const failedJump = questionPageResponse(50); await go.click();
+  assert.equal((await failedJump).status(), 503);
+  await page.getByRole("alert").filter({ hasText: "Question page unavailable" }).waitFor();
+  await page.getByText("Page 4 of 5", { exact: true }).waitFor();
+  const retryJump = questionPageResponse(50); await go.click(); await retryJump;
+  await page.getByText("Page 2 of 5", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.getByRole("form", { name: "Question pages" }).evaluate(el => el.scrollWidth <= el.clientWidth));
+  if (process.env.SCREENSHOT_DIR) await page.getByRole("form", { name: "Question pages" }).screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-page-jump-mobile.png` });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const searchInput = page.getByLabel("Search stem or exact internal / external ID");
+  await searchInput.fill("selected"); await searchInput.press("Enter");
+  await page.getByText("Page 1 of 3", { exact: true }).waitFor();
+  await destination.fill("3"); await go.click();
+  await page.getByText("101–110 of 110", { exact: true }).waitFor();
+  assert.equal(questionRequests.at(-1).q, "selected"); assert.equal(questionRequests.at(-1).limit, "50");
+  await searchInput.fill(""); await searchInput.press("Enter");
+  await page.getByText("Page 1 of 5", { exact: true }).waitFor();
+  console.log("PASS direct page navigation: Enter/Go, bounds, no redundant requests, loading, retry, filtered totals and mobile wrapping");
   // A failed target is still the next page from the rows being shown. The
   // next click must retry it, not skip a page or become a no-op.
   questionPageFailures = 1;
@@ -384,6 +429,9 @@ try {
   await page.getByLabel("Filter by review state", { exact: true }).selectOption("true");
   assert.equal((await flaggedPage).status(), 200);
   await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  await destination.fill("2"); await destination.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "Enter a whole page number from 1 to 1." }).waitFor();
+  await destination.fill("1");
   await page.getByText(`ID: ${rows[151].id}`, { exact: false }).waitFor();
   // Scoped to the row chip: the filter's own option carries the same words.
   const reviewChip = page.locator(".admin-question-row .tag", { hasText: "Needs review" });
@@ -398,6 +446,7 @@ try {
   assert.equal(rows[151].needsReview, false);
   assert.deepEqual(rows[151].tags, ["tag-one"], "clearing the review flag must not disturb the question's tags");
   await page.getByText("No questions found. Add a question to start authoring, or adjust the filters.", { exact: true }).waitFor();
+  assert.equal(await destination.isDisabled(), true); assert.equal(await go.isDisabled(), true);
   // Back to "Any review state": the empty value is not a filter.
   const anyPage = questionPageResponse(0);
   await page.getByLabel("Filter by review state", { exact: true }).selectOption("");
@@ -467,6 +516,75 @@ try {
   assert.equal(exported.schemaVersion, "2.0");
   assert.deepEqual(exported.assets, componentFile.assets);
   console.log("PASS component import preview, structured edit with assets, mobile drawer and downloadable export");
+  // The component drawer uses the same cancel guard for genuine backdrop
+  // presses. Selection gestures that merely end outside are not dismissal.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  rows = Array.from({ length: 60 }, (_, i) => ({ ...rows[0], id: `component-${i}`, externalId: `CASE-${i}`, sequenceNumber: i + 1 }));
+  await page.reload();
+  await page.getByLabel("Filter by type", { exact: true }).selectOption("matching");
+  await page.getByText("Page 1 of 2", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+  const opener = page.getByRole("button", { name: "Edit", exact: true }).last();
+  await opener.scrollIntoViewIfNeeded(); await opener.focus();
+  const overviewScroll = await page.evaluate(() => scrollY);
+  const openComponent = async () => {
+    await opener.click(); await structuredDialog.waitFor();
+    await page.locator(".question-drawer").evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
+  };
+  const assertOverview = async () => {
+    await structuredDialog.waitFor({ state: "detached" });
+    assert.equal(await opener.evaluate(el => el === document.activeElement), true);
+    assert.equal(await page.getByLabel("Filter by type").inputValue(), "matching");
+    await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => scrollY), overviewScroll);
+    assert.equal(await page.evaluate(() => document.body.style.overflow), "");
+  };
+  await page.evaluate(() => {
+    window.backgroundClicks = 0;
+    const button = document.createElement("button"); button.id = "background-target";
+    button.textContent = "Background"; button.style = "position:fixed;left:0;top:0;width:100px;height:50px";
+    button.onclick = () => window.backgroundClicks++; document.body.append(button);
+  });
+  await openComponent();
+  await jsonEditor.click(); await structuredDialog.getByRole("heading", { name: "Edit component question" }).click();
+  await structuredDialog.locator('section[aria-label="Component question preview"]').click({ position: { x: 10, y: 10 } });
+  await jsonEditor.scrollIntoViewIfNeeded();
+  assert.equal(await structuredDialog.count(), 1);
+  const start = await jsonEditor.boundingBox();
+  await page.mouse.move(start.x + 20, start.y + 30); await page.mouse.down();
+  await page.mouse.move(20, 100); await page.mouse.up();
+  assert.equal(await structuredDialog.count(), 1, "selection ending outside must not cancel");
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-backdrop-desktop.png` });
+  await page.mouse.click(20, 20); await assertOverview();
+  assert.equal(await page.evaluate(() => window.backgroundClicks), 0, "dismissal does not click through");
+  await openComponent();
+  const originalJson = await jsonEditor.inputValue(), draftJson = `${originalJson}\n`;
+  await jsonEditor.fill(draftJson);
+  page.once("dialog", dialog => dialog.dismiss()); await page.mouse.click(20, 20);
+  assert.equal(await jsonEditor.inputValue(), draftJson);
+  assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden");
+  page.once("dialog", dialog => dialog.accept()); await page.mouse.click(20, 20); await assertOverview();
+  await openComponent(); assert.equal(await jsonEditor.inputValue(), originalJson);
+  await page.keyboard.press("Escape"); await assertOverview();
+  await openComponent(); await jsonEditor.fill(draftJson);
+  heldComponentSave = { gate: Promise.withResolvers(), arrived: Promise.withResolvers() };
+  await structuredDialog.getByRole("button", { name: "Save", exact: true }).click(); await heldComponentSave.arrived.promise;
+  await page.mouse.click(20, 20); await page.keyboard.press("Escape");
+  assert.equal(await structuredDialog.count(), 1);
+  assert.equal(await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
+  heldComponentSave.gate.resolve();
+  await structuredDialog.getByRole("alert").filter({ hasText: "Save temporarily unavailable" }).waitFor();
+  page.once("dialog", dialog => dialog.accept()); await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click(); await assertOverview();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await openComponent(); await page.touchscreen.tap(12, 100); await structuredDialog.waitFor({ state: "detached" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openComponent();
+  assert.equal(Math.round((await page.locator(".question-drawer").boundingBox()).x), 0);
+  await jsonEditor.tap(); assert.equal(await structuredDialog.count(), 1);
+  await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).tap(); await structuredDialog.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.backgroundClicks), 0);
+  console.log("PASS component backdrop cancellation: clean/dirty guards, selection, focus/scroll/filter restoration, pending save, Escape and touch");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
-} finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
+} finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); heldComponentSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

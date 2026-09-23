@@ -14,5 +14,5 @@ export default function QuestionContent({ src, content, optionId, ...props }: { 
     const sameMarkdown = block?.type === "paragraph" && block.format === "markdown" && block.text === src;
     if (!sameMarkdown) return optionId ? <ComponentOptionContent content={content} optionId={optionId} /> : <ComponentContent content={content} />;
   }
-  return <MarkdownHighlightedText src={src} sourceCoordinates annotations={[]} qid="preview" target="stem" show={false} {...props} />;
+  return <MarkdownHighlightedText src={src} sourceCoordinates reflowProse annotations={[]} qid="preview" target="stem" show={false} {...props} />;
 }

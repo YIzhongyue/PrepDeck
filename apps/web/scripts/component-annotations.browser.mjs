@@ -1,5 +1,6 @@
 // Real Markdown rendering/capture after legacy export and component re-import.
 // PLAYWRIGHT_MODULE/BROWSER_EXECUTABLE may reuse installed browser tooling.
+import './question-prose.browser.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -8,17 +9,18 @@ import { build } from 'esbuild';
 import { exportComponentPackage, normalizeImportFile } from '../../../packages/shared/src/question-components.ts';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
 const legacy = {
-  externalId: 'legacy', type: 'single_choice', stem: '# **Legacy**\n\nRead the **marked stem** and `code`.\n\n- Final choice.',
-  options: [{ id: 'A', text: 'Use **marked option** safely.' }, { id: 'B', text: 'An alternative.' }], correctAnswers: ['A'],
+  externalId: 'legacy', type: 'single_choice', stem: '# **Legacy**\n\nRead the **marked\nstem** and `code`.\n\n- Final choice.',
+  options: [{ id: 'A', text: 'Use **markedオプ\nション** safely.' }, { id: 'B', text: 'An alternative.' }], correctAnswers: ['A'],
 };
 const exported = exportComponentPackage({ id: 'exam', name: 'Exam' }, [legacy]);
 const row = normalizeImportFile(exported).questions[0];
 assert.equal(row.stem, legacy.stem); assert.deepEqual(row.options, legacy.options);
 const complex = normalizeImportFile(JSON.parse(readFileSync(new URL('../../../tests/fixtures/components/case-with-figure.json', import.meta.url), 'utf8'))).questions[0];
-const stemStart = legacy.stem.indexOf('marked stem'), optionStart = legacy.options[0].text.indexOf('marked option');
+const stemStart = legacy.stem.indexOf('marked'), optionStart = legacy.options[0].text.indexOf('marked');
+const optionLength = 'markedオプ\nション'.length;
 let annotations = [
   { id: 'stem-mark', questionId: 'legacy', targetType: 'stem', targetRef: null, rangeStart: stemStart, rangeEnd: stemStart + 11, style: 'hl1', note: 'Stem note' },
-  { id: 'option-mark', questionId: 'legacy', targetType: 'option', targetRef: 'A', rangeStart: optionStart, rangeEnd: optionStart + 13, style: 'underline', note: 'Option note' },
+  { id: 'option-mark', questionId: 'legacy', targetType: 'option', targetRef: 'A', rangeStart: optionStart, rangeEnd: optionStart + optionLength, style: 'underline', note: 'Option note' },
 ];
 const deleted = [], errors = [];
 const { outputFiles } = await build({ stdin: { contents: `
@@ -90,7 +92,8 @@ try {
   const checkOffsets = async (region, source) => {
     assert.equal(await region.locator('[data-off]').evaluateAll((spans, source) => spans.length > 0 && spans.every(span => {
       const text = span.firstChild?.textContent ?? '', offset = Number(span.dataset.off);
-      return source.slice(offset, offset + text.length) === text;
+      const raw = source.slice(offset, offset + text.length);
+      return raw === text || raw.replace(/\n/g, ' ') === text;
     }), source), true, 'Rendered leaves keep raw Markdown source coordinates');
   };
   assert.equal(await stem.getByRole('button', { name: 'Delete mark' }).count(), 0);
@@ -99,15 +102,16 @@ try {
   await checkOffsets(stem, legacy.stem); await checkOffsets(option, legacy.options[0].text);
   await page.getByRole('button', { name: 'Show review annotations', exact: true }).click();
   const stemMark = stem.locator('[title="Stem note"]'), optionMark = option.locator('[title="Option note"]');
-  assert.equal(await stemMark.textContent(), 'marked stem'); assert.equal(await optionMark.textContent(), 'marked option');
+  assert.equal((await stemMark.allTextContents()).join(''), 'marked stem'); assert.equal((await optionMark.allTextContents()).join(''), 'markedオプション');
   assert.equal(await stemMark.getAttribute('data-off'), String(stemStart));
-  assert.equal(await optionMark.getAttribute('data-off'), String(optionStart));
+  assert.equal(await optionMark.first().getAttribute('data-off'), String(optionStart));
   assert.equal(await stemMark.evaluate(el => el.style.background), 'var(--color-mark-1)');
-  assert.equal(await optionMark.evaluate(el => el.style.textDecorationLine), 'underline');
+  assert.equal(await optionMark.first().evaluate(el => el.style.textDecorationLine), 'underline');
   assert.equal(await stem.innerHTML(), await page.getByRole('region', { name: 'Original stem', exact: true }).innerHTML());
-  for (const [mark, target, start, length] of [[stemMark, 'stem', stemStart, 11], [optionMark, 'opt:A', optionStart, 13]]) {
-    await mark.evaluate(el => {
-      const range = document.createRange(); range.setStart(el.firstChild, 0); range.setEnd(el.firstChild, el.firstChild.textContent.length);
+  for (const [mark, target, start, length] of [[stemMark, 'stem', stemStart, 11], [optionMark, 'opt:A', optionStart, optionLength]]) {
+    await mark.evaluateAll(elements => {
+      const el = elements[0], last = elements.at(-1);
+      const range = document.createRange(); range.setStart(el.firstChild, 0); range.setEnd(last.firstChild, last.firstChild.textContent.length);
       const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
       el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     });
@@ -128,7 +132,7 @@ try {
   assert.equal(await figure.evaluate(img => img.complete && img.naturalWidth > 0), true);
   await page.getByRole('region', { name: 'Complex option', exact: true }).getByText('Lower observation', { exact: true }).waitFor();
   for (const [region, mark, id] of [[option, optionMark, 'option-mark'], [stem, stemMark, 'stem-mark']]) {
-    await mark.hover(); await region.getByRole('button', { name: 'Delete mark', exact: true }).click();
+    await mark.first().hover(); await region.getByRole('button', { name: 'Delete mark', exact: true }).click();
     await page.waitForFunction(id => !window.store.state.anns.some(a => a.id === id), id);
   }
   assert.deepEqual(deleted, ['option-mark', 'stem-mark']);
