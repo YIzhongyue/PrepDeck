@@ -9,14 +9,16 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
   const initial = useRef(JSON.stringify(exportComponentPackage({ id: examId, name: examId }, [{ ...question, externalId: question.externalId ?? question.id, options: question.options ?? undefined }]), null, 2));
   const [text, setText] = useState(initial.current), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false), saved = useRef(false);
+  const backdropPress = useRef(false);
   const dirty = text !== initial.current;
   const canClose = () => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?"));
   const close = () => { if (canClose()) onClose(); };
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    const element = dialog.current;
     const overflow = document.body.style.overflow;
-    dialog.current?.showModal(); document.body.style.overflow = "hidden";
-    return () => { dialog.current?.close(); document.body.style.overflow = overflow; previous?.focus(); };
+    element?.showModal(); document.body.style.overflow = "hidden";
+    return () => { element?.close(); document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => { if (dirty || saving.current) { e.preventDefault(); e.returnValue = ""; } };
@@ -36,7 +38,18 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save question"); }
     finally { saving.current = false; setBusy(false); }
   };
-  return <dialog ref={dialog} className="question-drawer-backdrop" aria-label="Edit component question" onCancel={e => { e.preventDefault(); close(); }}>
+  return <dialog ref={dialog} className="question-drawer-backdrop" aria-label="Edit component question"
+    onCancel={e => { e.preventDefault(); close(); }}
+    onPointerDown={e => { backdropPress.current = e.isPrimary && e.button === 0 && e.target === e.currentTarget; }}
+    onPointerCancel={() => { backdropPress.current = false; }}
+    onClick={e => {
+      const startedOutside = backdropPress.current; backdropPress.current = false;
+      if (e.target !== e.currentTarget) return;
+      e.preventDefault(); e.stopPropagation();
+      // A click may target the common ancestor when a selection starts in the
+      // editor and ends outside it. Only a press that began on the wash closes.
+      if (startedOutside) close();
+    }}>
     <div className="question-drawer question-editor"><div className="question-drawer-body">
       <h3>Edit component question</h3><p>Edit the structured package. The preview updates when the question is valid.</p>
       <label>Question package JSON<textarea className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} onChange={e => setText(e.target.value)} /></label>

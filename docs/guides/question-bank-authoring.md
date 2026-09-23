@@ -13,6 +13,13 @@ the same exam, retains only its type, and focuses the stem. Failed validation or
 server requests keep the current input. Dismissal and app/browser navigation
 protect unsaved edits. Imported questions use the same editor.
 
+In the component editor, click or tap the dimmed area outside the drawer to
+cancel. Unsaved drafts use the same discard confirmation as **Cancel** and
+Escape; saving blocks dismissal. Selecting text inside and releasing outside
+does not close the editor. Returning to the overview retains its page, filters,
+scroll position and opening control's focus.
+See the [component drawer and backdrop](../screenshots/component-backdrop-desktop.png).
+
 The tag selector (implementation)
 searches the existing question-bank catalog. Select a suggestion or choose
 **Create** to add a new name. Selected tags appear as rounded chips with remove
