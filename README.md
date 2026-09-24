@@ -1,6 +1,6 @@
 ![PrepDeck](/imgs/PrepDeck-horizontal-logo-blue.png)
 
-[![CI](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml)
+[![CI](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml) [![M8ven Score](https://m8ven.ai/badge/mcp/yizhongyue-prepdeck-0kh85z)](https://m8ven.ai/mcp/yizhongyue-prepdeck-0kh85z)
 
 PrepDeck is a multi-exam practice platform for a small invited group, running on
 Cloudflare Workers with static assets, D1, R2 and KV. It uses direct Google OAuth
