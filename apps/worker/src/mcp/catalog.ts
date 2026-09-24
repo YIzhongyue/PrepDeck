@@ -9,11 +9,18 @@ export interface McpTool {
   invoke(input: unknown): Promise<CallToolResult>;
 }
 
+// Require an explicit decision for every tool; the protocol's optional defaults
+// cannot distinguish our reads, guarded writes and non-idempotent mutations.
+export type McpToolAnnotations = Readonly<Required<Pick<NonNullable<Tool["annotations"]>,
+  "readOnlyHint" | "destructiveHint" | "idempotentHint" | "openWorldHint"
+>>>;
+
 /** Strict schemas and fixed errors prevent caller-supplied keys/values or
  * service exception messages from being echoed in validation errors.
  */
 export function defineMcpTool<S extends z.ZodRawShape, R>(
   name: string,
+  annotations: McpToolAnnotations,
   description: string,
   schema: z.ZodObject<S>,
   operation: (input: z.infer<typeof schema>) => R | Promise<R>,
@@ -23,6 +30,7 @@ export function defineMcpTool<S extends z.ZodRawShape, R>(
   return {
     definition: {
       name, description,
+      annotations: { ...annotations },
       inputSchema: z.toJSONSchema(strictSchema) as Tool["inputSchema"],
     },
     async invoke(input) {
