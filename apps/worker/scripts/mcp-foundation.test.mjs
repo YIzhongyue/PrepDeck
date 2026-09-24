@@ -197,6 +197,38 @@ const ADMIN_TOOL_NAMES = [
   "admin_create_tag", "admin_update_tag", "admin_merge_tags",
 ];
 
+// Independent wire-contract expectations. Review these alongside handler
+// changes: a name prefix alone does not describe side effects or safe retries.
+const READ_ANNOTATIONS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const MUTATION_ANNOTATIONS = {
+  // [destructive, idempotent]; all operate inside the PrepDeck instance.
+  user_create_knowledge_point: [false, false],
+  user_update_knowledge_point: [true, true],
+  user_delete_knowledge_point: [true, true],
+  user_link_knowledge_point_question: [false, true],
+  user_unlink_knowledge_point_question: [true, true],
+  user_create_knowledge_point_group: [false, true],
+  user_rename_knowledge_point_group: [true, false],
+  user_delete_knowledge_point_group: [true, false],
+  user_create_knowledge_point_tag: [false, true],
+  user_rename_knowledge_point_tag: [true, false],
+  user_delete_knowledge_point_tag: [true, true],
+  user_unlink_knowledge_point_tag: [true, true],
+  user_reorder_knowledge_points: [true, true],
+  admin_create_question: [false, true],
+  admin_update_question: [true, true],
+  admin_delete_question: [true, true],
+  admin_batch_create_questions: [false, true],
+  admin_batch_update_questions: [true, true],
+  admin_create_exam: [false, true],
+  admin_update_exam: [true, true],
+  admin_archive_exam: [true, true],
+  admin_execute_import: [true, true],
+  admin_create_tag: [false, true],
+  admin_update_tag: [true, false],
+  admin_merge_tags: [true, false],
+};
+
 async function payload(response) {
   const body = await response.text();
   if (response.headers.get("Content-Type")?.includes("text/event-stream")) {
@@ -224,6 +256,33 @@ test("dedicated endpoints initialize and publish independent catalogs", async (t
     for (const tool of tools) assert.equal(tool.inputSchema.additionalProperties, false);
     const call = await payload(await rpc(f.env, audience, credential.token, "tools/call", { name: `${audience}_get_identity` }));
     assert.deepEqual(call.result.structuredContent, { ok: true, data: { userId: audience === "user" ? "alice" : "admin", server: audience } });
+  }
+});
+
+test("both MCP catalogs publish complete behavioral hints over JSON and legacy SSE", async (t) => {
+  const f = await fixture(t);
+  for (const protocolVersion of ["2025-11-25", "2026-07-28"]) {
+    for (const [audience, token] of [["user", f.alice.token], ["admin", f.admin.token]]) {
+      const response = await rpc(f.env, audience, token, "tools/list", {}, {
+        headers: { "MCP-Protocol-Version": protocolVersion },
+      });
+      assert.equal(response.status, 200);
+      assert.ok(response.headers.get("Content-Type").includes(
+        protocolVersion === "2025-11-25" ? "text/event-stream" : "application/json",
+      ));
+      const tools = (await payload(response)).result.tools;
+      assert.deepEqual(tools.map(tool => tool.name), audience === "admin" ? ADMIN_TOOL_NAMES : USER_TOOL_NAMES);
+      for (const tool of tools) {
+        const mutation = MUTATION_ANNOTATIONS[tool.name];
+        assert.deepEqual(tool.annotations, mutation ? {
+          readOnlyHint: false, destructiveHint: mutation[0], idempotentHint: mutation[1], openWorldHint: false,
+        } : READ_ANNOTATIONS, tool.name);
+        for (const value of Object.values(tool.annotations)) assert.equal(typeof value, "boolean", tool.name);
+      }
+    }
+  }
+  for (const name of Object.keys(MUTATION_ANNOTATIONS)) {
+    assert.ok([...USER_TOOL_NAMES, ...ADMIN_TOOL_NAMES].includes(name), `stale annotation expectation: ${name}`);
   }
 });
 
@@ -546,13 +605,13 @@ test("pagination bounds and tool error conventions are reusable", async () => {
   assert.deepEqual(pageResult([1, 2, 3], { limit: 2, offset: 0 }), { items: [1, 2], nextOffset: 2 });
   assert.deepEqual(pageResult([3], { limit: 2, offset: 2 }), { items: [3], nextOffset: null });
   for (const code of ["unauthenticated", "unauthorized", "invalid_input", "not_found", "internal"]) {
-    const tool = defineMcpTool("test", "Test", z.strictObject({}), () => { throw new McpApplicationError(code); });
+    const tool = defineMcpTool("test", READ_ANNOTATIONS, "Test", z.strictObject({}), () => { throw new McpApplicationError(code); });
     const result = await tool.invoke({});
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent.error.code, code);
     assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
   }
-  const tool = defineMcpTool("test", "Test", z.strictObject({}), () => { throw new Error("private failure"); });
+  const tool = defineMcpTool("test", READ_ANNOTATIONS, "Test", z.strictObject({}), () => { throw new Error("private failure"); });
   assert.ok(!JSON.stringify(await tool.invoke({})).includes("private failure"));
 });
 
@@ -2438,4 +2497,30 @@ test("single component preview rejects invalid references, metadata and wrong ex
   }
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, f.questionRowCount);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM admin_mcp_audit_log").get().n, 0);
+});
+
+
+test("taxonomy hints account for same-name updates and repeated merges advancing revisions", async (t) => {
+  const f = await questionBankFixture(t);
+  const tools = (await payload(await rpc(f.env, "admin", f.admin.token))).result.tools;
+  const hints = Object.fromEntries(tools.map(tool => [tool.name, tool.annotations]));
+  await callAdminTool(f, "admin_create_tag", { name: "source" });
+  const rows = () => f.sqlite.prepare("SELECT * FROM question_bank_tags ORDER BY id").all();
+  const beforeDuplicate = rows();
+  assert.equal((await callAdminToolExpectingError(f, "admin_create_tag", { name: "source" })).code, "conflict");
+  assert.deepEqual(rows(), beforeDuplicate);
+  assert.equal(hints.admin_create_tag.idempotentHint, true);
+
+  const revision = name => f.sqlite.prepare("SELECT revision FROM question_bank_tags WHERE name = ?").get(name).revision;
+  for (const [tool, args, target] of [
+    ["admin_update_tag", { name: "source", newName: "source" }, "source"],
+    ["admin_merge_tags", { names: ["source"], targetName: "target" }, "target"],
+  ]) {
+    await callAdminTool(f, tool, args);
+    const before = revision(target);
+    await callAdminTool(f, tool, args);
+    assert.equal(revision(target), before + 1, `${tool} still updates the catalog on retry`);
+    assert.equal(hints[tool].idempotentHint, false);
+    assert.equal(hints[tool].destructiveHint, true);
+  }
 });

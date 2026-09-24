@@ -903,3 +903,48 @@ test("implementation review: image reconciliation stays within D1's parameter bu
   await callTool(f, f.alice.token, "user_update_knowledge_point", { id, baseRevision: attached.knowledgePoint.revision, bodyMarkdown: "no images referenced anymore" });
   assert.deepEqual(statusCounts(), { orphaned: 105 });
 });
+
+
+test("behavior hints reflect repeated note creation, renames and failed group deletion", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const f = await fixture(t);
+  const tools = (await payload(await rpc(f.env, f.alice.token, "tools/list", {}))).result.tools;
+  const hints = Object.fromEntries(tools.map(tool => [tool.name, tool.annotations]));
+  const call = (name, args) => callTool(f, f.alice.token, name, args);
+  const error = (name, args) => callToolExpectingError(f, f.alice.token, name, args);
+
+  const first = await call("user_create_knowledge_point", { title: "Same input" });
+  const second = await call("user_create_knowledge_point", { title: "Same input" });
+  assert.notEqual(first.knowledgePoint.id, second.knowledgePoint.id);
+  assert.equal(hints.user_create_knowledge_point.idempotentHint, false);
+  assert.equal(hints.user_create_knowledge_point.destructiveHint, false);
+
+  const { group } = await call("user_create_knowledge_point_group", { name: "Unique group" });
+  const groupRows = () => f.sqlite.prepare("SELECT * FROM knowledge_point_groups ORDER BY id").all();
+  const beforeDuplicate = groupRows();
+  assert.equal((await error("user_create_knowledge_point_group", { name: "Unique group" })).code, "conflict");
+  assert.deepEqual(groupRows(), beforeDuplicate);
+  assert.equal(hints.user_create_knowledge_point_group.idempotentHint, true);
+
+  const tagged = await call("user_create_knowledge_point_tag", { id: first.knowledgePoint.id, name: "Tag" });
+  for (const [tool, id, table] of [
+    ["user_rename_knowledge_point_group", group.id, "knowledge_point_groups"],
+    ["user_rename_knowledge_point_tag", tagged.knowledgePoint.tags[0].id, "knowledge_point_tags"],
+  ]) {
+    await call(tool, { id, name: "Renamed" });
+    const before = f.sqlite.prepare(`SELECT updated_at FROM ${table} WHERE id = ?`).get(id);
+    t.mock.timers.tick(1000);
+    await call(tool, { id, name: "Renamed" });
+    const after = f.sqlite.prepare(`SELECT updated_at FROM ${table} WHERE id = ?`).get(id);
+    assert.notEqual(after.updated_at, before.updated_at);
+    assert.equal(hints[tool].idempotentHint, false);
+    assert.equal(hints[tool].destructiveHint, true);
+  }
+
+  await call("user_delete_knowledge_point_group", { id: group.id });
+  const scopeRevision = () => f.sqlite.prepare("SELECT revision FROM knowledge_point_order_scopes WHERE user_id = 'alice' AND scope_key = '__ungrouped__'").get().revision;
+  const before = scopeRevision();
+  assert.equal((await error("user_delete_knowledge_point_group", { id: group.id })).code, "not_found");
+  assert.equal(scopeRevision(), before + 1, "even a missing-group retry invalidates ordering today");
+  assert.equal(hints.user_delete_knowledge_point_group.idempotentHint, false);
+});

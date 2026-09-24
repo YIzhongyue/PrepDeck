@@ -56,6 +56,53 @@ and [low-level server](https://ts.sdk.modelcontextprotocol.io/v2/advanced/low-le
 The low-level SDK server lets the application validate tool arguments with its
 own fixed error vocabulary instead of returning raw schema-validation details.
 
+## Tool behavior annotations
+
+Every User and Admin `tools/list` entry declares explicit boolean
+`readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` values.
+The required `McpToolAnnotations` argument to `defineMcpTool` prevents new
+registrations from silently inheriting MCP defaults. The declarations live
+beside each tool in the two server catalogs; the transport tests verify both
+the modern JSON and legacy SSE representations.
+
+These are client hints, not authorization or retry instructions. Authentication,
+ownership checks, preview tokens, revision guards, rate limits, and audit records
+still apply independently. See the [MCP annotation semantics](https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations).
+
+- Reads, exports, validation and previews are read-only and non-destructive.
+  They are marked idempotent even when random question selection or newly
+  generated preview IDs make their responses differ: no application data is
+  changed. Request accounting, credential last-use timestamps, metrics and
+  audit records are not the business effects described by these hints.
+- `destructiveHint: false` on a write means additive only. Edits, unlinking,
+  deletion, archiving, reordering and import execution are destructive because
+  they can replace or remove existing state, even when reversible.
+- Idempotency describes repeating the **same arguments**, without intervening
+  business changes. A replay can return a conflict/not-found instead of its
+  original success and still have no additional business effect. Question
+  creation/imports use their existing operation IDs; question/note updates and
+  reordering use their existing revision guards. Unique exam slugs and unique
+  group/catalog-tag names prevent duplicate creation. Link/attach operations
+  deduplicate; ordinary deletions cannot delete the same object twice.
+- Six tools conservatively declare `idempotentHint: false` based on their
+  current implementations: `user_create_knowledge_point` creates a fresh note;
+  `user_rename_knowledge_point_group` and `user_rename_knowledge_point_tag`
+  refresh timestamps on every rename; `user_delete_knowledge_point_group`
+  advances the Ungrouped order revision even when a retry finds no group;
+  `admin_update_tag` can advance the catalog revision on a same-name rename;
+  `admin_merge_tags` touches the target revision even after sources are gone.
+  Behavioral regression tests exercise these differences. Annotation changes
+  do not change those handlers.
+- All current tools have `openWorldHint: false`: they operate on the configured
+  PrepDeck instance's data and storage, with no arbitrary external fetching,
+  messaging, or execution. Cloudflare storage bindings do not make this an
+  open-world tool. Returned links/Markdown are data, not outbound requests by
+  the tool; figure presentation uses the stored embedded assets.
+
+When changing a handler, review its annotations and the wire-contract tests
+together, especially any new external integration, revision side effect, or
+retry behavior. No database migration or credential change is required.
+
 ## Authentication and provisioning
 
 Apply the complete ordered [migration chain](../../migrations) before enabling
