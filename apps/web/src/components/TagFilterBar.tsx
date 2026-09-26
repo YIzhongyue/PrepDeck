@@ -8,10 +8,10 @@ import "./TagFilterBar.css";
 // is, except the chips currently filtering the page, which neither collapsing
 // nor searching may take away. See `lib/tagFilter.ts` for the rules.
 //
-// `StudyTagFilter` is the same idea for the practice/learning setup forms: it
-// filters the whole catalog inside a form card and is always expanded. This
-// one sits above a result list, reports what the filter is doing to that list,
-// and is collapsible. The chip appearance is deliberately kept in step.
+// The setup screens' `DomainPicker` (components/study/SetupKit.tsx) is the same
+// idea for Practice and Learning: it filters the whole catalog before a session
+// starts. This one sits above a result list, reports what the filter is doing
+// to that list, and is collapsible.
 
 const COLLAPSED_LIMIT = 6;
 // Below this, "More" reveals every remaining chip in one row or two and a

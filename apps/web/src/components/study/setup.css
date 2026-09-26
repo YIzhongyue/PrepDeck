@@ -1,4 +1,4 @@
-/* Practice and Mock setup, from the "PrepDeck Study Modes v2" design. Uses the
+/* Practice, Mock and Learning setup, from the "PrepDeck Study Modes v2" design. Uses the
    `--st-*` tokens that study.css defines on `.pd-study`. */
 
 .st-setup-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--st-line); }
@@ -164,6 +164,7 @@
 .st-range output { min-width: 64px; padding: 8px 12px; border: 1px solid var(--st-line-2); border-radius: 8px; color: var(--st-fg); font-size: 16px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 
 .st-custom { display: grid; gap: 16px; }
+.st-start { max-width: 240px; }
 
 /* ---- Summary card ------------------------------------------------------ */
 
@@ -187,7 +188,7 @@
 .st-big-pair-v { margin-top: 4px; font-size: 30px; font-weight: 600; line-height: 38px; color: var(--st-fg); font-variant-numeric: tabular-nums; }
 .st-summary-warn { margin: 0 24px; padding: 10px 12px; border: 1px solid var(--st-warn-line); border-radius: 8px; background: var(--st-warn-soft); color: var(--st-warn-fg); font-size: 13px; line-height: 18px; }
 
-/* ---- Mock banners and rules -------------------------------------------- */
+/* ---- Banners and Mock rules -------------------------------------------- */
 
 .st-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; padding: 16px; border: 1px solid var(--st-warn-line); border-radius: 12px; background: var(--st-warn-soft); }
 .st-banner-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: color-mix(in srgb, var(--st-warn) 14%, var(--color-bg)); color: var(--st-warn); }
@@ -195,6 +196,12 @@
 .st-banner-title { font-weight: 600; }
 .st-banner .st-btn--primary { border-color: var(--st-warn); background: var(--st-warn); }
 .st-banner .st-btn--primary:hover { border-color: var(--st-warn-fg); background: var(--st-warn-fg); }
+/* Learning's resume prompt is an offer, not a warning. */
+.st-banner--brand { border-color: var(--st-brand-line); background: var(--st-brand-tint); }
+.st-banner--brand .st-banner-icon { background: var(--st-brand-soft); color: var(--st-brand); }
+.st-banner--brand .st-banner-text { color: var(--st-fg-2); }
+.st-banner--brand .st-btn--primary { border-color: var(--st-brand); background: var(--st-brand); }
+.st-banner--brand .st-btn--primary:hover { border-color: var(--color-accent-700); background: var(--color-accent-700); }
 
 .st-note { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-soft); color: var(--st-fg-3); font-size: 13px; line-height: 20px; }
 .st-note svg { margin-top: 2px; color: var(--st-fg-4); }

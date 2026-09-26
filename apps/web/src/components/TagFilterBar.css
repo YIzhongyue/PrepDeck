@@ -61,8 +61,8 @@
 .tag-filter__empty { margin: 6px 4px; font-size: 13px; opacity: .7; overflow-wrap: anywhere; }
 .tag-filter__hint { margin: 10px 2px 0; font-size: 12px; opacity: .7; line-height: 1.5; }
 
-/* Phone width or a coarse pointer: the same 44px target `StudyTagFilter` and
-   the tag picker use. Width matters too — a small window is where these chips
+/* Phone width or a coarse pointer: the same 44px target the setup domain chips
+   and the tag picker use. Width matters too — a small window is where these chips
    are hardest to hit accurately. */
 @media (max-width: 600px), (hover: none), (pointer: coarse) {
   .tag-filter__chip, .tag-filter__clear, .tag-filter__more { min-height: 44px; }
