@@ -2,10 +2,15 @@
 // shared verbatim between the REST dashboard (routes/stats.ts, KV-cached via
 // lib/statsCache.ts) and the User MCP's read-only tools (mcp/adapter.ts), per
 // implementation's "reuse existing application/service/query logic where
-// practical". Every query here scopes to `attempts.user_id = userId` and
-// only counts completed attempts (completed_at IS NOT NULL) — an in-progress
-// mock's draft answers aren't graded yet (see routes/attempts.ts) and must
-// not skew accuracy/score figures.
+// practical". Every query here scopes to `attempts.user_id = userId`.
+//
+// Answer figures count GRADED answers (issue #40): a practice answer is graded
+// and locked the moment it is checked, so it counts from then on, whether or
+// not the session was ever ended; a mock's answers exist only once the mock is
+// submitted (its drafts live in attempts.draft_answers_json, never here).
+// Answers are dated by when they were answered, not by when their session
+// closed. Sessions, their durations and mock scores still come from completed
+// attempts.
 
 import type {
   AccuracyTrendPoint,
@@ -19,6 +24,19 @@ import type {
 } from "@prepdeck/shared";
 import { STATS_SCHEMA_VERSION, effectivePassMarkPct, isMockPassed } from "@prepdeck/shared";
 import { loadExamPassRule } from "./examManagement";
+
+// The answers a statistic may count, for a query joining attempts `a`.
+export const GRADED_ANSWER_SQL = "(a.mode = 'practice' OR a.completed_at IS NOT NULL)";
+// When an answer was given. Rows written before answered_at existed (0009)
+// fall back to their session's times.
+export const ANSWERED_AT_SQL = "COALESCE(aa.answered_at, a.completed_at, a.started_at)";
+// Latest study activity for one user and exam: a closed session or an answer.
+const LAST_ACTIVITY_SQL = `SELECT MAX(at) AS last_at FROM (
+  SELECT MAX(completed_at) AS at FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL
+  UNION ALL
+  SELECT MAX(${ANSWERED_AT_SQL}) AS at FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
+  WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
+)`;
 
 // Exported for reuse by mcp/adapter.ts's get_learning_overview, which
 // computes its own per-exam accuracy percentages outside computeExamStats.
@@ -52,7 +70,7 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
               COUNT(*) AS total_answers, COALESCE(SUM(aa.is_correct), 0) AS correct_answers
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL`
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}`
     )
       .bind(userId, examId)
       .first<{ attempted_questions: number; total_answers: number; correct_answers: number }>(),
@@ -71,16 +89,16 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
        JOIN questions q ON q.id = aa.question_id AND q.exam_id = a.exam_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL`
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}`
     )
       .bind(userId, examId)
       .first<{ attempted_in_bank: number }>(),
 
     db.prepare(
-      `SELECT substr(a.completed_at, 1, 10) AS day, COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
+      `SELECT substr(${ANSWERED_AT_SQL}, 1, 10) AS day, COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
        GROUP BY day ORDER BY day ASC`
     )
       .bind(userId, examId)
@@ -92,7 +110,7 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
        JOIN attempts a ON a.id = aa.attempt_id
        JOIN question_tag_links l ON l.question_id = aa.question_id
        JOIN question_bank_tags t ON t.id = l.tag_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
        GROUP BY l.tag_id ORDER BY attempted DESC, tag ASC`
     )
       .bind(userId, examId)
@@ -103,7 +121,7 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
        JOIN questions q ON q.id = aa.question_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
        GROUP BY difficulty`
     )
       .bind(userId, examId)
@@ -121,21 +139,19 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
       .bind(userId, examId)
       .all<{ attempt_id: string; completed_at: string; score: number; total_questions: number; correct_count: number }>(),
 
-    db.prepare(
-      "SELECT MAX(completed_at) AS last_at FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL"
-    )
-      .bind(userId, examId)
+    db.prepare(LAST_ACTIVITY_SQL)
+      .bind(userId, examId, userId, examId)
       .first<{ last_at: string | null }>(),
 
     // Both comparison windows in one pass, summed from correct/attempted —
     // NOT averaged over daily percentages, which would weigh a three-answer
     // day the same as a ninety-answer one.
     db.prepare(
-      `SELECT CASE WHEN a.completed_at >= ? THEN 'current' ELSE 'previous' END AS bucket,
+      `SELECT CASE WHEN ${ANSWERED_AT_SQL} >= ? THEN 'current' ELSE 'previous' END AS bucket,
               COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL AND a.completed_at >= ?
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL} AND ${ANSWERED_AT_SQL} >= ?
        GROUP BY bucket`
     )
       .bind(currentWindowStart, userId, examId, previousWindowStart)
@@ -146,10 +162,10 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
     // must not count as a new question here either.
     db.prepare(
       `SELECT COUNT(*) AS fresh FROM (
-         SELECT aa.question_id AS question_id, MIN(a.completed_at) AS first_at
+         SELECT aa.question_id AS question_id, MIN(${ANSWERED_AT_SQL}) AS first_at
          FROM attempt_answers aa
          JOIN attempts a ON a.id = aa.attempt_id
-         WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+         WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
          GROUP BY aa.question_id
        ) WHERE first_at >= ?`
     )
@@ -254,10 +270,10 @@ export async function computeExamStatsSummary(db: D1Database, userId: string, ex
     db.prepare(
       `SELECT COUNT(DISTINCT aa.question_id) AS attempted_questions, COUNT(*) AS total_answers, COALESCE(SUM(aa.is_correct), 0) AS correct_answers
        FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL`,
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}`,
     ).bind(userId, examId).first<{ attempted_questions: number; total_answers: number; correct_answers: number }>(),
-    db.prepare("SELECT MAX(completed_at) AS last_at FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL")
-      .bind(userId, examId).first<{ last_at: string | null }>(),
+    db.prepare(LAST_ACTIVITY_SQL)
+      .bind(userId, examId, userId, examId).first<{ last_at: string | null }>(),
   ]);
   return {
     examId: exam.id,
@@ -309,17 +325,17 @@ export async function computeExamStatsPage(
     db.prepare(
       `SELECT COUNT(DISTINCT aa.question_id) AS attempted_questions, COUNT(*) AS total_answers, COALESCE(SUM(aa.is_correct), 0) AS correct_answers
        FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL`,
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}`,
     ).bind(userId, examId).first<{ attempted_questions: number; total_answers: number; correct_answers: number }>(),
 
-    db.prepare("SELECT MAX(completed_at) AS last_at FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL")
-      .bind(userId, examId).first<{ last_at: string | null }>(),
+    db.prepare(LAST_ACTIVITY_SQL)
+      .bind(userId, examId, userId, examId).first<{ last_at: string | null }>(),
 
     // Latest trendCap+1 days, newest first — reversed to ascending below.
     db.prepare(
-      `SELECT substr(a.completed_at, 1, 10) AS day, COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
+      `SELECT substr(${ANSWERED_AT_SQL}, 1, 10) AS day, COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
        FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
        GROUP BY day ORDER BY day DESC LIMIT ?`,
     ).bind(userId, examId, opts.trendCap + 1).all<{ day: string; attempted: number; correct: number }>(),
 
@@ -329,7 +345,7 @@ export async function computeExamStatsPage(
        FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
        JOIN question_tag_links l ON l.question_id = aa.question_id
        JOIN question_bank_tags t ON t.id = l.tag_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
        GROUP BY l.tag_id ORDER BY attempted DESC, tag ASC LIMIT ?`,
     ).bind(userId, examId, opts.tagCap + 1).all<{ tag_id: string; tag: string; attempted: number; correct: number }>(),
 
@@ -337,7 +353,7 @@ export async function computeExamStatsPage(
     db.prepare(
       `SELECT COALESCE(q.difficulty, 'unspecified') AS difficulty, COUNT(*) AS attempted, COALESCE(SUM(aa.is_correct), 0) AS correct
        FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id JOIN questions q ON q.id = aa.question_id
-       WHERE a.user_id = ? AND a.exam_id = ? AND a.completed_at IS NOT NULL GROUP BY difficulty`,
+       WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL} GROUP BY difficulty`,
     ).bind(userId, examId).all<{ difficulty: DifficultyBreakdown["difficulty"]; attempted: number; correct: number }>(),
 
     // `id ASC` tiebreak for attempts sharing a completed_at timestamp.
@@ -399,10 +415,9 @@ export async function computeStudyActivity(
   // sessions that actually contributed to it: a day with sessions but no
   // recorded duration is UNAVAILABLE, not zero, and the DTO keeps the two
   // apart (see packages/shared/src/stats.ts and buildStudyWeek).
-  const [dayRows, avgRow] = await Promise.all([
+  const [dayRows, answerRows, avgRow] = await Promise.all([
     db.prepare(
       `SELECT substr(completed_at, 1, 10) AS day, COUNT(*) AS sessions,
-              COALESCE(SUM(total_questions), 0) AS questions,
               SUM(duration_seconds) AS duration_seconds,
               SUM(CASE WHEN duration_seconds IS NOT NULL THEN 1 ELSE 0 END) AS sessions_with_duration
        FROM attempts
@@ -411,7 +426,20 @@ export async function computeStudyActivity(
        GROUP BY day ORDER BY day ASC`
     )
       .bind(userId, since, examId, examId)
-      .all<{ day: string; sessions: number; questions: number; duration_seconds: number | null; sessions_with_duration: number }>(),
+      .all<{ day: string; sessions: number; duration_seconds: number | null; sessions_with_duration: number }>(),
+
+    // Questions answered, by the day each answer was given (issue #40): a
+    // practice session that was never ended still counts its answers, and one
+    // that ran past midnight counts each on its own day.
+    db.prepare(
+      `SELECT substr(${ANSWERED_AT_SQL}, 1, 10) AS day, COUNT(*) AS questions
+       FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
+       WHERE a.user_id = ? AND ${GRADED_ANSWER_SQL} AND ${ANSWERED_AT_SQL} >= ?
+             AND (? IS NULL OR a.exam_id = ?)
+       GROUP BY day`
+    )
+      .bind(userId, since, examId, examId)
+      .all<{ day: string; questions: number }>(),
 
     // Unchanged contract: the mean is over every completed session that
     // recorded a duration, across the user's whole history for this exam —
@@ -429,15 +457,24 @@ export async function computeStudyActivity(
 
   let sessionsCompleted = 0;
   let sessionsWithDuration = 0;
-  const days_: StudyActivityDay[] = (dayRows.results ?? []).map((r) => {
-    sessionsCompleted += r.sessions;
-    sessionsWithDuration += r.sessions_with_duration;
+  const sessionsByDay = new Map((dayRows.results ?? []).map((r) => [r.day, r]));
+  const answersByDay = new Map((answerRows.results ?? []).map((r) => [r.day, r.questions]));
+  // A day is active if a session closed on it or a question was answered on it.
+  const activeDays = [...new Set([...sessionsByDay.keys(), ...answersByDay.keys()])].sort();
+  const days_: StudyActivityDay[] = activeDays.map((day) => {
+    const r = sessionsByDay.get(day);
+    const sessions = r?.sessions ?? 0;
+    const withDuration = r?.sessions_with_duration ?? 0;
+    sessionsCompleted += sessions;
+    sessionsWithDuration += withDuration;
     return {
-      date: r.day,
-      sessionsCompleted: r.sessions,
-      questionsAnswered: r.questions,
-      durationSeconds: r.sessions_with_duration > 0 ? (r.duration_seconds ?? 0) : null,
-      sessionsWithDuration: r.sessions_with_duration,
+      date: day,
+      sessionsCompleted: sessions,
+      questionsAnswered: answersByDay.get(day) ?? 0,
+      // No closed session is zero recorded time; sessions without a recorded
+      // duration are unavailable, not zero.
+      durationSeconds: sessions === 0 ? 0 : withDuration > 0 ? (r?.duration_seconds ?? 0) : null,
+      sessionsWithDuration: withDuration,
     };
   });
 
