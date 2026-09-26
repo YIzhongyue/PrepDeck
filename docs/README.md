@@ -51,7 +51,7 @@ records the gaps between the original specification, current code and open issue
 | [MCP metrics](operations/mcp-observability.md) | Privacy-safe counter schema, five-minute queries, volume estimate and rollout checks. |
 | [Observability](operations/observability-runbook.md) | Current log/audit inventory, gaps, sampling and retention targets. |
 | [Content mutation audit](operations/content-mutation-audit.md) | Actor, entry point, target and outcome across browser, import and MCP writes. |
-| [Scheduled jobs](operations/scheduled-jobs.md) | Review email, unsubscribe, image cleanup and operational caveats. |
+| [Scheduled jobs](operations/scheduled-jobs.md) | Review email, unsubscribe, image cleanup, the abandoned-practice sweep and operational caveats. |
 | [Component question UI](screenshots/component-questions.md) | Synthetic desktop/mobile evidence for component rendering, answering and editing. |
 | [Screenshot policy](screenshots/README.md) | Where to add current, sanitized visual evidence. |
 | [Login layout](screenshots/login-layout.md) | Desktop/mobile login layout and browser verification. |

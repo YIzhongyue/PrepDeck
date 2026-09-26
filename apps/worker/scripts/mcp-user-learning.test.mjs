@@ -634,3 +634,19 @@ test("implementation review: get_learning_stats and get_exam_progress bound thei
   // or summary-only request.
   assert.equal(f.kvStore.size, 0, "get_learning_stats/get_exam_progress must not use the full-history KV cache");
 });
+
+test("issue #40: the learning overview counts graded answers of a practice session that was never ended", async (t) => {
+  const f = await fixture(t);
+  insertExam(f, { id: "exam1", slug: "exam-1", name: "Exam One" });
+  insertQuestion(f, { id: "q1", examId: "exam1", type: "single_choice", stem: "q1" });
+  insertQuestion(f, { id: "q2", examId: "exam1", type: "single_choice", stem: "q2" });
+  insertAttempt(f, { id: "open", userId: "alice", examId: "exam1", startedAt: "2026-01-01T00:00:00.000Z", questionIds: ["q1", "q2"] });
+  insertAttemptAnswer(f, { id: "aa1", attemptId: "open", questionId: "q1", isCorrect: true, answeredAt: "2026-01-01T00:01:00.000Z" });
+  insertAttemptAnswer(f, { id: "aa2", attemptId: "open", questionId: "q2", isCorrect: false, answeredAt: "2026-01-01T00:02:00.000Z" });
+  // An open mock has no graded answers yet and must still not count.
+  insertAttempt(f, { id: "mock", userId: "alice", examId: "exam1", mode: "mock", startedAt: "2026-01-02T00:00:00.000Z", questionIds: ["q1"] });
+
+  const overview = await callUserTool(f, f.alice.token, "user_get_learning_overview", {});
+  assert.deepEqual(overview.exams.map((e) => [e.examId, e.totalAttempted, e.overallAccuracyPct, e.lastAttemptAt]),
+    [["exam1", 2, 50, "2026-01-01T00:02:00.000Z"]]);
+});

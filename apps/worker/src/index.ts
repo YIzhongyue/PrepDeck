@@ -33,15 +33,21 @@ import { adminOverviewRouter } from "./routes/adminOverview";
 import { providerIconsRouter, providersRouter } from "./routes/providers";
 import { generalRateLimit, authenticatedRateLimit } from "./middleware/rateLimit";
 import { circuitBreaker } from "./middleware/circuitBreaker";
+import { jsonBodyLimit } from "./lib/bodyLimit";
+import { handleUnexpectedError } from "./lib/unexpectedError";
 import { runKnowledgePointImageCleanup } from "./scheduled/cleanupKnowledgePointImages";
 import { runContentMutationAuditPrune } from "./scheduled/pruneContentMutationAudit";
 import { runDailyReviewEmailDelivery } from "./scheduled/sendDailyReviewEmails";
+import { runStalePracticeClose } from "./scheduled/closeStalePracticeAttempts";
 import { userMcpRouter, adminMcpRouter } from "./mcp/routes";
 import { createMcpTokensRouter } from "./routes/mcpTokens";
 import { observeMcp } from "./mcp/observability";
 export { RateLimiterObject } from "./rateLimiterObject";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Every unhandled error answers in JSON (issue #45); see lib/unexpectedError.ts.
+app.onError(handleUnexpectedError);
 
 // A bounded, best-effort Analytics Engine counter also observes early rejects.
 // It never reads credentials or calls D1/KV/R2/the rate-limiter service.
@@ -79,6 +85,11 @@ app.route("/admin-mcp", adminMcpRouter);
 const api = new Hono<{ Bindings: Env; Variables: Variables }>();
 api.use("*", requireAccessUser);
 api.use("*", authenticatedRateLimit);
+// Small JSON bodies only; see lib/bodyLimit.ts. After authentication, so an
+// anonymous request is still refused with 401 rather than told about sizes.
+for (const path of ["/questions/:questionId/notes/*", "/notes/*", "/questions/:questionId/annotations/*", "/annotations/*", "/attempts/*", "/exams/:examId/attempts/*"]) {
+  api.use(path, jsonBodyLimit);
+}
 
 // docs/requirements/question-bank-management.md — Question Bank Management & Import (Admin).
 api.route("/exams", examsRouter);
@@ -161,5 +172,7 @@ export default {
     // same "a missed run is picked up tomorrow" property. Kept as its own
     // waitUntil so neither sweep's failure can cancel the other.
     ctx.waitUntil(runContentMutationAuditPrune(env));
+    // Practice sessions nobody ended (issue #40), on the same daily trigger.
+    ctx.waitUntil(runStalePracticeClose(env));
   },
 } satisfies ExportedHandler<Env>;

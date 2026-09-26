@@ -46,9 +46,47 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
   A practice answer is graded and locked when it is first recorded. Re-submitting the same question replays the stored grading — including the answer key it was graded against, so the replayed result stays consistent with itself even if the key has since changed — rather than failing. That makes a retry after a lost response recover the feedback instead of leaving the client stuck on a question the server has already graded, while still refusing to revise the recorded answer.
 
+  Keyboard shortcuts ([issue #50](https://github.com/YIzhongyue/PrepDeck/issues/50)):
+  on choice questions, number keys 1–9 and option letters select options.
+  **Enter** checks the answer only when **Check answer** would accept it (a
+  complete answer), and moves to the next question once the answer is graded.
+  Enter in the fill-in field checks that answer. **Shift+B** toggles the
+  bookmark, because every plain letter can be an option. Enter on a focused
+  option, button or link activates only that control, and held keys do not
+  repeat a shortcut. The shortcut panel lists exactly the keys that apply to
+  the current question.
+
 <a id="fr-3-3"></a>
 
 - **FR-3.3 (M):** Every answered question is recorded as an `attempt_answer` linked to an `attempt` of mode `practice`, including correctness and time spent, so it feeds statistics and the wrong-question book.
+
+  An answer is validated against its question before anything is written, on
+  the practice answer endpoint and the mock draft endpoint alike
+  ([issue #39](https://github.com/YIzhongyue/PrepDeck/issues/39); rules in
+  `answerProblem`, [`grading.ts`](../../packages/shared/src/grading.ts)). A
+  fill-in is one value, because several guesses in one submission are not an
+  answer. Single-choice and true/false answers name at most one option.
+  Multiple-choice answers name each option at most once. Every ID must belong to
+  the question. An ordering has one position per item, and a draft may still
+  hold blanks and repeats while the learner arranges it. A matching answer is
+  canonical `[leftId, rightId]` pairs, one per left item. An empty selection is
+  always allowed, since it is how an answer is cleared. An answer has at most
+  50 values of at most 1,000 characters each. `timeSpentSeconds` is omitted,
+  `null`, or a whole number of seconds from 0 to 86,400. Anything else is
+  refused with 400. Mock grading treats a draft saved before these checks (or
+  one naming an option removed since) as unanswered, so such an attempt can
+  still be submitted. Migration `0036` clears stored time values that break the
+  rule.
+
+  An answer feeds statistics as soon as it is graded, not when the session ends
+  ([issue #40](https://github.com/YIzhongyue/PrepDeck/issues/40)): a reload, a
+  closed tab or an expired session no longer hides answers from Statistics while
+  the wrong book and practice sources already count them. Practice has no resume
+  flow, so a session nobody ended is closed as a session (dated by its last
+  answer, its duration running from start to last answer) when the same user
+  starts practice in that exam after an hour without an answer, and by a daily
+  sweep after a day. An answer sent to a session closed that way is refused, and
+  the learner is told to start a new session.
 
 <a id="fr-3-4"></a>
 
@@ -59,6 +97,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-4-1"></a>
 
 - **FR-4.1 (M):** A user can configure a mock exam: exam, number of questions, and time limit (sensible defaults per exam, editable by the user at start time). An attempt is capped at `MAX_ATTEMPT_QUESTIONS` (200) questions, because submission grades the whole attempt in one atomic transaction whose size that bounds; an exam with a larger question bank offers up to the cap rather than its full pool.
+
+  The **Custom** format's fields keep exactly what the learner types and
+  validate it instead of clamping each keystroke
+  ([issue #55](https://github.com/YIzhongyue/PrepDeck/issues/55)). The question
+  count must be a whole number from 1 to the questions available (at most the
+  cap), and the time limit a whole number of minutes from 5 to 300. An empty or
+  out-of-range value shows why, the summary shows a dash for it, and **Begin
+  exam** stays disabled until it is valid, so an exam always starts with the
+  values on screen.
 
 <a id="fr-4-2"></a>
 
@@ -71,6 +118,14 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-4-4"></a>
 
 - **FR-4.4 (M):** On submission (manual or automatic), the user sees a results summary: score, pass/fail against a configurable passing threshold, time used, and a per-question breakdown (correct/incorrect, user's answer vs. correct answer) with the option to jump into AI explanations from there.
+
+  A manual submission is confirmed first in a modal dialog that states how many
+  questions are answered and flagged
+  ([issue #51](https://github.com/YIzhongyue/PrepDeck/issues/51)). The dialog
+  focuses **Keep going**, keeps keyboard focus inside itself and makes the exam
+  behind it inert, so no answer can change while it is open. Escape and a click
+  on the backdrop both mean Keep going, and closing returns focus to the
+  control that opened it.
 
 <a id="fr-4-5"></a>
 

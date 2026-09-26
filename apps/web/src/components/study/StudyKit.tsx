@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState, type DependencyList, type ReactNode } from "react";
-import { CURATED_MODELS } from "@prepdeck/shared";
+import { CURATED_MODELS, MAX_NOTE_LENGTH } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
 import MarkdownHighlightedText from "../MarkdownHighlightedText";
 import NoteCard from "../NoteCard";
+import LengthHint from "../LengthHint";
 import UnlockKeyPrompt from "../UnlockKeyPrompt";
 import AnswerRevisionNotice from "../AnswerRevisionNotice";
 import type { LearningHistoryRow, Question } from "../../types";
@@ -330,8 +331,9 @@ export function NotesPanel({ qid }: { qid: string }) {
       <div className="st-compose">
         <textarea
           className="st-textarea" placeholder="Write a note for this question…" aria-label="Note for this question"
-          value={state.noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+          value={state.noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={MAX_NOTE_LENGTH}
         />
+        <LengthHint length={state.noteDraft.length} max={MAX_NOTE_LENGTH} />
         <div className="st-compose-row">
           <div className="st-segmented" role="group" aria-label="Note visibility">
             {(["private", "shared"] as const).map((v) => (
