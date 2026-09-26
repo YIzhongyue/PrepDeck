@@ -274,7 +274,7 @@ try {
   assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
   assert.deepEqual(await selectedDomains(), awsDomains, 'Learning and Practice selections stay independent');
   await invoke('go', 'practice');
-  await page.getByRole('button', { name: 'All 7', exact: true }).click();
+  await page.getByRole('button', { name: 'All questions 7', exact: true }).click();
   await page.getByRole('button', { name: 'Any', exact: true }).click();
   await domainSearch.fill('batch domain');
   await page.getByRole('button', { name: 'Select all results (80)', exact: true }).click();

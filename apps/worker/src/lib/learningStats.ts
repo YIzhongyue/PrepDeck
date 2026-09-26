@@ -17,7 +17,8 @@ import type {
   StudyActivityResponse,
   TagBreakdown,
 } from "@prepdeck/shared";
-import { STATS_SCHEMA_VERSION } from "@prepdeck/shared";
+import { STATS_SCHEMA_VERSION, effectivePassMarkPct, isMockPassed } from "@prepdeck/shared";
+import { loadExamPassRule } from "./examManagement";
 
 // Exported for reuse by mcp/adapter.ts's get_learning_overview, which
 // computes its own per-exam accuracy percentages outside computeExamStats.
@@ -36,10 +37,9 @@ function utcDayStart(at: Date, daysBack: number): string {
 }
 
 export async function computeExamStats(db: D1Database, userId: string, examId: string, now: Date = new Date()): Promise<ExamStatsResponse | null> {
-  const exam = await db.prepare("SELECT id, pass_mark_pct FROM exams WHERE id = ?")
-    .bind(examId)
-    .first<{ id: string; pass_mark_pct: number | null }>();
-  if (!exam) return null;
+  const rule = await loadExamPassRule(db, examId);
+  if (!rule) return null;
+  const exam = { id: examId };
 
   // Current window: the last ACCURACY_WINDOW_DAYS UTC days, today included.
   // Previous window: the ACCURACY_WINDOW_DAYS days immediately before it.
@@ -112,13 +112,14 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
     // `id ASC` gives attempts sharing a completed_at timestamp a deterministic
     // order, which is what makes the "best mock" tiebreak below reproducible.
     db.prepare(
-      `SELECT id AS attempt_id, completed_at, score, total_questions
+      `SELECT id AS attempt_id, completed_at, score, total_questions,
+              (SELECT COALESCE(SUM(is_correct), 0) FROM attempt_answers aa WHERE aa.attempt_id = attempts.id) AS correct_count
        FROM attempts
        WHERE user_id = ? AND exam_id = ? AND mode = 'mock' AND completed_at IS NOT NULL
        ORDER BY completed_at ASC, id ASC`
     )
       .bind(userId, examId)
-      .all<{ attempt_id: string; completed_at: string; score: number; total_questions: number }>(),
+      .all<{ attempt_id: string; completed_at: string; score: number; total_questions: number; correct_count: number }>(),
 
     db.prepare(
       "SELECT MAX(completed_at) AS last_at FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL"
@@ -183,7 +184,7 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
     completedAt: r.completed_at,
     score: r.score,
     totalQuestions: r.total_questions,
-    passed: exam.pass_mark_pct != null ? r.score >= exam.pass_mark_pct : null,
+    passed: isMockPassed(rule, { correctCount: r.correct_count, totalQuestions: r.total_questions, score: r.score }),
   }));
 
   const windowFor = (bucket: "current" | "previous"): AccuracyWindow | null => {
@@ -206,7 +207,7 @@ export async function computeExamStats(db: D1Database, userId: string, examId: s
     totalAnswers,
     totalCorrect,
     overallAccuracyPct: pct(totalCorrect, totalAnswers),
-    passMarkPct: exam.pass_mark_pct ?? null,
+    passMarkPct: effectivePassMarkPct(rule),
     weeklyNewQuestions: freshRow?.fresh ?? 0,
     accuracyComparison: {
       days: ACCURACY_WINDOW_DAYS,
@@ -300,9 +301,9 @@ export async function computeExamStatsPage(
   db: D1Database, userId: string, examId: string,
   opts: { trendCap: number; tagCap: number; mockLimit: number; mockOffset: number },
 ): Promise<ExamStatsBoundedPage | null> {
-  const exam = await db.prepare("SELECT id, pass_mark_pct FROM exams WHERE id = ?")
-    .bind(examId).first<{ id: string; pass_mark_pct: number | null }>();
-  if (!exam) return null;
+  const rule = await loadExamPassRule(db, examId);
+  if (!rule) return null;
+  const exam = { id: examId };
 
   const [overall, lastAttempt, trendRows, tagRows, difficultyRows, mockRows] = await Promise.all([
     db.prepare(
@@ -341,10 +342,11 @@ export async function computeExamStatsPage(
 
     // `id ASC` tiebreak for attempts sharing a completed_at timestamp.
     db.prepare(
-      `SELECT id AS attempt_id, completed_at, score, total_questions
+      `SELECT id AS attempt_id, completed_at, score, total_questions,
+              (SELECT COALESCE(SUM(is_correct), 0) FROM attempt_answers aa WHERE aa.attempt_id = attempts.id) AS correct_count
        FROM attempts WHERE user_id = ? AND exam_id = ? AND mode = 'mock' AND completed_at IS NOT NULL
        ORDER BY completed_at ASC, id ASC LIMIT ? OFFSET ?`,
-    ).bind(userId, examId, opts.mockLimit + 1, opts.mockOffset).all<{ attempt_id: string; completed_at: string; score: number; total_questions: number }>(),
+    ).bind(userId, examId, opts.mockLimit + 1, opts.mockOffset).all<{ attempt_id: string; completed_at: string; score: number; total_questions: number; correct_count: number }>(),
   ]);
 
   const trendAll = trendRows.results ?? [];
@@ -365,7 +367,7 @@ export async function computeExamStatsPage(
 
   const mockScoreHistoryRows: MockScoreHistoryEntry[] = (mockRows.results ?? []).map((r) => ({
     attemptId: r.attempt_id, completedAt: r.completed_at, score: r.score, totalQuestions: r.total_questions,
-    passed: exam.pass_mark_pct != null ? r.score >= exam.pass_mark_pct : null,
+    passed: isMockPassed(rule, { correctCount: r.correct_count, totalQuestions: r.total_questions, score: r.score }),
   }));
 
   return {

@@ -26,7 +26,8 @@ import type {
   UserProfile,
   UserSettingsResponse
 } from "@prepdeck/shared";
-import { CURATED_MODELS, DEFAULT_MARK_ALIASES, hasAnswer, MAX_ATTEMPT_QUESTIONS } from "@prepdeck/shared";
+import { CURATED_MODELS, DEFAULT_MARK_ALIASES, hasAnswer, MAX_ATTEMPT_QUESTIONS, type MockFormatId } from "@prepdeck/shared";
+import { defaultMockFormat, mockPlan, officialFormatOf } from "../lib/mockFormat";
 import { apiFetch, ApiError } from "../lib/api";
 import { fromSharedAnnotation, toCreateAnnotationRequest } from "../lib/annotations";
 import { fromSharedNote } from "../lib/notes";
@@ -139,6 +140,8 @@ export interface AppState {
   mockDeadline: number | null;
   mConfirm: boolean;
   mockAttemptId: string | null;
+  /** Selected Mock setup format; mockCount/mockMinutes hold the custom values. */
+  mockFormat: MockFormatId;
   mockCount: number;
   mockMinutes: number;
   mockResult: CompleteAttemptResponse | null;
@@ -187,7 +190,7 @@ const initialState: AppState = {
   pendingQuestionJump: null, pendingKnowledgePointId: null, pendingSlugQuestionJump: null,
 
   mStage: "setup", mQueue: [], mIdx: 0, mSel: {}, mFlag: {}, mLeft: 0, mockDeadline: null, mConfirm: false,
-  mockAttemptId: null, mockCount: 10, mockMinutes: 30, mockResult: null, activeMockAttempt: null,
+  mockAttemptId: null, mockFormat: "custom", mockCount: 10, mockMinutes: 30, mockResult: null, activeMockAttempt: null,
 
   listMode: "wrong",
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
@@ -252,6 +255,7 @@ interface PrepDeckStore {
   openKnowledgePointNote: (noteId: string) => void;
   clearPendingKnowledgePoint: () => void;
 
+  setMockFormat: (format: MockFormatId) => void;
   setMockCount: (n: number) => void;
   setMockMinutes: (n: number) => void;
   beginMock: () => void;
@@ -464,7 +468,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         bookmarks: Object.fromEntries(data.bookmarkedIds.filter(id => catalogBy[id]).map(id => [id, true])),
         wrong: Object.fromEntries(data.wrongEntries.filter(e => catalogBy[e.questionId]).map(e => [e.questionId, { c: e.wrongCount, at: e.lastWrongAt }])),
         mastered: {}, attempted: Object.fromEntries(data.attemptedIds.map(id => [id, true])),
-        mockCount: count, mockMinutes: defaultMockMinutes(count), activeMockAttempt: attempt,
+        mockFormat: defaultMockFormat(officialFormatOf(s.exams, s.examId)), mockCount: count, mockMinutes: defaultMockMinutes(count), activeMockAttempt: attempt,
         lResume: progress.lastSequenceNumber, anns: annotations.map(fromSharedAnnotation), notes: notes.map(fromSharedNote)
       }));
     }).catch(() => {
@@ -847,6 +851,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     advanceLearningTo(idx);
   }, [advanceLearningTo]);
 
+  const setMockFormat = useCallback((format: MockFormatId) => setState({ mockFormat: format }), [setState]);
   const setMockCount = useCallback((n: number) => setState({ mockCount: n }), [setState]);
   const setMockMinutes = useCallback((n: number) => setState({ mockMinutes: n }), [setState]);
 
@@ -866,10 +871,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }
     if (!s.examId || s.catalog.length === 0) return;
     const shuffled = s.catalog.map((q) => q.id).sort(() => Math.random() - 0.5);
-    // mockCount is persisted, so it can outlive the exam it was chosen for —
-    // and the API rejects an attempt over MAX_ATTEMPT_QUESTIONS outright.
-    const ids = shuffled.slice(0, Math.min(s.mockCount, shuffled.length, MAX_ATTEMPT_QUESTIONS));
-    const timeLimitSeconds = s.mockMinutes * 60;
+    // mockPlan caps the format's length to the bank and to MAX_ATTEMPT_QUESTIONS,
+    // which the API rejects outright.
+    const plan = mockPlan(s);
+    const ids = shuffled.slice(0, plan.questionCount);
+    const timeLimitSeconds = plan.timeLimitMinutes * 60;
     requests.write("start", () => apiFetch<StartAttemptResponse>(`/api/exams/${s.examId}/attempts`, {
       method: "POST",
       body: JSON.stringify({ mode: "mock", questionIds: ids, timeLimitSeconds })
@@ -1066,7 +1072,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       // Knowledge Points remain available across exams.
       const keys = ["catalog", "catalogBy", "catalogRevision", "questionContent", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
         "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingKnowledgePointId",
-        "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
+        "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockFormat", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
         "bookmarks", "wrong", "attempted", "mastered", "ai", "anns", "notes", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
       for (const key of keys) Object.assign(next, { [key]: initialState[key] });
       setState(s => ({ ...next, examId: id, screen: questionId ? "learning" : original.screen,
@@ -1468,7 +1474,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     learningPool, learningQ, setLearningStartInput, toggleLearningTag, setLearningDiff,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
     goToQuestionForReview, openKnowledgePointNote, clearPendingKnowledgePoint,
-    setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
+    setMockFormat, setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
     askSubmit, cancelSubmit, finishMock, practiceWrong,
     setListMode, removeBookmark, markMastered, practiceList,
     setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateEmailSettings,

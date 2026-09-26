@@ -13,13 +13,16 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { invalidateExamStats } from "../lib/statsCache";
+import { loadExamPassRule } from "../lib/examManagement";
 import {
   attemptDeadlineMs,
   hasAnswer,
   isAnswerCorrect,
+  isMockPassed,
   isStringArray,
   MAX_ATTEMPT_QUESTIONS,
   MOCK_SUBMIT_GRACE_SECONDS,
+  requiredCorrectFor,
   type ActiveAttemptResponse,
   type AttemptMode,
   type CompleteAttemptResponse,
@@ -472,7 +475,7 @@ attemptsRouter.post("/:id/complete", async (c) => {
 
   const [finalAttempt, exam, breakdownRows] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM attempts WHERE id = ?").bind(id).first<AttemptRow>(),
-    c.env.DB.prepare("SELECT pass_mark_pct FROM exams WHERE id = ?").bind(attempt.exam_id).first<{ pass_mark_pct: number | null }>(),
+    loadExamPassRule(c.env.DB, attempt.exam_id),
     c.env.DB.prepare(
       `SELECT aa.question_id, aa.selected_answer_json, aa.is_correct, q.correct_answers_json, aa.graded_answers_json, aa.answer_revision, q.answer_revision AS current_answer_revision, q.answer_revised_at
        FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
@@ -495,14 +498,16 @@ attemptsRouter.post("/:id/complete", async (c) => {
 
   const correctCount = breakdown.filter((b) => b.isCorrect).length;
   const score = finalAttempt?.score ?? 0;
-  const passed = exam?.pass_mark_pct != null ? score >= exam.pass_mark_pct : null;
+  const totalQuestions = finalAttempt?.total_questions ?? breakdown.length;
+  const passed = exam ? isMockPassed(exam, { correctCount, totalQuestions, score }) : null;
 
   const response: CompleteAttemptResponse = {
     attemptId: id,
     mode: (finalAttempt?.mode ?? attempt.mode) as AttemptMode,
     score,
     passed,
-    totalQuestions: finalAttempt?.total_questions ?? breakdown.length,
+    requiredCorrect: requiredCorrectFor(exam?.officialFormat ?? null, totalQuestions),
+    totalQuestions,
     correctCount,
     durationSeconds: finalAttempt?.duration_seconds ?? 0,
     breakdown,

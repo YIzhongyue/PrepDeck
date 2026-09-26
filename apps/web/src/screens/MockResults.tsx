@@ -33,7 +33,15 @@ export default function MockResults() {
 
   const metrics = [
     { k: "Correct", v: String(result.correctCount), sub: `of ${total}`, icon: IC.circleCheck, tone: "ok" },
-    { k: "Missed", v: String(missed), sub: unanswered ? `${unanswered} left unanswered` : "to review", icon: IC.circleX, tone: "bad" },
+    // The pass mark when the exam has an official format; otherwise the misses.
+    result.requiredCorrect != null
+      ? {
+        k: "Pass mark", v: `${result.requiredCorrect} correct`, icon: IC.target, tone: "brand",
+        sub: result.correctCount >= result.requiredCorrect
+          ? `+${result.correctCount - result.requiredCorrect} above`
+          : `${result.requiredCorrect - result.correctCount} short`
+      }
+      : { k: "Missed", v: String(missed), sub: unanswered ? `${unanswered} left unanswered` : "to review", icon: IC.circleX, tone: "bad" },
     { k: "Time used", v: `${minutesUsed} min`, sub: `${pace} min / question`, icon: IC.clock, tone: "" }
   ];
 

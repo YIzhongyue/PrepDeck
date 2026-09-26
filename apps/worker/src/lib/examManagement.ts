@@ -3,7 +3,7 @@
 // implementation's "share management logic with the future Admin MCP" and implementation's
 // "reuse existing admin/service-layer query logic where practical".
 
-import type { Exam } from "@prepdeck/shared";
+import type { Exam, ExamPassRule, OfficialMockFormat } from "@prepdeck/shared";
 
 export interface ExamRow {
   id: string;
@@ -15,6 +15,9 @@ export interface ExamRow {
   created_at: string;
   archived_at: string | null;
   pass_mark_pct: number | null;
+  official_question_count: number | null;
+  official_time_limit_minutes: number | null;
+  official_pass_correct_count: number | null;
   badge_icon_url: string | null;
   question_count: number;
   providers_json: string;
@@ -22,6 +25,27 @@ export interface ExamRow {
 
 export interface ExamWithQuestionCount extends Exam {
   questionCount: number;
+}
+
+type OfficialFormatColumns = Pick<ExamRow, "official_question_count" | "official_time_limit_minutes" | "official_pass_correct_count">;
+
+// The three columns are written together (updateExamStatement), so one NULL
+// means the format is unset.
+export function toOfficialFormat(row: OfficialFormatColumns): OfficialMockFormat | null {
+  if (row.official_question_count == null || row.official_time_limit_minutes == null || row.official_pass_correct_count == null) return null;
+  return {
+    questionCount: row.official_question_count,
+    timeLimitMinutes: row.official_time_limit_minutes,
+    passCorrectCount: row.official_pass_correct_count,
+  };
+}
+
+/** The columns a mock's pass/fail and the Statistics pass line are computed from. */
+export async function loadExamPassRule(db: D1Database, examId: string): Promise<ExamPassRule | null> {
+  const row = await db.prepare(
+    "SELECT pass_mark_pct, official_question_count, official_time_limit_minutes, official_pass_correct_count FROM exams WHERE id = ?",
+  ).bind(examId).first<OfficialFormatColumns & { pass_mark_pct: number | null }>();
+  return row ? { passMarkPct: row.pass_mark_pct, officialFormat: toOfficialFormat(row) } : null;
 }
 
 export function toExam(row: ExamRow): ExamWithQuestionCount {
@@ -35,6 +59,7 @@ export function toExam(row: ExamRow): ExamWithQuestionCount {
     createdAt: row.created_at,
     archivedAt: row.archived_at,
     passMarkPct: row.pass_mark_pct,
+    officialFormat: toOfficialFormat(row),
     badgeIconUrl: row.badge_icon_url,
     questionCount: row.question_count,
     providers: JSON.parse(row.providers_json || "[]"),
@@ -97,14 +122,19 @@ export interface ExamCreateFields {
   description?: string | null;
   language?: string | null;
   passMarkPct?: number | null;
+  officialFormat?: OfficialMockFormat | null;
 }
 
 export function createExamStatement(db: D1Database, id: string, fields: ExamCreateFields, now: string): D1PreparedStatement {
   return db.prepare(
-    "INSERT INTO exams (id, slug, name, subject, description, language, pass_mark_pct, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    `INSERT INTO exams (id, slug, name, subject, description, language, pass_mark_pct,
+       official_question_count, official_time_limit_minutes, official_pass_correct_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, fields.slug, fields.name, fields.subject ?? null, fields.description ?? null,
-    fields.language ?? null, fields.passMarkPct ?? null, now,
+    fields.language ?? null, fields.passMarkPct ?? null,
+    fields.officialFormat?.questionCount ?? null, fields.officialFormat?.timeLimitMinutes ?? null,
+    fields.officialFormat?.passCorrectCount ?? null, now,
   );
 }
 
@@ -115,9 +145,11 @@ export interface ExamMutableFields {
   subject?: string;
   language?: string;
   passMarkPct?: number | null;
+  /** Written as its three columns together; null clears all three. */
+  officialFormat?: OfficialMockFormat | null;
 }
 
-const EDITABLE_EXAM_COLUMNS: Record<keyof ExamMutableFields, string> = {
+const EDITABLE_EXAM_COLUMNS: Record<Exclude<keyof ExamMutableFields, "officialFormat">, string> = {
   slug: "slug", name: "name", description: "description", subject: "subject", language: "language", passMarkPct: "pass_mark_pct",
 };
 
@@ -127,11 +159,16 @@ const EDITABLE_EXAM_COLUMNS: Record<keyof ExamMutableFields, string> = {
 export function updateExamStatement(db: D1Database, id: string, fields: ExamMutableFields): D1PreparedStatement | null {
   const columns: string[] = [];
   const values: unknown[] = [];
-  for (const key of Object.keys(EDITABLE_EXAM_COLUMNS) as (keyof ExamMutableFields)[]) {
+  for (const key of Object.keys(EDITABLE_EXAM_COLUMNS) as (keyof typeof EDITABLE_EXAM_COLUMNS)[]) {
     if (fields[key] !== undefined) {
       columns.push(`${EDITABLE_EXAM_COLUMNS[key]} = ?`);
       values.push(fields[key]);
     }
+  }
+  if (fields.officialFormat !== undefined) {
+    const f = fields.officialFormat;
+    columns.push("official_question_count = ?", "official_time_limit_minutes = ?", "official_pass_correct_count = ?");
+    values.push(f?.questionCount ?? null, f?.timeLimitMinutes ?? null, f?.passCorrectCount ?? null);
   }
   if (columns.length === 0) return null;
   return db.prepare(`UPDATE exams SET ${columns.join(", ")} WHERE id = ?`).bind(...values, id);

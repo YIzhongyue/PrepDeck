@@ -6,7 +6,8 @@
 // time). These functions are pure reads — they never write attempts,
 // attempt_answers, or anything else.
 
-import type { Attempt, AttemptMode } from "@prepdeck/shared";
+import { isMockPassed, type Attempt, type AttemptMode } from "@prepdeck/shared";
+import { loadExamPassRule } from "./examManagement";
 
 export interface AttemptRow {
   id: string;
@@ -100,8 +101,10 @@ export async function getAttemptDetail(
     .bind(attemptId, userId).first<AttemptRow>();
   if (!row) return null;
 
-  const exam = await db.prepare("SELECT pass_mark_pct FROM exams WHERE id = ?")
-    .bind(row.exam_id).first<{ pass_mark_pct: number | null }>();
+  const [rule, correct] = await Promise.all([
+    loadExamPassRule(db, row.exam_id),
+    db.prepare("SELECT COALESCE(SUM(is_correct), 0) AS n FROM attempt_answers WHERE attempt_id = ?").bind(attemptId).first<{ n: number }>(),
+  ]);
 
   // Ordered by the question's own sequence within the exam (not
   // answered_at), with question_id as a stable tiebreak — a deterministic,
@@ -131,12 +134,13 @@ export async function getAttemptDetail(
     answerRevisedAt: r.answer_revised_at,
   }));
 
-  // Recomputed live against the exam's CURRENT pass_mark_pct — not a stored
-  // historical snapshot (attempts has no `passed` column; REST's own
-  // /complete handler computes this the same way, from score vs. the
-  // pass mark at that moment). If the exam's pass mark changes later, this
-  // reflects the new value.
-  const passed = row.score != null && exam?.pass_mark_pct != null ? row.score >= exam.pass_mark_pct : null;
+  // Recomputed live against the exam's CURRENT pass rule (official format, else
+  // pass_mark_pct) — not a stored historical snapshot (attempts has no
+  // `passed` column; REST's own /complete handler computes this the same way).
+  // If the exam's pass rule changes later, this reflects the new value.
+  const passed = row.score != null && rule
+    ? isMockPassed(rule, { correctCount: correct?.n ?? 0, totalQuestions: row.total_questions ?? 0, score: row.score })
+    : null;
 
   return {
     attempt: toAttempt(row),
