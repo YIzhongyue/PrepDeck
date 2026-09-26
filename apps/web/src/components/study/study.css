@@ -19,8 +19,10 @@
 .pd-study {
   --st-fg: var(--color-text);
   --st-fg-2: color-mix(in srgb, var(--color-text) 82%, var(--color-bg));
-  --st-fg-3: color-mix(in srgb, var(--color-text) 68%, var(--color-bg));
-  --st-fg-4: color-mix(in srgb, var(--color-text) 55%, var(--color-bg));
+  /* fg-3 and fg-4 colour text, so they stay at or above the muted-text
+     contrast (issue #56); fg-5 is for icons and decoration only. */
+  --st-fg-3: color-mix(in srgb, var(--color-text) 76%, var(--color-bg));
+  --st-fg-4: var(--color-text-muted);
   --st-fg-5: color-mix(in srgb, var(--color-text) 40%, var(--color-bg));
   --st-line: color-mix(in srgb, var(--color-text) 10%, var(--color-bg));
   --st-line-2: color-mix(in srgb, var(--color-text) 20%, var(--color-bg));
@@ -251,8 +253,11 @@
 
 /* ---- Options ----------------------------------------------------------- */
 
-.st-opts { display: flex; flex-direction: column; gap: 10px; }
+.st-opts, .st-opt-group { display: flex; flex-direction: column; gap: 10px; }
 .st-opt {
+  /* Contains the row's .sr-only letter. Without it the absolutely positioned
+     label escapes the scrolling question body and stretches the page. */
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -267,8 +272,8 @@
   text-align: left;
   transition: background-color .2s, box-shadow .2s;
 }
-.st-opt[role="button"] { cursor: pointer; }
-.st-opt[role="button"]:hover { box-shadow: inset 0 0 0 1px var(--st-line-2); }
+.st-opt[role="radio"], .st-opt[role="checkbox"] { cursor: pointer; }
+.st-opt[role="radio"]:hover, .st-opt[role="checkbox"]:hover { box-shadow: inset 0 0 0 1px var(--st-line-2); }
 .st-opt-mark {
   display: grid;
   place-items: center;
@@ -669,7 +674,7 @@
   color: var(--color-warning);
 }
 .st-dialog-title { font-size: 18px; font-weight: 600; }
-.st-dialog-body { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: color-mix(in srgb, var(--color-text) 68%, var(--color-bg)); }
+.st-dialog-body { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--color-text-muted); }
 .st-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .st-dialog-actions .st-btn { font-size: 16px; }
 

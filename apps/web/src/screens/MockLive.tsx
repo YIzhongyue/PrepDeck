@@ -1,7 +1,7 @@
 import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
-import { IC, Icon, OptionRow, QuestionBadges, usePinnedCard } from "../components/study/StudyKit";
+import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, usePinnedCard } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -64,11 +64,15 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
                   <label className="st-field">Your answer<input className="st-input" value={mSel[0] ?? ""} onChange={e => mockPick(mq, e.target.value)} /></label>
                 )}
                 {mq.content && structured && <StructuredResponse content={mq.content} selected={mSel} onChange={answer => mockPick(mq, answer)} />}
-                {(structured ? [] : mq.options ?? []).map((o) => (
-                  <OptionRow key={o.id} id={o.id} state={mSel.includes(o.id) ? "selected" : "idle"} onPick={() => mockPick(mq, o.id)}>
-                    <QuestionContent src={o.text} content={mq.content} optionId={o.id} />
-                  </OptionRow>
-                ))}
+                {!structured && !!mq.options?.length && (
+                  <OptionGroup kind={mq.type === "multiple_choice" ? "multiple" : "single"} tabStop={mSel[0] ?? mq.options[0]?.id}>
+                    {mq.options.map((o) => (
+                      <OptionRow key={o.id} id={o.id} state={mSel.includes(o.id) ? "selected" : "idle"} onPick={() => mockPick(mq, o.id)}>
+                        <QuestionContent src={o.text} content={mq.content} optionId={o.id} />
+                      </OptionRow>
+                    ))}
+                  </OptionGroup>
+                )}
               </div>
             </QuestionContentGate>
           </div>

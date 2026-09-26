@@ -1,6 +1,14 @@
+import type { AriaAttributes } from "react";
 import { cx } from "@/utils/cx";
 
-export interface ProgressBarProps {
+// Local change to the vendored Untitled UI component (issue #56): ARIA
+// naming props are forwarded to the element with role="progressbar". Callers
+// passed `aria-label` all along, but the component destructured only its own
+// props and dropped it, so every bar was unnamed. TypeScript did not notice,
+// because hyphenated JSX attributes are exempt from excess-property checks.
+type ProgressBarAria = Pick<AriaAttributes, "aria-label" | "aria-labelledby" | "aria-valuetext">;
+
+export interface ProgressBarProps extends ProgressBarAria {
     /**
      * The current value of the progress bar.
      */
@@ -33,12 +41,15 @@ export interface ProgressBarProps {
 /**
  * A basic progress bar component.
  */
-export const ProgressBarBase = ({ value, min = 0, max = 100, className, progressClassName }: ProgressBarProps) => {
+export const ProgressBarBase = ({ value, min = 0, max = 100, className, progressClassName, ...aria }: ProgressBarProps) => {
     const percentage = ((value - min) * 100) / (max - min);
 
     return (
         <div
             role="progressbar"
+            aria-label={aria["aria-label"]}
+            aria-labelledby={aria["aria-labelledby"]}
+            aria-valuetext={aria["aria-valuetext"]}
             aria-valuenow={value}
             aria-valuemin={min}
             aria-valuemax={max}

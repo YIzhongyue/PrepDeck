@@ -233,7 +233,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 </div>
               )}
             </div>
-            <p style={{ margin: "8px 0 0", fontSize: 11.5, opacity: 0.6 }}>From Google until you change it · {state.me?.email}</p>
+            <p style={{ margin: "8px 0 0", fontSize: 11.5, color: "var(--color-text-muted)" }}>From Google until you change it · {state.me?.email}</p>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onAvatarChosen} style={{ display: "none" }} />
@@ -282,7 +282,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t.name}</span>
-                  <span style={{ fontSize: 11, opacity: 0.55 }}>{t.hint}</span>
+                  <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{t.hint}</span>
                 </span>
               </button>
             );
@@ -380,8 +380,8 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 Configure
               </span>
               <span style={{ flex: 1, height: 2, borderRadius: 2, background: keyStep >= 2 ? "var(--color-accent)" : "var(--color-neutral-300)" }} />
-              <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, color: keyStep >= 2 ? "var(--color-text)" : "var(--color-neutral-500)" }}>
-                <span style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", fontSize: 11, background: keyStep >= 2 ? "var(--color-accent)" : "var(--color-neutral-400)", color: "#fff" }}>2</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, color: keyStep >= 2 ? "var(--color-text)" : "var(--color-text-muted)" }}>
+                <span style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", fontSize: 11, background: keyStep >= 2 ? "var(--color-accent)" : "var(--color-neutral-200)", color: keyStep >= 2 ? "#fff" : "var(--color-text-muted)" }}>2</span>
                 Key
               </span>
             </div>
@@ -389,7 +389,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             {keyStep === 1 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div>
-                  <span style={{ display: "block", fontSize: 12, color: "color-mix(in srgb, var(--color-text) 70%, transparent)", marginBottom: 8 }}>Provider</span>
+                  <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Provider</span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {([{ id: "anthropic", label: "Anthropic" }, { id: "openai", label: "OpenAI" }] as const).map((o) => {
                       const on = state.provider === o.id;
@@ -423,7 +423,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                   )}
                 </div>
                 <div>
-                  <span style={{ display: "block", fontSize: 12, color: "color-mix(in srgb, var(--color-text) 70%, transparent)", marginBottom: 8 }}>Key storage</span>
+                  <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Key storage</span>
                   <RadioGroup
                     aria-label="Key storage"
                     size="md"
@@ -448,7 +448,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <Button size="md" onClick={() => setKeyStep(2)}>Continue</Button>
-                  <span style={{ fontSize: 12, color: "var(--color-neutral-600)" }}>Step 1 of 2</span>
+                  <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Step 1 of 2</span>
                   {keyManaging && (
                     <Button color="link-gray" size="md" className="ml-auto" onClick={() => setKeyManaging(false)}>Cancel</Button>
                   )}
@@ -500,7 +500,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
           </div>
         )}
 
-        <p style={{ margin: 0, fontSize: 11.5, opacity: 0.65 }}>
+        <p style={{ margin: 0, fontSize: 11.5, color: "var(--color-text-muted)" }}>
           Your key is only ever sent to this app's own server, which relays it to {providerLabel} for a single request and never stores it.
         </p>
       </div>
@@ -550,7 +550,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
         {emailSettings?.enabled && (
           <>
             <div>
-              <span style={{ display: "block", fontSize: 12, color: "color-mix(in srgb, var(--color-text) 70%, transparent)", marginBottom: 8 }}>Questions per email</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Questions per email</span>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {Array.from({ length: DAILY_EMAIL_MAX_QUESTIONS - DAILY_EMAIL_MIN_QUESTIONS + 1 }, (_, i) => DAILY_EMAIL_MIN_QUESTIONS + i).map((n) => {
                   const on = emailSettings.questionsPerEmail === n;
@@ -567,7 +567,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             </div>
 
             <div>
-              <span style={{ display: "block", fontSize: 12, color: "color-mix(in srgb, var(--color-text) 70%, transparent)", marginBottom: 8 }}>Question source</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Question source</span>
               <RadioGroup
                 aria-label="Question source"
                 size="md"

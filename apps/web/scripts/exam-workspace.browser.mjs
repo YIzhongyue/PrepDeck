@@ -367,7 +367,7 @@ try {
     return { before, after: await measureScroll() };
   };
   await resizePractice(1280, 900); await resetScroll(); await assertPracticeLayout(true);
-  await page.getByRole('button', { name: /B Choice B/ }).click(); await resetScroll();
+  await page.getByRole('radio', { name: /Choice B/ }).click(); await resetScroll();
   let scrolled = await wheelPractice('question', 220);
   assert.ok(scrolled.after.question.scrollTop > scrolled.before.question.scrollTop);
   assert.equal(scrolled.after.outer.scrollTop, scrolled.before.outer.scrollTop);

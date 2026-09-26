@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type DependencyList, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState, type DependencyList, type KeyboardEvent, type ReactNode } from "react";
 import { CURATED_MODELS } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
@@ -152,7 +152,47 @@ export function QuestionBadges({ label, typeLabel, multi, tags, children }: { la
 
 export type OptionState = "idle" | "selected" | "correct" | "wrong" | "dim";
 
-/* One answer option. Interactive rows (onPick set) behave as buttons. */
+/* How a set of answer options is exposed to assistive technology (issue #56):
+   "single" is a radiogroup (single choice, true/false), "multiple" a group of
+   checkboxes, and "review" a plain list for options that can no longer be
+   picked (graded Practice, Learning), where each row's status text says which
+   answer was yours and which is correct. */
+export type OptionGroupKind = "single" | "multiple" | "review";
+
+const OptionGroupContext = createContext<{ kind: OptionGroupKind; tabStop?: string }>({ kind: "review" });
+
+const GROUP_LABEL: Record<OptionGroupKind, string> = {
+  single: "Answer options, choose one",
+  multiple: "Answer options, choose all that apply",
+  review: "Answer options"
+};
+
+/* Wraps a question's OptionRows. `tabStop` is the radio that Tab lands on:
+   the chosen option, else the first (the usual roving-tabindex pattern). */
+export function OptionGroup({ kind, tabStop, children }: { kind: OptionGroupKind; tabStop?: string; children: ReactNode }) {
+  return (
+    <div className="st-opt-group" role={kind === "single" ? "radiogroup" : kind === "multiple" ? "group" : "list"} aria-label={GROUP_LABEL[kind]}>
+      <OptionGroupContext.Provider value={{ kind, tabStop }}>{children}</OptionGroupContext.Provider>
+    </div>
+  );
+}
+
+/* Arrow keys move between the options of a group. In a radiogroup the
+   focused option is also chosen, as with native radio buttons. */
+function moveWithinGroup(e: KeyboardEvent<HTMLDivElement>, kind: OptionGroupKind) {
+  const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+  if (!step) return false;
+  const rows = Array.from(e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(":scope > .st-opt") ?? []);
+  const next = rows[(rows.indexOf(e.currentTarget) + step + rows.length) % rows.length];
+  if (!next || next === e.currentTarget) return false;
+  e.preventDefault();
+  next.focus();
+  if (kind === "single") next.click();
+  return true;
+}
+
+/* One answer option, inside an OptionGroup. Rows with onPick are radios or
+   checkboxes; `checked` is whether the learner has chosen it. */
 export function OptionRow({ id, state, status, keyHint, onPick, onMouseUp, children }: {
   id: string;
   state: OptionState;
@@ -162,19 +202,26 @@ export function OptionRow({ id, state, status, keyHint, onPick, onMouseUp, child
   onMouseUp?: () => void;
   children: ReactNode;
 }) {
+  const { kind, tabStop } = useContext(OptionGroupContext);
+  const interactive = !!onPick && kind !== "review";
   const mark = state === "correct" ? <Icon d={IC.check} size={14} strokeWidth={3} /> : state === "wrong" ? <Icon d={IC.x} size={14} strokeWidth={3} /> : id;
   return (
     <div
       className="st-opt"
       data-state={state}
-      role={onPick ? "button" : undefined}
-      tabIndex={onPick ? 0 : undefined}
-      aria-pressed={onPick ? state === "selected" : undefined}
-      onClick={onPick}
-      onKeyDown={onPick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(); } } : undefined}
+      role={interactive ? (kind === "single" ? "radio" : "checkbox") : "listitem"}
+      tabIndex={interactive ? (kind === "multiple" || id === tabStop ? 0 : -1) : undefined}
+      aria-checked={interactive ? state === "selected" : undefined}
+      onClick={interactive ? onPick : undefined}
+      onKeyDown={interactive ? (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick?.(); }
+        else moveWithinGroup(e, kind);
+      } : undefined}
       onMouseUp={onMouseUp}
     >
-      <span className="st-opt-mark">{mark}</span>
+      {/* The letter is part of the name even once the mark shows a tick or cross. */}
+      <span className="st-opt-mark" aria-hidden="true">{mark}</span>
+      <span className="sr-only">{id}.</span>
       <span className="st-opt-main">
         <span>{children}</span>
         {status && <span className="st-opt-status">{status}</span>}

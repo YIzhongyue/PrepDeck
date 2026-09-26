@@ -115,12 +115,12 @@ export function Shell() {
                     {isNotes && <Notes />}
                     </div>}
                     {isKnowledgePoints && (
-                      <Suspense fallback={<p style={{ opacity: 0.5 }}>Loading…</p>}>
+                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>Loading…</p>}>
                         <KnowledgePoints bp={bp} />
                       </Suspense>
                     )}
                     {isSettings && (
-                      <Suspense fallback={<p style={{ opacity: 0.5 }}>Loading…</p>}>
+                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>Loading…</p>}>
                         <Settings bp={bp} />
                       </Suspense>
                     )}

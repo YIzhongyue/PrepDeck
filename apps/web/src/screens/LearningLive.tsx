@@ -7,7 +7,7 @@ import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes
+  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
 import { questionTypeLabel } from "../lib/questionTypes";
@@ -117,7 +117,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
                 {q.content && (q.type === "ordering" || q.type === "matching") ? (
                   <StructuredResponse content={q.content} selected={ready ? correctAnswers : []} onChange={() => {}} disabled correct={ready ? correctAnswers : undefined} />
                 ) : q.options ? (
-                  optionRows(q, state, correctAnswers, ready, capture, removeMark)
+                  <OptionGroup kind="review">{optionRows(q, state, correctAnswers, ready, capture, removeMark)}</OptionGroup>
                 ) : (
                   <div className="st-answer-box">
                     <span className="st-opt-status">Accepted answer(s)</span>

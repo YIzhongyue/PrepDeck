@@ -389,7 +389,7 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
                               <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayName}</span>
                               {isMe && <span className="tag tag-neutral" style={{ fontSize: 10 }}>you</span>}
                             </span>
-                            <span style={{ display: "block", fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</span>
+                            <span style={{ display: "block", fontSize: 11.5, color: "var(--color-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</span>
                           </span>
                         </span>
                       </td>
@@ -409,7 +409,7 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
                           <span className="admin-status-dot" style={{ color: STATUS_COLOR[u.status] }} />{u.status}
                         </span>
                       </td>
-                      <td style={{ padding: "14px 18px", fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}</td>
+                      <td style={{ padding: "14px 18px", fontSize: 12.5, color: "var(--color-text-muted)" }}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}</td>
                       <td style={{ padding: "14px 18px", textAlign: "right" }}>
                         {!isMe && (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
@@ -433,7 +433,7 @@ function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => v
           </div>
         )}
       </div>
-      <p style={{ margin: "2px 2px 0", fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 50%, transparent)" }}>
+      <p style={{ margin: "2px 2px 0", fontSize: 11.5, color: "var(--color-text-muted)" }}>
         Invited accounts activate on their first Google sign-in. Revoking keeps all historical data and can be undone.
       </p>
 
@@ -797,7 +797,7 @@ function ExamDetail({
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 13 }}>
           <div>
             <span className="admin-panel-kicker">Providers</span>
-            <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>Tap to assign or unassign this exam.</p>
+            <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--color-text-muted)" }}>Tap to assign or unassign this exam.</p>
           </div>
           <button type="button" className="btn btn-ghost" style={{ flex: "none" }} onClick={onNewProvider}>New provider</button>
         </div>
@@ -810,7 +810,7 @@ function ExamDetail({
               </button>
             );
           })}
-          {providers.length === 0 && <p style={{ margin: 0, fontSize: 12.5, opacity: 0.6 }}>No providers yet.</p>}
+          {providers.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No providers yet.</p>}
         </div>
       </div>
 
@@ -859,7 +859,7 @@ function OfficialFormatCard({ exam, onSaved }: { exam: ExamRow; onSaved: (format
     <div className="admin-panel-card" aria-labelledby={`${id}-title`}>
       <div style={{ marginBottom: 13 }}>
         <span id={`${id}-title`} className="admin-panel-kicker">Official exam format</span>
-        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--color-text-muted)" }}>
           The real test's length, time limit and pass mark. Mock exams offer full, half and sprint lengths from it, and pass at the same share of correct answers.
           {exam.passMarkPct != null && ` It replaces the ${exam.passMarkPct}% pass mark once set.`}
         </p>
@@ -885,7 +885,7 @@ function OfficialFormatCard({ exam, onSaved }: { exam: ExamRow; onSaved: (format
           {saved && <button type="button" className="btn btn-secondary" disabled={status.kind === "saving"} onClick={() => void save(null)}>Clear</button>}
         </div>
       </form>
-      <p role="status" style={{ margin: "10px 0 0", fontSize: 12.5, color: status.kind === "error" ? DANGER : "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
+      <p role="status" style={{ margin: "10px 0 0", fontSize: 12.5, color: status.kind === "error" ? DANGER : "var(--color-text-muted)" }}>
         {status.kind === "error" ? status.message
           : status.kind === "saved" ? "Saved."
           : questions || minutes || pass ? (problem ?? (whole(q) ? `Pass mark ${Math.round((100 * p) / q)}% · ${(m / q).toFixed(1)} min per question.` : ""))

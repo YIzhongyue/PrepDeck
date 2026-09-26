@@ -65,12 +65,12 @@
 
 .pd-stats-card--tight { padding: 18px 20px; gap: 12px; }
 
-.pd-stats-muted { color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.pd-stats-muted { color: var(--color-text-muted); }
 .pd-stats-kicker {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  color: var(--color-text-muted);
 }
 .pd-stats-figure {
   font-family: var(--font-body);
