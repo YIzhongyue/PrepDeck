@@ -99,6 +99,15 @@ drops the rest, since the same component and state serve both.
 
 - **FR-8.4 (M):** A dedicated My Annotations page lists annotated questions with the user's marks for review without re-solving. Stem/option marks render, but AI-targeted marks on this list still use placeholder text in `screens/Notes.tsx`; rendering the actual cached AI explanation here remains a gap. This does not mean AI generation is unavailable in Learning/practice review.
 
+  Questions with visible notes but no marks are listed too, unless a mark filter
+  is active: a mark filter lists only questions with matching marks
+  ([issue #48](https://github.com/YIzhongyue/PrepDeck/issues/48)). The page never
+  goes blank. With nothing to list it explains where marks are made and links to
+  Learning; the filter and sort controls appear once the exam has marks. A filter
+  that matches nothing says so and offers **Clear filter**, and a filter request
+  that fails says so with **Retry**. The mark-type chips and the Oldest/Newest
+  sort buttons expose their state with `aria-pressed`, in labelled groups.
+
 <a id="fr-8-5"></a>
 
 - **FR-8.5 (M):** A user can edit or remove an existing annotation.

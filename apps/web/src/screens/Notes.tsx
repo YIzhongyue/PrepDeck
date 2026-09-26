@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { MARK_STYLES, type AnnotationsListResponse, type MarkStyle } from "@prepdeck/shared";
 import { HL } from "../data/constants";
 import { segsFor } from "../lib/annotations";
@@ -13,7 +13,7 @@ import NoteCard from "../components/NoteCard";
 const AI_PLACEHOLDER = "AI explanations aren't wired up yet — this is a placeholder.";
 
 export default function Notes() {
-  const { state, capture, setMarkNote, saveMarkNote, removeMark } = usePrepDeck();
+  const { state, go, capture, setMarkNote, saveMarkNote, removeMark } = usePrepDeck();
 
   const [markFilter, setMarkFilter] = useState<MarkStyle[]>([]);
   const [markSort, setMarkSort] = useState<MarkSortOrder>("asc");
@@ -22,41 +22,57 @@ export default function Notes() {
   // current filter/sort; annotation content itself always comes from
   // state.anns so edits/removals made elsewhere stay in sync.
   const [filteredIds, setFilteredIds] = useState<string[] | null>(null);
+  // "loading" keeps the previous result on screen without claiming it is
+  // empty; "failed" says so instead of silently showing that previous result.
+  const [filterStatus, setFilterStatus] = useState<"idle" | "loading" | "failed">("idle");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    if (isDefaultView(markFilter, markSort)) { setFilteredIds(null); return; }
+    if (isDefaultView(markFilter, markSort)) { setFilteredIds(null); setFilterStatus("idle"); return; }
     let cancelled = false;
+    setFilterStatus("loading");
     apiFetch<AnnotationsListResponse>(`/api/annotations?${annotationsQueryString(markFilter, markSort, state.examId ?? "")}`)
-      .then(({ annotations }) => { if (!cancelled) setFilteredIds(annotations.map((a) => a.id)); })
-      .catch(() => {});
+      .then(({ annotations }) => { if (!cancelled) { setFilteredIds(annotations.map((a) => a.id)); setFilterStatus("idle"); } })
+      .catch(() => { if (!cancelled) setFilterStatus("failed"); });
     return () => { cancelled = true; };
-  }, [markFilter, markSort, state.examId]);
+  }, [markFilter, markSort, state.examId, retry]);
 
   const annsById = new Map(state.anns.map((a) => [a.id, a]));
   const visibleAnns = filteredIds === null
     ? state.anns
     : filteredIds.map((id) => annsById.get(id)).filter((a): a is (typeof state.anns)[number] => !!a);
+  const noteVisible = (n: (typeof state.notes)[number]) => n.me || (n.vis === "shared" && state.showShared);
 
+  // A question gets a card for its marks and, while no mark filter is active,
+  // for its notes alone. A mark filter lists only questions with matching
+  // marks, so it never shows a card with "0 marks". Only questions in this
+  // exam's catalog can be rendered, so the empty states count rendered cards.
+  const filtering = markFilter.length > 0;
   const annQids: string[] = [];
   visibleAnns.forEach((a) => { if (annQids.indexOf(a.qid) < 0) annQids.push(a.qid); });
-  state.notes.forEach((n) => { if (annQids.indexOf(n.qid) < 0) annQids.push(n.qid); });
+  if (!filtering) state.notes.forEach((n) => { if (noteVisible(n) && annQids.indexOf(n.qid) < 0) annQids.push(n.qid); });
+  const cardQids = annQids.filter((qid) => !!state.catalogBy[qid]);
+  const hasMarks = state.anns.some((a) => !!state.catalogBy[a.qid]);
 
   return (
     <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Review</p>
       <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>My annotations</h1>
       <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: 0.7, maxWidth: 620 }}>
-        Select any text below to highlight, underline or bold it. Marks are private to you and never appear while you answer.
+        {cardQids.length > 0 && "Select any text below to highlight, underline or bold it. "}
+        Marks are private to you and never appear while you answer.
       </p>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, maxWidth: 900 }}>
-        <span style={{ fontSize: 12, opacity: 0.65, marginRight: 4 }}>Filter:</span>
+      {hasMarks && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, maxWidth: 900 }}>
+        <span id="annotation-filter-label" style={{ fontSize: 12, opacity: 0.65, marginRight: 4 }}>Filter:</span>
+        <span role="group" aria-labelledby="annotation-filter-label" style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {MARK_STYLES.map((style) => {
           const on = markFilter.includes(style);
           return (
             <button
               key={style}
               type="button"
+              aria-pressed={on}
               onClick={() => setMarkFilter((prev) => (prev.includes(style) ? prev.filter((s) => s !== style) : prev.concat(style)))}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, cursor: "pointer",
@@ -69,16 +85,18 @@ export default function Notes() {
             </button>
           );
         })}
+        </span>
         {markFilter.length > 0 && (
           <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setMarkFilter([])}>Clear filter</button>
         )}
-        <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+        <span role="group" aria-label="Sort marks" style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
           {(["asc", "desc"] as const).map((order) => {
             const on = markSort === order;
             return (
               <button
                 key={order}
                 type="button"
+                aria-pressed={on}
                 onClick={() => setMarkSort(order)}
                 style={{
                   padding: "6px 14px", borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5,
@@ -91,14 +109,33 @@ export default function Notes() {
             );
           })}
         </span>
-      </div>
+      </div>}
+
+      {filterStatus === "failed" && (
+        <div role="alert" className="card" style={{ padding: 16, marginBottom: 16, maxWidth: 900, flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ flex: 1 }}>Could not apply this filter. The marks shown may be out of date.</span>
+          <button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>Retry</button>
+        </div>
+      )}
+
+      {filterStatus === "idle" && cardQids.length === 0 && (filtering ? (
+        <EmptyState title="No marks match this filter" body="None of your marks in this exam use the selected mark types.">
+          <button type="button" className="btn btn-secondary" onClick={() => setMarkFilter([])}>Clear filter</button>
+        </EmptyState>
+      ) : (
+        <EmptyState
+          title="No annotations yet"
+          body="Select text in a question to highlight, underline or bold it: in Learning, or once you have checked an answer in Practice or submitted a mock exam. Your marks and question notes collect here."
+        >
+          <button type="button" className="btn btn-primary" onClick={() => go("learning")}>Go to Learning</button>
+        </EmptyState>
+      ))}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 900 }}>
-        {annQids.map((qid) => {
-          const qq = state.catalogBy[qid];
-          if (!qq) return null;
+        {cardQids.map((qid) => {
+          const qq = state.catalogBy[qid]!;
           const marks = visibleAnns.filter((a) => a.qid === qid);
-          const notes = state.notes.filter((n) => n.qid === qid && (n.me || (n.vis === "shared" && state.showShared)));
+          const notes = state.notes.filter((n) => n.qid === qid && noteVisible(n));
           const stemSegs = segsFor(qq.stem, visibleAnns, qid, "stem", true);
           const hasAiMark = marks.some((a) => a.target === "ai");
           return (
@@ -162,6 +199,22 @@ export default function Notes() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Matches the Bookmarks and Wrong book empty states (ListScreen).
+function EmptyState({ title, body, children }: { title: string; body: string; children: ReactNode }) {
+  return (
+    <div className="card" style={{ padding: 40, alignItems: "center", textAlign: "center", maxWidth: 900, background: "color-mix(in srgb, var(--color-surface) 50%, var(--color-bg))" }}>
+      <span aria-hidden="true" style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--color-accent-2-200)", display: "grid", placeItems: "center", marginBottom: 6 }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-2-800)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </span>
+      <h2 style={{ margin: 0, fontSize: 20 }}>{title}</h2>
+      <p style={{ margin: 0, fontSize: 13, opacity: 0.7, maxWidth: 460 }}>{body}</p>
+      <div style={{ marginTop: 8 }}>{children}</div>
     </div>
   );
 }
