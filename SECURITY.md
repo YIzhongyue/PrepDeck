@@ -151,6 +151,11 @@ PrepDeck operators should follow these basic security practices:
 
 - Use a strong, unique `SESSION_SECRET` and store it through an appropriate
   secret-management mechanism.
+- Know the session lifecycle: a browser session is a signed 7-day token tied to
+  its account's session version. Signing out, or revoking the account, ends
+  every session of that account; rotating `SESSION_SECRET` ends everyone's and
+  also invalidates unsubscribe links. See
+  [authentication](docs/requirements/authentication-and-users.md#fr-1-6).
 - Restrict Cloudflare D1, R2, KV, and Worker permissions to the minimum required.
 - Configure Cloudflare Access and administrative roles carefully.
 - Keep Node.js, npm dependencies, Wrangler, and deployed application code up to
