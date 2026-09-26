@@ -26,11 +26,11 @@ Required fields:
 Optional fields:
 
 - `externalId`: non-empty stable source question identifier used for re-import de-duplication. Required by the PDF evidence pipeline, optional for general imports. Duplicate IDs within one file are errors; existing database IDs still use the importer’s skip/overwrite strategy.
-- `options`: required and non-empty for all choice types; omit for `fill_blank`.
+- `options`: required for all choice types, with at least two options; omit for `fill_blank`.
 - `explanation`: official source explanation as a string, or `null`.
 - `difficulty`: `easy`, `medium`, `hard`, or `null`.
 - `tags`: array of strings.
-- `points`: finite number; default is 1 when omitted.
+- `points`: number greater than 0 and at most 100 (fractions allowed); default is 1 when omitted.
 
 Each option is `{ "id": "A", "text": "..." }`. IDs must be unique within the question. Every choice-based `correctAnswers` value must exactly equal an option ID. A `single_choice` has exactly one answer. A `multiple_choice` has at least two distinct answers. A `true_false` has exactly the two options with IDs `true` and `false`, and exactly one matching answer. A `fill_blank` has one or more source-backed accepted answer strings and no `options` field.
 

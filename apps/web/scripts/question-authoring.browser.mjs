@@ -180,7 +180,11 @@ try {
   await tagChip(hashBoundary).click();
   await tagInput.fill("");
   await tagInput.press("Escape");
+  // Points must be greater than 0 (issue #54): the editor says so before saving.
   await page.getByLabel("Points", { exact: true }).fill("0");
+  await page.getByRole("button", { name: "Save & add next" }).click();
+  await page.getByText("points: must be a number greater than 0 and at most 100").waitFor();
+  await page.getByLabel("Points", { exact: true }).fill("0.5");
   await page.getByRole("button", { name: "Show Markdown preview" }).click();
   await page.getByRole("region", { name: "Markdown preview" }).getByRole("heading", { name: "First question" }).waitFor();
   tagFailures = 1;
@@ -192,7 +196,7 @@ try {
   assert.equal(await tagInput.inputValue(), "");
   assert.equal(await page.getByRole("button", { name: /^Remove tag / }).count(), 0);
   assert.equal(await page.getByLabel("Points", { exact: true }).inputValue(), "1");
-  assert.equal(rows[0].points, 0);
+  assert.equal(rows[0].points, 0.5);
   assert.deepEqual(rows[0].tags, ["tag-one", "Cloud, data"]);
   // A catalog failure keeps question editing available and retry preserves edits.
   await page.getByRole("status").filter({ hasText: "Could not load tags. You can still edit this question." }).waitFor();

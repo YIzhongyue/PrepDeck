@@ -111,3 +111,24 @@ test("buildQuestionSetStatistics flags truncated when the scan hit its bound", (
   const stats = buildQuestionSetStatistics([question(), question({ id: "q2" })], 2);
   assert.equal(stats.truncated, true);
 });
+
+// Issue #54: rows saved before validation refused these are reported, so an
+// admin can fix them rather than find out on the next save.
+test("findAnswerReferenceIssues reports one-option single choices and one-item right columns", () => {
+  assert.match(findAnswerReferenceIssues(question({ options: [{ id: "b", text: "4" }] }))[0] ?? "", /at least two options/);
+  assert.deepEqual(findAnswerReferenceIssues(question()), []);
+  const matching = (right: { id: string }[]) => question({
+    type: "matching", options: [{ id: "L1", text: "Left" }], correctAnswers: ['["L1","R1"]'],
+    content: { version: "1.0", body: [{ id: "b", type: "paragraph", text: "Match" }], stimuli: [], assets: [], interaction: { id: "r", type: "match", left: [{ id: "L1" }], right } },
+  });
+  assert.match(findAnswerReferenceIssues(matching([{ id: "R1" }]))[0] ?? "", /two right-hand items/);
+  assert.deepEqual(findAnswerReferenceIssues(matching([{ id: "R1" }, { id: "R2" }])), []);
+});
+
+test("missingMetadataFlags flags points outside (0, 100]", () => {
+  for (const points of [0, -5, 100.5, 1e308, Number.NaN]) {
+    assert.equal(missingMetadataFlags(question({ points })).invalidPoints, true, String(points));
+  }
+  for (const points of [0.5, 1, 100]) assert.equal(missingMetadataFlags(question({ points })).invalidPoints, false, String(points));
+  assert.equal(hasMissingMetadata(missingMetadataFlags(question({ points: -5 }))), true);
+});

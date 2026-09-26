@@ -19,6 +19,8 @@ export const IMPORT_LIMITS = {
   maxTags: 50,
   maxTagLength: 200,
   maxExplanationLength: 50_000,
+  // Points must be greater than 0 and at most this. Fractions are allowed.
+  maxPoints: 100,
 } as const;
 
 function nonempty(value: unknown): value is string {
@@ -71,6 +73,12 @@ export function validateQuestionRow(row: unknown, path: string): ValidationIssue
     if (!Array.isArray(r.options) || r.options.length === 0) {
       issues.push({ path: `${path}.options`, message: `required for type "${type}"` });
     } else {
+      // One option is not a question: its only choice is always correct, which
+      // inflates accuracy and readiness (issue #54). multiple_choice already
+      // needs two correct answers, and true_false exactly two options.
+      if (type === "single_choice" && r.options.length < 2) {
+        issues.push({ path: `${path}.options`, message: "single_choice requires at least two options" });
+      }
       if (r.options.length > IMPORT_LIMITS.maxOptions) {
         issues.push({ path: `${path}.options`, message: `must contain at most ${IMPORT_LIMITS.maxOptions} options` });
       }
@@ -175,8 +183,10 @@ export function validateQuestionRow(row: unknown, path: string): ValidationIssue
     issues.push({ path: `${path}.needsReview`, message: "must be a boolean" });
   }
 
-  if (r.points !== undefined && (typeof r.points !== "number" || !Number.isFinite(r.points))) {
-    issues.push({ path: `${path}.points`, message: "must be a finite number" });
+  // Scores count correct answers today, but points are shown in the catalog
+  // and editor, and a weighted score would inherit whatever is stored here.
+  if (r.points !== undefined && (typeof r.points !== "number" || !Number.isFinite(r.points) || r.points <= 0 || r.points > IMPORT_LIMITS.maxPoints)) {
+    issues.push({ path: `${path}.points`, message: `must be a number greater than 0 and at most ${IMPORT_LIMITS.maxPoints}` });
   }
 
   if (r.type === "ordering" && optionIds && Array.isArray(r.correctAnswers) && r.correctAnswers.length !== optionIds.size) issues.push({ path, message: "ordering requires every option exactly once" });

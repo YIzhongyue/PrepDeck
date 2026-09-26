@@ -625,7 +625,7 @@
                   }
                 ]
               },
-              "minItems": 1,
+              "minItems": 2,
               "maxItems": 20
             },
             "variant": {
@@ -871,7 +871,7 @@
                   }
                 ]
               },
-              "minItems": 1,
+              "minItems": 2,
               "maxItems": 20
             }
           },
@@ -1024,7 +1024,9 @@
           ]
         },
         "points": {
-          "type": "number"
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
         },
         "needsReview": {
           "type": "boolean"
