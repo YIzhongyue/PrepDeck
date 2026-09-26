@@ -32,7 +32,7 @@ import {
   type ImportConflictResolution,
 } from "../lib/importExecution";
 import { assertBoundedDepth, IMPORT_JSON_MAX_DEPTH } from "../lib/importSecurity";
-import { normalizeImportFile, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, officialFormatError, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
 import {
   normalizeTagName, resolveOrCreateTags, fetchTagIdsForQuestions, buildTagLinkStatements,
   buildTagNameResolver, findTagCatalogRowByName, listTagCatalogNames,
@@ -1458,6 +1458,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     async createExam(input: ExamCreateFields) {
       await consumeAdminMutationLimit();
       if (!EXAM_SLUG_PATTERN.test(input.slug)) throw new McpApplicationError("invalid_input");
+      if (input.officialFormat !== undefined && officialFormatError(input.officialFormat)) throw new McpApplicationError("invalid_input");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       try {
@@ -1482,6 +1483,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
       await consumeAdminMutationLimit();
       const { id, ...fields } = input;
       if (fields.slug !== undefined && !EXAM_SLUG_PATTERN.test(fields.slug)) throw new McpApplicationError("invalid_input");
+      if (fields.officialFormat !== undefined && officialFormatError(fields.officialFormat)) throw new McpApplicationError("invalid_input");
       const statement = updateExamStatement(db, id, fields);
       if (!statement) throw new McpApplicationError("invalid_input");
       let changed: number;

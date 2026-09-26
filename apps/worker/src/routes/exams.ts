@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
+import { officialFormatError } from "@prepdeck/shared";
 import {
   getExam, listExams, EXAM_SLUG_PATTERN,
   createExamStatement, updateExamStatement, archiveExamStatement, unarchiveExamStatement,
@@ -35,6 +36,8 @@ examsRouter.post("/", requireAdmin, async (c) => {
   if (!SLUG_RE.test(body.slug)) {
     return c.json({ error: "slug must be lowercase alphanumeric segments separated by hyphens" }, 400);
   }
+  const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
+  if (formatError) return c.json({ error: formatError }, 400);
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -56,6 +59,7 @@ examsRouter.post("/", requireAdmin, async (c) => {
         createdAt: now,
         archivedAt: null,
         passMarkPct: body.passMarkPct ?? null,
+        officialFormat: body.officialFormat ?? null,
         badgeIconUrl: null,
         questionCount: 0,
         providers: [],
@@ -72,6 +76,8 @@ examsRouter.patch("/:id", requireAdmin, async (c) => {
   if (body.slug !== undefined && !SLUG_RE.test(body.slug)) {
     return c.json({ error: "slug must be lowercase alphanumeric segments separated by hyphens" }, 400);
   }
+  const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
+  if (formatError) return c.json({ error: formatError }, 400);
 
   const existing = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(id).first();
   if (!existing) return c.json({ error: "Exam not found" }, 404);

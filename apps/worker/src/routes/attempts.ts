@@ -13,13 +13,16 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { invalidateExamStats } from "../lib/statsCache";
+import { loadExamPassRule } from "../lib/examManagement";
 import {
   attemptDeadlineMs,
   hasAnswer,
   isAnswerCorrect,
+  isMockPassed,
   isStringArray,
   MAX_ATTEMPT_QUESTIONS,
   MOCK_SUBMIT_GRACE_SECONDS,
+  requiredCorrectFor,
   type ActiveAttemptResponse,
   type AttemptMode,
   type CompleteAttemptResponse,
@@ -306,13 +309,19 @@ attemptsRouter.post("/:id/answers", async (c) => {
   return c.json(response);
 });
 
+// Mock draft and flag writes refused because the attempt was submitted
+// elsewhere (another tab or device). `completed` tells the client to stop
+// replaying its local drafts and fetch the result instead: POST /complete
+// returns the finished attempt's result without regrading it.
+const ALREADY_COMPLETED = { error: "Attempt already completed", completed: true } as const;
+
 attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   const id = c.req.param("id");
   const questionId = c.req.param("questionId");
   const attempt = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
   if (!attempt) return c.json({ error: "Attempt not found" }, 404);
   if (attempt.mode !== "mock") return c.json({ error: "This attempt is not in mock mode" }, 400);
-  if (attempt.completed_at) return c.json({ error: "Attempt already completed" }, 409);
+  if (attempt.completed_at) return c.json(ALREADY_COMPLETED, 409);
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
@@ -349,7 +358,7 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   if (!saved.meta.changes) {
     const current = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
     return current?.completed_at
-      ? c.json({ error: "Attempt already completed" }, 409)
+      ? c.json(ALREADY_COMPLETED, 409)
       : c.json({ error: "This mock exam has ended and no longer accepts answers", expired: true }, 409);
   }
 
@@ -362,7 +371,7 @@ attemptsRouter.put("/:id/flags/:questionId", async (c) => {
   const attempt = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
   if (!attempt) return c.json({ error: "Attempt not found" }, 404);
   if (attempt.mode !== "mock") return c.json({ error: "This attempt is not in mock mode" }, 400);
-  if (attempt.completed_at) return c.json({ error: "Attempt already completed" }, 409);
+  if (attempt.completed_at) return c.json(ALREADY_COMPLETED, 409);
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
@@ -377,7 +386,7 @@ attemptsRouter.put("/:id/flags/:questionId", async (c) => {
   // to protect nothing.
   const saved = await c.env.DB.prepare("UPDATE attempts SET flagged_json = json_patch(COALESCE(flagged_json, '{}'), ?) WHERE id = ? AND completed_at IS NULL")
     .bind(JSON.stringify({ [questionId]: body.flagged }), id).run();
-  if (!saved.meta.changes) return c.json({ error: "Attempt already completed" }, 409);
+  if (!saved.meta.changes) return c.json(ALREADY_COMPLETED, 409);
 
   return c.json({ saved: true });
 });
@@ -472,7 +481,7 @@ attemptsRouter.post("/:id/complete", async (c) => {
 
   const [finalAttempt, exam, breakdownRows] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM attempts WHERE id = ?").bind(id).first<AttemptRow>(),
-    c.env.DB.prepare("SELECT pass_mark_pct FROM exams WHERE id = ?").bind(attempt.exam_id).first<{ pass_mark_pct: number | null }>(),
+    loadExamPassRule(c.env.DB, attempt.exam_id),
     c.env.DB.prepare(
       `SELECT aa.question_id, aa.selected_answer_json, aa.is_correct, q.correct_answers_json, aa.graded_answers_json, aa.answer_revision, q.answer_revision AS current_answer_revision, q.answer_revised_at
        FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
@@ -495,14 +504,16 @@ attemptsRouter.post("/:id/complete", async (c) => {
 
   const correctCount = breakdown.filter((b) => b.isCorrect).length;
   const score = finalAttempt?.score ?? 0;
-  const passed = exam?.pass_mark_pct != null ? score >= exam.pass_mark_pct : null;
+  const totalQuestions = finalAttempt?.total_questions ?? breakdown.length;
+  const passed = exam ? isMockPassed(exam, { correctCount, totalQuestions, score }) : null;
 
   const response: CompleteAttemptResponse = {
     attemptId: id,
     mode: (finalAttempt?.mode ?? attempt.mode) as AttemptMode,
     score,
     passed,
-    totalQuestions: finalAttempt?.total_questions ?? breakdown.length,
+    requiredCorrect: requiredCorrectFor(exam?.officialFormat ?? null, totalQuestions),
+    totalQuestions,
     correctCount,
     durationSeconds: finalAttempt?.duration_seconds ?? 0,
     breakdown,

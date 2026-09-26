@@ -1,4 +1,5 @@
 import type { QuestionContentModel } from "./question-components.ts";
+import type { OfficialMockFormat } from "./examFormat.ts";
 // Core domain types shared between apps/web and apps/worker.
 // Mirrors docs/requirements/data-model-and-import-format.md (Core Entities) and docs/requirements/data-model-and-import-format.md (Question Types).
 
@@ -29,6 +30,8 @@ export interface Exam {
   createdAt: string;
   archivedAt: string | null;
   passMarkPct: number | null;
+  /** The real test's length, time limit and pass count; see examFormat.ts. */
+  officialFormat: OfficialMockFormat | null;
   badgeIconUrl: string | null;
   providers: Provider[];
 }

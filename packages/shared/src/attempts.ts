@@ -138,6 +138,8 @@ export interface CompleteAttemptResponse {
   mode: AttemptMode;
   score: number;
   passed: boolean | null;
+  /** Correct answers this attempt needed under the exam's official format; null without one. */
+  requiredCorrect: number | null;
   totalQuestions: number;
   correctCount: number;
   durationSeconds: number;

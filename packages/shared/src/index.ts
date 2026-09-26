@@ -6,6 +6,7 @@ export * from "./pdf-layouts.ts";
 export * from "./import-validate.ts";
 export * from "./grading.ts";
 export * from "./attempts.ts";
+export * from "./examFormat.ts";
 export * from "./learning.ts";
 export * from "./annotations.ts";
 export * from "./annotationSettings.ts";

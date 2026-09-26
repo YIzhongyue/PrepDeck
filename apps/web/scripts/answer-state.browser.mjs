@@ -61,10 +61,14 @@ const server = createServer(async (req, res) => {
     const [, , , id, action, qid] = url.pathname.split("/"); const attempt = attempts.get(id);
     if (action === "answers" && req.method === "PUT") {
       if (failDraft) return json({ error: "Draft unavailable" }, 503);
+      if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
       if (expired) return json({ expired: true, error: "This mock exam has expired." }, 409);
       attempt.selectedAnswers[qid] = selected(payload.selectedAnswer); return json({ saved: true });
     }
-    if (action === "flags") { attempt.flagged[qid] = payload.flagged; return json({ saved: true }); }
+    if (action === "flags") {
+      if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
+      attempt.flagged[qid] = payload.flagged; return json({ saved: true });
+    }
     if (action === "answers") {
       const isCorrect = grade(payload.questionId, payload.selectedAnswer);
       if (!isCorrect) recordWrong(payload.questionId);
@@ -165,8 +169,26 @@ try {
   failDraft = false; expired = true; await complete();
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   console.log("PASS expired writes and retries cannot block submission of the server's saved answers");
-  // Exercise component rendering and actual provider draft persistence in Mock.
+
+  // Submitted from another tab or device: a write to it leads to its result, and
+  // a draft this tab never managed to save cannot block the Submit button.
   expired = false;
+  await startMock(); await pick("q1", "B");
+  attempts.get((await state()).mockAttemptId).completed = true;
+  await pick("q1", "A");
+  await page.waitForFunction(() => window.store.state.mStage === "results");
+  assert.match((await state()).actionError, /another tab or device/);
+  assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, ["B"], "The result is the one graded elsewhere");
+  await invoke("dismissActionError");
+  await startMock(); failDraft = true; await pick("q1", "A");
+  await page.waitForFunction(() => window.store.state.actionError?.includes("not saved yet"));
+  failDraft = false; attempts.get((await state()).mockAttemptId).completed = true;
+  await invoke("askSubmit"); await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await page.waitForFunction(() => window.store.state.mStage === "results");
+  assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
+  await invoke("dismissActionError");
+  console.log("PASS an attempt submitted elsewhere shows its result instead of blocking Submit");
+  // Exercise component rendering and actual provider draft persistence in Mock.
   const componentRows = ["code", "case-with-figure", "combination"].flatMap(name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions);
   questions.splice(0, questions.length, ...componentRows.map((row, n) => ({ ...row, correctAnswers: undefined, id: `component-${n}`, examId: "exam", sequenceNumber: n + 1, chooseCount: 1, tags: [] })));
   await page.reload(); await ready(); await startMock();

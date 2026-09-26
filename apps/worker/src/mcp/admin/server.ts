@@ -18,6 +18,13 @@ const proposalTokenSchema = z.string().length(64);
 const proposalIdSchema = z.string().uuid();
 
 // implementation — exam lifecycle, import workflow, and taxonomy schemas.
+// Cross-field limits (pass count <= question count) are checked by the shared
+// officialFormatError in the service, like REST.
+const officialFormatSchema = z.strictObject({
+  questionCount: z.number().int().min(1).describe("Number of questions in the real exam"),
+  timeLimitMinutes: z.number().int().min(1).describe("Time limit of the real exam, in minutes"),
+  passCorrectCount: z.number().int().min(1).describe("Correct answers needed to pass the real exam"),
+}).nullable().optional().describe("The official exam format mock exams are scaled from; null clears it");
 const examSlugSchema = z.string().min(1).max(200);
 const examCreateFieldsSchema = z.strictObject({
   slug: examSlugSchema, name: z.string().min(1).max(200),
@@ -25,11 +32,13 @@ const examCreateFieldsSchema = z.strictObject({
   description: z.string().max(2000).nullable().optional(),
   language: z.string().max(50).nullable().optional(),
   passMarkPct: z.number().min(0).max(100).nullable().optional(),
+  officialFormat: officialFormatSchema,
 });
 const examMutableFieldsSchema = z.strictObject({
   slug: examSlugSchema.optional(), name: z.string().min(1).max(200).optional(),
   subject: z.string().max(200).optional(), description: z.string().max(2000).optional(),
   language: z.string().max(50).optional(), passMarkPct: z.number().min(0).max(100).nullable().optional(),
+  officialFormat: officialFormatSchema,
 });
 
 // Loose at the MCP boundary, same rationale as questionPayloadSchema above:

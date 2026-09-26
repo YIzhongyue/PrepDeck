@@ -4,6 +4,7 @@ import type {
   AdminUsersListResponse,
   Exam,
   InviteUserResponse,
+  OfficialMockFormat,
   Provider,
   Role,
   UpdateUserResponse,
@@ -14,6 +15,7 @@ import ModalLayer from "../components/ModalLayer";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import { apiFetch, ApiError } from "../lib/api";
+import { questionBankChanged } from "../lib/questionAuthoring";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
 
@@ -607,6 +609,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         onNewProvider={() => setModal("provider")}
         onToggleArchive={toggleArchive}
         onReplaceBadge={replaceBadge}
+        onFormatSaved={(officialFormat) => setExams((prev) => prev.map((x) => x.id === selected.id ? { ...x, officialFormat } : x))}
       />
     );
   }
@@ -748,7 +751,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 }
 
 function ExamDetail({
-  exam, providers, onBack, onToggleProvider, onNewProvider, onToggleArchive, onReplaceBadge
+  exam, providers, onBack, onToggleProvider, onNewProvider, onToggleArchive, onReplaceBadge, onFormatSaved
 }: {
   exam: ExamRow;
   providers: Provider[];
@@ -757,6 +760,7 @@ function ExamDetail({
   onNewProvider: () => void;
   onToggleArchive: (exam: ExamRow) => void;
   onReplaceBadge: (exam: ExamRow, file: File) => void;
+  onFormatSaved: (format: OfficialMockFormat | null) => void;
 }) {
   return (
     <div style={{ marginTop: 6 }}>
@@ -810,7 +814,83 @@ function ExamDetail({
         </div>
       </div>
 
+      <OfficialFormatCard key={exam.id} exam={exam} onSaved={onFormatSaved} />
+
       <QuestionsPanel exam={exam} />
+    </div>
+  );
+}
+
+// The real test's length, time limit and pass count. Mock setup offers Full /
+// Half / Sprint formats derived from it, and every mock of this exam passes at
+// the same share of correct answers (packages/shared/src/examFormat.ts).
+function OfficialFormatCard({ exam, onSaved }: { exam: ExamRow; onSaved: (format: OfficialMockFormat | null) => void }) {
+  const saved = exam.officialFormat ?? null;
+  const [questions, setQuestions] = useState(saved ? String(saved.questionCount) : "");
+  const [minutes, setMinutes] = useState(saved ? String(saved.timeLimitMinutes) : "");
+  const [pass, setPass] = useState(saved ? String(saved.passCorrectCount) : "");
+  const [status, setStatus] = useState<{ kind: "idle" | "saving" | "saved" } | { kind: "error"; message: string }>({ kind: "idle" });
+  const id = useId();
+
+  const q = Number(questions), m = Number(minutes), p = Number(pass);
+  const whole = (n: number) => Number.isInteger(n) && n > 0;
+  const problem = !questions || !minutes || !pass ? "Fill in all three values."
+    : !whole(q) || !whole(m) || !whole(p) ? "Use whole numbers above zero."
+    : p > q ? "Correct answers to pass cannot exceed the number of questions."
+    : null;
+  const dirty = !saved || saved.questionCount !== q || saved.timeLimitMinutes !== m || saved.passCorrectCount !== p;
+
+  const save = async (format: OfficialMockFormat | null) => {
+    setStatus({ kind: "saving" });
+    try {
+      const { exam: updated } = await apiFetch<{ exam: ExamRow }>(`/api/exams/${exam.id}`, {
+        method: "PATCH", body: JSON.stringify({ officialFormat: format })
+      });
+      onSaved(updated.officialFormat ?? null);
+      if (!format) { setQuestions(""); setMinutes(""); setPass(""); }
+      setStatus({ kind: "saved" });
+      questionBankChanged();
+    } catch (err) {
+      setStatus({ kind: "error", message: err instanceof ApiError ? err.message : "Could not save the exam format." });
+    }
+  };
+
+  return (
+    <div className="admin-panel-card" aria-labelledby={`${id}-title`}>
+      <div style={{ marginBottom: 13 }}>
+        <span id={`${id}-title`} className="admin-panel-kicker">Official exam format</span>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+          The real test's length, time limit and pass mark. Mock exams offer full, half and sprint lengths from it, and pass at the same share of correct answers.
+          {exam.passMarkPct != null && ` It replaces the ${exam.passMarkPct}% pass mark once set.`}
+        </p>
+      </div>
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (!problem) void save({ questionCount: q, timeLimitMinutes: m, passCorrectCount: p }); }}
+        style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 12 }}
+      >
+        <div className="field" style={{ flex: "1 1 140px" }}>
+          <label htmlFor={`${id}-q`}>Questions</label>
+          <input id={`${id}-q`} className="input" type="number" min={1} max={200} inputMode="numeric" value={questions} onChange={(e) => { setQuestions(e.target.value); setStatus({ kind: "idle" }); }} />
+        </div>
+        <div className="field" style={{ flex: "1 1 140px" }}>
+          <label htmlFor={`${id}-m`}>Time limit (minutes)</label>
+          <input id={`${id}-m`} className="input" type="number" min={1} max={600} inputMode="numeric" value={minutes} onChange={(e) => { setMinutes(e.target.value); setStatus({ kind: "idle" }); }} />
+        </div>
+        <div className="field" style={{ flex: "1 1 140px" }}>
+          <label htmlFor={`${id}-p`}>Correct answers to pass</label>
+          <input id={`${id}-p`} className="input" type="number" min={1} max={200} inputMode="numeric" value={pass} onChange={(e) => { setPass(e.target.value); setStatus({ kind: "idle" }); }} />
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="submit" className="btn btn-primary" disabled={!!problem || !dirty || status.kind === "saving"}>Save format</button>
+          {saved && <button type="button" className="btn btn-secondary" disabled={status.kind === "saving"} onClick={() => void save(null)}>Clear</button>}
+        </div>
+      </form>
+      <p role="status" style={{ margin: "10px 0 0", fontSize: 12.5, color: status.kind === "error" ? DANGER : "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
+        {status.kind === "error" ? status.message
+          : status.kind === "saved" ? "Saved."
+          : questions || minutes || pass ? (problem ?? (whole(q) ? `Pass mark ${Math.round((100 * p) / q)}% · ${(m / q).toFixed(1)} min per question.` : ""))
+          : "Not set — mock exams offer sprint and custom lengths only."}
+      </p>
     </div>
   );
 }

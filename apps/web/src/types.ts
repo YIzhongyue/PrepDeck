@@ -1,4 +1,4 @@
-import type { QuestionContentModel } from "@prepdeck/shared";
+import type { OfficialMockFormat, QuestionContentModel } from "@prepdeck/shared";
 export type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "ordering" | "matching";
 export type Difficulty = "easy" | "medium" | "hard";
 
@@ -40,6 +40,9 @@ export interface ExamSummary {
   name: string;
   badgeIconUrl: string | null;
   providers: { id: string; name: string; shortName: string; websiteUrl: string | null; iconUrl: string | null; createdAt: string }[];
+  /** Older percentage pass rule; superseded by officialFormat when that is set. */
+  passMarkPct?: number | null;
+  officialFormat?: OfficialMockFormat | null;
 }
 
 export type AnnotationTarget = "stem" | "ai" | `opt:${string}`;
