@@ -179,8 +179,21 @@ header .exam-selector--compact .exam-selector__menu {
 .admin-header p { margin: 8px 0 0; max-width: 520px; color: color-mix(in srgb, var(--color-text) 60%, transparent); font-size: 13.5px; }
 .admin-status-pill { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 13px; border: 1px solid var(--color-divider); border-radius: 999px; background: var(--color-neutral-100); color: color-mix(in srgb, var(--color-text) 70%, transparent); font-size: 12px; }
 .admin-live-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--color-accent-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-2) 12%, transparent); }
-.admin-tabs { display: flex; align-items: flex-end; gap: 26px; margin: 26px 0 22px; border-bottom: 1px solid var(--color-divider); }
-.admin-tab { display: inline-flex; align-items: center; gap: 8px; padding: 0 2px 13px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 15.5px; line-height: 1.2; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+/* The pill reports the last admin overview request (Admin.tsx, StatusPill). */
+.admin-status-pill.is-checking .admin-live-dot { background: var(--color-neutral-400); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-neutral-400) 18%, transparent); }
+.admin-status-pill.is-slow .admin-live-dot { background: var(--color-warning); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-warning) 14%, transparent); }
+.admin-status-pill.is-down { border-color: color-mix(in srgb, var(--color-danger) 40%, transparent); color: var(--color-danger); }
+.admin-status-pill.is-down .admin-live-dot { background: var(--color-danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-danger) 14%, transparent); }
+/* One row at every width: a row that no longer fits scrolls sideways instead of
+   wrapping a label onto a second line. A scroller clips what overflows it, so
+   the baseline is an inset shadow the active tab's underline paints over (not a
+   border the tab overlaps with a negative margin), and the focus ring is drawn
+   inside the tab. */
+.admin-tabs { display: flex; align-items: flex-end; gap: 22px; margin: 22px 0 22px; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 -1px 0 var(--color-divider); }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab:focus-visible { outline-offset: -2px; }
+@media (forced-colors: active) { .admin-tabs { border-bottom: 1px solid CanvasText; } }
+.admin-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 15.5px; line-height: 1.2; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .admin-tab:hover { color: var(--color-text); }
 .admin-tab.is-active { color: var(--color-accent-800); border-bottom-color: var(--color-accent); }
 .admin-tab-badge { padding: 1px 8px; border-radius: 999px; font-family: var(--font-body); font-size: 10.5px; font-weight: 700; background: var(--color-neutral-200); color: color-mix(in srgb, var(--color-text) 50%, transparent); }
@@ -289,7 +302,7 @@ header .exam-selector--compact .exam-selector__menu {
   .admin-stat-grid { grid-template-columns: repeat(2, 1fr); }.admin-overview-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .admin-header { flex-direction: column; }.admin-status-pill { align-self: flex-start; }.admin-tabs { gap: 16px; }.admin-tab { font-size: 13.5px; }.admin-toolbar { flex-direction: column; align-items: stretch; }.admin-search { flex: none; width: 100%; max-width: none; }.admin-stat-grid { gap: 9px; }.admin-stat { padding: 16px; }.admin-stat strong { font-size: 25px; }.admin-section-heading { align-items: flex-start; flex-direction: column; gap: 3px; }.admin-shell table th, .admin-shell table td { padding-inline: 12px !important; }
+  .admin-header { flex-direction: column; }.admin-status-pill { align-self: flex-start; }.admin-tabs { gap: 12px; }.admin-tab { font-size: 13.5px; }.admin-toolbar { flex-direction: column; align-items: stretch; }.admin-search { flex: none; width: 100%; max-width: none; }.admin-stat-grid { gap: 9px; }.admin-stat { padding: 16px; }.admin-stat strong { font-size: 25px; }.admin-section-heading { align-items: flex-start; flex-direction: column; gap: 3px; }.admin-shell table th, .admin-shell table td { padding-inline: 12px !important; }
 }
 .terms-star { position: absolute; z-index: 2; color: #f5a279; font-size: 27px; }.terms-star.star-a { top: 5px; right: 1px; }.terms-star.star-b { bottom: 16px; left: 4px; color: #0f9f8f; font-size: 20px; }
 .terms-summary { display: grid; grid-template-columns: 1.12fr repeat(3, 1fr); max-width: 1144px; margin: 0 auto 105px; border: 1px solid #e2e8f2; border-radius: 25px; background: white; box-shadow: 0 15px 42px rgba(23,32,51,.06); overflow: hidden; }

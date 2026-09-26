@@ -26,6 +26,59 @@ interface ExamRow extends Exam {
 
 const DANGER = "var(--color-danger, #c0392b)";
 
+// "1 exam", "2 exams": every count the console prints goes through this.
+function countOf(n: number, singular: string, plural = `${singular}s`): string {
+  return `${n.toLocaleString()} ${n === 1 ? singular : plural}`;
+}
+
+// An overview that took longer than this is reported as slow.
+const SLOW_OVERVIEW_MS = 3000;
+
+// The header's status pill reports the last overview request: that request
+// runs the console's D1 queries, so it is a real (if narrow) signal, where the
+// pill used to say "System operational" whatever happened (issue #49).
+type OverviewHealth =
+  | { kind: "checking" }
+  | { kind: "ok"; slow: boolean; at: Date }
+  | { kind: "failed"; message: string };
+
+function useAdminOverview(enabled: boolean) {
+  const [data, setData] = useState<AdminOverviewResponse | null>(null);
+  const [health, setHealth] = useState<OverviewHealth>({ kind: "checking" });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const started = performance.now();
+    setHealth({ kind: "checking" });
+    apiFetch<AdminOverviewResponse>("/api/admin/overview")
+      .then((next) => {
+        if (cancelled) return;
+        setData(next);
+        setHealth({ kind: "ok", slow: performance.now() - started > SLOW_OVERVIEW_MS, at: new Date() });
+      })
+      .catch((error) => {
+        if (!cancelled) setHealth({ kind: "failed", message: error instanceof ApiError ? error.message : "The request did not complete." });
+      });
+    return () => { cancelled = true; };
+  }, [enabled, attempt]);
+  return { data, health, retry: () => setAttempt((n) => n + 1) };
+}
+
+function StatusPill({ health }: { health: OverviewHealth }) {
+  const [label, tone, detail] =
+    health.kind === "checking" ? ["Checking status…", "checking", "Loading the admin overview."]
+    : health.kind === "failed" ? ["Status unavailable", "down", `The admin overview failed to load: ${health.message}`]
+    : health.slow ? ["Slow to respond", "slow", `The admin overview took more than ${SLOW_OVERVIEW_MS / 1000} s (${health.at.toLocaleTimeString()}).`]
+    : ["Operational", "ok", `The admin overview loaded at ${health.at.toLocaleTimeString()}.`];
+  return (
+    <div className={`admin-status-pill is-${tone}`} role="status" title={detail}>
+      <span className="admin-live-dot" aria-hidden="true" /> {label}
+      <span className="sr-only">. {detail}</span>
+    </div>
+  );
+}
+
 function AdminIcon({ name }: { name: "overview" | "users" | "exams" | "shield" | "arrow" | "back" | "plus" | "search" | "key" }) {
   const paths = {
     overview: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
@@ -86,6 +139,9 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
   const [userCount, setUserCount] = useState<number | null>(null);
   const [examCount, setExamCount] = useState<number | null>(null);
   const isAdmin = state.me?.role === "admin";
+  // Fetched whenever Overview is shown, so its figures and the header's status
+  // are both as fresh as the last visit.
+  const overview = useAdminOverview(isAdmin && tab === "overview");
 
   useEffect(() => {
     if (state.me && !isAdmin) go("dash");
@@ -109,7 +165,7 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
           <h1>Access &amp; content</h1>
           <p>Invite the people who study here, and keep the exam library tidy.</p>
         </div>
-        <div className="admin-status-pill"><span className="admin-live-dot" /> System operational</div>
+        <StatusPill health={overview.health} />
       </header>
 
       <nav className="admin-tabs" aria-label="Admin sections">
@@ -119,7 +175,8 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
             <button
               key={t.id}
               type="button"
-              onClick={() => setTab(t.id)}
+              // A selected tab that sits past the edge of the scrolled row comes into view.
+              onClick={(e) => { setTab(t.id); e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}
               className={on ? "admin-tab is-active" : "admin-tab"}
               aria-current={on ? "page" : undefined}
             >
@@ -131,7 +188,7 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
       </nav>
 
       <section className="admin-content">
-      {tab === "overview" && <OverviewPanel onNavigate={setTab} />}
+      {tab === "overview" && <OverviewPanel data={overview.data} health={overview.health} onRetry={overview.retry} onNavigate={setTab} />}
       {tab === "users" && <UsersPanel myId={state.me.id} onCount={setUserCount} />}
       {tab === "exams" && <ExamsPanel onCount={setExamCount} />}
       {tab === "mcp" && <McpTokensPanel />}
@@ -141,17 +198,20 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
 }
 
 // FR-13.4: at-a-glance usage counts, sourced from GET /api/admin/overview.
-function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
-  const [data, setData] = useState<AdminOverviewResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiFetch<AdminOverviewResponse>("/api/admin/overview")
-      .then(setData)
-      .catch(() => setError("Could not load the overview."));
-  }, []);
-
-  if (error) return <p style={{ fontSize: 13, color: DANGER }}>{error}</p>;
+function OverviewPanel({ data, health, onRetry, onNavigate }: {
+  data: AdminOverviewResponse | null;
+  health: OverviewHealth;
+  onRetry: () => void;
+  onNavigate: (tab: Tab) => void;
+}) {
+  if (health.kind === "failed") {
+    return (
+      <p style={{ fontSize: 13, color: DANGER, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        Could not load the overview.
+        <button type="button" className="btn btn-secondary" onClick={onRetry}>Retry</button>
+      </p>
+    );
+  }
   if (!data) return <p style={{ fontSize: 13, opacity: 0.7 }}>Loading…</p>;
 
   const stat = (label: string, value: number, tone: string, note: string) => (
@@ -168,8 +228,8 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     <div className="admin-overview">
       <div className="admin-section-heading"><div><span>At a glance</span><h2>Workspace overview</h2></div><p>Live totals across your PrepDeck workspace.</p></div>
       <div className="admin-stat-grid">
-        {stat("Active learners", data.users.active, "blue", `${data.users.total} authorized total`)}
-        {stat("Question library", data.questions.total, "violet", `Across ${data.exams.total} exams`)}
+        {stat("Active learners", data.users.active, "blue", `${data.users.total.toLocaleString()} authorized total`)}
+        {stat("Question library", data.questions.total, "violet", `Across ${countOf(data.exams.total, "exam")}`)}
         {stat("Attempts recorded", data.attempts.total, "green", "All-time activity")}
         {stat("Pending invites", data.users.invited, "amber", `${data.users.revoked} access revoked`)}
       </div>
@@ -665,7 +725,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
               <div className="admin-provider-group-head">
                 <span>{g.label}</span>
                 <span className="admin-provider-group-rule" />
-                <span>{g.exams.length} {g.exams.length === 1 ? "exam" : "exams"}</span>
+                <span>{countOf(g.exams.length, "exam")}</span>
               </div>
               <div className="admin-exam-grid">
                 {g.exams.map((ex) => (
@@ -775,7 +835,7 @@ function ExamDetail({
           </div>
           <div className="admin-detail-meta">
             <span className="mono">{exam.slug}</span>
-            <span>{exam.questionCount} questions</span>
+            <span>{countOf(exam.questionCount, "question")}</span>
             <span>Subject · {exam.subject || "—"}</span>
             <span>Language · {exam.language || "—"}</span>
           </div>
