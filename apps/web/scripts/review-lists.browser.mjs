@@ -38,6 +38,12 @@ for (const [index, tags] of [["Networking"], ["Storage"], ["Storage"], ["Billing
 const wrong = new Map(questions.filter(q => q.id.startsWith("w")).map(q => [q.id, { questionId: q.id, wrongCount: 2, lastWrongAt: new Date().toISOString(), mastered: false }]));
 const bookmarkedIds = questions.filter(q => q.id.startsWith("b")).map(q => q.id);
 const errors = [];
+// The annotations screen (issue #48) starts with nothing, then gets one mark
+// and one note on a different question.
+let annotations = [], notes = [];
+const stamp = new Date().toISOString();
+const annotationRow = (id, questionId, style) => ({ id, userId: "qa", questionId, targetType: "stem", targetRef: null, rangeStart: 0, rangeEnd: 5, style, note: null, createdAt: stamp, updatedAt: stamp });
+const noteRow = (id, questionId) => ({ id, userId: "qa", questionId, content: "A note on its own", visibility: "private", createdAt: stamp, updatedAt: stamp, author: { id: "qa", displayName: "QA", avatarUrl: null }, isMine: true });
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -59,8 +65,12 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === "/api/settings") return json({ showSharedNotes: true });
   if (url.pathname === "/api/annotation-settings") return json({ hl1Alias: "First", hl2Alias: "Second", hl3Alias: "Third" });
-  if (url.pathname === "/api/annotations") return json({ annotations: [] });
-  if (url.pathname === "/api/notes") return json({ notes: [] });
+  if (url.pathname === "/api/annotations") {
+    const types = url.searchParams.get("markType")?.split(",") ?? [];
+    const rows = annotations.filter(a => !types.length || types.includes(a.style));
+    return json({ annotations: url.searchParams.get("sort") === "desc" ? rows.slice().reverse() : rows });
+  }
+  if (url.pathname === "/api/notes") return json({ notes });
   if (url.pathname === "/api/attempts/active") return json({ attempt: null });
   if (url.pathname.endsWith("/learning/progress")) return json({ progress: { lastSequenceNumber: 1 } });
   if (url.pathname.endsWith("/wrong-book/mastered")) { wrong.get(url.pathname.split("/")[3]).mastered = true; return json({ mastered: true }); }
@@ -256,6 +266,56 @@ try {
   assert.ok(chipBox.height >= 36, `chip is ${chipBox.height}px tall on a touch target`);
   await capture("wrong-phone");
   console.log("PASS narrow viewport: no horizontal overflow and the filter still operates");
+
+  // Annotations (issue #48): "nothing yet" and "nothing matches" are distinct
+  // empty states, a mark filter never lists a note-only card with "0 marks",
+  // and the filter and sort toggles announce their state.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const openNotes = async () => {
+    await invoke("go", "notes");
+    await page.getByRole("heading", { name: "My annotations" }).waitFor();
+  };
+  await openNotes();
+  await page.getByRole("heading", { name: "No annotations yet" }).waitFor();
+  assert.equal(await page.getByText(/Select any text below/).count(), 0, "no instruction about text that is not there");
+  assert.equal(await page.getByRole("group", { name: "Filter:" }).count(), 0, "nothing to filter yet");
+  if (shots) await page.waitForTimeout(400); // let the screen's entrance animation finish
+  await capture("annotations-empty");
+  await page.getByRole("button", { name: "Go to Learning" }).click();
+  await page.waitForFunction(() => window.store.state.screen === "learning");
+
+  annotations = [annotationRow("a1", "w1", "hl1")];
+  notes = [noteRow("n1", "w2")];
+  await page.reload(); await page.waitForFunction(() => window.store?.state.workspaceStatus === "ready");
+  await openNotes();
+  await page.getByText(/Select any text below/).waitFor();
+  const noteCards = page.locator(".card.elev-sm");
+  assert.deepEqual(await noteCards.locator(".tag-neutral").allTextContents(), ["W1", "W2"], "a note alone earns a card while nothing is filtered");
+  const filterGroup = page.getByRole("group", { name: "Filter:" });
+  const sortGroup = page.getByRole("group", { name: "Sort marks" });
+  assert.deepEqual(await filterGroup.getByRole("button").evaluateAll(buttons => buttons.map(b => b.getAttribute("aria-pressed"))), ["false", "false", "false"]);
+  assert.equal(await sortGroup.getByRole("button", { name: "Oldest first" }).getAttribute("aria-pressed"), "true");
+  assert.equal(await sortGroup.getByRole("button", { name: "Newest first" }).getAttribute("aria-pressed"), "false");
+
+  await filterGroup.getByRole("button", { name: "First" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".card.elev-sm").length === 1);
+  assert.deepEqual(await noteCards.locator(".tag-neutral").allTextContents(), ["W1"], "the note-only card leaves while a mark filter is on");
+  assert.equal(await filterGroup.getByRole("button", { name: "First" }).getAttribute("aria-pressed"), "true");
+
+  await filterGroup.getByRole("button", { name: "First" }).click();
+  await filterGroup.getByRole("button", { name: "Second" }).click();
+  await page.getByRole("heading", { name: "No marks match this filter" }).waitFor();
+  assert.equal(await noteCards.count(), 0);
+  await capture("annotations-no-match");
+  await page.locator(".card").filter({ hasText: "No marks match this filter" }).getByRole("button", { name: "Clear filter" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".card.elev-sm").length === 2);
+  assert.equal(await page.getByRole("heading", { name: "No marks match this filter" }).count(), 0);
+  assert.equal(await filterGroup.getByRole("button", { name: "Second" }).getAttribute("aria-pressed"), "false");
+
+  await sortGroup.getByRole("button", { name: "Newest first" }).click();
+  assert.equal(await sortGroup.getByRole("button", { name: "Newest first" }).getAttribute("aria-pressed"), "true");
+  assert.equal(await sortGroup.getByRole("button", { name: "Oldest first" }).getAttribute("aria-pressed"), "false");
+  console.log("PASS annotations: distinct empty states, filter-only cards, and toggles that expose their state");
 
   assert.deepEqual(errors, []);
   if (shots) await writeFile(`${shots}/review-lists.txt`, "Bookmarks and wrong-book tag filter captures\n");

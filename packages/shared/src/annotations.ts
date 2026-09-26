@@ -24,3 +24,8 @@ export interface AnnotationResponse {
 export interface AnnotationsListResponse {
   annotations: Annotation[];
 }
+
+// Length limits (issue #45), in UTF-16 code units: an annotation note is a
+// short remark on a marked span (FR-8.2), and its style is a mark identifier.
+export const MAX_ANNOTATION_NOTE_LENGTH = 2_000;
+export const MAX_ANNOTATION_STYLE_LENGTH = 64;
