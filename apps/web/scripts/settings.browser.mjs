@@ -114,6 +114,7 @@ let userSettings = { showSharedNotes: false };
 let emailSettings = { enabled: false, questionsPerEmail: 3, source: "wrong", sendHourLocal: 8, timezone: "UTC" };
 let markAliases = { hl1Alias: "Important", hl2Alias: "Review", hl3Alias: "Question" };
 let avatarStatus = 200;
+let nameStatus = 200;
 
 const server = createServer(async (req, res) => {
   try {
@@ -149,8 +150,11 @@ const server = createServer(async (req, res) => {
       if (req.method !== "GET") emailSettings = { ...emailSettings, ...input };
       return json(200, emailSettings);
     }
-    if (path === "/api/me" && req.method === "PATCH") { profile = { ...profile, ...input }; return json(200, { user: profile }); }
-    if (path === "/api/me/avatar") return json(avatarStatus, avatarStatus === 200 ? { user: profile } : { error: "too_large" });
+    if (path === "/api/me" && req.method === "PATCH") {
+      if (nameStatus !== 200) return json(nameStatus, { error: "displayName must be 100 characters or fewer" });
+      profile = { ...profile, ...input }; return json(200, { user: profile });
+    }
+    if (path === "/api/me/avatar") return json(avatarStatus, avatarStatus === 200 ? { avatarUrl: "/avatars/me.webp" } : { error: "Avatar must be 2 MB or smaller" });
     if (path === "/api/mcp-tokens") return json(200, { credentials: [] });
     return json(200, {});
   } catch (err) { res.writeHead(500); res.end(String(err)); }
@@ -413,6 +417,26 @@ try {
     }
     await page.setViewportSize({ width: 1280, height: 1000 });
   }
+
+  // --- Profile changes the server refuses are reported (issue #52) ------------
+  await page.goto(base);
+  await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  nameStatus = 400;
+  const nameBefore = profile.displayName;
+  await page.getByRole("textbox", { name: "Display name" }).fill("A new name");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("displayName must be 100 characters or fewer").waitFor();
+  assert.equal(profile.displayName, nameBefore, "nothing was saved");
+  nameStatus = 200;
+  avatarStatus = 413;
+  const png = Buffer.from(await page.evaluate(() => {
+    const canvas = Object.assign(document.createElement("canvas"), { width: 8, height: 8 });
+    canvas.getContext("2d").fillRect(0, 0, 8, 8);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  await page.locator('input[type="file"]').setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+  await page.getByText("Avatar must be 2 MB or smaller").waitFor();
+  avatarStatus = 200;
 
   assert.deepEqual(failures, [], "no uncaught browser exceptions");
   console.log("Settings/Untitled UI browser regression passed: labels, validation, keyboard, disabled and loading states, portaled overlay re-theming, scheme persistence, every imported primitive above its contrast floor, and 1280/375px in all five schemes.");

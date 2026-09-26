@@ -5,6 +5,7 @@ import {
 } from "@prepdeck/shared";
 import { HL, THEMES } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { ApiError, isSessionExpired } from "../lib/api";
 import { apiFetch } from "../lib/api";
 import { AvatarValidationError, prepareAvatarUpload } from "../lib/avatar";
 import ProfileAvatar from "../components/ProfileAvatar";
@@ -34,6 +35,14 @@ function optionCardClass(selected: boolean) {
     "rounded-[20px] px-[15px] py-[13px] ring-[1.5px] ring-inset",
     selected ? "bg-brand-primary ring-brand" : "bg-tertiary ring-primary"
   );
+}
+
+// The server's own message for a refused profile change (a 400 or the 413
+// "Avatar must be 2 MB or smaller"). A lost session has its own dialog, so it
+// needs no message here.
+function profileErrorMessage(err: unknown, fallback: string): string | null {
+  if (isSessionExpired(err)) return null;
+  return err instanceof ApiError && err.status >= 400 && err.status < 500 ? err.message : fallback;
 }
 
 function segBg(on: boolean) { return on ? "var(--color-accent)" : "transparent"; }
@@ -120,6 +129,12 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const nameDirty = nameDraft.trim() !== "" && nameDraft.trim() !== (state.me?.displayName ?? "");
   // updateDisplayName() already refuses a blank name; this only surfaces why.
   const nameEmpty = nameDraft.trim() === "";
+  // A save the server refused, shown instead of silently keeping the old name (issue #52).
+  const [nameError, setNameError] = useState<string | null>(null);
+  const saveName = () => {
+    setNameError(null);
+    updateDisplayName(nameDraft).catch((err) => setNameError(profileErrorMessage(err, "Could not save your display name. Please try again.")));
+  };
 
   // implementation: same controlled-draft pattern as nameDraft above, re-synced
   // whenever the server-confirmed aliases change underneath it.
@@ -138,9 +153,9 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
     setAvatarBusy(true);
     try {
       const blob = await prepareAvatarUpload(file);
-      uploadAvatar(blob);
+      await uploadAvatar(blob);
     } catch (err) {
-      setAvatarError(err instanceof AvatarValidationError ? err.message : "Could not upload this image.");
+      setAvatarError(err instanceof AvatarValidationError ? err.message : profileErrorMessage(err, "Could not upload this image."));
     } finally {
       setAvatarBusy(false);
     }
@@ -223,13 +238,13 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 className="flex-1"
                 label="Display name"
                 value={nameDraft}
-                onChange={setNameDraft}
-                isInvalid={nameEmpty}
-                hint={nameEmpty ? "Enter a display name to save it." : undefined}
+                onChange={(v) => { setNameDraft(v); setNameError(null); }}
+                isInvalid={nameEmpty || !!nameError}
+                hint={nameEmpty ? "Enter a display name to save it." : nameError ?? undefined}
               />
               {nameDirty && (
                 <div style={ALIGN_WITH_INPUT}>
-                  <Button size="md" onClick={() => updateDisplayName(nameDraft)}>Save</Button>
+                  <Button size="md" onClick={saveName}>Save</Button>
                 </div>
               )}
             </div>

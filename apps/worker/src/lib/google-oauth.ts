@@ -4,6 +4,7 @@
 // than Access's hosted one. See routes/auth.ts for the /google/start and
 // /google/callback handlers that drive this.
 
+import { safeReturnTo } from "./returnTo";
 import type { Env } from "../bindings";
 import { verifyRs256Jwt } from "./jwt-verify";
 
@@ -112,21 +113,22 @@ export async function exchangeCodeForIdentity(
 const OAUTH_COOKIE_NAME = "pd_oauth";
 const OAUTH_COOKIE_TTL_SECONDS = 10 * 60;
 
-export function buildOAuthStateCookie(state: string, codeVerifier: string, secure: boolean): string {
-  const value = encodeURIComponent(JSON.stringify({ state, codeVerifier }));
+export function buildOAuthStateCookie(state: string, codeVerifier: string, secure: boolean, returnTo: string | null = null): string {
+  const value = encodeURIComponent(JSON.stringify({ state, codeVerifier, ...(returnTo ? { returnTo } : {}) }));
   return `${OAUTH_COOKIE_NAME}=${value}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${OAUTH_COOKIE_TTL_SECONDS}`;
 }
 
-export function readOAuthStateCookie(cookieHeader: string | null): { state: string; codeVerifier: string } | null {
+export function readOAuthStateCookie(cookieHeader: string | null): { state: string; codeVerifier: string; returnTo: string | null } | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     if (part.slice(0, eq).trim() !== OAUTH_COOKIE_NAME) continue;
     try {
-      const parsed = JSON.parse(decodeURIComponent(part.slice(eq + 1).trim())) as { state?: unknown; codeVerifier?: unknown };
+      const parsed = JSON.parse(decodeURIComponent(part.slice(eq + 1).trim())) as { state?: unknown; codeVerifier?: unknown; returnTo?: unknown };
       if (typeof parsed.state === "string" && typeof parsed.codeVerifier === "string") {
-        return { state: parsed.state, codeVerifier: parsed.codeVerifier };
+        // Re-validated on the way out: this cookie is not signed.
+        return { state: parsed.state, codeVerifier: parsed.codeVerifier, returnTo: safeReturnTo(parsed.returnTo) };
       }
     } catch {
       return null;
