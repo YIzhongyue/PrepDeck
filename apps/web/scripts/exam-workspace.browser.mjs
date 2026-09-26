@@ -14,7 +14,7 @@ function KPHarness(){const kp=useKnowledgePoints();window.kp=kp;window.navigate=
 return <MarkdownEditor value={kp.state.bodyMarkdown} onChange={kp.setBodyMarkdown} onUploadImage={kp.uploadImage}/>;}
 function Probe(){window.store=usePrepDeck();return null;}
 createRoot(document.getElementById('root')).render(<React.StrictMode>{location.search.includes('kp') ? <KnowledgePointsProvider><KPHarness/></KnowledgePointsProvider> : <PrepDeckProvider><Probe/><Shell/></PrepDeckProvider>}</React.StrictMode>);`, loader: 'tsx', resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
-  bundle: true, write: false, outfile: 'fixture.js', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"development"' } });
+  bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: 'fixture.js', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"development"' } });
 const question = (exam, index) => ({ id: `${exam}${index}`, examId: exam, externalId: `${exam}-${index}`, sequenceNumber: index,
   type: 'single_choice', stem: `Question ${exam}${index}`, options: [{ id: 'A', text: 'Choice A' }, { id: 'B', text: 'Choice B' }], tags: [exam], difficulty: 'easy', chooseCount: 1, points: 1 });
 const batchDomains = Array.from({ length: 80 }, (_, i) => `Batch domain ${String(i + 1).padStart(2, '0')}`);

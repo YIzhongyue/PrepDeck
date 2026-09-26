@@ -26,7 +26,7 @@ const { outputFiles } = await build({ stdin: { contents: `
     </main>;
   }
   createRoot(document.getElementById('root')).render(<PrepDeckProvider><Fixture/></PrepDeckProvider>);
-`, loader: "tsx", resolveDir: web }, bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+`, loader: "tsx", resolveDir: web }, bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 
 const longText = n => Array.from({ length: n }, (_, i) => `Sentence ${i + 1} describes another constraint the architecture must satisfy.`).join(" ");
 const questions = [

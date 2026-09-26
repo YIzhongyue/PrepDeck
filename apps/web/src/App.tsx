@@ -1,6 +1,7 @@
 // Order matters: Tailwind's layers come first so PrepDeck's unlayered token
 // and component CSS keeps winning wherever the two overlap (implementation).
 import "./styles/untitled-ui.css";
+import "./styles/fonts.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 

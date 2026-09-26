@@ -47,7 +47,7 @@ const { outputFiles } = await build({ stdin: { contents: `
     </div>;
   }
   createRoot(document.getElementById('root')).render(<PrepDeckProvider><Fixture/></PrepDeckProvider>);
-`, loader: "tsx", resolveDir: web }, bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic",
+`, loader: "tsx", resolveDir: web }, bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic",
   alias: { "@": resolve(web, "src") }, define: { "process.env.NODE_ENV": '"development"' } });
 
 // --- Fixture data ---------------------------------------------------------

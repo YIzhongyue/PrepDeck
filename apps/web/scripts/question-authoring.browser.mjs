@@ -16,7 +16,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright")
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
   createRoot(document.getElementById('root')).render(<QuestionsPanel exam={{id:'exam'}}/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
-  bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+  bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 let rows = [], writes = 0, tagFailures = 0, tagRequests = 0;
 // Lets a test hold the question-list response open, so an assertion can run
 // while a page is still in flight instead of racing it.

@@ -22,7 +22,7 @@ createRoot(document.getElementById('root')).render(<>
 <section aria-label="Option B"><h3>Option B</h3><QuestionContent src="projection" content={source} optionId="B"/></section>
 <section aria-label="Legacy Markdown"><h3>Legacy Markdown</h3><QuestionContent src={${JSON.stringify(prose.replace("hostsファ\nイル", "**hostsファ\nイル**"))}}/></section>
 <section aria-label="Intentional breaks"><h3>Intentional breaks</h3><QuestionContent src={${JSON.stringify("First  \nSecond\\\nThird")}}/></section>
-</>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) }, bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+</>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) }, bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const server = createServer((req, res) => {
   if (req.url === "/fixture.js" || req.url === "/fixture.css") {
     res.setHeader("Content-Type", req.url.endsWith("css") ? "text/css" : "text/javascript");

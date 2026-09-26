@@ -105,6 +105,22 @@ try {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.waitForTimeout(250);
       await page.screenshot({ path: resolve(STATE, "local-smoke-mobile.png"), fullPage: true });
+
+      // The Worker-served build enforces public/_headers' CSP, which Vite dev
+      // does not: the brand faces must load there from 'self', with no CSP
+      // violation (issue #44). The session cookie is shared across ports.
+      const cspErrors = [];
+      page.on("console", message => { if (/Content Security Policy/i.test(message.text())) cspErrors.push(message.text()); });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("http://localhost:8787/");
+      await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+      const loadedFaces = await page.evaluate(async () => {
+        await document.fonts.ready;
+        return [...new Set([...document.fonts].filter(face => face.status === "loaded").map(face => face.family.replace(/["']/g, "")))];
+      });
+      for (const family of ["Figtree", "Caprasimo"]) assert.ok(loadedFaces.includes(family), `${family} did not load on the Worker-served build: ${loadedFaces}`);
+      assert.deepEqual(cspErrors, [], "the Worker-served build reports no CSP violations");
     } finally { await browser.close(); }
   }
   console.log("Local smoke passed: idempotent seed, admin login, D1, R2 roundtrip, KV, Durable Object, both native rate limits, scheduled cleanup and simulated email.");

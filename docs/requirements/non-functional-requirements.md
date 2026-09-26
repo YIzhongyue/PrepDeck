@@ -39,6 +39,15 @@ Markdown/Mermaid rendering reduce script execution risk; neither encrypted local
 storage nor CSP makes an already-compromised browser safe. Source-coordinate
 annotations must survive renderer changes explicitly.
 
+The browser CSP in [`public/_headers`](../../apps/web/public/_headers) allows styles
+and fonts from `'self'` only, so the app loads no third-party stylesheet or font:
+its typefaces (Figtree, Caprasimo, JetBrains Mono) are self-hosted from npm and
+bundled into the build ([issue #44](https://github.com/YIzhongyue/PrepDeck/issues/44);
+licences in [CREDITS](../../CREDITS.md)). Pages therefore render the intended type
+under the production CSP, and no visitor's IP address is sent to a font CDN.
+`apps/web/scripts/font-hosting.test.mjs` and the Worker-served browser smoke check
+guard both.
+
 Routine logs must exclude secrets, raw bodies and sensitive content. The current
 logging inventory and deviations from that target are recorded honestly in the
 [runbook](../operations/observability-runbook.md); do not equate the target with
