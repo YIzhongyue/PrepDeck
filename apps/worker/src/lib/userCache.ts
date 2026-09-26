@@ -16,6 +16,9 @@ export interface CachedUserRow {
   status: "invited" | "active" | "revoked";
   display_name: string | null;
   avatar_url: string | null;
+  // Issue #46. Optional: an entry written before the column existed has none,
+  // and middleware/access.ts then reads the row instead of trusting it.
+  session_version?: number;
 }
 
 // TTL is deliberately a few minutes, not seconds: Workers KV's free tier caps

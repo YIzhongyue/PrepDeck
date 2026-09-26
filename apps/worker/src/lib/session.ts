@@ -2,6 +2,15 @@
 // middleware/access.ts) — established by Google OAuth or, locally,
 // email+password login. Deliberately simple — no external JWT dependency,
 // since verification never needs to happen anywhere but this Worker.
+//
+// Session lifecycle (issue #46): a token carries its user's session version
+// (users.session_version, migration 0037). Signing out increments it, which
+// ends every session of that account at once, and so does revoking the
+// account; middleware/access.ts refuses a token whose version is no longer the
+// account's. The signature alone cannot be withdrawn, so without the version a
+// copied token stayed usable for its whole 7-day life after sign-out. Tokens
+// from before the version existed have no "v2" marker and are refused: the
+// cost of that cut-over is one extra sign-in.
 
 import type { Env } from "../bindings";
 
@@ -32,14 +41,21 @@ async function hmacKey(env: Env): Promise<CryptoKey> {
   );
 }
 
-export async function createSessionToken(userId: string, env: Env): Promise<string> {
-  const payload = `${userId}.${Date.now() + TTL_SECONDS * 1000}`;
+const TOKEN_FORMAT = "v2";
+
+export interface SessionClaims {
+  userId: string;
+  sessionVersion: number;
+}
+
+export async function createSessionToken(userId: string, sessionVersion: number, env: Env): Promise<string> {
+  const payload = `${TOKEN_FORMAT}.${userId}.${sessionVersion}.${Date.now() + TTL_SECONDS * 1000}`;
   const key = await hmacKey(env);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return `${payload}.${toBase64Url(new Uint8Array(signature))}`;
 }
 
-export async function verifySessionToken(token: string, env: Env): Promise<{ userId: string } | null> {
+export async function verifySessionToken(token: string, env: Env): Promise<SessionClaims | null> {
   const lastDot = token.lastIndexOf(".");
   if (lastDot < 0) return null;
   const payload = token.slice(0, lastDot);
@@ -54,10 +70,21 @@ export async function verifySessionToken(token: string, env: Env): Promise<{ use
   const valid = await crypto.subtle.verify("HMAC", key, fromBase64Url(signatureB64), new TextEncoder().encode(payload));
   if (!valid) return null;
 
-  const [userId, expiresAtStr] = payload.split(".");
-  const expiresAt = parseInt(expiresAtStr ?? "", 10);
-  if (!userId || !Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
-  return { userId };
+  // v2.<userId>.<sessionVersion>.<expiresAtMs>, read from both ends so a dot
+  // in a user id could never shift the fields.
+  const parts = payload.split(".");
+  if (parts.length < 4 || parts[0] !== TOKEN_FORMAT) return null;
+  const expiresAt = Number(parts[parts.length - 1]);
+  const sessionVersion = Number(parts[parts.length - 2]);
+  const userId = parts.slice(1, -2).join(".");
+  if (!userId || !Number.isSafeInteger(sessionVersion) || sessionVersion < 0 || !Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
+  return { userId, sessionVersion };
+}
+
+/** A fresh session token for `userId`, at the account's current session version. */
+export async function issueSessionToken(env: Env, userId: string): Promise<string> {
+  const row = await env.DB.prepare("SELECT session_version FROM users WHERE id = ?").bind(userId).first<{ session_version: number }>();
+  return createSessionToken(userId, row?.session_version ?? 0, env);
 }
 
 export function readSessionCookie(cookieHeader: string | null): string | null {

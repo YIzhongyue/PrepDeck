@@ -24,7 +24,14 @@ export function clearSessionKey(): void {
   sessionKey = null;
 }
 
-const DB_NAME = "prepdeck-keystore";
+// One database per account (issue #46). A single browser-wide database let the
+// next account signed in on a shared browser see that a key was stored, be
+// offered to unlock it, and overwrite or delete it.
+const DB_NAME_PREFIX = "prepdeck-keystore";
+const dbName = (userId: string) => `${DB_NAME_PREFIX}:${userId}`;
+// The browser-wide database from before: its owner is unknown, so it is never
+// read, and it is removed when anyone signs out of this browser.
+const LEGACY_DB_NAME = DB_NAME_PREFIX;
 const STORE_NAME = "keys";
 const RECORD_ID = "ai-provider-key";
 const PBKDF2_ITERATIONS = 250_000;
@@ -35,9 +42,9 @@ interface StoredRecord {
   ciphertext: number[];
 }
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(userId: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(dbName(userId), 1);
     req.onupgradeneeded = () => {
       req.result.createObjectStore(STORE_NAME);
     };
@@ -46,8 +53,8 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-async function idbGet(): Promise<StoredRecord | undefined> {
-  const db = await openDb();
+async function idbGet(userId: string): Promise<StoredRecord | undefined> {
+  const db = await openDb(userId);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const req = tx.objectStore(STORE_NAME).get(RECORD_ID);
@@ -56,8 +63,8 @@ async function idbGet(): Promise<StoredRecord | undefined> {
   });
 }
 
-async function idbPut(value: StoredRecord): Promise<void> {
-  const db = await openDb();
+async function idbPut(userId: string, value: StoredRecord): Promise<void> {
+  const db = await openDb(userId);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).put(value, RECORD_ID);
@@ -66,8 +73,8 @@ async function idbPut(value: StoredRecord): Promise<void> {
   });
 }
 
-async function idbDelete(): Promise<void> {
-  const db = await openDb();
+async function idbDelete(userId: string): Promise<void> {
+  const db = await openDb(userId);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).delete(RECORD_ID);
@@ -89,26 +96,26 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
   );
 }
 
-export async function hasStoredEncryptedKey(): Promise<boolean> {
+export async function hasStoredEncryptedKey(userId: string): Promise<boolean> {
   try {
-    return (await idbGet()) !== undefined;
+    return (await idbGet(userId)) !== undefined;
   } catch {
     return false;
   }
 }
 
-export async function saveEncryptedKey(apiKey: string, passphrase: string): Promise<void> {
+export async function saveEncryptedKey(userId: string, apiKey: string, passphrase: string): Promise<void> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(passphrase, salt);
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(apiKey));
-  await idbPut({ salt: Array.from(salt), iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) });
+  await idbPut(userId, { salt: Array.from(salt), iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) });
 }
 
 export class UnlockError extends Error {}
 
-export async function loadEncryptedKey(passphrase: string): Promise<string> {
-  const record = await idbGet();
+export async function loadEncryptedKey(userId: string, passphrase: string): Promise<string> {
+  const record = await idbGet(userId);
   if (!record) throw new UnlockError("No saved key found");
   const key = await deriveKey(passphrase, new Uint8Array(record.salt));
   try {
@@ -123,6 +130,17 @@ export async function loadEncryptedKey(passphrase: string): Promise<string> {
   }
 }
 
-export async function clearStoredEncryptedKey(): Promise<void> {
-  await idbDelete();
+export async function clearStoredEncryptedKey(userId: string): Promise<void> {
+  await idbDelete(userId);
+}
+
+export function deleteLegacyKeystore(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(LEGACY_DB_NAME);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }

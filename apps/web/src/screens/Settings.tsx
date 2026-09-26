@@ -5,7 +5,6 @@ import {
 } from "@prepdeck/shared";
 import { HL, THEMES } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
-import { apiFetch } from "../lib/api";
 import { AvatarValidationError, prepareAvatarUpload } from "../lib/avatar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import McpTokensCard from "../components/McpTokensCard";
@@ -15,6 +14,7 @@ import { DEFAULT_THEME } from "../lib/themeStorage";
 // implementation — shared Untitled UI primitives. docs/guides/ui-components.md
 // covers the token mapping and which screens are still to be migrated.
 import { Button } from "@/components/base/buttons/button";
+import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { Input, InputBase, TextField } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
 import { RadioButton, RadioGroup } from "@/components/base/radio-buttons/radio-buttons";
@@ -43,10 +43,12 @@ function segBd(on: boolean) { return on ? "var(--color-accent)" : "var(--color-d
 export default function Settings({ bp }: { bp: Breakpoints }) {
   const {
     state, setTheme, setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
-    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey,
+    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut,
     toggleShared, updateDisplayName, uploadAvatar, updateMarkAlias, updateEmailSettings
   } = usePrepDeck();
   const theme = state.theme || DEFAULT_THEME;
+  const [removeSavedKey, setRemoveSavedKey] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const curatedModels = CURATED_MODELS[state.provider];
   const isCustomModel = !curatedModels.some((m) => m.id === state.model);
   const modelOptions = useMemo(
@@ -243,18 +245,24 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             {avatarError && <p role="alert" style={{ margin: 0, fontSize: 11.5, color: "var(--color-danger)", maxWidth: 180, textAlign: "right" }}>{avatarError}</p>}
           </div>
         </div>
-        <Button
-          color="secondary"
-          size="md"
-          className="self-start"
-          onClick={() =>
-            apiFetch("/api/auth/logout", { method: "POST" }).finally(() => {
-              window.location.href = "/?auth=signedout";
-            })
-          }
-        >
-          Sign out
-        </Button>
+        {/* Issue #46: signing out ends every session of the account, and a
+            saved AI key can go with it on a shared browser. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+          <p style={{ margin: 0, fontSize: 12.5, opacity: 0.7 }}>
+            Signing out ends your session on every device and browser. MCP tokens are separate; revoke them below.
+          </p>
+          {state.hasStoredKey && (
+            <Checkbox label="Also remove my saved AI key from this browser" isSelected={removeSavedKey} onChange={setRemoveSavedKey} />
+          )}
+          <Button
+            color="secondary"
+            size="md"
+            isDisabled={signingOut}
+            onClick={() => { setSigningOut(true); void signOut({ removeSavedKey: state.hasStoredKey && removeSavedKey }); }}
+          >
+            Sign out
+          </Button>
+        </div>
       </div>
 
       <div className="card elev-sm" style={{ padding: 22, gap: 16, marginBottom: 16 }}>
