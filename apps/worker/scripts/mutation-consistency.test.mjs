@@ -285,8 +285,8 @@ test("malformed cookies are unauthenticated and valid signed sessions still work
     const result = await authRouter.request("https://example.test/me", { headers: { Cookie: cookie } }, f.env);
     assert.equal(result.status, 401);
   }
-  const token = await createSessionToken("alice", f.env);
-  assert.deepEqual(await verifySessionToken(token, f.env), { userId: "alice" });
+  const token = await createSessionToken("alice", 0, f.env);
+  assert.deepEqual(await verifySessionToken(token, f.env), { userId: "alice", sessionVersion: 0 });
 });
 
 test("slow generation preserves a winning manual edit and returns actual ownership", async (t) => {

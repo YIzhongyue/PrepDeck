@@ -55,7 +55,7 @@ MCP proposal/revision/audit semantics live in [MCP architecture](mcp.md).
 | --- | --- | --- |
 | Browser authorization row | User ID and email | 600 seconds; role/status/profile edits delete keys. KV propagation can leave stale authorization. |
 | Access JWKS | Access signing keys | One hour; only relevant to optional Access auth. |
-| Statistics | User + exam + payload schema version | One hour; attempt completion invalidates. A payload cached under an older schema version is never served, so adding response fields needs no migration. |
+| Statistics | User + exam + payload schema version | One hour; attempt completion invalidates, and each read compares a cheap activity marker (graded-answer count, latest session close) with the one stored with the entry, recomputing on a mismatch, so a practice answer shows on the next visit without a KV write per answer. A payload cached under an older schema version is never served, so adding response fields needs no migration. |
 | Practice question catalog | Exam only | One hour; bank mutations invalidate. Personal collections are queried separately. |
 | AI explanations (D1) | Question + provider + model | Content-changing question edits invalidate; generation inserts are revision-bound. |
 

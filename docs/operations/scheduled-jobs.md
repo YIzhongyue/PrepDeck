@@ -1,4 +1,4 @@
-# Daily review email and image cleanup
+# Daily review email, image cleanup and practice sweep
 
 [Documentation index](../README.md)
 
@@ -82,3 +82,17 @@ appear in Wrangler's terminal and Local Explorer without external delivery.
 message through the native simulator. See the
 [local development guide](../guides/development-and-deployment.md#local-email-and-scheduled-jobs)
 for state inspection, repeatable email tests and explicit remote integrations.
+
+## Closing abandoned practice sessions
+
+The same daily trigger runs
+[the practice sweep](../../apps/worker/src/scheduled/closeStalePracticeAttempts.ts)
+([issue #40](https://github.com/YIzhongyue/PrepDeck/issues/40)). One `UPDATE`
+completes every open **practice** attempt whose last answer (or start, without
+one) is more than 24 hours old, the way `POST /complete` would but dated by its
+last answer: `completed_at` is that answer's time, `duration_seconds` runs from the
+start to it, and `total_questions`/`score` come from its answers. Mock attempts
+are never touched. Starting practice runs the same close for that user and exam
+with a one-hour idle threshold ([`practiceSessions.ts`](../../apps/worker/src/lib/practiceSessions.ts)).
+The answers themselves already count in statistics before either runs; closing
+only adds the session to Study time and the session counts.

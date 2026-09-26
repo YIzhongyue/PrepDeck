@@ -42,3 +42,8 @@ export interface NoteResponse {
 export interface NotesListResponse {
   notes: NoteWithAuthor[];
 }
+
+// Length limits (issue #45), in UTF-16 code units, the unit of a textarea's
+// maxLength and of String.length. A shared note is sent to every member who
+// shows shared notes, so an unbounded one was paid for by everyone.
+export const MAX_NOTE_LENGTH = 10_000;

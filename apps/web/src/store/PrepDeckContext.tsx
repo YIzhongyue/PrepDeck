@@ -2,6 +2,7 @@ import { WorkspaceRequests, storedExam, storeExam, beforeWorkspaceNavigation } f
 import { catalogQuestionIds } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
 import { allowAuthoringNavigation } from "../lib/questionAuthoring";
+import { canCheckAnswer, practiceKeyAction } from "../lib/practiceShortcuts";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type {
   ActiveAttemptResponse,
@@ -35,9 +36,9 @@ import { fromSharedNote } from "../lib/notes";
 import { fetchCachedExplanations, generateExplanation } from "../lib/ai";
 import {
   getSessionKey, setSessionKey, clearSessionKey, hasStoredEncryptedKey, saveEncryptedKey,
-  loadEncryptedKey, clearStoredEncryptedKey
+  loadEncryptedKey, clearStoredEncryptedKey, deleteLegacyKeystore
 } from "../lib/keyStorage";
-import { getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
+import { clearLegacyKeyMode, getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME, getStoredTheme, storeTheme } from "../lib/themeStorage";
 import type {
   AiExplanationEntry, AiRecord, Annotation, AnnotationStyle, AnnotationTarget, Difficulty, ExamSummary,
@@ -47,6 +48,9 @@ import type {
 export type PracticeStage = "setup" | "live";
 export type MockStage = "setup" | "live" | "results";
 export type PracticeSource = "all" | "new" | "wrong" | "bm" | "focus";
+
+// Keyboard targets whose Enter key activates the control itself.
+const ACTIVATABLE_CONTROLS = "button, a[href], summary, [role=button], [role=link], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=menuitem], [role=option]";
 
 // implementation — an explicit, complete practice filter set. Every field the
 // Practice setup screen reads is named here, so opening Practice from
@@ -197,7 +201,8 @@ const initialState: AppState = {
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
   noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, emailSettings: null,
   provider: "anthropic", model: CURATED_MODELS.anthropic[0]!.id,
-  keyMode: getStoredKeyMode() ?? "memory", hasSessionKey: false, hasStoredKey: false,
+  // Both are per account (issue #46), so they are read once the account is known.
+  keyMode: "memory", hasSessionKey: false, hasStoredKey: false,
   theme: getStoredTheme() ?? DEFAULT_THEME,
   tsel: null
 };
@@ -299,6 +304,7 @@ interface PrepDeckStore {
   saveEncryptedApiKey: (apiKey: string, passphrase: string) => Promise<void>;
   unlockSessionKey: (passphrase: string) => Promise<void>;
   forgetStoredApiKey: () => Promise<void>;
+  signOut: (opts: { removeSavedKey: boolean }) => Promise<void>;
   setTheme: (t: ThemeId) => void;
 
   // Both reject with the server's message, so Settings can show why (issue #52).
@@ -333,6 +339,14 @@ function isCompletedElsewhere(error: unknown): boolean {
 // Neither refusal can succeed on a retry.
 function isClosedAttempt(error: unknown): boolean {
   return isExpiredAttempt(error) || isCompletedElsewhere(error);
+}
+
+// The server refused the draft itself: not a possible answer to the question
+// (for example an option removed since this tab loaded it), or a question no
+// longer in the bank. A retry sends the same body and fails the same way, so it
+// must not block submission; the server keeps the last draft it accepted.
+function isRejectedDraft(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 404);
 }
 
 function remainingSeconds(active: ActiveAttemptResponse): number {
@@ -430,9 +444,15 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // prior visit — read once so screens beyond Settings (Practice/Learning's
   // "Generate explanation") can offer an unlock prompt instead of just
   // pointing the user back to Settings.
+  //
+  // Keyed by account (issue #46): another account signed in on the same
+  // browser sees neither this account's key nor its storage choice.
+  const meId = state.me?.id ?? null;
   useEffect(() => {
-    hasStoredEncryptedKey().then((v) => setState({ hasStoredKey: v })).catch(() => {});
-  }, [setState]);
+    if (!meId) return;
+    setState({ keyMode: getStoredKeyMode(meId) ?? "memory" });
+    hasStoredEncryptedKey(meId).then((v) => setState({ hasStoredKey: v })).catch(() => {});
+  }, [meId, setState]);
 
   // public/theme-init.js puts the stored scheme on <html> before React mounts,
   // so the first paint is already themed. Keep that attribute in step with the
@@ -613,11 +633,16 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const s = stateRef.current;
     const qid = s.queue[s.idx];
     if (!qid || !s.attemptId || s.switching || s.done[qid] || requests.has(`answer:${s.attemptId}:${qid}`)) return;
+    // The Check answer button's own rule, so no caller (the Enter shortcut
+    // included) can lock in a partial answer as wrong.
     const question = s.catalogBy[qid];
-    if (question?.hasContent && !question.content) return;
+    if (!question || !canCheckAnswer(question, s.sel[qid] ?? [])) return;
     const update = scopedState();
     void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
-      .catch(() => update({ actionError: "Could not save your answer. Please submit it again." }));
+      .catch((error) => update({ actionError: error instanceof ApiError && error.status === 409
+        // Closed as idle when a newer session started (issue #40): retrying cannot help.
+        ? "This practice session has ended, so this answer was not saved. Your earlier answers are kept; start a new session to continue."
+        : "Could not save your answer. Please submit it again." }));
   }, [requests, scopedState, savePracticeAnswer]);
 
   const completeAttempt = useCallback(async (attemptId: string | null) => {
@@ -925,7 +950,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }, (error) => {
       // An expired attempt will never accept this write, so it must not stay
       // dirty — persistMockDraft would replay it on every submission attempt.
-      if (isClosedAttempt(error) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
+      if ((isClosedAttempt(error) || isRejectedDraft(error)) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
       throw error;
     });
   }, [requests]);
@@ -964,6 +989,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         if (isCompletedElsewhere(error)) {
           update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
           finishMockRef.current();
+          return;
+        }
+        if (isRejectedDraft(error)) {
+          update({ actionError: "This answer could not be saved, so your last saved answer to this question stands. The question may have changed; reload to see its current version." });
           return;
         }
         update({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." });
@@ -1010,7 +1039,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         // already submitted elsewhere, must not block submission: it was never
         // going to be graded either way, and failing here would leave this tab
         // with no way to reach the result.
-        if (!isClosedAttempt(error)) throw error;
+        if (!isClosedAttempt(error) && !isRejectedDraft(error)) throw error;
       }
       if (dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
     }
@@ -1413,7 +1442,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // treatment as theme: it survives a refresh so "Encrypted in this browser"
   // stays selected without the user re-picking it every visit.
   const setKeyMode = useCallback((m: KeyMode) => {
-    storeKeyMode(m);
+    const id = stateRef.current.me?.id;
+    if (id) storeKeyMode(id, m);
     setState({ keyMode: m });
   }, [setState]);
 
@@ -1429,10 +1459,18 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setState({ hasSessionKey: false });
   }, [setState]);
 
+  // The encrypted key belongs to the signed-in account (issue #46). Reads the
+  // ref, so the callbacks below never see a stale account.
+  const signedInId = () => {
+    const id = stateRef.current.me?.id;
+    if (!id) throw new Error("Not signed in");
+    return id;
+  };
+
   // FR-7.9: encrypts and stores the key for next visit, and loads it into
   // this session immediately so it's usable right away.
   const saveEncryptedApiKey = useCallback(async (apiKey: string, passphrase: string) => {
-    await saveEncryptedKey(apiKey, passphrase);
+    await saveEncryptedKey(signedInId(), apiKey, passphrase);
     setSessionKey(apiKey);
     setState({ hasStoredKey: true, hasSessionKey: true });
   }, [setState]);
@@ -1441,15 +1479,29 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // or from an inline prompt next to "Generate explanation" once a refresh
   // (or enough idle time) has dropped the in-memory session key.
   const unlockSessionKey = useCallback(async (passphrase: string) => {
-    const key = await loadEncryptedKey(passphrase);
+    const key = await loadEncryptedKey(signedInId(), passphrase);
     setSessionKey(key);
     setState({ hasSessionKey: true });
   }, [setState]);
 
   const forgetStoredApiKey = useCallback(async () => {
-    await clearStoredEncryptedKey();
+    await clearStoredEncryptedKey(signedInId());
     setState({ hasStoredKey: false });
   }, [setState]);
+
+  // Signing out ends every session of the account (issue #46; the server moves
+  // its session version on). This browser also drops the key held in memory,
+  // the saved key when asked to, and the browser-wide key storage left by
+  // earlier versions, whose owner is unknown.
+  const signOut = useCallback(async (opts: { removeSavedKey: boolean }) => {
+    const id = stateRef.current.me?.id;
+    clearSessionKey();
+    if (opts.removeSavedKey && id) await clearStoredEncryptedKey(id).catch(() => {});
+    await deleteLegacyKeystore();
+    clearLegacyKeyMode();
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/?auth=signedout";
+  }, []);
 
   // Theme preference is deliberately browser-local: it can be restored before
   // the settings request completes and does not follow the account to a device
@@ -1482,28 +1534,35 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (s.mStage === "live" && s.mockAttemptId) stashMockSelections({ attemptId: s.mockAttemptId, sel: s.mSel });
   }, []);
 
-  // Keyboard shortcuts during live practice: number/letter keys pick, Enter checks/advances.
+  // Keyboard shortcuts during live practice. What each key does is decided by
+  // lib/practiceShortcuts, which the shortcut panel lists from as well.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target;
-      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey ||
-        (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable=true]")))) return;
+      // A control that already handled the key (an option row toggling itself)
+      // has the last word, and held keys must not check and then skip past the
+      // feedback they just produced.
+      if (e.defaultPrevented || e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable=true]"))) return;
+      // Enter on a focused button or link belongs to that control. Taking it
+      // here would also cancel the control's own click.
+      if (e.key === "Enter" && target?.closest(ACTIVATABLE_CONTROLS)) return;
       const s = stateRef.current;
       if (s.switching || s.screen !== "practice" || s.pStage !== "live") return;
       const qid = s.queue[s.idx];
       const q = qid ? s.catalogBy[qid] : undefined;
-      if (!q || (q.hasContent && !q.content) || !q.options || q.type === "ordering" || q.type === "matching") return;
-      const k = e.key.toUpperCase();
-      const hit = q.options.find((o) => o.id === k);
-      if (hit) { e.preventDefault(); pick(q, hit.id); return; }
-      const n = parseInt(e.key, 10);
-      const opt = n >= 1 && n <= q.options.length ? q.options[n - 1] : undefined;
-      if (opt) { e.preventDefault(); pick(q, opt.id); return; }
-      if (e.key === "Enter") { e.preventDefault(); if (s.done[q.id]) next(); else submit(); }
+      if (!q) return;
+      const action = practiceKeyAction(e, q, { graded: !!s.done[q.id], chosen: s.sel[q.id] ?? [] });
+      if (!action) return;
+      e.preventDefault();
+      if (action.kind === "pick") pick(q, action.optionId);
+      else if (action.kind === "check") submit();
+      else if (action.kind === "next") next();
+      else writeBookmark(q.id, !s.bookmarks[q.id]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pick, next, submit]);
+  }, [pick, next, submit, writeBookmark]);
 
   // Mock exam countdown; auto-submits when time runs out (FR-4.3).
   useEffect(() => {
@@ -1534,7 +1593,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateEmailSettings,
     capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias,
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
-    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, setTheme,
+    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut, setTheme,
     updateDisplayName, uploadAvatar, preserveForReauth
   };
 
