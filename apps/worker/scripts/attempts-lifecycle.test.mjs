@@ -282,3 +282,157 @@ test("a time limit that is not a positive number is refused at the start, not st
     assert.equal(status, 400, String(timeLimitSeconds));
   }
 });
+
+// Issue #39: an answer is validated against the question it answers, on both the
+// practice endpoint and the mock draft endpoint, before anything is written.
+const { normalizeImportFile } = await bundle("../../../packages/shared/src/question-components.ts");
+const componentRows = name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions;
+const answerRows = db => db.prepare("SELECT question_id, selected_answer_json, time_spent_seconds, typeof(time_spent_seconds) AS kind FROM attempt_answers ORDER BY question_id").all().map(row => ({ ...row }));
+
+test("several guesses in one fill-in submission are refused, not graded correct", async t => {
+  const { db, request, fillBlank, start } = setup(t);
+  const question = await fillBlank();
+  const practice = await start("practice", [question.id]);
+  const guesses = await request(`/attempts/${practice}/answers`, "POST", { questionId: question.id, selectedAnswer: ["red", "blue", "green", "purple", "orange"] });
+  assert.equal(guesses.status, 400, JSON.stringify(guesses.data));
+  assert.match(guesses.data.error, /single value/);
+  assert.deepEqual(answerRows(db), [], "nothing was written");
+  const single = await request(`/attempts/${practice}/answers`, "POST", { questionId: question.id, selectedAnswer: ["green"] });
+  assert.equal(single.data.isCorrect, true);
+});
+
+test("choice answers must name the question's own options, once each, and one for single choice", async t => {
+  const { db, request, addQuestion, start, draftOf } = setup(t);
+  const single = await addQuestion();
+  const multiple = await addQuestion({ type: "multiple_choice", options: [{ id: "A", text: "2" }, { id: "B", text: "4" }, { id: "C", text: "5" }], correctAnswers: ["A", "B"] });
+  const trueFalse = await addQuestion({ type: "true_false", options: [{ id: "true", text: "True" }, { id: "false", text: "False" }], correctAnswers: ["true"] });
+  const practice = await start("practice", [single.id, multiple.id, trueFalse.id]);
+  const refused = [
+    [single, ["A", "A"]], [single, ["A", "B"]], [single, ["Z"]],
+    [multiple, ["Z"]], [multiple, ["A", "A"]], [multiple, ["A", "B", "Z"]],
+    [trueFalse, ["true", "false"]], [trueFalse, ["yes"]],
+  ];
+  for (const [question, selectedAnswer] of refused) {
+    const response = await request(`/attempts/${practice}/answers`, "POST", { questionId: question.id, selectedAnswer });
+    assert.equal(response.status, 400, `${question.type} ${JSON.stringify(selectedAnswer)}`);
+  }
+  assert.deepEqual(answerRows(db), [], "a refused answer writes nothing and files nothing");
+
+  const mock = await start("mock", [single.id, multiple.id]);
+  assert.equal((await request(`/attempts/${mock}/answers/${multiple.id}`, "PUT", { selectedAnswer: ["A", "B"] })).status, 200);
+  for (const selectedAnswer of [["Z"], ["A", "A"], ["A", "B", "C", "Z"]]) {
+    assert.equal((await request(`/attempts/${mock}/answers/${multiple.id}`, "PUT", { selectedAnswer })).status, 400, JSON.stringify(selectedAnswer));
+  }
+  assert.equal((await request(`/attempts/${mock}/answers/${single.id}`, "PUT", { selectedAnswer: ["A", "B"] })).status, 400);
+  assert.deepEqual(draftOf(mock), { [multiple.id]: ["A", "B"] }, "a refused draft leaves the saved one alone");
+  // Clearing an answer is still an answer the draft endpoint takes.
+  assert.equal((await request(`/attempts/${mock}/answers/${multiple.id}`, "PUT", { selectedAnswer: [] })).status, 200);
+  assert.equal((await request(`/attempts/${practice}/answers`, "POST", { questionId: multiple.id, selectedAnswer: ["B", "A"] })).data.isCorrect, true);
+});
+
+test("an ordering draft may be half-arranged; a matching answer must be known, canonical pairs", async t => {
+  const { request, addQuestion, start, draftOf } = setup(t);
+  const [ordering] = componentRows("code");
+  const [matching] = componentRows("case-with-figure");
+  const order = await addQuestion(ordering);
+  const match = await addQuestion(matching);
+  const mock = await start("mock", [order.id, match.id]);
+  const put = (question, selectedAnswer) => request(`/attempts/${mock}/answers/${question.id}`, "PUT", { selectedAnswer });
+
+  // Blanks and repeats are how a learner gets from nothing to an order.
+  for (const selectedAnswer of [["read", "", ""], ["read", "read", "print"], ["read", "sum", "print"], []]) {
+    assert.equal((await put(order, selectedAnswer)).status, 200, JSON.stringify(selectedAnswer));
+  }
+  for (const selectedAnswer of [["read", "sum"], ["read", "sum", "print", "read"], ["read", "sum", "nope"]]) {
+    assert.equal((await put(order, selectedAnswer)).status, 400, JSON.stringify(selectedAnswer));
+  }
+  assert.equal((await put(match, ['["low","before"]'])).status, 200, "a partial match is a draft");
+  for (const selectedAnswer of [['["low","nope"]'], ['["nope","before"]'], ['["low", "before"]'], ['["low","before"]', '["low","after"]'], ["low"]]) {
+    assert.equal((await put(match, selectedAnswer)).status, 400, JSON.stringify(selectedAnswer));
+  }
+  assert.deepEqual(draftOf(mock)[match.id], ['["low","before"]']);
+  assert.equal((await put(match, ['["high","after"]', '["low","before"]'])).status, 200);
+  const { data } = await request(`/attempts/${mock}/complete`, "POST");
+  assert.deepEqual(data.breakdown.map(row => row.isCorrect), [false, true], "the empty ordering is unanswered, the full match correct");
+});
+
+test("answers have size limits, refused with 400 before they reach the database", async t => {
+  const { request, fillBlank, addQuestion, start, draftOf } = setup(t);
+  const blank = await fillBlank();
+  const multiple = await addQuestion({ type: "multiple_choice", correctAnswers: ["A", "B"] });
+  const practice = await start("practice", [blank.id]);
+  const long = await request(`/attempts/${practice}/answers`, "POST", { questionId: blank.id, selectedAnswer: ["x".repeat(1001)] });
+  assert.equal(long.status, 400);
+  assert.match(long.data.error, /1000 characters/);
+  const mock = await start("mock", [multiple.id]);
+  const many = await request(`/attempts/${mock}/answers/${multiple.id}`, "PUT", { selectedAnswer: Array.from({ length: 51 }, (_, i) => `id-${i}`) });
+  assert.equal(many.status, 400);
+  assert.match(many.data.error, /at most 50 values/);
+  assert.deepEqual(draftOf(mock), {});
+});
+
+test("timeSpentSeconds is absent or whole seconds within a day", async t => {
+  const { db, request, addQuestion, start } = setup(t);
+  const questions = [await addQuestion(), await addQuestion(), await addQuestion()];
+  const practice = await start("practice", questions.map(q => q.id));
+  for (const timeSpentSeconds of [-99999, "lots", 1e300, 1.5, 86401, true]) {
+    const response = await request(`/attempts/${practice}/answers`, "POST", { questionId: questions[0].id, selectedAnswer: ["A"], timeSpentSeconds });
+    assert.equal(response.status, 400, JSON.stringify(timeSpentSeconds));
+  }
+  assert.deepEqual(answerRows(db), []);
+  assert.equal((await request(`/attempts/${practice}/answers`, "POST", { questionId: questions[0].id, selectedAnswer: ["A"], timeSpentSeconds: 42 })).status, 200);
+  assert.equal((await request(`/attempts/${practice}/answers`, "POST", { questionId: questions[1].id, selectedAnswer: ["A"], timeSpentSeconds: null })).status, 200);
+  assert.equal((await request(`/attempts/${practice}/answers`, "POST", { questionId: questions[2].id, selectedAnswer: ["A"] })).status, 200);
+  const stored = Object.fromEntries(answerRows(db).map(row => [row.question_id, [row.time_spent_seconds, row.kind]]));
+  assert.deepEqual(stored, { [questions[0].id]: [42, "integer"], [questions[1].id]: [null, "null"], [questions[2].id]: [null, "null"] });
+});
+
+test("a mock with a draft saved before validation still submits; the draft is graded as unanswered", async t => {
+  const { db, request, fillBlank, addQuestion, start, wrongBook } = setup(t);
+  const blank = await fillBlank();
+  const single = await addQuestion();
+  const attempt = await start("mock", [blank.id, single.id]);
+  // What an older server accepted: several fill-in guesses, one of them right,
+  // and an option the question does not have.
+  db.prepare("UPDATE attempts SET draft_answers_json = ? WHERE id = ?")
+    .run(JSON.stringify({ [blank.id]: ["red", "green"], [single.id]: ["Z"] }), attempt);
+  const { status, data } = await request(`/attempts/${attempt}/complete`, "POST");
+  assert.equal(status, 200, "an invalid draft entry must not make the attempt unsubmittable");
+  assert.deepEqual(data.breakdown.map(row => [row.isCorrect, row.selectedAnswer]), [[false, []], [false, []]]);
+  assert.deepEqual(wrongBook(), [], "an unusable draft is not a wrong answer to file");
+});
+
+test("a replayed practice answer still recovers its feedback after the question changed", async t => {
+  const { db, request, addQuestion, start } = setup(t);
+  const question = await addQuestion({ options: [{ id: "A", text: "2" }, { id: "B", text: "3" }, { id: "C", text: "4" }] });
+  const practice = await start("practice", [question.id]);
+  const first = await request(`/attempts/${practice}/answers`, "POST", { questionId: question.id, selectedAnswer: ["C"] });
+  assert.equal(first.status, 200);
+  // Option C is edited away after it was answered; the retry of that same
+  // answer must replay the recorded grading, not be refused as unknown.
+  db.prepare("UPDATE questions SET options_json = ? WHERE id = ?").run(JSON.stringify([{ id: "A", text: "2" }, { id: "B", text: "3" }]), question.id);
+  const replay = await request(`/attempts/${practice}/answers`, "POST", { questionId: question.id, selectedAnswer: ["C"] });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.isCorrect, first.data.isCorrect);
+});
+
+test("migration 0036 clears only time_spent_seconds values the API would now refuse", t => {
+  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
+  const directory = new URL("../../../migrations/", import.meta.url);
+  const names = readdirSync(directory).filter(n => n.endsWith(".sql")).sort();
+  const cleanup = names.find(n => n.startsWith("0036_"));
+  for (const name of names.filter(n => n < cleanup)) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-09-09');
+    INSERT INTO exams(id,slug,name,created_at) VALUES ('e','e','E','2026-09-09');
+    INSERT INTO questions (id, exam_id, sequence_number, type, stem, correct_answers_json, created_at, updated_at) VALUES ('q','e',1,'fill_blank','S','["x"]','2026-09-09','2026-09-09')`);
+  const values = [["ok", 42], ["zero", 0], ["day", 86400], ["none", null], ["text", "lots"], ["real", 1e300], ["negative", -99999], ["late", 86401]];
+  for (const [id, value] of values) {
+    // One attempt per row: an attempt answers each question at most once.
+    db.prepare("INSERT INTO attempts (id, user_id, exam_id, mode, started_at, total_questions, question_ids_json) VALUES (?, 'u', 'e', 'practice', '2026-09-09', 1, '[\"q\"]')").run(`a-${id}`);
+    db.prepare("INSERT INTO attempt_answers (id, attempt_id, question_id, selected_answer_json, is_correct, time_spent_seconds, answered_at) VALUES (?, ?, 'q', '[\"x\"]', 1, ?, '2026-09-09')")
+      .run(id, `a-${id}`, value);
+  }
+  db.exec(readFileSync(new URL(cleanup, directory), "utf8"));
+  const after = Object.fromEntries(db.prepare("SELECT id, time_spent_seconds FROM attempt_answers").all().map(row => [row.id, row.time_spent_seconds]));
+  assert.deepEqual(after, { ok: 42, zero: 0, day: 86400, none: null, text: null, real: null, negative: null, late: null });
+});

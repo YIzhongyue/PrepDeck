@@ -371,7 +371,9 @@ for (const name of ["reading", "code", "case-with-figure", "combination", ...(pr
   const attempt = await f.request('/exams/exam/attempts', 'POST', { mode: 'practice', questionIds: stored.map(q => q.id) });
   assert.equal(attempt.status, 201, JSON.stringify(attempt.data));
   for (const q of stored) {
-    const graded = await f.request(`/attempts/${attempt.data.attemptId}/answers`, 'POST', { questionId: q.id, selectedAnswer: q.correctAnswers });
+    // A fill-in lists every accepted answer, but a submission is one of them (issue #39).
+    const selectedAnswer = q.type === 'fill_blank' ? q.correctAnswers.slice(0, 1) : q.correctAnswers;
+    const graded = await f.request(`/attempts/${attempt.data.attemptId}/answers`, 'POST', { questionId: q.id, selectedAnswer });
     assert.equal(graded.status, 200, JSON.stringify(graded.data)); assert.equal(graded.data.isCorrect, true);
   }
   const q = stored[0];

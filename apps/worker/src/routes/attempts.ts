@@ -15,15 +15,20 @@ import type { Variables } from "../context";
 import { invalidateExamStats } from "../lib/statsCache";
 import { loadExamPassRule } from "../lib/examManagement";
 import {
+  answerProblem,
+  answerSizeProblem,
   attemptDeadlineMs,
   hasAnswer,
   isAnswerCorrect,
   isMockPassed,
   isStringArray,
+  isValidTimeSpent,
+  MAX_TIME_SPENT_SECONDS,
   MAX_ATTEMPT_QUESTIONS,
   MOCK_SUBMIT_GRACE_SECONDS,
   requiredCorrectFor,
   type ActiveAttemptResponse,
+  type AnswerableQuestion,
   type AttemptMode,
   type CompleteAttemptResponse,
   type SaveDraftAnswerRequest,
@@ -32,6 +37,7 @@ import {
   type StartAttemptResponse,
   type SubmitPracticeAnswerRequest,
   type SubmitPracticeAnswerResponse,
+  type Interaction,
 } from "@prepdeck/shared";
 
 interface AttemptRow {
@@ -50,6 +56,27 @@ interface AttemptRow {
   draft_revision: number;
   flagged_json: string | null;
 }
+
+// What answer validation reads from a question row (issue #39). Only the
+// interaction is extracted from content_json: stored content can approach a
+// megabyte of figures, and a mock draft is saved on every selection.
+const ANSWERABLE_COLUMNS = "type, options_json, CASE WHEN json_valid(content_json) THEN json_extract(content_json, '$.interaction') END AS interaction_json";
+
+interface AnswerableRow {
+  type: string;
+  options_json: string | null;
+  interaction_json: string | null;
+}
+
+function answerable(row: AnswerableRow): AnswerableQuestion {
+  const parse = <T,>(json: string | null): T | null => {
+    if (!json) return null;
+    try { return JSON.parse(json) as T; } catch { return null; }
+  };
+  return { type: row.type, options: parse<{ id: string }[]>(row.options_json), interaction: parse<Interaction>(row.interaction_json) };
+}
+
+const invalidAnswer = (problem: string) => ({ error: `selectedAnswer is not a possible answer to this question: ${problem}` });
 
 function wrongBookUpsert(db: D1Database, userId: string, questionId: string, now: string, answerId: string): D1PreparedStatement {
   return db
@@ -255,19 +282,31 @@ attemptsRouter.post("/:id/answers", async (c) => {
   if (!isStringArray(body.selectedAnswer)) {
     return c.json({ error: "selectedAnswer must be an array of strings" }, 400);
   }
+  const tooLarge = answerSizeProblem(body.selectedAnswer);
+  if (tooLarge) return c.json(invalidAnswer(tooLarge), 400);
+  // Bound straight into an INTEGER column, which SQLite does not enforce: text,
+  // reals and negatives used to be stored as they arrived.
+  if (!isValidTimeSpent(body.timeSpentSeconds)) {
+    return c.json({ error: `timeSpentSeconds must be a whole number of seconds from 0 to ${MAX_TIME_SPENT_SECONDS}` }, 400);
+  }
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(body.questionId)) {
     return c.json({ error: "Question is not part of this attempt" }, 400);
   }
 
+  // A replay comes before the question-specific checks: it writes nothing, and
+  // a retry after a lost response must recover its feedback even if the
+  // question has been edited since it was answered.
   const replay = await storedPracticeAnswer(c.env.DB, id, body.questionId);
   if (replay) return c.json(replay);
 
-  const question = await c.env.DB.prepare("SELECT type, correct_answers_json, explanation, answer_revision, answer_revised_at FROM questions WHERE id = ?")
+  const question = await c.env.DB.prepare(`SELECT ${ANSWERABLE_COLUMNS}, correct_answers_json, explanation, answer_revision, answer_revised_at FROM questions WHERE id = ?`)
     .bind(body.questionId)
-    .first<{ type: string; correct_answers_json: string; explanation: string | null; answer_revision: number; answer_revised_at: string | null }>();
+    .first<AnswerableRow & { correct_answers_json: string; explanation: string | null; answer_revision: number; answer_revised_at: string | null }>();
   if (!question) return c.json({ error: "Question not found" }, 404);
+  const problem = answerProblem(answerable(question), body.selectedAnswer);
+  if (problem) return c.json(invalidAnswer(problem), 400);
 
   const correctAnswers = JSON.parse(question.correct_answers_json) as string[];
   const isCorrect = isAnswerCorrect(question.type, body.selectedAnswer, correctAnswers);
@@ -334,6 +373,10 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   if (!isStringArray(body.selectedAnswer)) {
     return c.json({ error: "selectedAnswer must be an array of strings" }, 400);
   }
+  // Checked before the write: the draft is merged into one attempts row with
+  // json_patch, so an unbounded value would grow that row without limit.
+  const tooLarge = answerSizeProblem(body.selectedAnswer);
+  if (tooLarge) return c.json(invalidAnswer(tooLarge), 400);
 
   // `expired` is what tells the client to stop retrying and auto-submit; a bare
   // 409 is indistinguishable from the "already completed" case below, and the
@@ -342,6 +385,13 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   if (isPastDeadline(attempt, Date.now())) {
     return c.json({ error: "This mock exam has ended and no longer accepts answers", expired: true }, 409);
   }
+
+  const question = await c.env.DB.prepare(`SELECT ${ANSWERABLE_COLUMNS} FROM questions WHERE id = ?`)
+    .bind(questionId)
+    .first<AnswerableRow>();
+  if (!question) return c.json({ error: "Question not found" }, 404);
+  const problem = answerProblem(answerable(question), body.selectedAnswer);
+  if (problem) return c.json(invalidAnswer(problem), 400);
 
   // draft_revision is the token POST /:id/complete guards its whole grading
   // batch on (migrations/0030) — every accepted draft write has to move it, or
@@ -407,10 +457,10 @@ attemptsRouter.post("/:id/complete", async (c) => {
       // Mock never grades until now: score every question in the attempt
       // against its draft (ungraded) selection, in one shot.
       const { results: questionRows } = await c.env.DB.prepare(
-        "SELECT id, type, correct_answers_json, answer_revision FROM questions WHERE id IN (SELECT value FROM json_each(?))"
+        `SELECT id, ${ANSWERABLE_COLUMNS}, correct_answers_json, answer_revision FROM questions WHERE id IN (SELECT value FROM json_each(?))`
       )
         .bind(JSON.stringify(questionIds))
-        .all<{ id: string; type: string; correct_answers_json: string; answer_revision: number }>();
+        .all<AnswerableRow & { id: string; correct_answers_json: string; answer_revision: number }>();
       const questionsById = new Map((questionRows ?? []).map((q) => [q.id, q]));
 
       const draft = readMockDraft(attempt);
@@ -418,7 +468,11 @@ attemptsRouter.post("/:id/complete", async (c) => {
         const q = questionsById.get(qid);
         if (!q) continue;
         const correctAnswers = JSON.parse(q.correct_answers_json) as string[];
-        const selected = draft[qid] ?? [];
+        // A draft saved before answers were validated (issue #39), or before an
+        // option it names was removed, is not a possible answer: it is graded
+        // as unanswered rather than stored with values the question lacks.
+        const drafted = draft[qid] ?? [];
+        const selected = answerProblem(answerable(q), drafted) ? [] : drafted;
         const isCorrect = hasAnswer(q.type, selected) && isAnswerCorrect(q.type, selected, correctAnswers);
         const answerId = crypto.randomUUID();
         statements.push(

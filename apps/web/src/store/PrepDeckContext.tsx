@@ -332,6 +332,14 @@ function isClosedAttempt(error: unknown): boolean {
   return isExpiredAttempt(error) || isCompletedElsewhere(error);
 }
 
+// The server refused the draft itself: not a possible answer to the question
+// (for example an option removed since this tab loaded it), or a question no
+// longer in the bank. A retry sends the same body and fails the same way, so it
+// must not block submission; the server keeps the last draft it accepted.
+function isRejectedDraft(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 404);
+}
+
 function remainingSeconds(active: ActiveAttemptResponse): number {
   if (active.timeLimitSeconds == null) return 0;
   const elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
@@ -910,7 +918,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }, (error) => {
       // An expired attempt will never accept this write, so it must not stay
       // dirty — persistMockDraft would replay it on every submission attempt.
-      if (isClosedAttempt(error) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
+      if ((isClosedAttempt(error) || isRejectedDraft(error)) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
       throw error;
     });
   }, [requests]);
@@ -944,6 +952,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         if (isCompletedElsewhere(error)) {
           update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
           finishMockRef.current();
+          return;
+        }
+        if (isRejectedDraft(error)) {
+          update({ actionError: "This answer could not be saved, so your last saved answer to this question stands. The question may have changed; reload to see its current version." });
           return;
         }
         update({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." });
@@ -990,7 +1002,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         // already submitted elsewhere, must not block submission: it was never
         // going to be graded either way, and failing here would leave this tab
         // with no way to reach the result.
-        if (!isClosedAttempt(error)) throw error;
+        if (!isClosedAttempt(error) && !isRejectedDraft(error)) throw error;
       }
       if (dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
     }

@@ -19,7 +19,7 @@ const questions = ["single_choice", "multiple_choice", "fill_blank"].map((type, 
   options: type === "fill_blank" ? null : [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }],
 }));
 const attempts = new Map(), wrong = new Map(), calls = [], errors = [];
-let serial = 0, expired = false, failDraft = false;
+let serial = 0, expired = false, failDraft = false, rejectDraft = false;
 const selected = answer => answer?.some(value => value.trim()) ? answer : [];
 function grade(qid, answer) { return qid === "q3" ? answer.some(value => value.trim() === "green") : answer.join() === "A"; }
 function recordWrong(qid) {
@@ -61,6 +61,7 @@ const server = createServer(async (req, res) => {
     const [, , , id, action, qid] = url.pathname.split("/"); const attempt = attempts.get(id);
     if (action === "answers" && req.method === "PUT") {
       if (failDraft) return json({ error: "Draft unavailable" }, 503);
+      if (rejectDraft) return json({ error: "selectedAnswer is not a possible answer to this question: unknown option ID" }, 400);
       if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
       if (expired) return json({ expired: true, error: "This mock exam has expired." }, 409);
       attempt.selectedAnswers[qid] = selected(payload.selectedAnswer); return json({ saved: true });
@@ -155,6 +156,19 @@ try {
   await invoke("goToQuestionForReview", "exam", "q3");
   await page.getByText("Fill in the blank", { exact: true }).waitFor();
   console.log("PASS skipped/mastered wrong-book membership, valid dates and question labels in all study modes");
+
+  // A draft the server refuses as not a possible answer (issue #39) fails the
+  // same way on every retry, so it must not block submission: the draft the
+  // server last accepted is what gets graded.
+  await startMock(); await pick("q1", "A");
+  await invoke("go", "wrong"); await invoke("go", "mock"); // drains the accepted draft
+  rejectDraft = true; await pick("q1", "B");
+  await page.waitForFunction(() => window.store.state.actionError?.includes("could not be saved"));
+  rejectDraft = false;
+  await complete();
+  assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, ["A"]);
+  await invoke("dismissActionError");
+  console.log("PASS a draft the server refuses is dropped, not retried, and cannot block submission");
 
   await invoke("endSession");
   await startMock(); await pick("q1", "B"); await invoke("go", "wrong"); await invoke("go", "mock");
