@@ -50,6 +50,24 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-3.3 (M):** Every answered question is recorded as an `attempt_answer` linked to an `attempt` of mode `practice`, including correctness and time spent, so it feeds statistics and the wrong-question book.
 
+  An answer is validated against its question before anything is written, on
+  the practice answer endpoint and the mock draft endpoint alike
+  ([issue #39](https://github.com/YIzhongyue/PrepDeck/issues/39); rules in
+  `answerProblem`, [`grading.ts`](../../packages/shared/src/grading.ts)). A
+  fill-in is one value, because several guesses in one submission are not an
+  answer. Single-choice and true/false answers name at most one option.
+  Multiple-choice answers name each option at most once. Every ID must belong to
+  the question. An ordering has one position per item, and a draft may still
+  hold blanks and repeats while the learner arranges it. A matching answer is
+  canonical `[leftId, rightId]` pairs, one per left item. An empty selection is
+  always allowed, since it is how an answer is cleared. An answer has at most
+  50 values of at most 1,000 characters each. `timeSpentSeconds` is omitted,
+  `null`, or a whole number of seconds from 0 to 86,400. Anything else is
+  refused with 400. Mock grading treats a draft saved before these checks (or
+  one naming an option removed since) as unanswered, so such an attempt can
+  still be submitted. Migration `0036` clears stored time values that break the
+  rule.
+
 <a id="fr-3-4"></a>
 
 - **FR-3.4 (M):** During unanswered practice and timed mock answering, render questions without personal annotations, notes or answer-revealing explanations. Post-answer review may show them under [review rules](review-notes-and-annotations.md). The old reference to nonexistent FR-3.9 is corrected to FR-8.3; no FR-3.9 requirement was defined.
