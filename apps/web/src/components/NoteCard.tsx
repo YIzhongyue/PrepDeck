@@ -1,5 +1,7 @@
 import { registerNavigationSave } from "../lib/examWorkspace";
 import { useEffect, useState } from "react";
+import { MAX_NOTE_LENGTH } from "@prepdeck/shared";
+import LengthHint from "./LengthHint";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Note } from "../types";
 
@@ -61,9 +63,10 @@ export default function NoteCard({ note }: { note: Note }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {error && <p role="alert">{error}</p>}
             <textarea
-              className="input" value={draft} onChange={(e) => setDraft(e.target.value)}
+              className="input" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_NOTE_LENGTH} aria-label="Edit note"
               style={{ minHeight: 60, borderRadius: 14, fontSize: 12.5 }}
             />
+            <LengthHint length={draft.length} max={MAX_NOTE_LENGTH} />
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ display: "flex", gap: 6, flex: 1 }}>
                 {(["private", "shared"] as const).map((v) => {

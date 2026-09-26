@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
-import type { NoteVisibility, NoteWithAuthor } from "@prepdeck/shared";
+import { MAX_NOTE_LENGTH, type NoteVisibility, type NoteWithAuthor } from "@prepdeck/shared";
 
 interface NoteRow {
   id: string;
@@ -45,9 +45,13 @@ const VISIBLE_TO_CLAUSE = `(n.user_id = ? OR (n.visibility = 'shared' AND (SELEC
 
 const SELECT_NOTE = `SELECT n.*, u.display_name, u.avatar_url FROM notes n JOIN users u ON u.id = n.user_id`;
 
+const TOO_LONG = `content must be ${MAX_NOTE_LENGTH.toLocaleString("en")} characters or fewer`;
+
 function validateCreate(body: any): string | null {
   if (!body || typeof body !== "object") return "Invalid JSON body";
   if (typeof body.content !== "string" || !body.content.trim()) return "content is required";
+  // Checked on what is stored: the trimmed text.
+  if (body.content.trim().length > MAX_NOTE_LENGTH) return TOO_LONG;
   if (body.visibility !== "private" && body.visibility !== "shared") return "visibility must be private or shared";
   return null;
 }
@@ -122,6 +126,7 @@ notesRouter.patch("/:id", async (c) => {
   if (body.content != null && (typeof body.content !== "string" || !body.content.trim())) {
     return c.json({ error: "content must be a non-empty string" }, 400);
   }
+  if (typeof body.content === "string" && body.content.trim().length > MAX_NOTE_LENGTH) return c.json({ error: TOO_LONG }, 400);
   if (body.visibility != null && body.visibility !== "private" && body.visibility !== "shared") {
     return c.json({ error: "visibility must be private or shared" }, 400);
   }
