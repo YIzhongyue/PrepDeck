@@ -10,7 +10,7 @@ import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes,
+  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes,
   type OptionState
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -140,7 +140,11 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                   <label className="st-field">Your answer
                     <input className="st-input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />
                   </label>
-                ) : optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark, SHOW_KEYBOARD_HINTS && !bp.phone)}
+                ) : (
+                  <OptionGroup kind={graded ? "review" : q.type === "multiple_choice" ? "multiple" : "single"} tabStop={chosen[0] ?? q.options?.[0]?.id}>
+                    {optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark, SHOW_KEYBOARD_HINTS && !bp.phone)}
+                  </OptionGroup>
+                )}
               </div>
             </QuestionContentGate>
 
@@ -232,7 +236,7 @@ function optionRows(
     let status: string | undefined;
     if (graded) {
       if (right) { optState = "correct"; status = on ? "Your answer · Correct" : "Correct answer"; }
-      else if (on) { optState = "wrong"; status = "Your answer"; }
+      else if (on) { optState = "wrong"; status = "Your answer · Incorrect"; }
       else optState = "dim";
     }
     return (

@@ -169,6 +169,8 @@ Keep this list current; `upgrade` overwrites these files.
 | --- | --- |
 | `src/components/base/avatar/utils.ts` | `getInitials` guards the destructured name parts, which `noUncheckedIndexedAccess` types as possibly `undefined`. |
 | `src/components/application/charts/charts-base.tsx` | `ChartLegendContent` uses `payload.slice().reverse()` instead of `toReversed()`, which is ES2023 and outside this workspace's `lib`. |
+| `src/components/base/progress-indicators/progress-indicators.tsx` | `ProgressBarBase` forwards `aria-label`, `aria-labelledby` and `aria-valuetext` to its `role="progressbar"` element. Upstream drops them, so every bar was unnamed. |
+| `src/components/base/progress-indicators/progress-circles.tsx` | The same forwarding for `ProgressBarCircle` and `ProgressBarHalfCircle`. |
 
 ### Licensing
 
@@ -269,34 +271,36 @@ Settings (provider, questions-per-email), which have no Untitled UI equivalent
 that preserves their appearance. Untitled UI's `ButtonGroup` is the candidate
 if those are revisited.
 
-### Known gaps, inherited rather than introduced
+### Contrast and the scheme palettes
 
-Both of these come from the brand palette, predate this work and affect the
-existing screens identically. They are recorded here rather than fixed, because
-fixing either means changing how the whole application looks and should be a
-deliberate decision of its own.
+PrepDeck paints text on a solid accent fill with the page background.
+`.btn-primary` has always done this, and the mapping follows it so migrated and
+unmigrated buttons match. The accent also colours links and accent text on the
+page, so it has to reach 4.5:1 in both directions. Issue #56 darkened the three
+warm accents to reach it, which is a visible change to those schemes:
 
-**Clay has no accent ramp.** The scheme defines `--color-accent` but not
-`--color-accent-100`…`900`, so accent washes fall back to the Light scheme's
-blues. `PracticeSetup`'s selected source pill has always rendered that way.
+| Scheme | Accent | `--color-bg` on `--color-accent` |
+| --- | --- | --- |
+| Light | `#2563eb` | 5.17:1 |
+| Cream | `#904f24` (was `#c67139`, 3.03:1) | 5.30:1 |
+| Sage | `#5c6945` (was `#7a8a5e`, 3.28:1) | 5.18:1 |
+| Clay | `#8b4b20` (was `#b2622d`, 3.60:1) | 5.39:1 |
+| Dusk | `#e0894f` | 5.57:1 |
 
-**On-accent labels fall short of WCAG AA in three schemes.** PrepDeck paints
-text on a solid accent fill with the page background — `.btn-primary` has
-always done this, and the mapping follows it so migrated and unmigrated buttons
-match. The resulting ratios are:
+Clay used to define `--color-accent` without `--color-accent-100`…`900`, so its
+hover shades and washes fell back to the Light scheme's blues. It now uses
+Cream's terracotta and olive ramps.
 
-| Scheme | `--color-bg` on `--color-accent` |
-| --- | --- |
-| Light | 5.17:1 |
-| Cream | 3.03:1 |
-| Sage | 3.28:1 |
-| Clay | 3.60:1 |
-| Dusk | 5.57:1 |
+Secondary text uses `--color-text-muted` (70% of the text colour over the page
+colour, defined per scheme), which keeps at least 4.5:1 on the page, surface,
+neutral and accent-wash backgrounds of every scheme. Don't dim text with
+`opacity` or a translucent `color-mix`: the result depends on the surface behind
+it and drops below 4.5:1 on tinted cards. Opacity is fine for icons and other
+decoration.
 
-Cream, Sage and Clay clear 3:1 but not the 4.5:1 that AA asks for at this text
-size, so the kit sweep holds solid-fill labels to 3:1 and everything on a page
-or field surface to 4.5:1. Raising the floor means darkening those three
-accents for every button in the app.
+The kit sweep in `settings.browser.mjs` holds every label, including those on
+solid fills, to 4.5:1. `scripts/axe-scan.mjs` checks the real screens (see
+[Development and deployment](development-and-deployment.md#accessibility-scan)).
 
 ## Verification
 

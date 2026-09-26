@@ -349,27 +349,19 @@ try {
   // reports the interpolated colour part-way through. Settle them so the
   // contrast figures below are the real ones rather than a blend.
   await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
-  // Text on a page or field surface is body text, so WCAG AA's 4.5:1 applies.
-  const KIT_ON_SURFACE = ["button-secondary", "input", "input-invalid", "textarea",
+  // Every label is body-size text, so WCAG AA's 4.5:1 applies, including the
+  // labels on a solid accent or danger fill (issue #56 darkened the Cream, Sage
+  // and Clay accents to get there).
+  const KIT_TEXT = ["button-primary", "button-destructive", "button-secondary", "input", "input-invalid", "textarea",
     "badge-brand", "badge-success", "badge-error", "badge-warning", "badge-gray", "progress-circle"];
-  // A label on a solid accent or danger fill is held to 3:1. That is not a
-  // relaxed standard picked to make this pass: it is the ratio PrepDeck's own
-  // `.btn-primary` already achieves, because both use the page background as
-  // the on-accent ink. Cream (3.03:1), Sage (3.28:1) and Clay (3.60:1) sit
-  // below 4.5:1 today on every existing screen. Raising the floor here means
-  // changing the brand palette for the whole app, which
-  // docs/guides/ui-components.md records as follow-up work.
-  const KIT_ON_FILL = ["button-primary", "button-destructive"];
   const kitPaint = new Map();
   for (const theme of THEMES) {
     await setTheme(theme);
     await page.waitForTimeout(80);
 
-    for (const [floor, group] of [[4.5, KIT_ON_SURFACE], [3, KIT_ON_FILL]]) {
-      for (const kit of group) {
-        const { ratio, color, bg } = await contrastOf(page.locator(`[data-kit="${kit}"]`).first());
-        assert.ok(ratio >= floor, `${theme} ${kit}: ${color} on ${bg} is ${ratio.toFixed(2)}:1, below ${floor}:1`);
-      }
+    for (const kit of KIT_TEXT) {
+      const { ratio, color, bg } = await contrastOf(page.locator(`[data-kit="${kit}"]`).first());
+      assert.ok(ratio >= 4.5, `${theme} ${kit}: ${color} on ${bg} is ${ratio.toFixed(2)}:1, below 4.5:1`);
     }
 
     // A filled control has to read as filled, and an empty one as empty, in

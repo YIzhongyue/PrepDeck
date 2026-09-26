@@ -11,6 +11,12 @@
   --color-accent: #2563eb;
   --color-accent-2: #0f9f8f;
   --color-divider: color-mix(in srgb, #172033 14%, transparent);
+  /* Secondary text (issue #56). 70% of the text colour over the page colour
+     keeps at least 4.5:1 on the page, surface, neutral-100/200 and accent-100
+     backgrounds of every scheme. Use it instead of dimming text with opacity
+     or a translucent colour-mix, which drops below 4.5:1 on tinted surfaces.
+     Redefined on [data-pd-theme] so it follows the scheme's own colours. */
+  --color-text-muted: color-mix(in srgb, var(--color-text) 70%, var(--color-bg));
   --color-mark-1: #ffdfd1;
   --color-mark-1-text: #6b2c11;
   --color-mark-2: #d9f3df;
@@ -112,8 +118,8 @@ p { margin: 0 0 var(--space-3); }
 a { color: var(--color-accent); text-underline-offset: 3px; }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
-figcaption { font-size: 11px; margin-top: var(--space-1); color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+figcaption { font-size: 11px; margin-top: var(--space-1); color: var(--color-text-muted); }
+.text-muted { color: var(--color-text-muted); }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
@@ -148,7 +154,7 @@ figcaption { font-size: 11px; margin-top: var(--space-1); color: color-mix(in sr
 .btn-icon { width: 36px; height: 36px; padding: 0; }
 .btn-block { width: 100%; margin-top: var(--space-2); }
 
-.field > label { display: block; font-size: 12px; margin-bottom: 5px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.field > label { display: block; font-size: 12px; margin-bottom: 5px; color: var(--color-text-muted); }
 .input {
   width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
   font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
@@ -175,7 +181,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 .card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
 .card-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 17px; line-height: 1.2; }
 .card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
-.card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted); }
 .elev-sm { box-shadow: var(--pd-shadow-sm); }
 .elev-md { box-shadow: var(--pd-shadow-md); }
 .elev-lg { box-shadow: var(--pd-shadow-lg); }
@@ -192,7 +198,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
 
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th { text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 60%, transparent); padding: var(--space-2); border-bottom: 1px solid var(--color-divider); }
+.table th { text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); padding: var(--space-2); border-bottom: 1px solid var(--color-divider); }
 .table td { padding: var(--space-2); border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent); }
 .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
 

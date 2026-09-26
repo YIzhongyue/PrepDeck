@@ -49,11 +49,11 @@ function NoteCard({ item, onOpen, dragHandle }: { item: KnowledgePointSummary; o
         {item.tags.map((t) => (
           <span key={t.id} className="tag tag-accent" style={{ whiteSpace: "nowrap" }}>{t.name}</span>
         ))}
-        <span style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.5, whiteSpace: "nowrap" }}>Updated {relativeTime(item.updatedAt)}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>Updated {relativeTime(item.updatedAt)}</span>
       </div>
       <h3 style={{ margin: 0, fontSize: 20 }}><a href="#" onClick={e => { e.preventDefault(); onOpen(); }} style={{ color: "inherit", textDecoration: "none" }}>{item.title || "Untitled knowledge point"}</a></h3>
       {item.excerpt && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, opacity: 0.72 }}>{item.excerpt}</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 11.5, opacity: 0.5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 11.5, color: "var(--color-text-muted)" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           <StatIcon d="M7 3h8l3 3v15H7z M10 11h6 M10 15h4" />
           {item.linkedQuestionCount > 0 ? `${item.linkedQuestionCount} linked question${item.linkedQuestionCount === 1 ? "" : "s"}` : "No linked questions"}
@@ -90,7 +90,7 @@ function SortableNoteCard({ item, onOpen, onUp, onDown, disabled }: { item: Know
             {...attributes}
             {...listeners}
             aria-label={`Reorder ${item.title || "note"} with arrow keys, or drag`}
-            style={{ display: "grid", placeItems: "center", width: 40, height: 40, touchAction: "none", border: 0, borderRadius: 6, background: "transparent", cursor: "grab", color: "color-mix(in srgb, var(--color-text) 65%, transparent)" }}
+            style={{ display: "grid", placeItems: "center", width: 40, height: 40, touchAction: "none", border: 0, borderRadius: 6, background: "transparent", cursor: "grab", color: "var(--color-text-muted)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6h.01 M15 6h.01 M9 12h.01 M15 12h.01 M9 18h.01 M15 18h.01" /></svg>
@@ -141,7 +141,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
         <div>
           <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Personal knowledge</p>
           <h1 style={{ margin: 0, fontSize: 34 }}>Knowledge points</h1>
-          <p style={{ margin: "8px 0 0", maxWidth: 560, fontSize: 13.5, opacity: 0.65 }}>
+          <p style={{ margin: "8px 0 0", maxWidth: 560, fontSize: 13.5, color: "var(--color-text-muted)" }}>
             Concept-level notes you write and organise yourself. Private to you — link them to any question across your exams.
           </p>
         </div>
@@ -164,7 +164,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
               key={opt.id}
               type="button"
               onClick={() => kp.setScope(opt.id)}
-              style={{ display: "inline-flex", alignItems: "center", padding: "7px 14px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", background: state.scope === opt.id ? "var(--color-bg)" : "transparent", color: state.scope === opt.id ? "var(--color-accent-800)" : "color-mix(in srgb, var(--color-text) 60%, transparent)", boxShadow: state.scope === opt.id ? "var(--pd-shadow-sm)" : "none" }}
+              style={{ display: "inline-flex", alignItems: "center", padding: "7px 14px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", background: state.scope === opt.id ? "var(--color-bg)" : "transparent", color: state.scope === opt.id ? "var(--color-accent-800)" : "var(--color-text-muted)", boxShadow: state.scope === opt.id ? "var(--pd-shadow-sm)" : "none" }}
             >
               {opt.label}
             </button>
@@ -183,7 +183,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
           : { flex: "1 1 220px", maxWidth: "100%", width: 236, display: "flex", flexDirection: "column", gap: 2 }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: bp.narrow ? "0 2px" : "0 10px 8px" }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.5 }}>Groups</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>Groups</span>
             <button type="button" onClick={onManage} style={{ padding: "2px 6px", border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600, color: "var(--color-accent-700)" }}>Manage</button>
           </div>
           <div style={bp.narrow ? { display: "flex", flexWrap: "wrap", gap: 6 } : { display: "flex", flexDirection: "column", gap: 2 }}>
@@ -194,7 +194,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                 ? { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: !state.groupId && !state.ungrouped ? 600 : 400, background: !state.groupId && !state.ungrouped ? "var(--color-accent-200)" : "var(--color-neutral-100)", color: !state.groupId && !state.ungrouped ? "var(--color-accent-800)" : "var(--color-text)" }
                 : { display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 11px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 13.5, textAlign: "left", fontWeight: !state.groupId && !state.ungrouped ? 600 : 400, background: !state.groupId && !state.ungrouped ? "var(--color-accent-200)" : "transparent", color: !state.groupId && !state.ungrouped ? "var(--color-accent-800)" : "var(--color-text)" }}
             >
-              All notes<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, opacity: bp.narrow ? 0.6 : 1 }}>{bp.narrow ? ` · ${allNotesCount}` : allNotesCount}</span>
+              All notes<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, color: bp.narrow && (state.groupId || state.ungrouped) ? "var(--color-text-muted)" : undefined }}>{bp.narrow ? ` · ${allNotesCount}` : allNotesCount}</span>
             </button>
             {state.groups.map((g) => (
               <button
@@ -205,7 +205,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                   ? { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, background: state.groupId === g.id ? "var(--color-accent-200)" : "var(--color-neutral-100)", color: state.groupId === g.id ? "var(--color-accent-800)" : "var(--color-text)" }
                   : { display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 11px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 13.5, textAlign: "left", background: state.groupId === g.id ? "var(--color-accent-200)" : "transparent", color: state.groupId === g.id ? "var(--color-accent-800)" : "var(--color-text)" }}
               >
-                {g.name}<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, opacity: 0.5 }}>{bp.narrow ? ` · ${g.noteCount}` : g.noteCount}</span>
+                {g.name}<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, color: state.groupId === g.id ? undefined : "var(--color-text-muted)" }}>{bp.narrow ? ` · ${g.noteCount}` : g.noteCount}</span>
               </button>
             ))}
             <button
@@ -215,15 +215,15 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                 ? { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, background: state.ungrouped ? "var(--color-accent-200)" : "var(--color-neutral-100)", color: state.ungrouped ? "var(--color-accent-800)" : "var(--color-text)" }
                 : { display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 11px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 13.5, textAlign: "left", background: state.ungrouped ? "var(--color-accent-200)" : "transparent", color: state.ungrouped ? "var(--color-accent-800)" : "var(--color-text)" }}
             >
-              Ungrouped<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, opacity: 0.5 }}>{bp.narrow ? ` · ${state.ungroupedCount}` : state.ungroupedCount}</span>
+              Ungrouped<span style={{ marginLeft: bp.narrow ? 0 : "auto", fontSize: 11.5, color: state.ungrouped ? undefined : "var(--color-text-muted)" }}>{bp.narrow ? ` · ${state.ungroupedCount}` : state.ungroupedCount}</span>
             </button>
           </div>
 
           <div style={{ height: 1, margin: bp.narrow ? "4px 0" : "14px 10px", background: "var(--color-divider)" }} />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: bp.narrow ? "0 2px" : "0 10px 9px" }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.5 }}>Tags</span>
-            {state.tagIds.length > 1 && <span style={{ fontSize: 11, opacity: 0.45 }}>matches all</span>}
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>Tags</span>
+            {state.tagIds.length > 1 && <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>matches all</span>}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: bp.narrow ? 0 : "0 6px" }}>
             {state.tags.map((t) => {
@@ -253,7 +253,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                 placeholder="Search titles and note text…"
                 style={{ width: "100%", minWidth: 0, padding: 0, border: 0, outline: 0, background: "transparent", font: "inherit", fontSize: 13 }}
               />
-              <span style={{ flex: "none", fontSize: 11.5, opacity: 0.45, whiteSpace: "nowrap" }}>{state.total} result{state.total === 1 ? "" : "s"}</span>
+              <span style={{ flex: "none", fontSize: 11.5, color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>{state.total} result{state.total === 1 ? "" : "s"}</span>
             </div>
             <div style={{ display: "inline-flex", flexWrap: "wrap", gap: 3, padding: 3, border: "1px solid var(--color-divider)", borderRadius: 22, background: "var(--color-neutral-100)" }}>
               {SORTS.map((s) => (
@@ -261,7 +261,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                   key={s.id}
                   type="button"
                   onClick={() => kp.setSort(s.id)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", background: state.sort === s.id ? "var(--color-bg)" : "transparent", color: state.sort === s.id ? "var(--color-accent-800)" : "color-mix(in srgb, var(--color-text) 60%, transparent)", boxShadow: state.sort === s.id ? "var(--pd-shadow-sm)" : "none" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", background: state.sort === s.id ? "var(--color-bg)" : "transparent", color: state.sort === s.id ? "var(--color-accent-800)" : "var(--color-text-muted)", boxShadow: state.sort === s.id ? "var(--pd-shadow-sm)" : "none" }}
                 >
                   {s.label}
                 </button>
@@ -293,7 +293,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
                 <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-2-800)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l8 4.5-8 4.5-8-4.5z M4 12l8 4.5 8-4.5 M4 16.5l8 4.5 8-4.5" /></svg>
               </span>
               <h3 style={{ margin: 0, fontSize: 20 }}>No knowledge points yet</h3>
-              <p style={{ margin: "0 0 12px", maxWidth: 420, fontSize: 13, opacity: 0.65 }}>Write one explanation per concept, link the questions it covers, and it becomes your own revision outline.</p>
+              <p style={{ margin: "0 0 12px", maxWidth: 420, fontSize: 13, color: "var(--color-text-muted)" }}>Write one explanation per concept, link the questions it covers, and it becomes your own revision outline.</p>
               <button type="button" className="btn btn-primary" onClick={createNote}>Create your first note</button>
             </div>
           )}
@@ -303,7 +303,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
               <h3 style={{ margin: 0, fontSize: 20 }}>
                 {state.search ? `No notes match “${state.search}”` : kp.hasActiveFilters ? "No notes match these tags" : "No notes linked to this exam yet"}
               </h3>
-              <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.65 }}>
+              <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--color-text-muted)" }}>
                 {kp.hasActiveFilters ? "Try a different search or clear your filters." : "Link a knowledge point to a question in this exam, or browse your full library."}
               </p>
               <button

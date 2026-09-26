@@ -229,7 +229,7 @@ export default function McpTokensCard({
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t.name}</span>
                   <span className={`tag ${STATUS_TAG_CLASS[t.status]}`}>{t.status}</span>
                 </div>
-                <div style={{ fontSize: 11.5, opacity: 0.65, marginTop: 3 }}>
+                <div style={{ fontSize: 11.5, color: "var(--color-text-muted)", marginTop: 3 }}>
                   Created {formatDate(t.createdAt)} · Last used {formatDate(t.lastUsedAt)}
                   {t.expiresAt !== null && <> · Expires {formatDate(t.expiresAt)}</>}
                 </div>
@@ -245,7 +245,7 @@ export default function McpTokensCard({
         </div>
       )}
       {!loading && !loadError && tokens.length === 0 && !creating && (
-        <p style={{ margin: 0, fontSize: 12.5, opacity: 0.6 }}>No tokens yet.</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No tokens yet.</p>
       )}
       {rowError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{rowError}</p>}
 

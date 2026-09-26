@@ -120,6 +120,32 @@ module can instead be passed as a module URL in `PLAYWRIGHT_MODULE`;
 `PLAYWRIGHT_CHANNEL=msedge` or `chrome` uses an installed browser. The browser
 check signs in through the helper, loads the seeded workspace, reloads, and takes
 desktop/mobile screenshots under `.local-state/` with external requests blocked.
+It then runs the accessibility scan described below.
+
+### Accessibility scan
+
+[`scripts/axe-scan.mjs`](../../scripts/axe-scan.mjs) runs
+[axe-core](https://github.com/dequelabs/axe-core) over the Worker-served build:
+the main signed-in screens (Statistics, Practice and Learning setup and a live
+question for each, Mock setup, Knowledge Points, Bookmarks, Wrong questions,
+Annotations, Settings and Admin) in all five colour schemes, plus the privacy
+and terms pages. Any serious or critical WCAG 2.1 A/AA violation fails the
+check. To accept one, add it to `KNOWN_EXCEPTIONS` in the script with the reason.
+The list is empty today.
+
+To run it against a running `npm run dev`, after `npm run build --workspace apps/web`:
+
+```bash
+node scripts/axe-scan.mjs            # exit 1 on violations
+node scripts/axe-scan.mjs --report   # list every violation, never fail
+AXE_THEMES=clay,dusk node scripts/axe-scan.mjs
+```
+
+The scan moves between screens through the app's own navigation rather than
+reloading each one, to stay under the Worker's read rate limit (300 requests a
+minute, shared by everything on the local machine). If a screen is still
+throttled, the scan waits out the window and opens it again rather than scan an
+error state.
 
 ## Optional remote integrations
 

@@ -373,7 +373,7 @@ try {
   await page.evaluate(() => window.fixtureApp.begin(["Q1", "Q2"]));
   await page.waitForFunction(() => window.fixtureApp.state.screen === "practice");
   assert.equal(await page.getByRole("button", { name: "Link existing", exact: true }).count(), 0, "Live answering hides related-note hints");
-  await page.getByRole("button", { name: /Identity/ }).click();
+  await page.getByRole("radio", { name: /Identity/ }).click();
   await page.getByRole("button", { name: "Check answer", exact: true }).click();
   await page.getByRole("tab", { name: "Related", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Link existing", exact: true }).count(), 1, "Graded review exposes related notes");

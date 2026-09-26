@@ -56,7 +56,7 @@ export default function TagPicker({
         <div style={{ position: "absolute", zIndex: 40, top: "calc(100% + 6px)", left: 0, width: 210, padding: 6, border: "1px solid var(--color-divider)", borderRadius: 14, background: "var(--color-bg)", boxShadow: "var(--pd-shadow-lg)" }}>
           {suggestions.length > 0 && (
             <>
-              <span style={{ display: "block", padding: "6px 10px 5px", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+              <span style={{ display: "block", padding: "6px 10px 5px", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>
                 Your tags
               </span>
               {suggestions.map((t) => (

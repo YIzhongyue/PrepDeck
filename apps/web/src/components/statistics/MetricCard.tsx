@@ -52,7 +52,7 @@ export default function MetricCard({
       {children}
 
       {footer != null && (
-        <p style={{ margin: 0, fontSize: 12, color: footerTone ? TONE_INK[footerTone] : "color-mix(in srgb, var(--color-text) 62%, transparent)" }}>
+        <p style={{ margin: 0, fontSize: 12, color: footerTone ? TONE_INK[footerTone] : "var(--color-text-muted)" }}>
           {footer}
         </p>
       )}
