@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { renderExplanationPrompt } from "../lib/prompts";
-import type { AiExplanationDto, AiProvider } from "@prepdeck/shared";
+import { allContentBlocks, answerParts, matchingTargets, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
 
 // Request guard; see docs/requirements/ai-explanations.md for byte-count limitations.
 const MAX_BODY_BYTES = 32 * 1024;
@@ -35,6 +35,7 @@ interface QuestionRow {
   options_json: string | null;
   correct_answers_json: string;
   explanation: string | null;
+  content_json: string | null;
 }
 
 interface ExplanationRow {
@@ -63,10 +64,27 @@ function toDto(row: ExplanationRow, viewerId: string, viewerRole: "admin" | "use
 // concern) — it only ever explains a real question already in the bank. The
 // template itself lives in prompts/explanation.njk (Nunjucks/Jinja2 syntax);
 // see lib/prompts.ts for why it's precompiled rather than rendered live.
-function buildPrompt(q: QuestionRow): string {
+//
+// Matching and ordering questions are described from their component content
+// (issue #42): a matching question's options are only its left column, and its
+// answer key is stored as ID pairs, so without the content the model was asked
+// to explain pairings with items it had never seen.
+export function buildPrompt(q: QuestionRow): string {
   const options: { id: string; text: string }[] = q.options_json ? JSON.parse(q.options_json) : [];
   const correctAnswers: string[] = JSON.parse(q.correct_answers_json);
-  return renderExplanationPrompt({ stem: q.stem, options, correctAnswers, officialExplanation: q.explanation });
+  let content: QuestionContentModel | null = null;
+  try { content = q.content_json ? JSON.parse(q.content_json) as QuestionContentModel : null; } catch { content = null; }
+  const question = { type: q.type, options, content };
+  const kind = q.type === "matching" || q.type === "ordering" ? q.type : q.type === "fill_blank" ? "text" : "choice";
+  return renderExplanationPrompt({
+    stem: q.stem,
+    kind,
+    options,
+    matchTargets: matchingTargets(question),
+    correctAnswers: kind === "matching" || kind === "ordering" ? answerParts(question, correctAnswers) : correctAnswers,
+    officialExplanation: q.explanation,
+    figureOmitted: !!content && allContentBlocks(content).some((block) => block.type === "figure"),
+  });
 }
 
 // The only logging call site in this file — every other diagnostic signal
@@ -224,7 +242,7 @@ aiGenerateRouter.post("/", async (c) => {
   const user = c.get("user");
 
   const question = await c.env.DB.prepare(
-    "SELECT id, type, stem, options_json, correct_answers_json, explanation, revision FROM questions WHERE id = ?"
+    "SELECT id, type, stem, options_json, correct_answers_json, explanation, revision, content_json FROM questions WHERE id = ?"
   )
     .bind(questionId)
     .first<QuestionRow>();

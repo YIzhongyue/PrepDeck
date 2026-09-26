@@ -51,6 +51,19 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-7.4 (M):** On a cache miss, the browser sends question ID, provider, model and the loaded API key to `POST /api/ai/generate`. The Worker constructs the prompt from the current stored question and relays it only to fixed provider endpoints. It does not accept an arbitrary upstream URL or a browser-authored prompt. The key is transient request data, never persisted to D1/KV/R2 or deliberately logged.
 
+  The prompt describes the whole question for every interaction type
+  ([issue #42](https://github.com/YIzhongyue/PrepDeck/issues/42)). A matching
+  question lists both columns and gives the answer as readable pairs
+  ("HTTPS → 443"); an ordering lists its items and the order as item text. The
+  instructions fit the type: choice questions ask why the other options are
+  wrong, matching asks why each pair matches, ordering why each step comes
+  where it does, and fill-in has no option instructions. Figures reach the
+  prompt as caption and alt text only, and the prompt says so. **Copy as
+  prompt** in Learning and Practice formats answers the same way, through
+  `answerParts` in [`answerFormat.ts`](../../packages/shared/src/answerFormat.ts).
+  Migration `0038` removed cached explanations for matching and ordering
+  questions that were generated from the older, incomplete prompts.
+
 <a id="fr-7-5"></a>
 
 - **FR-7.5 (M):** After successful generation, cache the explanation content and provenance metadata, never the API key, by `(question_id, provider, model)`. The insert is conditional on the question revision used for generation; a concurrent question edit cannot restore a stale cached explanation. Later cache hits require no provider call or API key.
@@ -70,3 +83,11 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-7-9"></a>
 
 - **FR-7.9 (S):** As an **opt-in** alternative to the in-memory default (FR-7.0), a user may choose to persist their API key across sessions by setting a personal passphrase. The app derives an encryption key from that passphrase (e.g., via PBKDF2 or an equivalent KDF), encrypts the API key with **AES-GCM**, and stores only the ciphertext in the browser's IndexedDB. On a later visit, the user must re-enter the passphrase to decrypt the key back into memory before it can be used (per FR-7.4); the passphrase itself is never sent to or stored by the backend, and losing it means losing the saved key with no recovery path — the UI must state this plainly before the user opts in.
+
+  The encrypted key and the storage choice are kept per account in the browser
+  (IndexedDB `prepdeck-keystore:<userId>`, localStorage `prepdeck.keyMode:<userId>`;
+  [issue #46](https://github.com/YIzhongyue/PrepDeck/issues/46)), so another account
+  signed in on a shared browser neither sees nor can overwrite it. Signing out
+  offers **Also remove my saved AI key from this browser**. The browser-wide
+  store used before is never read (its owner is unknown) and is removed at the
+  next sign-out, so a key saved there must be entered and saved once more.

@@ -19,7 +19,9 @@ const questions = ["single_choice", "multiple_choice", "fill_blank"].map((type, 
   options: type === "fill_blank" ? null : [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }],
 }));
 const attempts = new Map(), wrong = new Map(), calls = [], errors = [];
-let serial = 0, expired = false, failDraft = false;
+// Answer keys the fixture grades component questions against (issue #43).
+const answerKeys = new Map();
+let serial = 0, expired = false, failDraft = false, sessionGone = false, rejectDraft = false;
 const selected = answer => answer?.some(value => value.trim()) ? answer : [];
 function grade(qid, answer) { return qid === "q3" ? answer.some(value => value.trim() === "green") : answer.join() === "A"; }
 function recordWrong(qid) {
@@ -39,6 +41,7 @@ const server = createServer(async (req, res) => {
   let raw = ""; for await (const chunk of req) raw += chunk;
   const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+  if (sessionGone && !url.pathname.startsWith("/api/auth/")) return json({ error: "Unauthorized" }, 401);
   if (url.pathname === "/api/auth/me") return json({ user: { id: "qa", email: "qa@example.test", role: "user", displayName: "QA" } });
   if (url.pathname === "/api/exams") return json({ exams: [{ id: "exam", name: "Answer state", slug: "exam", providers: [], questionCount: 3 }, { id: "other", name: "Other exam", slug: "other", providers: [], questionCount: 0 }] });
   if (url.pathname === "/api/exams/other/practice-catalog") return json({ questions: [], bookmarkedIds: [], wrongEntries: [], attemptedIds: [] });
@@ -51,6 +54,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.endsWith("/learning-detail")) return json({ question: { correctAnswers: ["green"], explanation: "Explanation", answerRevision: 1 }, history: [] });
   if (url.pathname.endsWith("/ai-explanations")) return json({ explanations: [] });
   if (url.pathname.endsWith("/knowledge-points")) return json({ knowledgePoints: [], total: 0 });
+  if (url.pathname.endsWith("/bookmark")) return json({ bookmarked: req.method === "PUT" });
   if (url.pathname.endsWith("/wrong-book/mastered")) { wrong.get(url.pathname.split("/")[3]).mastered = true; return json({ mastered: true }); }
   if (url.pathname === "/api/attempts/active") return json({ attempt: [...attempts.values()].find(attempt => attempt.mode === "mock" && !attempt.completed) ?? null });
   if (url.pathname === "/api/exams/exam/attempts") {
@@ -61,6 +65,7 @@ const server = createServer(async (req, res) => {
     const [, , , id, action, qid] = url.pathname.split("/"); const attempt = attempts.get(id);
     if (action === "answers" && req.method === "PUT") {
       if (failDraft) return json({ error: "Draft unavailable" }, 503);
+      if (rejectDraft) return json({ error: "selectedAnswer is not a possible answer to this question: unknown option ID" }, 400);
       if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
       if (expired) return json({ expired: true, error: "This mock exam has expired." }, 409);
       attempt.selectedAnswers[qid] = selected(payload.selectedAnswer); return json({ saved: true });
@@ -72,13 +77,13 @@ const server = createServer(async (req, res) => {
     if (action === "answers") {
       const isCorrect = grade(payload.questionId, payload.selectedAnswer);
       if (!isCorrect) recordWrong(payload.questionId);
-      return json({ isCorrect, correctAnswers: ["green"], explanation: "Explanation", answerRevision: 1 });
+      return json({ isCorrect, correctAnswers: answerKeys.get(payload.questionId) ?? ["green"], explanation: "Explanation", answerRevision: 1 });
     }
     if (action === "complete") {
       const breakdown = attempt.questionIds.map(questionId => {
         const answer = selected(attempt.selectedAnswers[questionId] ?? []), isCorrect = grade(questionId, answer);
         if (!attempt.completed && !isCorrect && answer.length) recordWrong(questionId);
-        return { questionId, selectedAnswer: answer, isCorrect, correctAnswers: questionId === "q3" ? ["green"] : ["A"], gradedAnswers: [], answerRevision: 1, currentAnswerRevision: 1 };
+        return { questionId, selectedAnswer: answer, isCorrect, correctAnswers: answerKeys.get(questionId) ?? (questionId === "q3" ? ["green"] : ["A"]), gradedAnswers: [], answerRevision: 1, currentAnswerRevision: 1 };
       });
       attempt.completed = true;
       return json({ attemptId: id, mode: attempt.mode, score: 0, passed: false, correctCount: 0, totalQuestions: 3, durationSeconds: 1, breakdown });
@@ -127,6 +132,37 @@ try {
   await page.reload(); await ready(); await checkWrong(["q1"]);
   console.log("PASS deselection, blank fill, restored drafts and partial submission agree across UI and reload");
 
+  // The submit confirmation is a real modal (issue #51): opened from the
+  // keyboard it takes focus, keeps Tab inside, shields the exam behind it,
+  // closes on Escape and hands focus back to the control that opened it.
+  await startMock();
+  const submitExam = page.getByRole("button", { name: "Submit exam", exact: true });
+  const confirmDialog = page.getByRole("dialog", { name: "Submit your exam?" });
+  const focusInfo = () => page.evaluate(() => ({ text: document.activeElement?.textContent?.trim(), inDialog: !!document.activeElement?.closest("dialog[open]") }));
+  await submitExam.focus(); await page.keyboard.press("Enter"); await confirmDialog.waitFor();
+  assert.deepEqual(await focusInfo(), { text: "Keep going", inDialog: true }, "the safe choice has focus");
+  assert.match(await page.evaluate(() => document.getElementById(document.querySelector("dialog[open]").getAttribute("aria-describedby")).textContent), /You have answered 0 of 3 questions/);
+  for (const key of ["Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {
+    await page.keyboard.press(key);
+    assert.equal((await focusInfo()).inDialog, true, `${key} stays inside the dialog`);
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !window.store.state.mConfirm);
+  assert.deepEqual(await focusInfo(), { text: "Submit exam", inDialog: false }, "focus returns to Submit exam");
+  await show("q1"); await page.locator(".st-opt").first().waitFor();
+  await submitExam.click(); await confirmDialog.waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mock-submit-confirmation.png`, animations: "disabled" });
+  const optionBox = await page.locator(".st-opt").first().boundingBox();
+  const centre = { x: optionBox.x + optionBox.width / 2, y: optionBox.y + optionBox.height / 2 };
+  assert.equal(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest("dialog[open]"), centre), true, "the dialog covers the options");
+  const answersBefore = JSON.stringify((await state()).mSel);
+  await page.mouse.click(centre.x, centre.y);
+  assert.equal(JSON.stringify((await state()).mSel), answersBefore, "no answer can change while the dialog is open");
+  if ((await state()).mConfirm) await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !window.store.state.mConfirm);
+  await complete(); await checkWrong(["q1"]);
+  console.log("PASS the submit confirmation takes focus, contains Tab, blocks the exam, closes on Escape and restores focus");
+
   await invoke("markMastered", "q1"); await page.getByRole("button", { name: "Practice these 0", exact: true }).waitFor();
   await startMock(); await complete(); await checkWrong([]);
   assert.equal((await state()).mastered.q1, true, "Skipping a mastered question preserves mastery");
@@ -156,6 +192,19 @@ try {
   await page.getByText("Fill in the blank", { exact: true }).waitFor();
   console.log("PASS skipped/mastered wrong-book membership, valid dates and question labels in all study modes");
 
+  // A draft the server refuses as not a possible answer (issue #39) fails the
+  // same way on every retry, so it must not block submission: the draft the
+  // server last accepted is what gets graded.
+  await startMock(); await pick("q1", "A");
+  await invoke("go", "wrong"); await invoke("go", "mock"); // drains the accepted draft
+  rejectDraft = true; await pick("q1", "B");
+  await page.waitForFunction(() => window.store.state.actionError?.includes("could not be saved"));
+  rejectDraft = false;
+  await complete();
+  assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, ["A"]);
+  await invoke("dismissActionError");
+  console.log("PASS a draft the server refuses is dropped, not retried, and cannot block submission");
+
   await invoke("endSession");
   await startMock(); await pick("q1", "B"); await invoke("go", "wrong"); await invoke("go", "mock");
   expired = true; await pick("q1", "A");
@@ -169,6 +218,42 @@ try {
   failDraft = false; expired = true; await complete();
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   console.log("PASS expired writes and retries cannot block submission of the server's saved answers");
+
+  // Custom mock fields keep what is typed and validate it instead of clamping
+  // every keystroke (issue #55): 120 used to become 300 and 45 became 55.
+  expired = false;
+  await invoke("go", "mock", { newMock: true });
+  const countField = page.getByRole("spinbutton", { name: "Questions", exact: true });
+  const minutesField = page.getByRole("spinbutton", { name: "Time limit (minutes)", exact: true });
+  const beginExam = page.getByRole("button", { name: "Begin exam", exact: true });
+  const retype = async (field, text) => {
+    await field.click(); await field.press("Control+a");
+    if (text) await page.keyboard.type(text); else await page.keyboard.press("Backspace");
+  };
+  await retype(minutesField, "120"); assert.equal(await minutesField.inputValue(), "120");
+  await retype(minutesField, "45"); assert.equal(await minutesField.inputValue(), "45");
+  await retype(minutesField, ""); assert.equal(await minutesField.inputValue(), "", "the field can be empty while editing");
+  await page.getByText("Enter a whole number of minutes from 5 to 300.", { exact: true }).waitFor();
+  assert.equal(await beginExam.isDisabled(), true, "an empty time limit cannot start an exam");
+  await retype(minutesField, "400"); assert.equal(await beginExam.isDisabled(), true);
+  assert.equal(await page.locator(".st-big-pair-v").nth(1).textContent(), "—", "the summary does not show the 40 typed on the way to 400");
+  assert.equal(await minutesField.getAttribute("aria-invalid"), "true");
+  await retype(countField, "4");
+  await page.getByText("Enter a whole number from 1 to 3.", { exact: true }).waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mock-custom-fields-invalid.png`, animations: "disabled" });
+  await retype(countField, "2"); await retype(minutesField, "45");
+  assert.equal(await beginExam.isDisabled(), false);
+  assert.equal(await page.getByText(/Enter a whole number/).count(), 0);
+  await beginExam.click();
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  const customAttempt = attempts.get((await state()).mockAttemptId);
+  assert.equal(customAttempt.timeLimitSeconds, 45 * 60);
+  assert.equal(customAttempt.questionIds.length, 2);
+  await complete();
+  // The following blocks draw all three questions again.
+  await invoke("go", "mock", { newMock: true }); await retype(countField, "3");
+  await page.waitForFunction(() => window.store.state.mockCount === 3);
+  console.log("PASS custom mock fields accept typed values, flag empty or out-of-range ones and start with what was typed");
 
   // Submitted from another tab or device: a write to it leads to its result, and
   // a draft this tab never managed to save cannot block the Submit button.
@@ -188,9 +273,48 @@ try {
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   await invoke("dismissActionError");
   console.log("PASS an attempt submitted elsewhere shows its result instead of blocking Submit");
+  // Practice shortcuts follow the Check answer button, never take Enter from a
+  // focused control, and keep bookmarking off the option letters (issue #50).
+  await invoke("begin", ["q2", "q1", "q3"]);
+  await page.waitForFunction(() => window.store.state.pStage === "live" && window.store.state.queue[0] === "q2");
+  const settle = () => page.waitForTimeout(250);
+  const bookmarkWrites = () => calls.filter(call => call.path.endsWith("/bookmark")).length;
+  const beforeKeys = answerWrites();
+  await page.keyboard.press("b"); await settle();
+  assert.deepEqual((await state()).sel.q2, ["B"], "b selects option B");
+  assert.equal(bookmarkWrites(), 0, "b does not bookmark");
+  await page.keyboard.press("Enter"); await settle();
+  assert.equal(answerWrites(), beforeKeys, "Enter does not submit 1 of 2 selections");
+  await page.locator(".st-opt").first().focus(); await page.keyboard.press("Enter"); await settle();
+  assert.deepEqual((await state()).sel.q2, ["B", "A"], "Enter on a focused option toggles it");
+  assert.equal(answerWrites(), beforeKeys, "Enter on a focused option does not also submit");
+  assert.equal((await state()).done.q2, undefined);
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => !!window.store.state.done.q2);
+  assert.equal(answerWrites(), beforeKeys + 1);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.store.state.idx === 1);
+  assert.deepEqual(await page.locator(".st-key-row kbd").allTextContents(), ["1 – 2", "A – B", "Enter", "Shift + B"]);
+  await page.keyboard.press("Shift+B");
+  await page.waitForFunction(() => window.store.state.bookmarks.q1 === true);
+  assert.equal(calls.filter(call => call.method === "PUT" && call.path === "/api/questions/q1/bookmark").length, 1);
+  assert.deepEqual((await state()).sel.q1 ?? [], [], "Shift+B does not pick option B");
+  await page.getByRole("button", { name: "Back", exact: true }).focus(); await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.store.state.idx === 0);
+  assert.equal(answerWrites(), beforeKeys + 1, "Enter on a focused button runs that button");
+  await invoke("next"); await page.waitForFunction(() => window.store.state.idx === 1);
+  await invoke("next"); await page.waitForFunction(() => window.store.state.idx === 2);
+  const blankField = page.getByRole("textbox", { name: "Your answer" });
+  await blankField.fill("green"); await blankField.press("Enter");
+  await page.waitForFunction(() => window.store.state.done.q3 === "ok");
+  await invoke("endSession"); await page.waitForFunction(() => window.store.state.pStage === "setup");
+  console.log("PASS keyboard shortcuts toggle focused options, wait for a complete answer, leave focused buttons alone and bookmark with Shift+B");
+
   // Exercise component rendering and actual provider draft persistence in Mock.
   const componentRows = ["code", "case-with-figure", "combination"].flatMap(name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions);
   questions.splice(0, questions.length, ...componentRows.map((row, n) => ({ ...row, correctAnswers: undefined, id: `component-${n}`, examId: "exam", sequenceNumber: n + 1, chooseCount: 1, tags: [] })));
+  componentRows.forEach((row, n) => answerKeys.set(`component-${n}`, row.correctAnswers));
   await page.reload(); await ready(); await startMock();
   await show("component-0");
   await page.locator("pre code").filter({ hasText: "values = [1, 2, 3]" }).waitFor();
@@ -229,6 +353,52 @@ try {
   await page.getByRole("button", { name: "Check answer", exact: true }).click();
   await page.waitForFunction(() => !!window.store.state.done["component-0"]);
   assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).isDisabled(), true);
+  // Structured answers read as text, not stored IDs (issue #43): the practice
+  // banner here, and the mock results table below.
+  await page.getByText("Correct answer: 1. Read the values  2. Sum the values  3. Print the sum.", { exact: false }).waitFor();
+  await invoke("go", "mock"); await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  await complete();
+  const matchRow = page.locator("tr").filter({ hasText: "Lower observation" }).first();
+  await matchRow.waitFor();
+  assert.deepEqual(await matchRow.locator("td").evaluateAll(cells => cells.slice(3, 5).map(cell => cell.firstChild?.textContent ?? cell.textContent)),
+    ["Lower observation → Before; Higher observation → After", "Lower observation → Before; Higher observation → After"]);
+  assert.equal(await page.getByText('["low"', { exact: false }).count(), 0, "no JSON pair strings anywhere");
+  const orderRow = page.locator("tr").filter({ hasText: "1. Read the values" }).first();
+  await orderRow.waitFor();
+  await invoke("go", "mock", { newMock: true });
   console.log("PASS component figures/tables/code, order/match controls, restored drafts, practice grading state, keyboard isolation and mobile layout");
+
+  // A session that ends mid-exam (issue #52) asks the learner to sign in again,
+  // instead of every action saying "please retry"; the mock answers it could
+  // not save come back after signing in, and are saved on resume.
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await invoke("go", "mock"); await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  await pick("component-2", "A");
+  await invoke("go", "wrong"); await invoke("go", "mock"); // drains the saved draft
+  const mockId = (await state()).mockAttemptId;
+  assert.deepEqual(attempts.get(mockId).selectedAnswers["component-2"], ["A"]);
+  sessionGone = true;
+  await pick("component-2", "B");
+  const expiredDialog = page.getByRole("dialog", { name: "Your session has expired" });
+  await expiredDialog.waitFor();
+  assert.equal((await state()).actionError, null, "no 'please retry' message for a lost session");
+  await expiredDialog.getByText(/mock answers that could not be saved are restored/).waitFor();
+  await expiredDialog.getByRole("button", { name: "Not now" }).click();
+  await expiredDialog.waitFor({ state: "detached" });
+  await pick("component-2", "B");
+  await expiredDialog.waitFor();
+  await expiredDialog.getByRole("button", { name: "Sign in again" }).click();
+  await page.waitForURL(/\/api\/auth\/google\/start\?returnTo=%2F%3Fscreen%3Dmock$/);
+  sessionGone = false; // Google sends the learner back, signed in
+  await page.goto(`${base}/?screen=mock`); await ready();
+  await page.waitForFunction(() => window.store.state.screen === "mock" && !!window.store.state.activeMockAttempt);
+  await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  assert.deepEqual((await state()).mSel["component-2"], ["B"], "the unsaved answer is back");
+  await invoke("go", "wrong"); // drains the re-saved draft
+  assert.deepEqual(attempts.get(mockId).selectedAnswers["component-2"], ["B"], "and saved");
+  console.log("PASS an expired session asks to sign in again, returns to the mock and restores its unsaved answers");
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

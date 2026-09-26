@@ -157,7 +157,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
             onChange={setTab}
           >
             {tab === "exp" && <ExplanationPanel q={q} explanation={detail?.explanation} collapsible={!gridHeight} />}
-            {tab === "history" && <HistoryPanel rows={history} loading={!ready} answerRevisedAt={detail?.answerRevisedAt} answerRevision={detail?.answerRevision} />}
+            {tab === "history" && <HistoryPanel rows={history} loading={!ready} answerRevisedAt={detail?.answerRevisedAt} answerRevision={detail?.answerRevision} question={q} />}
             {tab === "notes" && <NotesPanel qid={q.id} />}
             {tab === "related" && <RelatedKnowledgePoints key={q.id} questionId={q.id} embedded />}
           </ReviewTabs>

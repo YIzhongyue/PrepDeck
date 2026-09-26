@@ -10,7 +10,7 @@
 import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
-import type { AnnotationTargetType } from "@prepdeck/shared";
+import { MAX_ANNOTATION_NOTE_LENGTH, MAX_ANNOTATION_STYLE_LENGTH, type AnnotationTargetType } from "@prepdeck/shared";
 import { buildAnnotationsListQuery, toAnnotation, type AnnotationRow } from "../lib/annotationsQuery";
 
 const TARGET_TYPES: AnnotationTargetType[] = ["stem", "option", "ai_explanation"];
@@ -26,7 +26,19 @@ function validateCreate(body: any): string | null {
   if (!Number.isInteger(body.rangeStart) || body.rangeStart < 0) return "rangeStart must be a non-negative integer";
   if (!Number.isInteger(body.rangeEnd) || body.rangeEnd <= body.rangeStart) return "rangeEnd must be an integer greater than rangeStart";
   if (typeof body.style !== "string" || !body.style) return "style is required";
+  return lengthProblem(body);
+}
+
+// Issue #45: both strings used to be unbounded; an oversized one reached D1
+// and came back as an unhandled SQLITE_TOOBIG 500.
+function lengthProblem(body: { style?: unknown; note?: unknown }): string | null {
   if (body.note != null && typeof body.note !== "string") return "note must be a string";
+  if (typeof body.note === "string" && body.note.length > MAX_ANNOTATION_NOTE_LENGTH) {
+    return `note must be ${MAX_ANNOTATION_NOTE_LENGTH.toLocaleString("en")} characters or fewer`;
+  }
+  if (typeof body.style === "string" && body.style.length > MAX_ANNOTATION_STYLE_LENGTH) {
+    return `style must be ${MAX_ANNOTATION_STYLE_LENGTH} characters or fewer`;
+  }
   return null;
 }
 
@@ -116,7 +128,8 @@ annotationsRouter.patch("/:id", async (c) => {
   if (body.style != null && (typeof body.style !== "string" || !body.style)) {
     return c.json({ error: "style must be a non-empty string" }, 400);
   }
-  if (body.note != null && typeof body.note !== "string") return c.json({ error: "note must be a string" }, 400);
+  const tooLong = lengthProblem(body);
+  if (tooLong) return c.json({ error: tooLong }, 400);
 
   const style = body.style ?? existing.style;
   const note = body.note !== undefined ? body.note : existing.note;

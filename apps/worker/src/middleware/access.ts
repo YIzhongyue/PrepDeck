@@ -13,6 +13,7 @@ interface UserRow {
   status: "invited" | "active" | "revoked";
   display_name: string | null;
   avatar_url: string | null;
+  session_version: number;
 }
 
 type Handler = MiddlewareHandler<{ Bindings: Env; Variables: Variables }>;
@@ -67,19 +68,26 @@ const requireCookieSessionUser: Handler = async (c, next) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
+  // A token minted before the account's latest sign-out or revoke carries an
+  // older session version and is refused (issue #46). The cached row is only
+  // trusted when it carries the version; after a sign-out it is deleted, so
+  // the next request reads D1 (other locations see the delete within about a
+  // minute, KV's propagation time).
   const cached = await getCachedUserById(c.env, session.userId);
-  if (cached) {
+  if (cached && cached.session_version !== undefined) {
+    if (cached.session_version !== session.sessionVersion) return c.json({ error: "Unauthorized" }, 401);
     if (cached.status === "revoked") return c.json({ error: "Forbidden", email: cached.email }, 403);
     c.set("user", { id: cached.id, email: cached.email, role: cached.role, displayName: cached.display_name, avatarUrl: cached.avatar_url });
     return next();
   }
 
-  const row = await c.env.DB.prepare("SELECT id, email, role, status, display_name, avatar_url FROM users WHERE id = ?")
+  const row = await c.env.DB.prepare("SELECT id, email, role, status, display_name, avatar_url, session_version FROM users WHERE id = ?")
     .bind(session.userId)
     .first<UserRow>();
   if (!row || row.status === "revoked") {
     return c.json({ error: "Forbidden", email: row?.email ?? null }, 403);
   }
+  if (row.session_version !== session.sessionVersion) return c.json({ error: "Unauthorized" }, 401);
 
   c.set("user", { id: row.id, email: row.email, role: row.role, displayName: row.display_name, avatarUrl: row.avatar_url });
   await setCachedUser(c.env, row);

@@ -820,7 +820,7 @@ test("implementation: quality-control find_* tools locate the seeded duplicate, 
   assert.deepEqual(missingMetadata.items[0], {
     id: "q2", examId: "examA", externalId: null, sequenceNumber: 2, type: "single_choice",
     stemPreview: "what is 2+2?", updatedAt: "2026-01-03T00:00:00.000Z",
-    missingDifficulty: true, missingTags: true,
+    missingDifficulty: true, missingTags: true, invalidPoints: false,
   });
 
   assert.equal((await callAdminToolExpectingError(f, "admin_find_duplicate_questions", { examId: "missing" })).code, "not_found");

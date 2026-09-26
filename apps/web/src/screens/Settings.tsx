@@ -5,7 +5,7 @@ import {
 } from "@prepdeck/shared";
 import { HL, THEMES } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
-import { apiFetch } from "../lib/api";
+import { ApiError, isSessionExpired } from "../lib/api";
 import { AvatarValidationError, prepareAvatarUpload } from "../lib/avatar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import McpTokensCard from "../components/McpTokensCard";
@@ -15,6 +15,7 @@ import { DEFAULT_THEME } from "../lib/themeStorage";
 // implementation — shared Untitled UI primitives. docs/guides/ui-components.md
 // covers the token mapping and which screens are still to be migrated.
 import { Button } from "@/components/base/buttons/button";
+import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { Input, InputBase, TextField } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
 import { RadioButton, RadioGroup } from "@/components/base/radio-buttons/radio-buttons";
@@ -36,6 +37,14 @@ function optionCardClass(selected: boolean) {
   );
 }
 
+// The server's own message for a refused profile change (a 400 or the 413
+// "Avatar must be 2 MB or smaller"). A lost session has its own dialog, so it
+// needs no message here.
+function profileErrorMessage(err: unknown, fallback: string): string | null {
+  if (isSessionExpired(err)) return null;
+  return err instanceof ApiError && err.status >= 400 && err.status < 500 ? err.message : fallback;
+}
+
 function segBg(on: boolean) { return on ? "var(--color-accent)" : "transparent"; }
 function segFg(on: boolean) { return on ? "var(--color-bg)" : "var(--color-text)"; }
 function segBd(on: boolean) { return on ? "var(--color-accent)" : "var(--color-divider)"; }
@@ -43,10 +52,12 @@ function segBd(on: boolean) { return on ? "var(--color-accent)" : "var(--color-d
 export default function Settings({ bp }: { bp: Breakpoints }) {
   const {
     state, setTheme, setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
-    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey,
+    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut,
     toggleShared, updateDisplayName, uploadAvatar, updateMarkAlias, updateEmailSettings
   } = usePrepDeck();
   const theme = state.theme || DEFAULT_THEME;
+  const [removeSavedKey, setRemoveSavedKey] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const curatedModels = CURATED_MODELS[state.provider];
   const isCustomModel = !curatedModels.some((m) => m.id === state.model);
   const modelOptions = useMemo(
@@ -120,6 +131,12 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const nameDirty = nameDraft.trim() !== "" && nameDraft.trim() !== (state.me?.displayName ?? "");
   // updateDisplayName() already refuses a blank name; this only surfaces why.
   const nameEmpty = nameDraft.trim() === "";
+  // A save the server refused, shown instead of silently keeping the old name (issue #52).
+  const [nameError, setNameError] = useState<string | null>(null);
+  const saveName = () => {
+    setNameError(null);
+    updateDisplayName(nameDraft).catch((err) => setNameError(profileErrorMessage(err, "Could not save your display name. Please try again.")));
+  };
 
   // implementation: same controlled-draft pattern as nameDraft above, re-synced
   // whenever the server-confirmed aliases change underneath it.
@@ -138,9 +155,9 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
     setAvatarBusy(true);
     try {
       const blob = await prepareAvatarUpload(file);
-      uploadAvatar(blob);
+      await uploadAvatar(blob);
     } catch (err) {
-      setAvatarError(err instanceof AvatarValidationError ? err.message : "Could not upload this image.");
+      setAvatarError(err instanceof AvatarValidationError ? err.message : profileErrorMessage(err, "Could not upload this image."));
     } finally {
       setAvatarBusy(false);
     }
@@ -223,13 +240,13 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 className="flex-1"
                 label="Display name"
                 value={nameDraft}
-                onChange={setNameDraft}
-                isInvalid={nameEmpty}
-                hint={nameEmpty ? "Enter a display name to save it." : undefined}
+                onChange={(v) => { setNameDraft(v); setNameError(null); }}
+                isInvalid={nameEmpty || !!nameError}
+                hint={nameEmpty ? "Enter a display name to save it." : nameError ?? undefined}
               />
               {nameDirty && (
                 <div style={ALIGN_WITH_INPUT}>
-                  <Button size="md" onClick={() => updateDisplayName(nameDraft)}>Save</Button>
+                  <Button size="md" onClick={saveName}>Save</Button>
                 </div>
               )}
             </div>
@@ -243,18 +260,24 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             {avatarError && <p role="alert" style={{ margin: 0, fontSize: 11.5, color: "var(--color-danger)", maxWidth: 180, textAlign: "right" }}>{avatarError}</p>}
           </div>
         </div>
-        <Button
-          color="secondary"
-          size="md"
-          className="self-start"
-          onClick={() =>
-            apiFetch("/api/auth/logout", { method: "POST" }).finally(() => {
-              window.location.href = "/?auth=signedout";
-            })
-          }
-        >
-          Sign out
-        </Button>
+        {/* Issue #46: signing out ends every session of the account, and a
+            saved AI key can go with it on a shared browser. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+          <p style={{ margin: 0, fontSize: 12.5, opacity: 0.7 }}>
+            Signing out ends your session on every device and browser. MCP tokens are separate; revoke them below.
+          </p>
+          {state.hasStoredKey && (
+            <Checkbox label="Also remove my saved AI key from this browser" isSelected={removeSavedKey} onChange={setRemoveSavedKey} />
+          )}
+          <Button
+            color="secondary"
+            size="md"
+            isDisabled={signingOut}
+            onClick={() => { setSigningOut(true); void signOut({ removeSavedKey: state.hasStoredKey && removeSavedKey }); }}
+          >
+            Sign out
+          </Button>
+        </div>
       </div>
 
       <div className="card elev-sm" style={{ padding: 22, gap: 16, marginBottom: 16 }}>

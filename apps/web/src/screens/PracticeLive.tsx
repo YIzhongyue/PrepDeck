@@ -1,9 +1,10 @@
 import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useState } from "react";
-import { hasAnswer } from "@prepdeck/shared";
+import { formatAnswerText } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { SHOW_KEYBOARD_HINTS } from "../data/constants";
 import { buildPracticePrompt, copyText } from "../lib/practicePrompt";
+import { canCheckAnswer, practiceShortcutHints, requiredSelections } from "../lib/practiceShortcuts";
 import { questionTypeLabel } from "../lib/questionTypes";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
@@ -15,13 +16,6 @@ import {
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
 import type { GradedAnswer, Question } from "../types";
-
-const SHORTCUTS = [
-  { key: "1 – 4", what: "Select an option" },
-  { key: "A – D", what: "Select by letter" },
-  { key: "Enter", what: "Check / next" },
-  { key: "B", what: "Bookmark" }
-];
 
 // Longer sessions fall back to a plain bar: segments under ~6px stop reading as questions.
 const MAX_SEGMENTS = 60;
@@ -60,10 +54,8 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const gradedAnswer = state.graded[q.id];
   const contentPending = !!q.hasContent && !q.content;
   const chosen = state.sel[q.id] || [];
-  const interaction = q.content?.interaction;
-  const need = interaction?.type === "order" ? interaction.options.length : interaction?.type === "match" ? interaction.left.length : q.type === "multiple_choice" ? (q.chooseCount || 1) : 1;
-  const incompleteOrder = interaction?.type === "order" && (chosen.some(id => !id) || new Set(chosen).size !== need);
-  const canCheck = !contentPending && chosen.length === need && !incompleteOrder && hasAnswer(q.type, chosen);
+  const need = requiredSelections(q);
+  const canCheck = canCheckAnswer(q, chosen);
   const liveCols = !bp.narrow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
   const bookmarked = !!state.bookmarks[q.id];
   const last = state.idx + 1 >= state.queue.length;
@@ -138,7 +130,12 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                   <StructuredResponse content={q.content} selected={chosen} onChange={answer => pick(q, answer)} disabled={!!graded} correct={graded ? correctAnswers : undefined} />
                 ) : q.type === "fill_blank" ? (
                   <label className="st-field">Your answer
-                    <input className="st-input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)} />
+                    <input
+                      className="st-input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)}
+                      // Enter in the answer field checks it, like the shortcut does elsewhere
+                      // on the page. It never ends an IME composition early.
+                      onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && canCheck) { e.preventDefault(); submit(); } }}
+                    />
                   </label>
                 ) : (
                   <OptionGroup kind={graded ? "review" : q.type === "multiple_choice" ? "multiple" : "single"} tabStop={chosen[0] ?? q.options?.[0]?.id}>
@@ -154,7 +151,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                 <div>
                   <div className="st-alert-title">{graded === "ok" ? "Correct" : "Incorrect — added to your wrong book"}</div>
                   <div className="st-alert-body">
-                    {correctAnswers.length > 0 && <>Correct answer: {correctAnswers.join(", ")}. </>}
+                    {correctAnswers.length > 0 && <>Correct answer: {formatAnswerText(q, correctAnswers)}. </>}
                     The explanation is open {bp.narrow ? "below" : "on the right"}.
                   </div>
                 </div>
@@ -188,8 +185,8 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
               {SHOW_KEYBOARD_HINTS && (
                 <div className="st-keys">
                   <div className="st-keys-title"><Icon d={IC.keyboard} size={14} />Keyboard shortcuts</div>
-                  {SHORTCUTS.filter(k => (q.type !== "ordering" && q.type !== "matching") || k.key === "Enter").map((k) => (
-                    <div key={k.key} className="st-key-row"><kbd className="st-kbd">{k.key}</kbd>{k.what}</div>
+                  {practiceShortcutHints(q).map((k) => (
+                    <div key={k.keys} className="st-key-row"><kbd className="st-kbd">{k.keys}</kbd>{k.action}</div>
                   ))}
                 </div>
               )}
@@ -242,7 +239,7 @@ function optionRows(
     return (
       <OptionRow
         key={o.id} id={o.id} state={optState} status={status}
-        keyHint={!graded && showKeys ? String(i + 1) : undefined}
+        keyHint={!graded && showKeys && i < 9 ? String(i + 1) : undefined}
         onPick={!graded ? () => pick(q, o.id) : undefined}
         onMouseUp={graded ? () => capture(q.id, `opt:${o.id}`) : undefined}
       >

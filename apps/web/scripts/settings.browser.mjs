@@ -114,6 +114,8 @@ let userSettings = { showSharedNotes: false };
 let emailSettings = { enabled: false, questionsPerEmail: 3, source: "wrong", sendHourLocal: 8, timezone: "UTC" };
 let markAliases = { hl1Alias: "Important", hl2Alias: "Review", hl3Alias: "Question" };
 let avatarStatus = 200;
+let nameStatus = 200;
+let logouts = 0;
 
 const server = createServer(async (req, res) => {
   try {
@@ -133,6 +135,7 @@ const server = createServer(async (req, res) => {
     let raw = Buffer.alloc(0); for await (const part of req) raw = Buffer.concat([raw, part]);
     const input = req.headers["content-type"]?.startsWith("image/") ? {} : JSON.parse(raw.toString() || "{}");
     if (path === "/api/auth/me") return json(200, { user: profile });
+    if (path === "/api/auth/logout") { logouts++; return json(200, { ok: true }); }
     if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "cloud", name: "Cloud fundamentals" }] });
     if (path.includes("practice-catalog")) return json(200, { questions: [], bookmarkedIds: [], wrongEntries: [], attemptedIds: [] });
     if (path === "/api/attempts/active") return json(200, { attempt: null });
@@ -149,8 +152,11 @@ const server = createServer(async (req, res) => {
       if (req.method !== "GET") emailSettings = { ...emailSettings, ...input };
       return json(200, emailSettings);
     }
-    if (path === "/api/me" && req.method === "PATCH") { profile = { ...profile, ...input }; return json(200, { user: profile }); }
-    if (path === "/api/me/avatar") return json(avatarStatus, avatarStatus === 200 ? { user: profile } : { error: "too_large" });
+    if (path === "/api/me" && req.method === "PATCH") {
+      if (nameStatus !== 200) return json(nameStatus, { error: "displayName must be 100 characters or fewer" });
+      profile = { ...profile, ...input }; return json(200, { user: profile });
+    }
+    if (path === "/api/me/avatar") return json(avatarStatus, avatarStatus === 200 ? { avatarUrl: "/avatars/me.webp" } : { error: "Avatar must be 2 MB or smaller" });
     if (path === "/api/mcp-tokens") return json(200, { credentials: [] });
     return json(200, {});
   } catch (err) { res.writeHead(500); res.end(String(err)); }
@@ -405,6 +411,69 @@ try {
     }
     await page.setViewportSize({ width: 1280, height: 1000 });
   }
+
+  // --- Profile changes the server refuses are reported (issue #52) ------------
+  await page.goto(base);
+  await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  nameStatus = 400;
+  const nameBefore = profile.displayName;
+  await page.getByRole("textbox", { name: "Display name" }).fill("A new name");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("displayName must be 100 characters or fewer").waitFor();
+  assert.equal(profile.displayName, nameBefore, "nothing was saved");
+  nameStatus = 200;
+  avatarStatus = 413;
+  const png = Buffer.from(await page.evaluate(() => {
+    const canvas = Object.assign(document.createElement("canvas"), { width: 8, height: 8 });
+    canvas.getContext("2d").fillRect(0, 0, 8, 8);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  await page.locator('input[type="file"]').setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+  await page.getByText("Avatar must be 2 MB or smaller").waitFor();
+  avatarStatus = 200;
+
+  // --- The saved AI key belongs to one account (issue #46) ---------------------
+  // A browser-wide key store let the next account on a shared browser see that
+  // a key was saved, be offered to unlock it, and overwrite or delete it.
+  const app = expression => page.evaluate(expression);
+  const reloadAs = async id => {
+    profile = { ...profile, id };
+    await page.goto(base);
+    await page.waitForFunction(expected => window.fixtureApp?.state.me?.id === expected, id);
+    await page.waitForTimeout(150); // the key lookup follows the account
+  };
+  const keyState = () => app(() => ({ mode: window.fixtureApp.state.keyMode, stored: window.fixtureApp.state.hasStoredKey }));
+  const idbRecord = name => page.evaluate(name => new Promise(done => {
+    const req = indexedDB.open(name, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("keys");
+    req.onsuccess = () => { const get = req.result.transaction("keys").objectStore("keys").get("ai-provider-key"); get.onsuccess = () => { done(get.result !== undefined); req.result.close(); }; };
+  }), name);
+  await reloadAs("me");
+  await app(() => window.fixtureApp.setKeyMode("encrypted"));
+  await app(() => window.fixtureApp.saveEncryptedApiKey("sk-synthetic", "correct horse"));
+  assert.equal(await idbRecord("prepdeck-keystore:me"), true, "the key is stored under its account");
+  assert.equal(await app(() => localStorage.getItem("prepdeck.keyMode:me")), "encrypted");
+  // What an earlier version left behind: a browser-wide key and mode.
+  await page.evaluate(() => new Promise(done => {
+    localStorage.setItem("prepdeck.keyMode", "encrypted");
+    const req = indexedDB.open("prepdeck-keystore", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("keys");
+    req.onsuccess = () => { const tx = req.result.transaction("keys", "readwrite"); tx.objectStore("keys").put({ salt: [], iv: [], ciphertext: [] }, "ai-provider-key"); tx.oncomplete = () => { req.result.close(); done(); }; };
+  }));
+  await reloadAs("someone-else");
+  assert.deepEqual(await keyState(), { mode: "memory", stored: false }, "another account sees neither this key nor the old browser-wide one");
+  assert.equal(await page.getByRole("checkbox", { name: "Also remove my saved AI key from this browser" }).count(), 0);
+  await reloadAs("me");
+  assert.deepEqual(await keyState(), { mode: "encrypted", stored: true }, "the owner still has it");
+  await page.getByText("Signing out ends your session on every device and browser.", { exact: false }).waitFor();
+  await page.getByText("Also remove my saved AI key from this browser", { exact: true }).click();
+  assert.equal(await page.getByRole("checkbox", { name: "Also remove my saved AI key from this browser" }).isChecked(), true);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.waitForURL(/auth=signedout/);
+  assert.equal(logouts, 1);
+  assert.equal(await idbRecord("prepdeck-keystore:me"), false, "the saved key was removed on request");
+  assert.equal(await app(() => localStorage.getItem("prepdeck.keyMode")), null, "the browser-wide mode is gone");
+  assert.equal(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "prepdeck-keystore")), false, "so is the browser-wide key store");
 
   assert.deepEqual(failures, [], "no uncaught browser exceptions");
   console.log("Settings/Untitled UI browser regression passed: labels, validation, keyboard, disabled and loading states, portaled overlay re-theming, scheme persistence, every imported primitive above its contrast floor, and 1280/375px in all five schemes.");
