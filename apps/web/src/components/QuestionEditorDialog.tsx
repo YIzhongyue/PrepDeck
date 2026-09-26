@@ -99,7 +99,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
         <div className="authoring-toolbar">
           <div className="field"><label htmlFor="external-id">External ID (optional, unique in this exam)</label><input id="external-id" className="input" value={form.externalId} onChange={e => change("externalId", e.target.value)} {...accessibility("externalId")} />{errors("externalId")}</div>
           <div className="field"><label htmlFor="question-difficulty">Difficulty</label><select id="question-difficulty" className="input" value={form.difficulty} onChange={e => change("difficulty", e.target.value)}><option value="">Unspecified</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>{errors("difficulty")}</div>
-          <div className="field"><label htmlFor="question-points">Points</label><input id="question-points" className="input" type="number" step="any" value={form.points} onChange={e => change("points", e.target.value)} {...accessibility("points")} />{errors("points")}</div>
+          <div className="field"><label htmlFor="question-points">Points</label><input id="question-points" className="input" type="number" step="any" min={0} max={IMPORT_LIMITS.maxPoints} value={form.points} onChange={e => change("points", e.target.value)} {...accessibility("points")} />{errors("points")}</div>
         </div>
         <div className="field"><label htmlFor="question-tags">Tags</label><QuestionTagPicker tags={form.tags} invalid={fieldErrors("tags").length > 0}
           onAdd={name => setForm(f => f.tags.length >= IMPORT_LIMITS.maxTags || f.tags.some(tag => normalizeTagKey(tag) === normalizeTagKey(name)) ? f : { ...f, tags: [...f.tags, name] })}

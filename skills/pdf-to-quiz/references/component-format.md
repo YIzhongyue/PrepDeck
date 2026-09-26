@@ -24,10 +24,10 @@ Interactions:
 
 | Type | Structure | Stored response / grading |
 | --- | --- | --- |
-| `choice` | `multiple`, options with unique IDs | One ID, or at least two IDs for multiple choice; exact set. Optional `variant: "true_false"` preserves that type and requires `true`/`false` IDs. |
+| `choice` | `multiple`, at least two options with unique IDs | One ID, or at least two IDs for multiple choice; exact set. Optional `variant: "true_false"` preserves that type and requires `true`/`false` IDs. |
 | `text` | No options | One or more accepted source-backed strings; existing trimmed, case-insensitive exact comparison. |
 | `order` | Options in source display order | Correct IDs in exact order, each exactly once. |
-| `match` | `left` and `right` options | Canonical JSON pair strings, e.g. `"[\"low\",\"before\"]"`; exactly one pair per left ID. Right IDs may repeat; pair order does not affect grading. |
+| `match` | `left` and `right` options; at least two `right` items | Canonical JSON pair strings, e.g. `"[\"low\",\"before\"]"`; exactly one pair per left ID. Right IDs may repeat; pair order does not affect grading. |
 
 Options contain either `body` blocks or `memberRefs` pointing to IDs in a list.
 A choice that names actions (a)+(c) remains **one choice**, not a multiple-choice

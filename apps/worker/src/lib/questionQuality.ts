@@ -8,7 +8,7 @@
 // tools (which only need counts), and so they can be unit tested without a
 // database.
 
-import type { Question } from "@prepdeck/shared";
+import { IMPORT_LIMITS, type Question } from "@prepdeck/shared";
 
 const CHOICE_TYPES = new Set<Question["type"]>(["single_choice", "multiple_choice", "true_false"]);
 
@@ -44,11 +44,23 @@ export function isMissingExplanation(question: Pick<Question, "explanation">): b
 
 // Referential integrity between correctAnswers and options[].id — narrower
 // than validateQuestionRow (used for full payload validation on write),
-// scoped to just the condition this read tool is named for.
-export function findAnswerReferenceIssues(question: Pick<Question, "type" | "options" | "correctAnswers">): string[] {
+// scoped to the answer structure this read tool is named for. That includes
+// the structures validation started refusing in issue #54, so rows saved before
+// then can be found and fixed rather than silently grandfathered: once the
+// rule exists, such a row cannot be saved again until it is corrected.
+export function findAnswerReferenceIssues(question: Pick<Question, "type" | "options" | "correctAnswers" | "content">): string[] {
+  if (question.type === "matching") {
+    const interaction = question.content?.interaction;
+    return interaction?.type === "match" && interaction.right.length < 2
+      ? ["matching must have at least two right-hand items; with one, every match is correct"]
+      : [];
+  }
   if (!CHOICE_TYPES.has(question.type)) return [];
   const optionIds = new Set((question.options ?? []).map((option) => option.id));
   const issues: string[] = [];
+  if (question.type === "single_choice" && optionIds.size < 2) {
+    issues.push("single_choice must have at least two options; with one, it is always answered correctly");
+  }
   for (const answer of question.correctAnswers) {
     if (!optionIds.has(answer)) issues.push(`correctAnswers references unknown option id "${answer}"`);
   }
@@ -61,14 +73,21 @@ export function findAnswerReferenceIssues(question: Pick<Question, "type" | "opt
 export interface MissingMetadataFlags {
   missingDifficulty: boolean;
   missingTags: boolean;
+  // Points outside the range validation accepts (issue #54): greater than 0
+  // and at most IMPORT_LIMITS.maxPoints.
+  invalidPoints: boolean;
 }
 
-export function missingMetadataFlags(question: Pick<Question, "difficulty" | "tags">): MissingMetadataFlags {
-  return { missingDifficulty: question.difficulty === null, missingTags: question.tags.length === 0 };
+export function isValidPoints(points: number): boolean {
+  return Number.isFinite(points) && points > 0 && points <= IMPORT_LIMITS.maxPoints;
+}
+
+export function missingMetadataFlags(question: Pick<Question, "difficulty" | "tags" | "points">): MissingMetadataFlags {
+  return { missingDifficulty: question.difficulty === null, missingTags: question.tags.length === 0, invalidPoints: !isValidPoints(question.points) };
 }
 
 export function hasMissingMetadata(flags: MissingMetadataFlags): boolean {
-  return flags.missingDifficulty || flags.missingTags;
+  return flags.missingDifficulty || flags.missingTags || flags.invalidPoints;
 }
 
 export function stemPreview(stem: string, maxLength = 160): string {

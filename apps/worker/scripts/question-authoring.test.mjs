@@ -130,7 +130,7 @@ test("invalid payloads and non-admin writes cannot persist anything", async t =>
 });
 test("partial edits preserve unrelated fields and stable IDs; stale edits cannot overwrite", async t => {
   const { create, update, request } = setup(t);
-  const q = await create({ externalId: "Q1", tags: ["tag"], explanation: "why", difficulty: "hard", points: 0 });
+  const q = await create({ externalId: "Q1", tags: ["tag"], explanation: "why", difficulty: "hard", points: 2.5 });
   const res = await update(q, { stem: "New stem" }); assert.equal(res.status, 200);
   assert.equal(res.data.question.id, q.id); assert.equal(res.data.question.sequenceNumber, q.sequenceNumber);
   for (const field of ["externalId", "tags", "explanation", "difficulty", "points"]) assert.deepEqual(res.data.question[field], q[field]);
@@ -528,4 +528,29 @@ test("0033 migrates legacy needs_review tag state onto the column and retires th
   assert.equal(await reasonFor("edited", "Q2"), "locally_edited");
   assert.equal(await reasonFor("tagged-later", "Q3"), "locally_edited");
   assert.equal(await reasonFor("hand-authored", "Q5"), "unknown_provenance");
+});
+
+test("points must be greater than 0 and at most 100, and a single choice needs two options (issue #54)", async t => {
+  const { db, request, create, update, file } = setup(t);
+  for (const points of [-5, 0, 100.5, 1e308]) {
+    const response = await request("/exams/exam/questions", "POST", { ...choice, points });
+    assert.equal(response.status, 422, String(points));
+    assert.ok(response.data.issues.some(issue => issue.path === "$.points"), JSON.stringify(response.data));
+  }
+  assert.equal((await create({ points: 0.5 })).points, 0.5, "fractions are allowed");
+  assert.equal((await create({ points: 100 })).points, 100);
+  const lonely = await request("/exams/exam/questions", "POST", { ...choice, options: [{ id: "A", text: "2" }], correctAnswers: ["A"] });
+  assert.equal(lonely.status, 422);
+  assert.ok(lonely.data.issues.some(issue => issue.path === "$.options" && /at least two options/.test(issue.message)), JSON.stringify(lonely.data));
+  // A row saved before the rules existed is refused on its next save, and the
+  // error names the field to fix; fixing it is enough to save the edit.
+  const legacy = await create();
+  db.prepare("UPDATE questions SET points = -5 WHERE id = ?").run(legacy.id);
+  const refused = await update(legacy, { stem: "Typo fixed" });
+  assert.equal(refused.status, 422);
+  assert.ok(refused.data.issues.some(issue => issue.path === "$.points"), JSON.stringify(refused.data));
+  assert.equal((await update(legacy, { stem: "Typo fixed", points: 1 })).status, 200);
+  const preview = await request("/exams/exam/import/validate", "POST", file([{ ...choice, points: -5 }, { ...choice, options: [{ id: "A", text: "2" }] }]));
+  assert.equal(preview.data.valid, false);
+  assert.deepEqual(preview.data.issues.map(issue => issue.path).sort(), ["$.questions[0].points", "$.questions[1].options"]);
 });

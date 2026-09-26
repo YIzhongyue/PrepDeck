@@ -67,7 +67,9 @@ export const questionImportJsonSchema = {
         },
         options: {
           type: "array",
-          minItems: 1,
+          // Two or more for every type that has options: one option is not a
+          // question (issue #54).
+          minItems: 2,
           maxItems: 20,
           description: "Required for single_choice/multiple_choice/true_false; omitted for fill_blank.",
           items: {
@@ -109,6 +111,8 @@ export const questionImportJsonSchema = {
         },
         points: {
           type: "number",
+          exclusiveMinimum: 0,
+          maximum: 100,
           default: 1
         }
       },
