@@ -1,0 +1,12 @@
+/* Brand typefaces, self-hosted (issue #44). They used to be @imported from
+   Google Fonts, which the production CSP (`style-src 'self'`, `font-src 'self'`
+   in public/_headers) refuses, so outside Vite dev every page fell back to the
+   platform's system-ui. Served from 'self' now, fingerprinted into dist/assets
+   by Vite, with no third-party request and no CSP change. Each file declares
+   its unicode-range subsets; the browser fetches only the ones a page uses,
+   and only for faces it actually renders. All three are OFL-1.1 (CREDITS.md). */
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/figtree/700.css";
+@import "@fontsource/caprasimo/400.css";
+@import "@fontsource/jetbrains-mono/400.css";

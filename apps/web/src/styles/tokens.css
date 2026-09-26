@@ -1,6 +1,6 @@
 /* Design tokens and component classes, ported from the "Organic" Claude Design
    system used for the PrepDeck UI design. Source of truth for look & feel. */
-@import url('https://fonts.googleapis.com/css2?family=Caprasimo:wght@400&family=Figtree:wght@400;600;700&display=swap');
+/* The typefaces are self-hosted in fonts.css (issue #44). */
 
 :root {
   /* Keep the unscoped, pre-React tokens in sync with DEFAULT_THEME. These are

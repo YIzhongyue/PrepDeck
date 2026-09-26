@@ -30,7 +30,7 @@ const { outputFiles } = await build({ stdin: { contents: `
     </main>;
   }
   createRoot(document.getElementById('root')).render(<PrepDeckProvider><Fixture/></PrepDeckProvider>);
-`, loader: "tsx", resolveDir: web }, bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+`, loader: "tsx", resolveDir: web }, bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 
 let png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yacoAAAAASUVORK5CYII=", "base64");
 const body = '# Access policies\n\n**Bold concept** and *careful reasoning*.\n\n> Private study note\n\n- Identity\n- Resource\n\n| Policy | Scope |\n| --- | --- |\n| IAM | Account |\n\n```typescript\nconst policy = "deny";\n```\n\n```mermaid\nflowchart TD\n  A[Identity] --> B[Policy]\n```\n\n![Policy screenshot](/api/kp-images/picture)\n\nPreserve <span data-example="raw">inline HTML</span> here.\n';

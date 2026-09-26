@@ -13,7 +13,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React from 'rea
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
 function Probe(){window.store=usePrepDeck();return null;}
 createRoot(document.getElementById('root')).render(<PrepDeckProvider><Probe/><Shell/></PrepDeckProvider>);`,
-  loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) }, bundle: true, write: false,
+  loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) }, bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" },
   outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 
 const exams = [

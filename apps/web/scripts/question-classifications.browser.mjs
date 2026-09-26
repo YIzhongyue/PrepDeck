@@ -8,7 +8,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React, {useStat
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
   function Fixture(){const [exam,setExam]=useState('sg');return <><button onClick={()=>setExam('sg')}>SG exam</button><button onClick={()=>setExam('ip')}>IP exam</button><QuestionsPanel exam={{id:exam}}/></>}
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
-  bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+  bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const question = (id, tags, extra = {}) => ({ id, externalId: id, sequenceNumber: Number(id.match(/\d+/)?.[0] ?? 0) + 1, type: "single_choice", stem: `Question ${id}`, tags, options: [{ id: "a", text: "One" }, { id: "b", text: "Two" }], correctAnswers: ["a"], difficulty: "easy", ...extra });
 const banks = { sg: [...Array.from({ length: 75 }, (_, i) => question(`a-${i}`, ["科目A"])),
   ...Array.from({ length: 75 }, (_, i) => question(`b-${i}`, ["科目B", ...(i === 54 ? ["focus"] : [])], i === 54 ? { stem: "Selected question", difficulty: "hard", needsReview: true } : {})), question("missing", []), question("ambiguous", ["科目A", "科目B"])],

@@ -12,7 +12,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React from 'rea
   root.render(<McpTokensCard title={admin ? 'Admin MCP tokens' : 'MCP access'} description="Connect your AI client to PrepDeck."
     apiBase={admin ? '/api/admin/mcp-tokens' : '/api/mcp-tokens'} enableSetupPrompt />);
   window.unmountFixture = () => root.unmount();`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
-  bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+  bundle: true, write: false, loader: { ".woff": "dataurl", ".woff2": "dataurl" }, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 let tokens = [], writes = 0, nextExpiry = null, failRotation = false;
 const freshToken = n => `pd_mcp_user_${n.toString(16).padStart(64, "a")}`;
 const server = createServer(async (req, res) => {
