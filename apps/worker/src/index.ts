@@ -36,6 +36,7 @@ import { circuitBreaker } from "./middleware/circuitBreaker";
 import { runKnowledgePointImageCleanup } from "./scheduled/cleanupKnowledgePointImages";
 import { runContentMutationAuditPrune } from "./scheduled/pruneContentMutationAudit";
 import { runDailyReviewEmailDelivery } from "./scheduled/sendDailyReviewEmails";
+import { runStalePracticeClose } from "./scheduled/closeStalePracticeAttempts";
 import { userMcpRouter, adminMcpRouter } from "./mcp/routes";
 import { createMcpTokensRouter } from "./routes/mcpTokens";
 import { observeMcp } from "./mcp/observability";
@@ -161,5 +162,7 @@ export default {
     // same "a missed run is picked up tomorrow" property. Kept as its own
     // waitUntil so neither sweep's failure can cancel the other.
     ctx.waitUntil(runContentMutationAuditPrune(env));
+    // Practice sessions nobody ended (issue #40), on the same daily trigger.
+    ctx.waitUntil(runStalePracticeClose(env));
   },
 } satisfies ExportedHandler<Env>;

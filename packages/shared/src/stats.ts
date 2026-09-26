@@ -70,7 +70,10 @@ export interface AccuracyComparison {
 // Bumped whenever ExamStatsResponse gains fields the dashboard reads. The KV
 // cache key carries the same number (lib/statsCache.ts), so a payload cached
 // by an older deployment is recomputed rather than served with fields missing.
-export const STATS_SCHEMA_VERSION = 2;
+// Also bumped when the figures change meaning: 3 counts practice answers from
+// the moment they are graded and dates answers by when they were given
+// (issue #40), and caches its payload together with an activity marker.
+export const STATS_SCHEMA_VERSION = 3;
 
 export interface ExamStatsResponse {
   examId: string;
