@@ -22,6 +22,9 @@ const exams = [
 ];
 const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null }];
 const errors = [];
+// The overview drives the header's status pill (issue #49): it can succeed,
+// fail or answer slowly, and report any exam total.
+let overviewMode = "ok", overviewExams = exams.length;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -38,7 +41,9 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/exams") return json({ exams });
   if (url.pathname === "/api/providers") return json({ providers });
   if (url.pathname === "/api/admin/overview") {
-    return json({ users: { invited: 1, active: 3, revoked: 0, total: 4 }, exams: { total: exams.length, archived: 0 },
+    if (overviewMode === "fail") return json({ error: "Database unavailable" }, 503);
+    if (overviewMode === "slow") await new Promise(resolve => setTimeout(resolve, 3200));
+    return json({ users: { invited: 1, active: 3, revoked: 0, total: 4 }, exams: { total: overviewExams, archived: 0 },
       questions: { total: 16, byExam: exams.map(e => ({ examId: e.id, examName: e.name, questionCount: e.questionCount })) }, attempts: { total: 42 } });
   }
   if (url.pathname === "/api/admin/users") return json({ users: [{ id: "root", email: "root@example.test", displayName: "Root", role: "admin", status: "active", createdAt: "2026-01-01T00:00:00Z", lastSeenAt: null }] });
@@ -63,6 +68,36 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.evaluate(() => window.store.go("admin"));
   await page.getByRole("heading", { name: "Access & content" }).waitFor();
+
+  // The status pill reports the overview request instead of claiming
+  // "System operational" whatever happens, and counts are pluralised.
+  const pill = page.locator(".admin-status-pill");
+  const reopenOverview = async () => {
+    await page.getByRole("button", { name: /^People/ }).click();
+    await page.getByRole("button", { name: "Overview", exact: true }).click();
+  };
+  await page.getByText("Across 2 exams", { exact: true }).waitFor();
+  assert.match(await pill.textContent(), /^\s*Operational/);
+  assert.equal(await pill.getAttribute("class"), "admin-status-pill is-ok");
+  overviewExams = 1; await reopenOverview();
+  await page.getByText("Across 1 exam", { exact: true }).waitFor();
+  overviewMode = "fail"; await reopenOverview();
+  await page.getByText("Could not load the overview.").waitFor();
+  assert.match(await pill.textContent(), /^\s*Status unavailable/);
+  assert.equal(await pill.getAttribute("class"), "admin-status-pill is-down");
+  assert.match(await pill.getAttribute("title"), /Database unavailable/);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/admin-status-unavailable.png` });
+  overviewMode = "ok"; await page.getByRole("button", { name: "Retry" }).click();
+  await page.getByText("Across 1 exam", { exact: true }).waitFor();
+  assert.match(await pill.textContent(), /^\s*Operational/);
+  overviewMode = "slow"; await reopenOverview();
+  await page.waitForFunction(() => document.querySelector(".admin-status-pill")?.classList.contains("is-checking"));
+  assert.match(await pill.textContent(), /^\s*Checking status/);
+  await page.waitForFunction(() => document.querySelector(".admin-status-pill")?.classList.contains("is-slow"), null, { timeout: 8000 });
+  assert.match(await pill.textContent(), /^\s*Slow to respond/);
+  overviewMode = "ok"; overviewExams = exams.length;
+  console.log("PASS status pill follows the overview request (checking, operational, slow, unavailable, retry) and counts are pluralised");
+
   await page.getByRole("button", { name: /^Content/ }).click();
 
   // Whatever the dialog is mounted in — the assertions below are about what the
@@ -135,6 +170,18 @@ try {
 
   // Narrow viewport: the same guarantee, on the layout that has no sidebar.
   await page.setViewportSize({ width: 390, height: 780 });
+  // Measure the phone layout itself, not the desktop one squeezed to 390px.
+  await page.waitForFunction(() => window.store?.width === 390);
+  await page.locator(".admin-shell").evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
+  // The tab row stays one line: every tab shares one top edge and one height,
+  // "MCP tokens" included, and the row scrolls rather than wrapping.
+  const tabBoxes = await page.locator(".admin-tab").evaluateAll(tabs => tabs.map(tab => {
+    const box = tab.getBoundingClientRect();
+    return { label: tab.textContent, top: Math.round(box.top), height: Math.round(box.height) };
+  }));
+  assert.equal(new Set(tabBoxes.map(t => t.top)).size, 1, `tabs wrap onto two rows: ${JSON.stringify(tabBoxes)}`);
+  assert.equal(new Set(tabBoxes.map(t => t.height)).size, 1, `a tab label wraps: ${JSON.stringify(tabBoxes)}`);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/admin-tabs-phone.png` });
   await openProvider();
   await coverage("phone");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -55,6 +55,16 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-13.4 (S):** The Admin Overview tab shows a lightweight **overview panel** with at-a-glance counts — total authorized users (by status: invited/active/revoked), total exams, total questions per exam, and total attempts recorded — supporting the "monitor usage" task already listed for Admin in [Roles and scope](overview.md). These figures are read directly from D1 at request time; no new table is required, and this is explicitly a convenience view, not an analytics/reporting feature.
 
+  The console header's status pill reports that same overview request, because
+  it runs the console's D1 queries
+  ([issue #49](https://github.com/YIzhongyue/PrepDeck/issues/49)): *Checking
+  status…* while it loads, *Operational* when it succeeds, *Slow to respond*
+  when it takes longer than 3 seconds, and *Status unavailable* (with the error
+  in its tooltip and a Retry on the panel) when it fails. It is refreshed each
+  time the Overview tab opens. It is not a full health check of every binding.
+  Counts are pluralised ("Across 1 exam"), and the section tabs stay on one line
+  at phone widths, scrolling sideways when they do not fit.
+
 <a id="fr-13-5"></a>
 
 - **FR-13.5 (C):** **Deferred optional feature.** A same-day Cloudflare quota indicator is not implemented in Admin. A future design must select its measurement source and account-specific limits; the existing overview counts application records only.
