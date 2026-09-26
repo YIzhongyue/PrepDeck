@@ -130,6 +130,9 @@ adminUsersRouter.patch("/:id", async (c) => {
   if (body.status !== undefined) {
     fields.push("status = ?");
     values.push(body.status);
+    // A revoke also ends the account's sessions (issue #46), so it holds even
+    // where a cached user row has not caught up yet.
+    if (body.status === "revoked") fields.push("session_version = session_version + 1");
   }
   // FR-1.9 recovery: re-arms the one-time email-based binding, so the next
   // successful Google sign-in on this address adopts whichever account signs

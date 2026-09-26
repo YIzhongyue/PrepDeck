@@ -70,3 +70,11 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-7-9"></a>
 
 - **FR-7.9 (S):** As an **opt-in** alternative to the in-memory default (FR-7.0), a user may choose to persist their API key across sessions by setting a personal passphrase. The app derives an encryption key from that passphrase (e.g., via PBKDF2 or an equivalent KDF), encrypts the API key with **AES-GCM**, and stores only the ciphertext in the browser's IndexedDB. On a later visit, the user must re-enter the passphrase to decrypt the key back into memory before it can be used (per FR-7.4); the passphrase itself is never sent to or stored by the backend, and losing it means losing the saved key with no recovery path — the UI must state this plainly before the user opts in.
+
+  The encrypted key and the storage choice are kept per account in the browser
+  (IndexedDB `prepdeck-keystore:<userId>`, localStorage `prepdeck.keyMode:<userId>`;
+  [issue #46](https://github.com/YIzhongyue/PrepDeck/issues/46)), so another account
+  signed in on a shared browser neither sees nor can overwrite it. Signing out
+  offers **Also remove my saved AI key from this browser**. The browser-wide
+  store used before is never read (its owner is unknown) and is removed at the
+  next sign-out, so a key saved there must be entered and saved once more.

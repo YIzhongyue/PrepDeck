@@ -41,6 +41,18 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-1.6 (M):** Every protected browser API request verifies the configured cookie session or Access JWT and resolves internal identity, role and status server-side; client-supplied roles are never trusted. Public entry points have their own validation. MCP has separate bearer authentication and cannot use browser cookies or Access JWTs; see [MCP architecture](../architecture/mcp.md).
 
+  Session lifecycle, cookie mode ([issue #46](https://github.com/YIzhongyue/PrepDeck/issues/46)):
+  a session is a signed token valid for 7 days that carries its account's
+  session version (`users.session_version`, migration `0037`). **Sign out ends
+  every session of the account**, on every device and browser: it increments the
+  version, and a token with an older version is refused with 401. Revoking an
+  account increments it too. Only a still-current token can sign an account out,
+  so an old copied token cannot be used to end someone's sessions. The refusal is
+  immediate where the request lands and follows elsewhere within about a minute,
+  the time a KV deletion of the cached user row takes to propagate. Tokens issued
+  before the version existed are refused, so every user signs in once after the
+  upgrade. MCP tokens are separate credentials; sign-out does not revoke them.
+
 <a id="fr-1-7"></a>
 
 - **FR-1.7 (M):** Admin-only endpoints (question bank management, Authorized Users management) must return `403 Forbidden` for `user`-role accounts.

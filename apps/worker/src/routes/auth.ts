@@ -12,7 +12,8 @@ import type { Variables } from "../context";
 import { requireAccessUser } from "../middleware/access";
 import { verifyPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
-import { createSessionToken, buildSessionCookie, clearSessionCookie } from "../lib/session";
+import { issueSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
+import { invalidateCachedUser } from "../lib/userCache";
 import { authorizeIdentity } from "../lib/authorizeIdentity";
 import {
   buildGoogleAuthUrl,
@@ -130,7 +131,7 @@ authRouter.get("/google/callback", async (c) => {
   }
   if (!result.ok) return fail(result.reason === "subject_conflict" ? "conflict" : "denied", result.email);
 
-  const token = await createSessionToken(result.user.id, c.env);
+  const token = await issueSessionToken(c.env, result.user.id);
   c.header("Set-Cookie", buildSessionCookie(token, secure));
   c.header("Set-Cookie", clearOAuthCookie, { append: true });
   return c.redirect("/", 302);
@@ -165,14 +166,30 @@ authRouter.post("/login", async (c) => {
   const now = new Date().toISOString();
   await c.env.DB.prepare("UPDATE users SET status = 'active', last_login_at = ? WHERE id = ?").bind(now, row.id).run();
 
-  const token = await createSessionToken(row.id, c.env);
+  const token = await issueSessionToken(c.env, row.id);
   const secure = new URL(c.req.url).protocol === "https:";
   c.header("Set-Cookie", buildSessionCookie(token, secure));
   return c.json({ user: { id: row.id, email: row.email, role: row.role, displayName: row.display_name, avatarUrl: row.avatar_url } });
 });
 
-authRouter.post("/logout", (c) => {
+// Signing out ends every session of the account, not only this browser's
+// (issue #46): a stateless token cannot be withdrawn on its own, so the
+// account's session version moves on and every token minted before it is
+// refused. Only a token that is still current can do that, so an old copied
+// token cannot be used to sign the account out elsewhere. MCP tokens are
+// separate credentials and are not affected.
+authRouter.post("/logout", async (c) => {
   const secure = new URL(c.req.url).protocol === "https:";
+  const token = c.env.AUTH_MODE === "cookie" ? readSessionCookie(c.req.header("Cookie") ?? null) : null;
+  const session = token ? await verifySessionToken(token, c.env) : null;
+  if (session) {
+    const row = await c.env.DB.prepare(
+      "UPDATE users SET session_version = session_version + 1 WHERE id = ? AND session_version = ? RETURNING id, email"
+    )
+      .bind(session.userId, session.sessionVersion)
+      .first<{ id: string; email: string }>();
+    if (row) await invalidateCachedUser(c.env, row.id, row.email);
+  }
   c.header("Set-Cookie", clearSessionCookie(secure));
   return c.json({ ok: true });
 });

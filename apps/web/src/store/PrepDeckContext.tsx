@@ -34,9 +34,9 @@ import { fromSharedNote } from "../lib/notes";
 import { fetchCachedExplanations, generateExplanation } from "../lib/ai";
 import {
   getSessionKey, setSessionKey, clearSessionKey, hasStoredEncryptedKey, saveEncryptedKey,
-  loadEncryptedKey, clearStoredEncryptedKey
+  loadEncryptedKey, clearStoredEncryptedKey, deleteLegacyKeystore
 } from "../lib/keyStorage";
-import { getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
+import { clearLegacyKeyMode, getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME, getStoredTheme, storeTheme } from "../lib/themeStorage";
 import type {
   AiExplanationEntry, AiRecord, Annotation, AnnotationStyle, AnnotationTarget, Difficulty, ExamSummary,
@@ -196,7 +196,8 @@ const initialState: AppState = {
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
   noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, emailSettings: null,
   provider: "anthropic", model: CURATED_MODELS.anthropic[0]!.id,
-  keyMode: getStoredKeyMode() ?? "memory", hasSessionKey: false, hasStoredKey: false,
+  // Both are per account (issue #46), so they are read once the account is known.
+  keyMode: "memory", hasSessionKey: false, hasStoredKey: false,
   theme: getStoredTheme() ?? DEFAULT_THEME,
   tsel: null
 };
@@ -298,6 +299,7 @@ interface PrepDeckStore {
   saveEncryptedApiKey: (apiKey: string, passphrase: string) => Promise<void>;
   unlockSessionKey: (passphrase: string) => Promise<void>;
   forgetStoredApiKey: () => Promise<void>;
+  signOut: (opts: { removeSavedKey: boolean }) => Promise<void>;
   setTheme: (t: ThemeId) => void;
 
   updateDisplayName: (displayName: string) => void;
@@ -422,9 +424,15 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // prior visit — read once so screens beyond Settings (Practice/Learning's
   // "Generate explanation") can offer an unlock prompt instead of just
   // pointing the user back to Settings.
+  //
+  // Keyed by account (issue #46): another account signed in on the same
+  // browser sees neither this account's key nor its storage choice.
+  const meId = state.me?.id ?? null;
   useEffect(() => {
-    hasStoredEncryptedKey().then((v) => setState({ hasStoredKey: v })).catch(() => {});
-  }, [setState]);
+    if (!meId) return;
+    setState({ keyMode: getStoredKeyMode(meId) ?? "memory" });
+    hasStoredEncryptedKey(meId).then((v) => setState({ hasStoredKey: v })).catch(() => {});
+  }, [meId, setState]);
 
   // public/theme-init.js puts the stored scheme on <html> before React mounts,
   // so the first paint is already themed. Keep that attribute in step with the
@@ -1391,7 +1399,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // treatment as theme: it survives a refresh so "Encrypted in this browser"
   // stays selected without the user re-picking it every visit.
   const setKeyMode = useCallback((m: KeyMode) => {
-    storeKeyMode(m);
+    const id = stateRef.current.me?.id;
+    if (id) storeKeyMode(id, m);
     setState({ keyMode: m });
   }, [setState]);
 
@@ -1407,10 +1416,18 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setState({ hasSessionKey: false });
   }, [setState]);
 
+  // The encrypted key belongs to the signed-in account (issue #46). Reads the
+  // ref, so the callbacks below never see a stale account.
+  const signedInId = () => {
+    const id = stateRef.current.me?.id;
+    if (!id) throw new Error("Not signed in");
+    return id;
+  };
+
   // FR-7.9: encrypts and stores the key for next visit, and loads it into
   // this session immediately so it's usable right away.
   const saveEncryptedApiKey = useCallback(async (apiKey: string, passphrase: string) => {
-    await saveEncryptedKey(apiKey, passphrase);
+    await saveEncryptedKey(signedInId(), apiKey, passphrase);
     setSessionKey(apiKey);
     setState({ hasStoredKey: true, hasSessionKey: true });
   }, [setState]);
@@ -1419,15 +1436,29 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // or from an inline prompt next to "Generate explanation" once a refresh
   // (or enough idle time) has dropped the in-memory session key.
   const unlockSessionKey = useCallback(async (passphrase: string) => {
-    const key = await loadEncryptedKey(passphrase);
+    const key = await loadEncryptedKey(signedInId(), passphrase);
     setSessionKey(key);
     setState({ hasSessionKey: true });
   }, [setState]);
 
   const forgetStoredApiKey = useCallback(async () => {
-    await clearStoredEncryptedKey();
+    await clearStoredEncryptedKey(signedInId());
     setState({ hasStoredKey: false });
   }, [setState]);
+
+  // Signing out ends every session of the account (issue #46; the server moves
+  // its session version on). This browser also drops the key held in memory,
+  // the saved key when asked to, and the browser-wide key storage left by
+  // earlier versions, whose owner is unknown.
+  const signOut = useCallback(async (opts: { removeSavedKey: boolean }) => {
+    const id = stateRef.current.me?.id;
+    clearSessionKey();
+    if (opts.removeSavedKey && id) await clearStoredEncryptedKey(id).catch(() => {});
+    await deleteLegacyKeystore();
+    clearLegacyKeyMode();
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/?auth=signedout";
+  }, []);
 
   // Theme preference is deliberately browser-local: it can be restored before
   // the settings request completes and does not follow the account to a device
@@ -1507,7 +1538,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateEmailSettings,
     capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias,
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
-    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, setTheme,
+    saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut, setTheme,
     updateDisplayName, uploadAvatar
   };
 
