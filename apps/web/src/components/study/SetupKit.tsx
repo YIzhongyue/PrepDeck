@@ -2,7 +2,7 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import { IC, Icon } from "./StudyKit";
 import "./setup.css";
 
-// Shared pieces of the Practice and Mock setup screens. Styles live in
+// Shared pieces of the Practice, Mock and Learning setup screens. Styles live in
 // setup.css, on the `.pd-study` tokens from study.css.
 
 export interface SetupLayout {
@@ -125,13 +125,15 @@ export function domainSummary(selected: readonly string[]) {
  * Domain chips with search. Searching only changes which chips show; "Select
  * all results" replaces the selection with every match (the Practice behaviour
  * the domain browser tests pin down), and chips still toggle one at a time.
+ * Leave out `onSelectResults` or `onClear` to drop that action; Learning
+ * keeps Clear but not "Select all results".
  */
 export function DomainPicker({ questions, selected, onToggle, onSelectResults, onClear, phone }: {
   questions: readonly { tags: readonly string[] }[];
   selected: readonly string[];
   onToggle: (tag: string) => void;
-  onSelectResults: (tags: string[]) => void;
-  onClear: () => void;
+  onSelectResults?: (tags: string[]) => void;
+  onClear?: () => void;
   phone: boolean;
 }) {
   const [search, setSearch] = useState("");
@@ -156,7 +158,7 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
           <Icon d={IC.search} size={18} />
           <input
             type="search" placeholder={`Search ${tags.length} domains`} aria-label="Search domains"
-            aria-describedby={query ? hintId : undefined}
+            aria-describedby={query && onSelectResults ? hintId : undefined}
             value={search} onChange={(e) => setSearch(e.target.value)}
           />
           {!!search && (
@@ -192,7 +194,7 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
               {expanded ? "Show fewer" : `Show all ${tags.length} domains`}<Icon d={IC.chevDown} size={14} strokeWidth={2.25} />
             </button>
           )}
-          {query && (
+          {query && onSelectResults && (
             <button
               type="button" className="st-link st-link--brand st-bulk" disabled={!visible.length} aria-describedby={hintId}
               onClick={() => { if (visible.length) onSelectResults(visible.map(({ name }) => name)); }}
@@ -204,12 +206,12 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
           {selected.length > 0 && (
             <span className="st-chip-sel">
               <span>{selected.length} selected · {selectedQuestions} {selectedQuestions === 1 ? "question" : "questions"}</span>
-              <button type="button" className="st-link" onClick={onClear}><Icon d={IC.x} size={14} />Clear</button>
+              {onClear && <button type="button" className="st-link" onClick={onClear}><Icon d={IC.x} size={14} />Clear</button>}
             </span>
           )}
         </div>
       )}
-      {query && <span id={hintId} className="sr-only">Select all results replaces your current domain selection.</span>}
+      {query && onSelectResults && <span id={hintId} className="sr-only">Select all results replaces your current domain selection.</span>}
     </>
   );
 }

@@ -273,6 +273,10 @@ try {
   await domainGroup.getByRole('button', { name: 'AWS Security, 2 questions', exact: true }).click();
   assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
   assert.deepEqual(await selectedDomains(), awsDomains, 'Learning and Practice selections stay independent');
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  assert.deepEqual((await state()).lTags, [], 'Learning clears its whole domain selection at once');
+  assert.deepEqual(await selectedDomains(), awsDomains, 'Clearing Learning leaves Practice untouched');
+  await invoke('toggleLearningTag', 'Azure'); await invoke('toggleLearningTag', 'AWS Security');
   await invoke('go', 'practice');
   await page.getByRole('button', { name: 'All questions 7', exact: true }).click();
   await page.getByRole('button', { name: 'Any', exact: true }).click();
@@ -292,7 +296,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-domain-search-mobile.png`, fullPage: true });
   assert.deepEqual((await state()).lTags, ['Azure', 'AWS Security']);
-  console.log('Passed: Practice search-result selection, replacement/idempotence, independent Learning, OR/source/difficulty session IDs, 80 results and mobile keyboard controls.');
+  console.log('Passed: Practice search-result selection, replacement/idempotence, independent Learning and its Clear, OR/source/difficulty session IDs, 80 results and mobile keyboard controls.');
 
   // Keep wheel hit testing in the real Practice layout: programmatic scroll
   // only positions the fixture at a boundary before an actual wheel gesture.

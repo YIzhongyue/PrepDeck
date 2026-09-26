@@ -244,6 +244,7 @@ interface PrepDeckStore {
   learningQ: () => Question | undefined;
   setLearningStartInput: (n: number) => void;
   toggleLearningTag: (tag: string) => void;
+  clearLearningTags: () => void;
   setLearningDiff: (id: Difficulty | "all") => void;
   beginLearning: (fromSequence?: number) => void;
   learningNext: () => void;
@@ -768,6 +769,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       return { lTags: a };
     });
   }, [setState]);
+  const clearLearningTags = useCallback(() => setState({ lTags: [] }), [setState]);
 
   // FR-14.3/FR-14.4: fetches the answer-key'd question plus this user's own
   // answer history — unlike Practice's graded state, this is loaded as soon
@@ -1496,7 +1498,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
     setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, useAlternateAi,
-    learningPool, learningQ, setLearningStartInput, toggleLearningTag, setLearningDiff,
+    learningPool, learningQ, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
     goToQuestionForReview, openKnowledgePointNote, clearPendingKnowledgePoint,
     setMockFormat, setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
