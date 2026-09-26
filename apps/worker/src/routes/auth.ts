@@ -14,6 +14,7 @@ import { verifyPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
 import { issueSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
 import { invalidateCachedUser } from "../lib/userCache";
+import { safeReturnTo } from "../lib/returnTo";
 import { authorizeIdentity } from "../lib/authorizeIdentity";
 import {
   buildGoogleAuthUrl,
@@ -57,7 +58,9 @@ authRouter.get("/google/start", async (c) => {
   const codeChallenge = await pkceChallengeFromVerifier(codeVerifier);
 
   const secure = new URL(c.req.url).protocol === "https:";
-  c.header("Set-Cookie", buildOAuthStateCookie(state, codeVerifier, secure));
+  // Where to land after signing in (issues #41 and #52): the page a signed-out
+  // learner opened, for example from a review email. Same-origin paths only.
+  c.header("Set-Cookie", buildOAuthStateCookie(state, codeVerifier, secure, safeReturnTo(c.req.query("returnTo"))));
 
   const redirectUri = googleRedirectUri(c);
   console.info("auth.google.start", { redirectUri });
@@ -134,7 +137,7 @@ authRouter.get("/google/callback", async (c) => {
   const token = await issueSessionToken(c.env, result.user.id);
   c.header("Set-Cookie", buildSessionCookie(token, secure));
   c.header("Set-Cookie", clearOAuthCookie, { append: true });
-  return c.redirect("/", 302);
+  return c.redirect(stored.returnTo ?? "/", 302);
 });
 
 // Local-dev-only fallback: doesn't need a registered Google OAuth redirect
