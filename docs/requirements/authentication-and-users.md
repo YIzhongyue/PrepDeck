@@ -21,6 +21,24 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-1.1 (M):** Google sign-in uses the application login screen and direct OAuth, establishing a signed session cookie (`AUTH_MODE=cookie`). The invited-user allow-list protects application data. Static assets, login, health and unsubscribe have public entry points. The old requirement to put every route behind Cloudflare Access is superseded; `AUTH_MODE=access` is an optional rollback path, not the default.
 
+  Sign-in returns to the page that asked for it
+  ([issues #41](https://github.com/YIzhongyue/PrepDeck/issues/41) and
+  [#52](https://github.com/YIzhongyue/PrepDeck/issues/52)): `/api/auth/google/start`
+  accepts `returnTo`, a same-origin path (never `/api/`, `/mcp`, `/admin-mcp` or
+  another origin; see [`returnTo.ts`](../../apps/worker/src/lib/returnTo.ts)), carries
+  it in the short-lived OAuth state cookie, re-validates it there, and the
+  callback lands on it. A review email link opened while signed out therefore
+  arrives at its question after sign-in.
+
+  A session that ends during use (its 7 days run out, or it is signed out
+  elsewhere) is detected by the first request that gets a 401. The app then asks
+  the learner to sign in again, once, instead of showing each action's own
+  "please retry" message, which retrying could never satisfy. A mock in progress
+  keeps its unsaved answers across the round trip: they return, and are saved,
+  when the exam is resumed. An account revoked while signed in gets the "access
+  not authorized" screen. Action errors belong to the screen that raised them and
+  clear on navigation.
+
 <a id="fr-1-2"></a>
 
 - **FR-1.2 (M):** From a dedicated **Authorized Users** admin screen, Admin can **invite** a new account by entering its Google email address and choosing an initial role (`admin` or `user`). This creates a `users` row with status `invited` and no `google_sub` yet, since the person has not signed in.
@@ -40,6 +58,18 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-1-6"></a>
 
 - **FR-1.6 (M):** Every protected browser API request verifies the configured cookie session or Access JWT and resolves internal identity, role and status server-side; client-supplied roles are never trusted. Public entry points have their own validation. MCP has separate bearer authentication and cannot use browser cookies or Access JWTs; see [MCP architecture](../architecture/mcp.md).
+
+  Session lifecycle, cookie mode ([issue #46](https://github.com/YIzhongyue/PrepDeck/issues/46)):
+  a session is a signed token valid for 7 days that carries its account's
+  session version (`users.session_version`, migration `0037`). **Sign out ends
+  every session of the account**, on every device and browser: it increments the
+  version, and a token with an older version is refused with 401. Revoking an
+  account increments it too. Only a still-current token can sign an account out,
+  so an old copied token cannot be used to end someone's sessions. The refusal is
+  immediate where the request lands and follows elsewhere within about a minute,
+  the time a KV deletion of the cached user row takes to propagate. Tokens issued
+  before the version existed are refused, so every user signs in once after the
+  upgrade. MCP tokens are separate credentials; sign-out does not revoke them.
 
 <a id="fr-1-7"></a>
 
@@ -65,7 +95,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-12-2"></a>
 
-- **FR-12.2 (M):** A user can edit their own display name at any time from their Settings page, overriding the Google-sourced default.
+- **FR-12.2 (M):** A user can edit their own display name at any time from their Settings page, overriding the Google-sourced default. A change the server refuses is reported beside the field with the server's reason, as is a refused avatar upload (for example "Avatar must be 2 MB or smaller"), rather than failing silently ([issue #52](https://github.com/YIzhongyue/PrepDeck/issues/52)).
 
 <a id="fr-12-3"></a>
 

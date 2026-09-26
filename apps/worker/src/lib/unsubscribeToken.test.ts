@@ -30,6 +30,6 @@ test("rejects garbage input", async () => {
 });
 
 test("a session cookie token is never accepted as an unsubscribe token", async () => {
-  const sessionToken = await createSessionToken("user-123", env);
+  const sessionToken = await createSessionToken("user-123", 0, env);
   assert.equal(await verifyUnsubscribeToken(sessionToken, env), null);
 });

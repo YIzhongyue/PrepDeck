@@ -418,10 +418,14 @@ unless noted, all deterministic and explainable rather than AI-judged):
 - `admin_find_questions_missing_explanations` — null or blank `explanation`.
 - `admin_find_questions_with_invalid_answer_references` — a choice-based
   question whose `correctAnswers` reference an option id that does not
-  exist in `options[]`, or a `true_false` question missing exactly the
-  `"true"`/`"false"` option pair.
-- `admin_find_questions_missing_metadata` — no `difficulty` set or an empty
-  `tags` array.
+  exist in `options[]`, a `true_false` question missing exactly the
+  `"true"`/`"false"` option pair, a `single_choice` with fewer than two
+  options, or a `matching` question with fewer than two right-hand items
+  (the last two are refused on save since issue #54).
+- `admin_find_questions_missing_metadata` — no `difficulty` set, an empty
+  `tags` array, or `points` outside the accepted range (greater than 0, at
+  most 100); each match carries `missingDifficulty`, `missingTags` and
+  `invalidPoints` flags.
 - `admin_get_question_bank_statistics` — `{}`, the same statistics as
   `admin_get_exam_statistics` aggregated across the whole bank (bounded scan;
   see below), plus a per-exam question-count breakdown.

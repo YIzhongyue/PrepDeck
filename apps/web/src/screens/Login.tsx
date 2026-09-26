@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import BrandLogo from "../components/BrandLogo";
+import { signInUrl } from "../lib/reauth";
 
 interface LoginProps {
   /** Set when a Google account signed in successfully but isn't on the
@@ -76,7 +77,9 @@ export default function Login({ deniedEmail, conflict, signedOut, error }: Login
 
   const signIn = () => {
     setBusy(true);
-    window.location.href = "/api/auth/google/start";
+    // Comes back to the page that asked for sign-in, such as a question linked
+    // from a daily review email (issue #41), instead of always to "/".
+    window.location.href = signInUrl();
   };
 
   return (
