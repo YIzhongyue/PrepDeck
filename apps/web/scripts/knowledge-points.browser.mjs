@@ -375,8 +375,10 @@ try {
   assert.equal(await page.getByRole("button", { name: "Link existing", exact: true }).count(), 0, "Live answering hides related-note hints");
   await page.getByRole("button", { name: /Identity/ }).click();
   await page.getByRole("button", { name: "Check answer", exact: true }).click();
-  const draft = page.getByPlaceholder("Write a note for this question…"); await draft.waitFor();
+  await page.getByRole("tab", { name: "Related", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Link existing", exact: true }).count(), 1, "Graded review exposes related notes");
+  await page.getByRole("tab", { name: /^Notes/ }).click();
+  const draft = page.getByPlaceholder("Write a note for this question…"); await draft.waitFor();
   await draft.fill(""); await draft.pressSequentially("abcd1234"); await draft.press("Enter");
   assert.equal(await draft.inputValue(), "abcd1234\n");
   assert.equal(await page.evaluate(() => window.fixtureApp.state.idx), 0);

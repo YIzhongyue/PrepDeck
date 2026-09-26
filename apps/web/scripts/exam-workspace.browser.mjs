@@ -302,7 +302,7 @@ try {
   await page.getByRole('button', { name: 'Check answer', exact: true }).waitFor();
   await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.animationName === 'pd-rise').map(a => a.finished)); });
   const measureScroll = () => page.evaluate(() => {
-    const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent))?.closest('.card');
+    const panel = [...document.querySelectorAll('main .st-q-id')].find(el => /^scroll-[12]$/.test(el.textContent))?.closest('.st-q');
     const grid = panel.parentElement, right = grid.children[1];
     const measure = el => {
       const box = el.getBoundingClientRect(), css = getComputedStyle(el);
@@ -317,7 +317,7 @@ try {
   const resizePractice = async (width, height) => { await page.setViewportSize({ width, height }); await settleScroll(); };
   const resetScroll = async (questionTop = 0, rightTop = 0, outerTop = 0) => {
     await page.evaluate(({ questionTop, rightTop, outerTop }) => {
-      const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.card');
+      const panel = [...document.querySelectorAll('main .st-q-id')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.st-q');
       panel.scrollTop = questionTop; panel.parentElement.children[1].scrollTop = rightTop;
       document.scrollingElement.scrollTop = outerTop;
     }, { questionTop, rightTop, outerTop });
@@ -345,7 +345,7 @@ try {
     const point = { x: region === 'outside' ? box.left - 16 : box.left + Math.min(100, box.width / 2),
       y: Math.min(before.height - 110, Math.max(100, box.top + 120)) };
     assert.equal(await page.evaluate(({ region, x, y }) => {
-      const panel = [...document.querySelectorAll('main .tag-neutral')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.card');
+      const panel = [...document.querySelectorAll('main .st-q-id')].find(el => /^scroll-[12]$/.test(el.textContent)).closest('.st-q');
       const grid = panel.parentElement, target = region === 'question' ? panel : grid.children[1], hit = document.elementFromPoint(x, y);
       return region === 'outside' ? !grid.contains(hit) : target.contains(hit);
     }, { region, ...point }), true, `Wheel pointer must land in ${region}`);

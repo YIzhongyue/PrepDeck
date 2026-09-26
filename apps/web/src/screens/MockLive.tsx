@@ -1,108 +1,112 @@
 import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
+import { IC, Icon, OptionRow, QuestionBadges } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
+
+// Under five minutes the timer turns red and pulses.
+const LOW_TIME_SECONDS = 5 * 60;
 
 export default function MockLive({ bp }: { bp: Breakpoints }) {
   const { state, mockQ, mockPick, mockPrev, mockNext, mockGoto, toggleFlag, askSubmit } = usePrepDeck();
   const mq = mockQ();
   if (!mq) return null;
 
+  const total = state.mQueue.length;
   const mm = Math.floor(state.mLeft / 60);
   const ss = state.mLeft % 60;
-  const lowTime = state.mLeft < 120;
-  const flagged = state.mFlag[mq.id];
+  const lowTime = state.mLeft < LOW_TIME_SECONDS;
+  const flagged = !!state.mFlag[mq.id];
+  const answered = mockAnsweredCount(state);
+  const flaggedCount = state.mQueue.filter((id) => state.mFlag[id]).length;
   const rail = !bp.narrow;
-  const mockCols = rail ? "minmax(0, 1.75fr) minmax(230px, 1fr)" : "1fr";
+  const mockCols = rail ? "minmax(0, 1fr) minmax(260px, 300px)" : "minmax(0, 1fr)";
   const mSel = state.mSel[mq.id] || [];
+  const last = state.mIdx + 1 >= total;
+  const structured = mq.type === "ordering" || mq.type === "matching";
 
   return (
-    <div style={{ animation: "pd-rise .22s ease backwards" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "8px 16px", borderRadius: 999, background: lowTime ? "var(--color-accent-700)" : "var(--color-surface)", color: lowTime ? "var(--color-bg)" : "var(--color-text)", fontVariantNumeric: "tabular-nums", fontFamily: "var(--font-heading)", fontSize: 19 }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round">
-            <path d="M12 4a8 8 0 100 16 8 8 0 000-16z" />
-            <path d="M12 8v4l3 2" />
-          </svg>
-          <span>{mm}:{ss < 10 ? "0" : ""}{ss}</span>
+    <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
+      <div className="st-card st-mockbar">
+        <span className="st-timer" data-low={lowTime} role="timer" aria-label={`${mm} minutes ${ss} seconds left`}>
+          <Icon d={IC.timer} size={20} />{mm}:{ss < 10 ? "0" : ""}{ss}
         </span>
-        <span style={{ fontSize: 13, opacity: 0.7 }}>Answered {mockAnsweredCount(state)} of {state.mQueue.length}</span>
-        <button
-          type="button" onClick={toggleFlag} className="btn btn-secondary"
-          style={{ marginLeft: "auto", padding: "7px 14px", background: flagged ? "var(--color-accent-2-200)" : "transparent", color: flagged ? "var(--color-accent-2-900)" : "var(--color-text)" }}
-        >
-          {flagged ? "Flagged" : "Flag"}
-        </button>
-        <button type="button" className="btn btn-primary" onClick={askSubmit} style={{ padding: "7px 16px" }}>Submit</button>
+        <div className="st-mock-progress">
+          <div className="st-mock-progress-row">
+            <span>Answered {answered} of {total}</span>
+            <span data-low={lowTime}>{lowTime ? "Under 5 minutes left" : "Server clock · answers save as you go"}</span>
+          </div>
+          <div className="st-bar st-bar--lg" aria-hidden="true"><span style={{ width: `${total ? (answered / total) * 100 : 0}%` }} /></div>
+        </div>
+        <div className="st-mockbar-actions">
+          <button type="button" className={`st-btn${flagged ? " st-btn--flagged" : ""}`} onClick={toggleFlag} aria-pressed={flagged}>
+            <Icon d={IC.flag} size={18} fill={flagged ? "currentColor" : "none"} />{flagged ? "Flagged" : "Flag"}
+          </button>
+          <button type="button" className="st-btn st-btn--primary" onClick={askSubmit}><Icon d={IC.send} />Submit exam</button>
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: mockCols, gap: 20, alignItems: "start" }}>
-        <div className="card elev-sm" style={{ padding: bp.phone ? 18 : "26px 28px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>Question {state.mIdx + 1}</span>
-            <span className="tag tag-outline" style={{ whiteSpace: "nowrap" }}>{questionTypeLabel(mq)}</span>
+      <div className="st-grid" style={{ gridTemplateColumns: mockCols, alignItems: "start" }}>
+        <section className="st-card st-q" aria-label="Question">
+          <div className="st-q-body">
+            <QuestionBadges label={`Question ${state.mIdx + 1}`} typeLabel={questionTypeLabel(mq)} multi={mq.type === "multiple_choice"} />
+            <QuestionContentGate question={mq}>
+              <div className="st-stem"><QuestionContent src={mq.stem} content={mq.content} /></div>
+              <div className="st-opts">
+                {mq.type === "fill_blank" && (
+                  <label className="st-field">Your answer<input className="st-input" value={mSel[0] ?? ""} onChange={e => mockPick(mq, e.target.value)} /></label>
+                )}
+                {mq.content && structured && <StructuredResponse content={mq.content} selected={mSel} onChange={answer => mockPick(mq, answer)} />}
+                {(structured ? [] : mq.options ?? []).map((o) => (
+                  <OptionRow key={o.id} id={o.id} state={mSel.includes(o.id) ? "selected" : "idle"} onPick={() => mockPick(mq, o.id)}>
+                    <QuestionContent src={o.text} content={mq.content} optionId={o.id} />
+                  </OptionRow>
+                ))}
+              </div>
+            </QuestionContentGate>
           </div>
-          <QuestionContentGate question={mq}>
-            <div style={{ margin: "14px 0 20px", fontSize: bp.phone ? 15 : 16.5, lineHeight: 1.6 }}><QuestionContent src={mq.stem} content={mq.content} /></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {mq.type === "fill_blank" && <label>Your answer<input className="input" value={mSel[0] ?? ""} onChange={e => mockPick(mq, e.target.value)} /></label>}
-              {mq.content && (mq.type === "ordering" || mq.type === "matching") && <StructuredResponse content={mq.content} selected={mSel} onChange={answer => mockPick(mq, answer)} />}
-              {((mq.type === "ordering" || mq.type === "matching") ? [] : mq.options ?? []).map((o) => {
-                const on = mSel.indexOf(o.id) >= 0;
-                return (
-                  <button
-                    key={o.id} type="button" onClick={() => mockPick(mq, o.id)}
-                    style={{
-                      display: "flex", alignItems: "flex-start", gap: 13, textAlign: "left", width: "100%", padding: "13px 15px",
-                      borderRadius: 20, cursor: "pointer", font: "inherit", fontSize: 14.5, lineHeight: 1.5,
-                      background: on ? "var(--color-accent-100)" : "var(--color-neutral-100)",
-                      border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`, color: "var(--color-text)"
-                    }}
-                  >
-                    <span style={{ width: 26, height: 26, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12.5, background: on ? "var(--color-accent)" : "var(--color-neutral-200)", color: on ? "var(--color-bg)" : "var(--color-neutral-800)" }}>{o.id}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}><QuestionContent src={o.text} content={mq.content} optionId={o.id} /></div>
-                  </button>
-                );
-              })}
-            </div>
-          </QuestionContentGate>
-          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-            <button type="button" className="btn btn-secondary" onClick={mockPrev}>Back</button>
-            <button type="button" className="btn btn-primary" onClick={mockNext} style={{ marginLeft: "auto" }}>Next</button>
+          <div className="st-q-foot">
+            <button type="button" className="st-btn" onClick={mockPrev} disabled={state.mIdx === 0}><Icon d={IC.chevLeft} size={18} />Back</button>
+            <span className="st-spacer" />
+            <button type="button" className="st-btn st-btn--primary" onClick={last ? askSubmit : mockNext}>
+              {last ? "Review & submit" : "Next"}<Icon d={IC.chevRight} size={18} />
+            </button>
           </div>
-        </div>
+        </section>
 
-        <div className="card elev-sm" style={{ padding: 18, gap: 12, position: rail ? "sticky" : "static", top: 18 }}>
-          <span className="card-kicker">Question palette</span>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(38px, 1fr))", gap: 7 }}>
+        <aside className="st-card" aria-label="Question palette" style={{ position: rail ? "sticky" : "static", top: 18 }}>
+          <div className="st-card-title">Questions</div>
+          <div className="st-trio">
+            <div><div className="st-trio-k">Answered</div><div className="st-trio-v">{answered}</div></div>
+            <div><div className="st-trio-k">Flagged</div><div className="st-trio-v st-trio-v--warn">{flaggedCount}</div></div>
+            <div><div className="st-trio-k">Left</div><div className="st-trio-v">{total - answered}</div></div>
+          </div>
+          <div className="st-palette">
             {state.mQueue.map((id, i) => {
-              const answered = isMockAnswered(state, id);
-              const flaggedI = state.mFlag[id];
-              const cur = i === state.mIdx;
+              const isAnswered = isMockAnswered(state, id);
+              const isFlagged = !!state.mFlag[id];
               return (
                 <button
-                  key={id} type="button" onClick={() => mockGoto(i)}
-                  style={{
-                    aspectRatio: "1", borderRadius: 13, cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 600,
-                    background: answered ? "var(--color-accent)" : flaggedI ? "var(--color-accent-2-300)" : "transparent",
-                    color: answered ? "var(--color-bg)" : "var(--color-text)",
-                    border: `1.5px solid ${cur ? "var(--color-neutral-900)" : answered ? "var(--color-accent)" : "var(--color-divider)"}`
-                  }}
+                  key={id} type="button" className="st-pal" onClick={() => mockGoto(i)}
+                  data-state={isAnswered ? "answered" : isFlagged ? "flagged" : "open"}
+                  aria-current={i === state.mIdx ? "true" : undefined}
+                  aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ""}${isFlagged ? ", flagged" : ""}`}
                 >
                   {i + 1}
+                  {isAnswered && isFlagged && <span className="st-pal-dot" />}
                 </button>
               );
             })}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11.5, marginTop: 4, color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--color-accent)" }} />answered</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--color-accent-2-300)" }} />flagged</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, border: "1.5px solid var(--color-divider)" }} />untouched</span>
+          <div className="st-legend">
+            <span><span className="st-swatch st-swatch--answered" />Answered</span>
+            <span><span className="st-swatch st-swatch--flagged" />Flagged</span>
+            <span><span className="st-swatch" />Not answered</span>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );
