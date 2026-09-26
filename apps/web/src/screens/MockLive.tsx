@@ -1,7 +1,7 @@
 import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
-import { IC, Icon, OptionRow, QuestionBadges } from "../components/study/StudyKit";
+import { IC, Icon, OptionRow, QuestionBadges, usePinnedCard } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -13,6 +13,8 @@ const LOW_TIME_SECONDS = 5 * 60;
 export default function MockLive({ bp }: { bp: Breakpoints }) {
   const { state, mockQ, mockPick, mockPrev, mockNext, mockGoto, toggleFlag, askSubmit } = usePrepDeck();
   const mq = mockQ();
+  // Only the card is sized to the viewport; the palette stays sticky beside it.
+  const { gridRef, bodyRef, fitHeight } = usePinnedCard(mq?.id, bp.phone);
   if (!mq) return null;
 
   const total = state.mQueue.length;
@@ -49,10 +51,12 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
         </div>
       </div>
 
-      <div className="st-grid" style={{ gridTemplateColumns: mockCols, alignItems: "start" }}>
-        <section className="st-card st-q" aria-label="Question">
-          <div className="st-q-body">
+      <div ref={gridRef} className="st-grid" style={{ gridTemplateColumns: mockCols, alignItems: "start" }}>
+        <section className="st-card st-q st-q--pinned" aria-label="Question" style={{ height: fitHeight ?? undefined }}>
+          <div className="st-q-head">
             <QuestionBadges label={`Question ${state.mIdx + 1}`} typeLabel={questionTypeLabel(mq)} multi={mq.type === "multiple_choice"} />
+          </div>
+          <div className="st-q-body" ref={bodyRef}>
             <QuestionContentGate question={mq}>
               <div className="st-stem"><QuestionContent src={mq.stem} content={mq.content} /></div>
               <div className="st-opts">

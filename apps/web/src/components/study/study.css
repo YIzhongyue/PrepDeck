@@ -212,8 +212,20 @@
 .st-phone .st-q-foot .st-spacer { display: none; }
 .st-phone .st-q-foot > .st-btn--primary { flex: 1 1 auto; }
 
-.st-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.st-badges .st-copy { margin-left: auto; }
+/* Pinned card: the header and footer stay put while only the stem and answers scroll. */
+.st-q-head { flex-shrink: 0; padding: 20px 32px 16px; border-bottom: 1px solid var(--st-line); }
+.st-phone .st-q-head { padding: 16px 16px 12px; }
+.st-q--pinned { overflow: hidden; }
+.st-q--pinned .st-q-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.st-q--pinned .st-q-foot { flex-shrink: 0; }
+
+.st-badges { display: flex; flex-direction: column; gap: 10px; }
+.st-badges-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.st-badges-row > .st-badge { flex-shrink: 0; }
+.st-badges-row > .st-q-id { display: block; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-badges-row .st-copy { flex-shrink: 0; margin-left: auto; }
+.st-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-tags > .st-badge { overflow-wrap: anywhere; }
 .st-badge {
   display: inline-flex;
   align-items: center;
