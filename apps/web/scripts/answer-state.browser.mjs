@@ -51,6 +51,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.endsWith("/learning-detail")) return json({ question: { correctAnswers: ["green"], explanation: "Explanation", answerRevision: 1 }, history: [] });
   if (url.pathname.endsWith("/ai-explanations")) return json({ explanations: [] });
   if (url.pathname.endsWith("/knowledge-points")) return json({ knowledgePoints: [], total: 0 });
+  if (url.pathname.endsWith("/bookmark")) return json({ bookmarked: req.method === "PUT" });
   if (url.pathname.endsWith("/wrong-book/mastered")) { wrong.get(url.pathname.split("/")[3]).mastered = true; return json({ mastered: true }); }
   if (url.pathname === "/api/attempts/active") return json({ attempt: [...attempts.values()].find(attempt => attempt.mode === "mock" && !attempt.completed) ?? null });
   if (url.pathname === "/api/exams/exam/attempts") {
@@ -188,6 +189,44 @@ try {
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   await invoke("dismissActionError");
   console.log("PASS an attempt submitted elsewhere shows its result instead of blocking Submit");
+  // Practice shortcuts follow the Check answer button, never take Enter from a
+  // focused control, and keep bookmarking off the option letters (issue #50).
+  await invoke("begin", ["q2", "q1", "q3"]);
+  await page.waitForFunction(() => window.store.state.pStage === "live" && window.store.state.queue[0] === "q2");
+  const settle = () => page.waitForTimeout(250);
+  const bookmarkWrites = () => calls.filter(call => call.path.endsWith("/bookmark")).length;
+  const beforeKeys = answerWrites();
+  await page.keyboard.press("b"); await settle();
+  assert.deepEqual((await state()).sel.q2, ["B"], "b selects option B");
+  assert.equal(bookmarkWrites(), 0, "b does not bookmark");
+  await page.keyboard.press("Enter"); await settle();
+  assert.equal(answerWrites(), beforeKeys, "Enter does not submit 1 of 2 selections");
+  await page.locator(".st-opt").first().focus(); await page.keyboard.press("Enter"); await settle();
+  assert.deepEqual((await state()).sel.q2, ["B", "A"], "Enter on a focused option toggles it");
+  assert.equal(answerWrites(), beforeKeys, "Enter on a focused option does not also submit");
+  assert.equal((await state()).done.q2, undefined);
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => !!window.store.state.done.q2);
+  assert.equal(answerWrites(), beforeKeys + 1);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.store.state.idx === 1);
+  assert.deepEqual(await page.locator(".st-key-row kbd").allTextContents(), ["1 – 2", "A – B", "Enter", "Shift + B"]);
+  await page.keyboard.press("Shift+B");
+  await page.waitForFunction(() => window.store.state.bookmarks.q1 === true);
+  assert.equal(calls.filter(call => call.method === "PUT" && call.path === "/api/questions/q1/bookmark").length, 1);
+  assert.deepEqual((await state()).sel.q1 ?? [], [], "Shift+B does not pick option B");
+  await page.getByRole("button", { name: "Back", exact: true }).focus(); await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.store.state.idx === 0);
+  assert.equal(answerWrites(), beforeKeys + 1, "Enter on a focused button runs that button");
+  await invoke("next"); await page.waitForFunction(() => window.store.state.idx === 1);
+  await invoke("next"); await page.waitForFunction(() => window.store.state.idx === 2);
+  const blankField = page.getByRole("textbox", { name: "Your answer" });
+  await blankField.fill("green"); await blankField.press("Enter");
+  await page.waitForFunction(() => window.store.state.done.q3 === "ok");
+  await invoke("endSession"); await page.waitForFunction(() => window.store.state.pStage === "setup");
+  console.log("PASS keyboard shortcuts toggle focused options, wait for a complete answer, leave focused buttons alone and bookmark with Shift+B");
+
   // Exercise component rendering and actual provider draft persistence in Mock.
   const componentRows = ["code", "case-with-figure", "combination"].flatMap(name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions);
   questions.splice(0, questions.length, ...componentRows.map((row, n) => ({ ...row, correctAnswers: undefined, id: `component-${n}`, examId: "exam", sequenceNumber: n + 1, chooseCount: 1, tags: [] })));

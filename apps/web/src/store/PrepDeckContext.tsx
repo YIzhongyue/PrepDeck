@@ -2,6 +2,7 @@ import { WorkspaceRequests, storedExam, storeExam, beforeWorkspaceNavigation } f
 import { catalogQuestionIds } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
 import { allowAuthoringNavigation } from "../lib/questionAuthoring";
+import { canCheckAnswer, practiceKeyAction } from "../lib/practiceShortcuts";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type {
   ActiveAttemptResponse,
@@ -46,6 +47,9 @@ import type {
 export type PracticeStage = "setup" | "live";
 export type MockStage = "setup" | "live" | "results";
 export type PracticeSource = "all" | "new" | "wrong" | "bm" | "focus";
+
+// Keyboard targets whose Enter key activates the control itself.
+const ACTIVATABLE_CONTROLS = "button, a[href], summary, [role=button], [role=link], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=menuitem], [role=option]";
 
 // implementation — an explicit, complete practice filter set. Every field the
 // Practice setup screen reads is named here, so opening Practice from
@@ -605,8 +609,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const s = stateRef.current;
     const qid = s.queue[s.idx];
     if (!qid || !s.attemptId || s.switching || s.done[qid] || requests.has(`answer:${s.attemptId}:${qid}`)) return;
+    // The Check answer button's own rule, so no caller (the Enter shortcut
+    // included) can lock in a partial answer as wrong.
     const question = s.catalogBy[qid];
-    if (question?.hasContent && !question.content) return;
+    if (!question || !canCheckAnswer(question, s.sel[qid] ?? [])) return;
     const update = scopedState();
     void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
       .catch(() => update({ actionError: "Could not save your answer. Please submit it again." }));
@@ -1455,28 +1461,35 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [setState]);
 
-  // Keyboard shortcuts during live practice: number/letter keys pick, Enter checks/advances.
+  // Keyboard shortcuts during live practice. What each key does is decided by
+  // lib/practiceShortcuts, which the shortcut panel lists from as well.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target;
-      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey ||
-        (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable=true]")))) return;
+      // A control that already handled the key (an option row toggling itself)
+      // has the last word, and held keys must not check and then skip past the
+      // feedback they just produced.
+      if (e.defaultPrevented || e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable=true]"))) return;
+      // Enter on a focused button or link belongs to that control. Taking it
+      // here would also cancel the control's own click.
+      if (e.key === "Enter" && target?.closest(ACTIVATABLE_CONTROLS)) return;
       const s = stateRef.current;
       if (s.switching || s.screen !== "practice" || s.pStage !== "live") return;
       const qid = s.queue[s.idx];
       const q = qid ? s.catalogBy[qid] : undefined;
-      if (!q || (q.hasContent && !q.content) || !q.options || q.type === "ordering" || q.type === "matching") return;
-      const k = e.key.toUpperCase();
-      const hit = q.options.find((o) => o.id === k);
-      if (hit) { e.preventDefault(); pick(q, hit.id); return; }
-      const n = parseInt(e.key, 10);
-      const opt = n >= 1 && n <= q.options.length ? q.options[n - 1] : undefined;
-      if (opt) { e.preventDefault(); pick(q, opt.id); return; }
-      if (e.key === "Enter") { e.preventDefault(); if (s.done[q.id]) next(); else submit(); }
+      if (!q) return;
+      const action = practiceKeyAction(e, q, { graded: !!s.done[q.id], chosen: s.sel[q.id] ?? [] });
+      if (!action) return;
+      e.preventDefault();
+      if (action.kind === "pick") pick(q, action.optionId);
+      else if (action.kind === "check") submit();
+      else if (action.kind === "next") next();
+      else writeBookmark(q.id, !s.bookmarks[q.id]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pick, next, submit]);
+  }, [pick, next, submit, writeBookmark]);
 
   // Mock exam countdown; auto-submits when time runs out (FR-4.3).
   useEffect(() => {

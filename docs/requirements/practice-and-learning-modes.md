@@ -46,6 +46,16 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
   A practice answer is graded and locked when it is first recorded. Re-submitting the same question replays the stored grading — including the answer key it was graded against, so the replayed result stays consistent with itself even if the key has since changed — rather than failing. That makes a retry after a lost response recover the feedback instead of leaving the client stuck on a question the server has already graded, while still refusing to revise the recorded answer.
 
+  Keyboard shortcuts ([issue #50](https://github.com/YIzhongyue/PrepDeck/issues/50)):
+  on choice questions, number keys 1–9 and option letters select options.
+  **Enter** checks the answer only when **Check answer** would accept it (a
+  complete answer), and moves to the next question once the answer is graded.
+  Enter in the fill-in field checks that answer. **Shift+B** toggles the
+  bookmark, because every plain letter can be an option. Enter on a focused
+  option, button or link activates only that control, and held keys do not
+  repeat a shortcut. The shortcut panel lists exactly the keys that apply to
+  the current question.
+
 <a id="fr-3-3"></a>
 
 - **FR-3.3 (M):** Every answered question is recorded as an `attempt_answer` linked to an `attempt` of mode `practice`, including correctness and time spent, so it feeds statistics and the wrong-question book.
