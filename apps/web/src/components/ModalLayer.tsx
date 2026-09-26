@@ -17,9 +17,12 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 // QuestionEditorDialog drives its own `<dialog>` for the same reason; this is
 // that pattern lifted out for the dialogs that do not need a drawer's
 // animation or unsaved-changes guard.
-export default function ModalLayer({ label, labelledBy, onClose, children }: {
+export default function ModalLayer({ label, labelledBy, describedBy, onClose, children }: {
   label?: string;
   labelledBy?: string;
+  // The element whose text is announced after the name when the dialog opens,
+  // e.g. a confirmation's consequences.
+  describedBy?: string;
   // Omit to make the dialog dismissible only through its own controls — the
   // backdrop and Escape then do nothing.
   onClose?: () => void;
@@ -48,6 +51,7 @@ export default function ModalLayer({ label, labelledBy, onClose, children }: {
       aria-modal="true"
       aria-label={label}
       aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
       // Native modal dialogs keep the page inert, but Tab can still leave the
       // document for browser controls. Keep both keyboard boundaries inside.
       onKeyDown={(e) => {

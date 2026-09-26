@@ -202,7 +202,9 @@ viewport and paint the wash through `::backdrop`; theme tokens still reach it by
 inheritance from where the component sits in the tree.
 
 Wrap the panel and pass `onClose` — the backdrop click and Escape both go
-through it, so the state that renders the dialog stays in step with the element:
+through it, so the state that renders the dialog stays in step with the element.
+Name it with `label` or `labelledBy`, and point `describedBy` at the text a
+screen reader should announce on opening, such as a confirmation's consequences:
 
 ```tsx
 <ModalLayer label="Import questions" onClose={close}>
@@ -216,11 +218,18 @@ focus, the Tab trap, Escape and focus restore are all what `showModal()` already
 does, and `inert` covers the screen reader as well, which `aria-modal` alone
 never did.
 
+The mock exam's submit confirmation (`ConfirmDialog`) moved here too
+([issue #51](https://github.com/YIzhongyue/PrepDeck/issues/51)). As a plain `div`
+it neither took focus nor kept Tab out of the exam behind it, so a keyboard user
+could still change answers while being asked to confirm an irreversible submit.
+It focuses its **Keep going** button explicitly after opening, rather than
+relying on the browser's initial-focus choice.
+
 `QuestionEditorDialog` drives its own `<dialog>` for the same reason, because it
 also needs a drawer animation and an unsaved-changes guard. The overlays left on
 a plain fixed `div` are not broken, but each of them avoids the problem its own
-way: `ConfirmDialog`, the `TabBar` sheet and the exam-switching status render at
-the application root, above the animated screens rather than inside one, while
+way: the `TabBar` sheet and the exam-switching status render at the application
+root, above the animated screens rather than inside one, while
 `StudyPlanDialog` and `MediaDialog` portal out to reach that same place — and
 `MediaDialog` then marks its new siblings `inert` by hand. Fold them into this
 layer when you touch them; the top layer does all of that by itself.

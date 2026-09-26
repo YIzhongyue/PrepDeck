@@ -72,6 +72,14 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-4.4 (M):** On submission (manual or automatic), the user sees a results summary: score, pass/fail against a configurable passing threshold, time used, and a per-question breakdown (correct/incorrect, user's answer vs. correct answer) with the option to jump into AI explanations from there.
 
+  A manual submission is confirmed first in a modal dialog that states how many
+  questions are answered and flagged
+  ([issue #51](https://github.com/YIzhongyue/PrepDeck/issues/51)). The dialog
+  focuses **Keep going**, keeps keyboard focus inside itself and makes the exam
+  behind it inert, so no answer can change while it is open. Escape and a click
+  on the backdrop both mean Keep going, and closing returns focus to the
+  control that opened it.
+
 <a id="fr-4-5"></a>
 
 - **FR-4.5 (M):** Mock exam attempts are recorded exactly like practice attempts (mode = `mock`) and count toward statistics and the wrong-question book.
