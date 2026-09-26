@@ -170,6 +170,42 @@ try {
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   console.log("PASS expired writes and retries cannot block submission of the server's saved answers");
 
+  // Custom mock fields keep what is typed and validate it instead of clamping
+  // every keystroke (issue #55): 120 used to become 300 and 45 became 55.
+  expired = false;
+  await invoke("go", "mock", { newMock: true });
+  const countField = page.getByRole("spinbutton", { name: "Questions", exact: true });
+  const minutesField = page.getByRole("spinbutton", { name: "Time limit (minutes)", exact: true });
+  const beginExam = page.getByRole("button", { name: "Begin exam", exact: true });
+  const retype = async (field, text) => {
+    await field.click(); await field.press("Control+a");
+    if (text) await page.keyboard.type(text); else await page.keyboard.press("Backspace");
+  };
+  await retype(minutesField, "120"); assert.equal(await minutesField.inputValue(), "120");
+  await retype(minutesField, "45"); assert.equal(await minutesField.inputValue(), "45");
+  await retype(minutesField, ""); assert.equal(await minutesField.inputValue(), "", "the field can be empty while editing");
+  await page.getByText("Enter a whole number of minutes from 5 to 300.", { exact: true }).waitFor();
+  assert.equal(await beginExam.isDisabled(), true, "an empty time limit cannot start an exam");
+  await retype(minutesField, "400"); assert.equal(await beginExam.isDisabled(), true);
+  assert.equal(await page.locator(".st-big-pair-v").nth(1).textContent(), "—", "the summary does not show the 40 typed on the way to 400");
+  assert.equal(await minutesField.getAttribute("aria-invalid"), "true");
+  await retype(countField, "4");
+  await page.getByText("Enter a whole number from 1 to 3.", { exact: true }).waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mock-custom-fields-invalid.png`, animations: "disabled" });
+  await retype(countField, "2"); await retype(minutesField, "45");
+  assert.equal(await beginExam.isDisabled(), false);
+  assert.equal(await page.getByText(/Enter a whole number/).count(), 0);
+  await beginExam.click();
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  const customAttempt = attempts.get((await state()).mockAttemptId);
+  assert.equal(customAttempt.timeLimitSeconds, 45 * 60);
+  assert.equal(customAttempt.questionIds.length, 2);
+  await complete();
+  // The following blocks draw all three questions again.
+  await invoke("go", "mock", { newMock: true }); await retype(countField, "3");
+  await page.waitForFunction(() => window.store.state.mockCount === 3);
+  console.log("PASS custom mock fields accept typed values, flag empty or out-of-range ones and start with what was typed");
+
   // Submitted from another tab or device: a write to it leads to its result, and
   // a draft this tab never managed to save cannot block the Submit button.
   expired = false;
