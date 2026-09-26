@@ -91,6 +91,10 @@ drops the rest, since the same component and state serve both.
 
 - **FR-8.2 (S):** A user can optionally attach a short free-text note to an annotation.
 
+  An annotation note is at most 2,000 characters (`MAX_ANNOTATION_NOTE_LENGTH`)
+  and its style identifier at most 64, on create and edit
+  ([issue #45](https://github.com/YIzhongyue/PrepDeck/issues/45)).
+
 <a id="fr-8-3"></a>
 
 - **FR-8.3 (M):** Annotations are personal (per-user) and never visible to other users, and never rendered during live practice/mock answering — only on the dedicated Review page (FR-8.4), in post-answer review screens, and throughout Learning Mode ([Learning mode](practice-and-learning-modes.md), FR-14.6), since Learning Mode is a read-through/review context by design.
@@ -113,6 +117,16 @@ text projection. The review-only visibility rules above remain unchanged.
 <a id="fr-11-1"></a>
 
 - **FR-11.1 (M):** A user can add a free-text note to any question, independent of any annotation and not tied to a specific text span.
+
+  A note is at most 10,000 characters after trimming (`MAX_NOTE_LENGTH` in
+  [`notes.ts`](../../packages/shared/src/notes.ts)), on create and edit; a
+  longer one is refused with 400 and the editors stop at the limit, showing a
+  counter as it nears
+  ([issue #45](https://github.com/YIzhongyue/PrepDeck/issues/45)). A shared
+  note is downloaded by every member who shows shared notes, so an unbounded
+  one was paid for by everyone. The notes, annotation and attempt routes also
+  refuse request bodies over 64 KiB with 413 before parsing them, and an
+  unexpected server error answers with a JSON 500 rather than plain text.
 
 <a id="fr-11-2"></a>
 

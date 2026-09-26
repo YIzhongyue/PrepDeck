@@ -11,6 +11,7 @@
 // same HTTP status/body this route has always returned.
 
 import { Hono } from "hono";
+import { KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH } from "@prepdeck/shared";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { buildKnowledgePointsListQuery } from "../lib/knowledgePointsQuery";
@@ -21,8 +22,8 @@ import { scopeKeyFor } from "../lib/knowledgePointOrdering";
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 50;
-const MAX_TITLE_LENGTH = 200;
-const MAX_BODY_LENGTH = 200_000;
+const MAX_TITLE_LENGTH = KNOWLEDGE_POINT_MAX_TITLE_LENGTH;
+const MAX_BODY_LENGTH = KNOWLEDGE_POINT_MAX_BODY_LENGTH;
 
 export const knowledgePointsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
 

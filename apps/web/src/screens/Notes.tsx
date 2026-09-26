@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MARK_STYLES, type AnnotationsListResponse, type MarkStyle } from "@prepdeck/shared";
+import { MARK_STYLES, MAX_ANNOTATION_NOTE_LENGTH, type AnnotationsListResponse, type MarkStyle } from "@prepdeck/shared";
 import { HL } from "../data/constants";
 import { segsFor } from "../lib/annotations";
 import { annotationsQueryString, isDefaultView, type MarkSortOrder } from "../lib/annotationFilters";
@@ -145,7 +145,7 @@ export default function Notes() {
                         <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, margin: "2px 0 4px" }}>&ldquo;{quote}&rdquo;</span>
                         <input
                           className="input" type="text" placeholder="Add a note to this mark…" value={a.note}
-                          onChange={(e) => setMarkNote(a.id, e.target.value)}
+                          onChange={(e) => setMarkNote(a.id, e.target.value)} maxLength={MAX_ANNOTATION_NOTE_LENGTH}
                           onBlur={() => saveMarkNote(a.id)}
                           style={{ fontSize: 12.5, minHeight: 32 }}
                         />

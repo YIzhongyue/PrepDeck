@@ -164,3 +164,7 @@ export interface LinkableQuestionsResponse {
   limit: number;
   offset: number;
 }
+
+// Knowledge Point limits, shared by the REST routes and the User MCP tools.
+export const KNOWLEDGE_POINT_MAX_TITLE_LENGTH = 200;
+export const KNOWLEDGE_POINT_MAX_BODY_LENGTH = 200_000;

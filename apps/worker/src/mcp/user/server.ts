@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getImportSchemas } from "@prepdeck/shared";
+import { getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -25,8 +25,8 @@ const candidateLimitSchema = z.number().int().min(1).max(100).default(10);
 const knowledgePointIdSchema = z.string().min(1).max(200);
 const knowledgePointGroupIdSchema = z.string().min(1).max(200);
 const knowledgePointTagIdSchema = z.string().min(1).max(200);
-const knowledgePointTitleSchema = z.string().max(200);
-const knowledgePointBodySchema = z.string().max(200_000);
+const knowledgePointTitleSchema = z.string().max(KNOWLEDGE_POINT_MAX_TITLE_LENGTH);
+const knowledgePointBodySchema = z.string().max(KNOWLEDGE_POINT_MAX_BODY_LENGTH);
 const knowledgePointNameSchema = z.string().min(1).max(40);
 // Distinct from the annotations `sortSchema` above (asc/desc) — a different
 // axis entirely (which field to sort by, not which direction).

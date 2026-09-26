@@ -21,6 +21,7 @@ bounded and avoid attacker-controlled values and unbounded cardinality.
 | --- | --- | --- |
 | `ai.upstream_failure` | [AI route](../../apps/worker/src/routes/ai.ts) | Fixed provider/reason/status fields; compact JSON; no key or explanation. |
 | `auth.google.start*`, `auth.google.callback.*` | [Auth routes](../../apps/worker/src/routes/auth.ts) | Redirect URI/mode, missing-parameter/state booleans, provider error or exception message depending on event. |
+| `api.unhandled_error` | [Error handler](../../apps/worker/src/lib/unexpectedError.ts) | Method, route pattern, error name and the first 200 characters of its message; no body, headers or user ID. The client gets a generic JSON 500. |
 | `dailyReviewEmail.delivery_failed` | [Email job](../../apps/worker/src/scheduled/sendDailyReviewEmails.ts) | User ID and exception message. |
 | `mcp.v1` request/tool metrics (Analytics Engine) | [MCP observation](../../apps/worker/src/mcp/observability.ts) | Fixed audience/method/catalog tool, auth/error/outcome/gate enums, duration and bounded item counts. [Schema and five-minute queries](mcp-observability.md). |
 | `admin_mcp_audit_log` (D1, not Workers Logs) | [MCP audit](../../apps/worker/src/mcp/audit.ts) and adapter | Actor/credential, action, target IDs, outcome and changed field names, not complete question content. |
