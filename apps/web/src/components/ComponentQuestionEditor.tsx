@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { exportComponentPackage, normalizeImportFile, validateImportFile, type Question } from "@prepdeck/shared";
+import { exportComponentPackage, formatAnswerText, normalizeImportFile, validateImportFile, type Question } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 import QuestionContent from "./QuestionContent";
 
@@ -54,7 +54,7 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
       <h3>Edit component question</h3><p>Edit the structured package. The preview updates when the question is valid.</p>
       <label>Question package JSON<textarea className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} onChange={e => setText(e.target.value)} /></label>
       {error && <p role="alert">{error}</p>}
-      {preview && <section aria-label="Component question preview"><QuestionContent src={preview.stem} content={preview.content} />{preview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={preview.content} optionId={o.id} /></div>)}<p>Correct response: {preview.correctAnswers.join(", ")}</p></section>}
+      {preview && <section aria-label="Component question preview"><QuestionContent src={preview.stem} content={preview.content} />{preview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={preview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(preview, preview.correctAnswers)}</p></section>}
     </div><div className="question-drawer-footer"><div className="dialog-actions"><button className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" disabled={busy || !preview} onClick={save}>Save</button></div></div></div>
   </dialog>;
 }

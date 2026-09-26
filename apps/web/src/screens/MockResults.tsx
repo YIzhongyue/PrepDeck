@@ -1,5 +1,6 @@
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { formatAnswerText } from "@prepdeck/shared";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import { IC, Icon } from "../components/study/StudyKit";
 import { breakpointsFor } from "../lib/responsive";
@@ -11,10 +12,18 @@ const RING_C = 2 * Math.PI * RING_R;
 type Filter = "all" | "missed" | "correct";
 
 export default function MockResults() {
-  const { state, width, practiceWrong, go, toggleBookmark } = usePrepDeck();
+  const { state, width, practiceWrong, go, toggleBookmark, loadQuestionContent } = usePrepDeck();
   const result = state.mockResult;
   const [reviewQuestionId, setReviewQuestionId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  // Matching and ordering answers read as text only with their question's
+  // content (issue #43); a mock loads it only for the questions opened.
+  useEffect(() => {
+    for (const row of result?.breakdown ?? []) {
+      const q = state.catalogBy[row.questionId];
+      if (q?.hasContent && !q.content && (q.type === "matching" || q.type === "ordering") && state.questionContent[q.id]?.status !== "error") loadQuestionContent(q.id);
+    }
+  }, [result, state.catalogBy, state.questionContent, loadQuestionContent]);
   if (!result) return null;
 
   const bp = breakpointsFor(width);
@@ -100,7 +109,9 @@ export default function MockResults() {
               <tbody>
                 {rows.map(({ row, n }) => {
                   const qq = state.catalogBy[row.questionId];
-                  const yours = row.selectedAnswer.join(", ") || "—";
+                  // Readable for matching/ordering; falls back to IDs for a question no longer in the catalog.
+                  const format = (values: string[]) => qq ? formatAnswerText(qq, values) : values.join(", ");
+                  const yours = format(row.selectedAnswer) || "—";
                   const bookmarked = !!state.bookmarks[row.questionId];
                   return (
                     <tr key={row.questionId}>
@@ -108,7 +119,7 @@ export default function MockResults() {
                       <td className="st-stem"><span title={qq?.stem}>{qq?.stem ?? ""}</span></td>
                       <td style={{ whiteSpace: "nowrap" }}>{qq?.tags.join(", ") || "—"}</td>
                       <td className="st-yours">{yours}</td>
-                      <td>{row.correctAnswers.join(", ")}<AnswerRevisionNotice revisedAt={row.answerRevisedAt} historical={row.answerRevision == null || row.answerRevision < row.currentAnswerRevision} gradedAnswers={row.gradedAnswers} /></td>
+                      <td>{format(row.correctAnswers)}<AnswerRevisionNotice revisedAt={row.answerRevisedAt} historical={row.answerRevision == null || row.answerRevision < row.currentAnswerRevision} gradedAnswers={row.gradedAnswers} question={qq} /></td>
                       <td>
                         <span className={`st-badge ${row.isCorrect ? "st-badge--ok" : "st-badge--bad"}`} style={{ whiteSpace: "nowrap" }}>
                           <Icon d={row.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{row.isCorrect ? "Correct" : "Missed"}

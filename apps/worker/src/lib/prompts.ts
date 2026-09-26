@@ -20,9 +20,20 @@ const env = new nunjucks.Environment(new nunjucks.PrecompiledLoader(precompiledT
 
 export interface ExplanationPromptContext {
   stem: string;
+  // Which instructions fit (issue #42): "choice" asks about the other options,
+  // while matching and ordering have no wrong options, only wrong pairings or
+  // positions, and a fill-in has no options at all.
+  kind: "choice" | "text" | "ordering" | "matching";
+  // A matching question's left column, or the items to order, or the choices.
   options: { id: string; text: string }[];
+  // A matching question's right column; empty otherwise.
+  matchTargets: { id: string; text: string }[];
+  // Readable lines for matching and ordering ("HTTPS → 443"); IDs or accepted
+  // answers otherwise.
   correctAnswers: string[];
   officialExplanation: string | null;
+  // The stem carries figure captions and alt text only.
+  figureOmitted: boolean;
 }
 
 export function renderExplanationPrompt(ctx: ExplanationPromptContext): string {

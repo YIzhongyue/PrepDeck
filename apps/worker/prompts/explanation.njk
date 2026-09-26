@@ -4,7 +4,13 @@ Analyze the question below and provide a clear, concise, and educational explana
 
 Requirements:
 - Explain why each correct answer is correct.
+{%- if kind == "matching" %}
+- Explain why each item matches its partner, and why a different pairing would be wrong.
+{%- elif kind == "ordering" %}
+- Explain why each step comes where it does, and what it depends on.
+{%- elif kind == "choice" %}
 - Explain why each incorrect option is wrong.
+{%- endif %}
 - Focus on the underlying concept, rule, principle, or reasoning needed to solve the question.
 - Do not simply restate or paraphrase the question or answer choices.
 - If an option is partially true but incorrect in this context, explain the distinction.
@@ -17,31 +23,66 @@ Requirements:
 
 Question:
 {{ stem }}
+{%- if figureOmitted %}
 
-{% if options and options.length -%}
-Options:
-{% for o in options -%}
+(This question includes a figure that is not reproduced here; only its caption and alt text appear above.)
+{%- endif %}
+{%- if kind == "matching" %}
+
+Items to match:
+{%- for o in options %}
 - ({{ o.id }}) {{ o.text }}
-{% endfor -%}
-{% endif -%}
+{%- endfor %}
+
+Match with:
+{%- for o in matchTargets %}
+- ({{ o.id }}) {{ o.text }}
+{%- endfor %}
+{%- elif kind == "ordering" %}
+
+Items to put in order:
+{%- for o in options %}
+- ({{ o.id }}) {{ o.text }}
+{%- endfor %}
+{%- elif options and options.length %}
+
+Options:
+{%- for o in options %}
+- ({{ o.id }}) {{ o.text }}
+{%- endfor %}
+{%- endif %}
 
 Correct answer(s):
+{%- if kind == "matching" or kind == "ordering" %}
+{%- for a in correctAnswers %}
+- {{ a }}
+{%- endfor %}
+{%- else %}
 {{ correctAnswers | join(", ") }}
+{%- endif %}
+{%- if officialExplanation %}
 
-{% if officialExplanation -%}
 Official reference explanation:
 {{ officialExplanation }}
-{% endif -%}
+{%- endif %}
 
 Provide the answer in the following structure:
 
 **Why the correct answer is correct**
 Explain the key reasoning that leads to the correct answer.
+{%- if kind == "choice" %}
 
-{% if options and options.length -%}
 **Why the other options are incorrect**
 Briefly explain each incorrect option individually.
-{% endif -%}
+{%- elif kind == "matching" %}
+
+**Why each pair matches**
+For each item on the left, explain why it belongs with its partner on the right.
+{%- elif kind == "ordering" %}
+
+**Why this order**
+Explain why each step must come before the one that follows it.
+{%- endif %}
 
 **Key takeaway**
 Summarize the most important concept or exam rule the learner should remember in one or two sentences.

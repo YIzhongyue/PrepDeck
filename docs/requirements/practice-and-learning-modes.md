@@ -72,6 +72,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-4.4 (M):** On submission (manual or automatic), the user sees a results summary: score, pass/fail against a configurable passing threshold, time used, and a per-question breakdown (correct/incorrect, user's answer vs. correct answer) with the option to jump into AI explanations from there.
 
+  Answers read as the question's own text wherever they are summarised: the
+  practice feedback banner, this breakdown, Learning's history, the
+  answer-revision notice and the admin and import previews
+  ([issue #43](https://github.com/YIzhongyue/PrepDeck/issues/43)). A matching
+  answer reads "HTTPS → 443; SSH → 22" rather than its stored `["L1","R2"]`
+  pairs, and an ordering "1. … 2. …" rather than item IDs. Choice and fill-in
+  answers are shown as before. A question whose content is not available falls
+  back to the stored IDs.
+
 <a id="fr-4-5"></a>
 
 - **FR-4.5 (M):** Mock exam attempts are recorded exactly like practice attempts (mode = `mock`) and count toward statistics and the wrong-question book.
