@@ -60,6 +60,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-4.1 (M):** A user can configure a mock exam: exam, number of questions, and time limit (sensible defaults per exam, editable by the user at start time). An attempt is capped at `MAX_ATTEMPT_QUESTIONS` (200) questions, because submission grades the whole attempt in one atomic transaction whose size that bounds; an exam with a larger question bank offers up to the cap rather than its full pool.
 
+  The **Custom** format's fields keep exactly what the learner types and
+  validate it instead of clamping each keystroke
+  ([issue #55](https://github.com/YIzhongyue/PrepDeck/issues/55)). The question
+  count must be a whole number from 1 to the questions available (at most the
+  cap), and the time limit a whole number of minutes from 5 to 300. An empty or
+  out-of-range value shows why, the summary shows a dash for it, and **Begin
+  exam** stays disabled until it is valid, so an exam always starts with the
+  values on screen.
+
 <a id="fr-4-2"></a>
 
 - **FR-4.2 (M):** Questions are drawn randomly without repetition within the same attempt from the exam's question pool. The optional original intent to reuse practice filters has no controls in the current Mock setup UI; the shipped setup configures question count and duration.
