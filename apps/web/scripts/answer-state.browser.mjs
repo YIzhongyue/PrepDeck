@@ -19,6 +19,8 @@ const questions = ["single_choice", "multiple_choice", "fill_blank"].map((type, 
   options: type === "fill_blank" ? null : [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }],
 }));
 const attempts = new Map(), wrong = new Map(), calls = [], errors = [];
+// Answer keys the fixture grades component questions against (issue #43).
+const answerKeys = new Map();
 let serial = 0, expired = false, failDraft = false;
 const selected = answer => answer?.some(value => value.trim()) ? answer : [];
 function grade(qid, answer) { return qid === "q3" ? answer.some(value => value.trim() === "green") : answer.join() === "A"; }
@@ -72,13 +74,13 @@ const server = createServer(async (req, res) => {
     if (action === "answers") {
       const isCorrect = grade(payload.questionId, payload.selectedAnswer);
       if (!isCorrect) recordWrong(payload.questionId);
-      return json({ isCorrect, correctAnswers: ["green"], explanation: "Explanation", answerRevision: 1 });
+      return json({ isCorrect, correctAnswers: answerKeys.get(payload.questionId) ?? ["green"], explanation: "Explanation", answerRevision: 1 });
     }
     if (action === "complete") {
       const breakdown = attempt.questionIds.map(questionId => {
         const answer = selected(attempt.selectedAnswers[questionId] ?? []), isCorrect = grade(questionId, answer);
         if (!attempt.completed && !isCorrect && answer.length) recordWrong(questionId);
-        return { questionId, selectedAnswer: answer, isCorrect, correctAnswers: questionId === "q3" ? ["green"] : ["A"], gradedAnswers: [], answerRevision: 1, currentAnswerRevision: 1 };
+        return { questionId, selectedAnswer: answer, isCorrect, correctAnswers: answerKeys.get(questionId) ?? (questionId === "q3" ? ["green"] : ["A"]), gradedAnswers: [], answerRevision: 1, currentAnswerRevision: 1 };
       });
       attempt.completed = true;
       return json({ attemptId: id, mode: attempt.mode, score: 0, passed: false, correctCount: 0, totalQuestions: 3, durationSeconds: 1, breakdown });
@@ -191,6 +193,7 @@ try {
   // Exercise component rendering and actual provider draft persistence in Mock.
   const componentRows = ["code", "case-with-figure", "combination"].flatMap(name => normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions);
   questions.splice(0, questions.length, ...componentRows.map((row, n) => ({ ...row, correctAnswers: undefined, id: `component-${n}`, examId: "exam", sequenceNumber: n + 1, chooseCount: 1, tags: [] })));
+  componentRows.forEach((row, n) => answerKeys.set(`component-${n}`, row.correctAnswers));
   await page.reload(); await ready(); await startMock();
   await show("component-0");
   await page.locator("pre code").filter({ hasText: "values = [1, 2, 3]" }).waitFor();
@@ -229,6 +232,20 @@ try {
   await page.getByRole("button", { name: "Check answer", exact: true }).click();
   await page.waitForFunction(() => !!window.store.state.done["component-0"]);
   assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).isDisabled(), true);
+  // Structured answers read as text, not stored IDs (issue #43): the practice
+  // banner here, and the mock results table below.
+  await page.getByText("Correct answer: 1. Read the values  2. Sum the values  3. Print the sum.", { exact: false }).waitFor();
+  await invoke("go", "mock"); await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  await complete();
+  const matchRow = page.locator("tr").filter({ hasText: "Lower observation" }).first();
+  await matchRow.waitFor();
+  assert.deepEqual(await matchRow.locator("td").evaluateAll(cells => cells.slice(3, 5).map(cell => cell.firstChild?.textContent ?? cell.textContent)),
+    ["Lower observation → Before; Higher observation → After", "Lower observation → Before; Higher observation → After"]);
+  assert.equal(await page.getByText('["low"', { exact: false }).count(), 0, "no JSON pair strings anywhere");
+  const orderRow = page.locator("tr").filter({ hasText: "1. Read the values" }).first();
+  await orderRow.waitFor();
+  await invoke("go", "mock", { newMock: true });
   console.log("PASS component figures/tables/code, order/match controls, restored drafts, practice grading state, keyboard isolation and mobile layout");
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

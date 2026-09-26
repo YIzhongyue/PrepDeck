@@ -51,6 +51,19 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-7.4 (M):** On a cache miss, the browser sends question ID, provider, model and the loaded API key to `POST /api/ai/generate`. The Worker constructs the prompt from the current stored question and relays it only to fixed provider endpoints. It does not accept an arbitrary upstream URL or a browser-authored prompt. The key is transient request data, never persisted to D1/KV/R2 or deliberately logged.
 
+  The prompt describes the whole question for every interaction type
+  ([issue #42](https://github.com/YIzhongyue/PrepDeck/issues/42)). A matching
+  question lists both columns and gives the answer as readable pairs
+  ("HTTPS → 443"); an ordering lists its items and the order as item text. The
+  instructions fit the type: choice questions ask why the other options are
+  wrong, matching asks why each pair matches, ordering why each step comes
+  where it does, and fill-in has no option instructions. Figures reach the
+  prompt as caption and alt text only, and the prompt says so. **Copy as
+  prompt** in Learning and Practice formats answers the same way, through
+  `answerParts` in [`answerFormat.ts`](../../packages/shared/src/answerFormat.ts).
+  Migration `0038` removed cached explanations for matching and ordering
+  questions that were generated from the older, incomplete prompts.
+
 <a id="fr-7-5"></a>
 
 - **FR-7.5 (M):** After successful generation, cache the explanation content and provenance metadata, never the API key, by `(question_id, provider, model)`. The insert is conditional on the question revision used for generation; a concurrent question edit cannot restore a stale cached explanation. Later cache hits require no provider call or API key.

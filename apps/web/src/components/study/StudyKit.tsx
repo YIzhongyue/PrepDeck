@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type DependencyList, type ReactNode } from "react";
-import { CURATED_MODELS } from "@prepdeck/shared";
+import { CURATED_MODELS, formatAnswerText } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
 import MarkdownHighlightedText from "../MarkdownHighlightedText";
@@ -348,7 +348,7 @@ export function NotesPanel({ qid }: { qid: string }) {
   );
 }
 
-export function HistoryPanel({ rows, loading, answerRevisedAt, answerRevision }: { rows: LearningHistoryRow[]; loading: boolean; answerRevisedAt?: string | null; answerRevision?: number }) {
+export function HistoryPanel({ rows, loading, answerRevisedAt, answerRevision, question }: { rows: LearningHistoryRow[]; loading: boolean; answerRevisedAt?: string | null; answerRevision?: number; question: Question }) {
   if (loading) return <div className="st-panel"><span className="st-muted">Loading…</span></div>;
   if (!rows.length) {
     return (
@@ -366,12 +366,12 @@ export function HistoryPanel({ rows, loading, answerRevisedAt, answerRevision }:
       {rows.map((h, i) => (
         <div key={`${h.attemptId}-${i}`} className="st-history-row">
           <span className="st-badge">{h.mode === "mock" ? "Mock" : "Practice"}</span>
-          <span className="st-history-text">Answered <strong style={{ fontWeight: 600 }}>{h.selectedAnswer.join(", ") || "—"}</strong></span>
+          <span className="st-history-text">Answered <strong style={{ fontWeight: 600 }}>{formatAnswerText(question, h.selectedAnswer) || "—"}</strong></span>
           <span className={`st-badge ${h.isCorrect ? "st-badge--ok" : "st-badge--bad"}`}>
             <Icon d={h.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{h.isCorrect ? "Correct" : "Incorrect"}
           </span>
           <span className="st-history-date">{new Date(h.answeredAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>
-          <AnswerRevisionNotice revisedAt={answerRevisedAt} historical={h.answerRevision == null || h.answerRevision < (answerRevision ?? 1)} gradedAnswers={h.gradedAnswers} />
+          <AnswerRevisionNotice revisedAt={answerRevisedAt} historical={h.answerRevision == null || h.answerRevision < (answerRevision ?? 1)} gradedAnswers={h.gradedAnswers} question={question} />
         </div>
       ))}
     </div>
