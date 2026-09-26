@@ -125,7 +125,8 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
               {!!graded && !contentPending && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} />}
             </QuestionBadges>
           </div>
-          <div className="st-q-body" ref={bodyRef}>
+          {/* Practice lets the wheel hand off to the page at the top and bottom of the question. */}
+          <div className="st-q-body" ref={bodyRef} style={{ overscrollBehavior: "auto" }}>
             <QuestionContentGate question={q}>
               <div className="st-stem" onMouseUp={() => { if (graded) capture(q.id, "stem"); }}>
                 <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />

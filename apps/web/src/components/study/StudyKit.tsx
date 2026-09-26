@@ -99,8 +99,10 @@ export function CopyPromptButton({ status, onClick }: { status: "idle" | "copied
 /* The question's id, type and domain badges, with an optional trailing action. */
 /* Pinned question card (`.st-q--pinned`): its header and footer stay on screen
    while only `.st-q-body` scrolls. `fitHeight` is the viewport height left
-   below `gridRef` (at least 360px), kept current on resize; size the grid or
-   the card to it. The body scrolls back to the top on every new question. */
+   below `gridRef` (at least 360px), less the bottom padding of the app's
+   content column (`[data-pd-content]`), which reserves room for the fixed
+   mobile tab bar; size the grid or the card to it. The body scrolls back to
+   the top on every new question. */
 export function usePinnedCard(questionId: string | undefined, phone: boolean, deps: DependencyList = []) {
   const gridRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -108,9 +110,11 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
   useLayoutEffect(() => {
     const el = gridRef.current;
     if (!el) return;
+    const content = el.closest<HTMLElement>("[data-pd-content]");
     const compute = () => {
       const top = el.getBoundingClientRect().top + window.scrollY;
-      setFitHeight(Math.max(360, window.innerHeight - top - (phone ? 16 : 40)));
+      const bottom = content ? parseFloat(getComputedStyle(content).paddingBottom) || 0 : phone ? 16 : 40;
+      setFitHeight(Math.max(360, window.innerHeight - top - bottom));
     };
     let frame = 0;
     const schedule = () => {
@@ -119,7 +123,10 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     };
     compute();
     window.addEventListener("resize", schedule);
-    return () => { window.removeEventListener("resize", schedule); cancelAnimationFrame(frame); };
+    // The tab bar's height (and so the content padding) is only known after it lays out.
+    const observer = content ? new ResizeObserver(schedule) : null;
+    if (content) observer?.observe(content, { box: "border-box" });
+    return () => { window.removeEventListener("resize", schedule); observer?.disconnect(); cancelAnimationFrame(frame); };
   }, [phone, questionId, ...deps]);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [questionId]);
   return { gridRef, bodyRef, fitHeight };

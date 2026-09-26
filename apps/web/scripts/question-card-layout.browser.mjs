@@ -96,8 +96,10 @@ async function checkLongBody(page, label, viewport) {
   assert.ok(before.foot.bottom <= viewport.height, `${label}: footer is below the viewport`);
   const bodyBox = await body.evaluate(el => el.getBoundingClientRect().toJSON());
   await page.mouse.move(bodyBox.x + bodyBox.width / 2, bodyBox.y + bodyBox.height / 2);
-  for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 400);
-  await page.waitForFunction(() => { const el = document.querySelector(".st-q-body"); return el.scrollTop + el.clientHeight >= el.scrollHeight - 1; });
+  // Stop at the end of the body: past it Practice deliberately hands the wheel on to the page.
+  const atEnd = () => body.evaluate(el => el.scrollTop + el.clientHeight >= el.scrollHeight - 1);
+  for (let i = 0; i < 80 && !(await atEnd()); i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(50); }
+  assert.ok(await atEnd(), `${label}: wheel never reached the end of the body`);
   assert.deepEqual({ head: await rect(page, ".st-q-head"), foot: await rect(page, ".st-q-foot"), y: await page.evaluate(() => window.scrollY) }, before, `${label}: header, footer or page moved while scrolling the body`);
   const lastOption = await rect(page, ".st-opt:last-child");
   const scrolledBody = await rect(page, ".st-q-body");

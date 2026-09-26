@@ -83,7 +83,8 @@ export function Shell() {
           <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
             {compactNavigation && <TopBar />}
 
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: bp.phone ? 18 : bp.narrow ? 22 : 30, paddingInline: bp.phone ? 16 : bp.narrow ? 22 : 34, paddingBottom: compactNavigation ? tabBarHeight + 20 : 40 }}>
+            {/* data-pd-content: pinned question cards stop above this padding (and so above the tab bar). */}
+            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: bp.phone ? 18 : bp.narrow ? 22 : 30, paddingInline: bp.phone ? 16 : bp.narrow ? 22 : 34, paddingBottom: compactNavigation ? tabBarHeight + 20 : 40 }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", width: "100%", maxWidth: 1160, margin: "0 auto" }}>
                 {state.workspaceNotice && <p role="status">{state.workspaceNotice}</p>}
                 {state.actionError && <div role="alert" className="card" style={{ padding: 16, marginBottom: 16 }}>
