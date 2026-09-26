@@ -40,7 +40,7 @@ export default function Sidebar({ rail }: { rail: boolean }) {
           return (
             <div key={group.label} role="group" aria-label={group.label} style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, marginTop: group.label === "System" ? "auto" : undefined }}>
               {rail && groupItems.length > 1 && (
-                <div aria-hidden="true" style={{ padding: "0 10px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }}>
+                <div aria-hidden="true" style={{ padding: "0 10px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: "var(--color-text-muted)" }}>
                   {group.label}
                 </div>
               )}
@@ -83,7 +83,7 @@ export default function Sidebar({ rail }: { rail: boolean }) {
           <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {state.me?.displayName || state.me?.email || "Loading…"}
           </span>
-          <span style={{ display: "block", fontSize: 11, color: "color-mix(in srgb, var(--color-text) 50%, transparent)", textTransform: "capitalize" }}>
+          <span style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", textTransform: "capitalize" }}>
             {state.me?.role || ""}
           </span>
         </span>

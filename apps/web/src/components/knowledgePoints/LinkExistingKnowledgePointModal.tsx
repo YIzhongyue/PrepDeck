@@ -68,7 +68,7 @@ export default function LinkExistingKnowledgePointModal({ questionId, onClose }:
               </div>
             );
           })}
-          {results.length === 0 && <p style={{ opacity: 0.6, fontSize: 13 }}>No matching knowledge points.</p>}
+          {results.length === 0 && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>No matching knowledge points.</p>}
         </div>
 
         <div className="dialog-actions">

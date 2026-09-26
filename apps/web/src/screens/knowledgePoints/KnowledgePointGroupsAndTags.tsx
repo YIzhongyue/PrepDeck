@@ -35,7 +35,7 @@ function EditableRow<T extends { id: string; name: string; noteCount: number }>(
           style={{ flex: 1, minWidth: 0, padding: "4px 0", border: 0, outline: 0, background: "transparent", font: "inherit", fontSize: 13.5, fontWeight: 600 }}
         />
         <button type="button" onClick={() => { onRename(item.id, draft); setEditing(false); }} style={{ padding: "5px 13px", border: 0, borderRadius: 999, background: "var(--color-accent)", color: "var(--color-bg)", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}>Save</button>
-        <button type="button" onClick={() => { setDraft(item.name); setEditing(false); }} style={{ padding: "5px 11px", border: 0, borderRadius: 999, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 12, opacity: 0.6 }}>Cancel</button>
+        <button type="button" onClick={() => { setDraft(item.name); setEditing(false); }} style={{ padding: "5px 11px", border: 0, borderRadius: 999, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 12, color: "var(--color-text-muted)" }}>Cancel</button>
       </div>
     );
   }
@@ -43,7 +43,7 @@ function EditableRow<T extends { id: string; name: string; noteCount: number }>(
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: pillClassName ? "9px 14px" : "11px 14px", borderRadius: 16, background: "var(--color-bg)" }}>
       {pillClassName ? <span className={pillClassName}>{item.name}</span> : <span style={{ fontSize: 13.5, fontWeight: 600 }}>{item.name}</span>}
-      <span style={{ fontSize: 11.5, opacity: 0.45 }}>{pillClassName ? `on ${item.noteCount} note${item.noteCount === 1 ? "" : "s"}` : `${item.noteCount} note${item.noteCount === 1 ? "" : "s"}`}</span>
+      <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>{pillClassName ? `on ${item.noteCount} note${item.noteCount === 1 ? "" : "s"}` : `${item.noteCount} note${item.noteCount === 1 ? "" : "s"}`}</span>
       <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
         <button type="button" onClick={() => setEditing(true)} style={{ padding: "3px 10px", border: 0, borderRadius: 999, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 11.5, color: "var(--color-accent-700)" }}>Rename</button>
         <button
@@ -81,7 +81,7 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
         Knowledge points
       </a>
       <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>Groups &amp; tags</h1>
-      <p style={{ margin: "0 0 24px", maxWidth: 560, fontSize: 13.5, opacity: 0.65 }}>
+      <p style={{ margin: "0 0 24px", maxWidth: 560, fontSize: 13.5, color: "var(--color-text-muted)" }}>
         Groups are flat — a note belongs to at most one. Tags overlap freely. Both are private to you and separate from the question bank&rsquo;s tags.
       </p>
 
@@ -89,7 +89,7 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
         <div style={{ padding: 22, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-surface)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: 18 }}>Groups</h3>
-            <span style={{ fontSize: 11.5, opacity: 0.45 }}>{state.groups.length} group{state.groups.length === 1 ? "" : "s"} · {totalNotes} note{totalNotes === 1 ? "" : "s"}</span>
+            <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>{state.groups.length} group{state.groups.length === 1 ? "" : "s"} · {totalNotes} note{totalNotes === 1 ? "" : "s"}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {state.groups.map((g) => (
@@ -102,9 +102,9 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
               />
             ))}
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 16, background: "var(--color-neutral-100)" }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, opacity: 0.65 }}>Ungrouped</span>
-              <span style={{ fontSize: 11.5, opacity: 0.45 }}>{state.ungroupedCount} notes</span>
-              <span style={{ marginLeft: "auto", fontSize: 11, opacity: 0.45 }}>built-in</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--color-text-muted)" }}>Ungrouped</span>
+              <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>{state.ungroupedCount} notes</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--color-text-muted)" }}>built-in</span>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -120,13 +120,13 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
             <button type="button" onClick={addGroup} className="btn btn-primary">Add group</button>
           </div>
           {newGroupError && <p style={{ margin: "8px 2px 0", fontSize: 12, color: "var(--color-danger-text)" }}>{newGroupError}</p>}
-          <p style={{ margin: "10px 2px 0", fontSize: 11.5, opacity: 0.55 }}>Names must be unique and non-blank. Deleting a group moves its notes to Ungrouped, keeping their order.</p>
+          <p style={{ margin: "10px 2px 0", fontSize: 11.5, color: "var(--color-text-muted)" }}>Names must be unique and non-blank. Deleting a group moves its notes to Ungrouped, keeping their order.</p>
         </div>
 
         <div style={{ padding: 22, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-surface)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: 18 }}>Tags</h3>
-            <span style={{ fontSize: 11.5, opacity: 0.45 }}>case-insensitive</span>
+            <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>case-insensitive</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {state.tags.map((t: KnowledgePointTag) => (
@@ -139,7 +139,7 @@ export default function KnowledgePointGroupsAndTags({ onBack }: { onBack: () => 
                 pillClassName="tag tag-accent"
               />
             ))}
-            {state.tags.length === 0 && <p style={{ fontSize: 12.5, opacity: 0.5, margin: 0 }}>No tags yet — add one from a note.</p>}
+            {state.tags.length === 0 && <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", margin: 0 }}>No tags yet — add one from a note.</p>}
           </div>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginTop: 14, padding: "12px 14px", border: "1px solid var(--color-accent-2-200)", borderRadius: 16, background: "var(--color-accent-2-100)" }}>
             <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-2-800)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 1 }}><path d="M12 8h.01 M11 12h1v4h1" /><circle cx={12} cy={12} r={9} /></svg>

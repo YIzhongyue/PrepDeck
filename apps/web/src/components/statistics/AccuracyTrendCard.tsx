@@ -45,7 +45,8 @@ export default function AccuracyTrendCard({ trend }: { trend: TrendModel }) {
       {enough ? (
         <div className="pd-stats-chart" style={{ height: 220 }} aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+            {/* Not focusable (issue #56): the chart is aria-hidden, and "Show the numbers" is its text alternative. */}
+            <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }} accessibilityLayer={false}>
               <defs>
                 <linearGradient id="pd-stats-accuracy-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.28} />
@@ -53,11 +54,11 @@ export default function AccuracyTrendCard({ trend }: { trend: TrendModel }) {
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="var(--color-divider)" strokeDasharray="3 5" />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-neutral-600)" }} minTickGap={16} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-text-muted)" }} minTickGap={16} />
               {/* The domain always contains the threshold, so a pass line above
                   or below every plotted point is still visible. */}
               <YAxis domain={trend.domain} tickLine={false} axisLine={false} width={44}
-                tick={{ fontSize: 11, fill: "var(--color-neutral-600)" }} tickFormatter={(v: number) => `${v}%`} />
+                tick={{ fontSize: 11, fill: "var(--color-text-muted)" }} tickFormatter={(v: number) => `${v}%`} />
               <Tooltip content={<ChartTooltipContent />} formatter={(value: unknown) => `${value}%`} cursor={{ stroke: "var(--color-divider)" }} />
               {trend.passMarkPct != null && (
                 <ReferenceLine y={trend.passMarkPct} stroke="var(--color-accent-2-600)" strokeDasharray="2 4" strokeWidth={2} />

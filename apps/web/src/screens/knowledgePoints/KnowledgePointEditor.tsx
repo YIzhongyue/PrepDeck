@@ -36,7 +36,7 @@ function SaveStatusPill({ status, lastSavedAt, message }: { status: string; last
     );
   }
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-divider)", borderRadius: 999, color: "color-mix(in srgb, var(--color-text) 60%, transparent)", fontSize: 12.5, fontWeight: 600 }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-divider)", borderRadius: 999, color: "var(--color-text-muted)", fontSize: 12.5, fontWeight: 600 }}>
       Unsaved changes
     </div>
   );
@@ -85,7 +85,7 @@ export default function KnowledgePointEditor({
 
   if (state.editorError) return <div role="alert"><p>{state.editorError}</p><button type="button" className="btn btn-primary" onClick={() => kp.openNote(noteId)}>Retry loading note</button><button type="button" className="btn btn-secondary" onClick={onBack}>All notes</button></div>;
   if (state.editorLoading || !editing) {
-    return <p style={{ opacity: 0.6, padding: "40px 0" }}>Loading…</p>;
+    return <p style={{ color: "var(--color-text-muted)", padding: "40px 0" }}>Loading…</p>;
   }
 
   const header = (
@@ -107,11 +107,11 @@ export default function KnowledgePointEditor({
         {editing.tags.map((t) => (
           <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "4px 10px", borderRadius: 999, background: "var(--color-accent-100)", color: "var(--color-accent-800)" }}>
             {t.name}
-            <button type="button" onClick={() => kp.removeTag(t.id)} aria-label={`Remove tag ${t.name}`} style={{ border: 0, background: "transparent", cursor: "pointer", opacity: 0.5, font: "inherit", fontSize: 11, padding: 0 }}>✕</button>
+            <button type="button" onClick={() => kp.removeTag(t.id)} aria-label={`Remove tag ${t.name}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", font: "inherit", fontSize: 11, padding: 0 }}>✕</button>
           </span>
         ))}
         <TagPicker existingTags={state.tags} currentTagIds={editing.tags.map((t) => t.id)} onAdd={kp.addTag} />
-        <span style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.45, whiteSpace: "nowrap" }}>
+        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
           Created {new Date(editing.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Updated {new Date(editing.updatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
@@ -134,8 +134,8 @@ export default function KnowledgePointEditor({
           <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
           All notes
         </a>
-        <span style={{ fontSize: 12.5, opacity: 0.35 }}>/</span>
-        <span style={{ fontSize: 12.5, opacity: 0.6 }}>{editing.groupName ?? "Ungrouped"}</span>
+        <span style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}>/</span>
+        <span style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}>{editing.groupName ?? "Ungrouped"}</span>
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span role="status" aria-live="polite"><SaveStatusPill status={state.saveStatus} lastSavedAt={state.lastSavedAt} message={state.saveErrorMessage} /></span>
@@ -196,13 +196,13 @@ export default function KnowledgePointEditor({
           <div style={{ padding: 18, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-surface)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
               <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Related questions</span>
-              <span style={{ fontSize: 11.5, opacity: 0.45 }}>{editing.linkedQuestions.length}</span>
+              <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>{editing.linkedQuestions.length}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {editing.linkedQuestions.filter((l) => l.accessible).map((l) => (
                 <div key={l.questionId} style={{ padding: "11px 13px", borderRadius: 16, background: "var(--color-bg)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, opacity: 0.5 }}>{l.examSlug} · {l.externalId ?? l.questionId.slice(0, 8)}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "var(--color-text-muted)" }}>{l.examSlug} · {l.externalId ?? l.questionId.slice(0, 8)}</span>
                     <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
                       <button
                         type="button"
@@ -221,7 +221,7 @@ export default function KnowledgePointEditor({
               {editing.linkedQuestions.some((l) => !l.accessible) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 13px", borderRadius: 16, background: "var(--color-neutral-100)" }}>
                   <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.45, flex: "none" }}><path d="M12 8h.01 M11 12h1v4h1" /><circle cx={12} cy={12} r={9} /></svg>
-                  <span style={{ fontSize: 12, opacity: 0.6 }}>
+                  <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
                     {editing.linkedQuestions.filter((l) => !l.accessible).length} linked question{editing.linkedQuestions.filter((l) => !l.accessible).length === 1 ? " is" : "s are"} no longer available to you.
                   </span>
                 </div>
@@ -234,7 +234,7 @@ export default function KnowledgePointEditor({
           </div>
 
           <div style={{ padding: 18, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-bg)" }}>
-            <span style={{ display: "block", marginBottom: 10, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.5 }}>Sync</span>
+            <span style={{ display: "block", marginBottom: 10, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>Sync</span>
             <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12.5, opacity: 0.75 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: state.saveStatus === "saved" ? "var(--color-accent-2-600)" : state.saveStatus === "error" ? "var(--color-danger)" : "var(--color-neutral-400)" }} />

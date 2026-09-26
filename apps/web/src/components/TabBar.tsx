@@ -43,7 +43,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 2px",
                 minHeight: 52, border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 10.5,
-                borderRadius: 16, color: on ? "var(--color-accent-700)" : "color-mix(in srgb, var(--color-text) 55%, transparent)"
+                borderRadius: 16, color: on ? "var(--color-accent-700)" : "var(--color-text-muted)"
               }}
             >
               <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
@@ -59,7 +59,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
           style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 2px",
             minHeight: 52, border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 10.5,
-            borderRadius: 16, color: state.more ? "var(--color-accent-700)" : "color-mix(in srgb, var(--color-text) 55%, transparent)"
+            borderRadius: 16, color: state.more ? "var(--color-accent-700)" : "var(--color-text-muted)"
           }}
         >
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">

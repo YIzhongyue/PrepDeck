@@ -78,8 +78,9 @@ export default function StudyTimeCard({
 
       <div className="pd-stats-chart" style={{ height: 200 }} aria-hidden="true">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 24, right: 4, bottom: 0, left: 4 }} barCategoryGap="28%">
-            <XAxis dataKey="weekday" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--color-neutral-600)" }} />
+          {/* Not focusable (issue #56): the chart is aria-hidden, and "Show the numbers" is its text alternative. */}
+          <BarChart data={data} margin={{ top: 24, right: 4, bottom: 0, left: 4 }} barCategoryGap="28%" accessibilityLayer={false}>
+            <XAxis dataKey="weekday" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--color-text-muted)" }} />
             <YAxis hide domain={[0, peak]} />
             <Bar dataKey="minutes" radius={[6, 6, 6, 6]} minPointSize={3} isAnimationActive={!reducedMotion}>
               {data.map((d) => (
@@ -90,7 +91,7 @@ export default function StudyTimeCard({
                     : d.minutes >= peak * 0.6 ? "var(--color-accent)" : "var(--color-accent-400)"}
                 />
               ))}
-              <LabelList dataKey="label" position="top" style={{ fontSize: 11, fill: "var(--color-neutral-600)" }} />
+              <LabelList dataKey="label" position="top" style={{ fontSize: 11, fill: "var(--color-text-muted)" }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

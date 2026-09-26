@@ -69,5 +69,11 @@ versioned and migration chain authoritative.
 Target evergreen browsers, keyboard navigation and a 375px mobile viewport.
 Marks must remain legible across themes and not depend on color alone; labels and
 accessible names carry meaning. Learning and unanswered testing need visibly
-different presentation. Remaining Knowledge Point WYSIWYG/IME/touch/accessibility
+different presentation. Text meets WCAG 2.1 AA contrast (4.5:1) in every
+scheme. Answer options are radios in single choice and checkboxes in multiple
+choice, and graded options say in words which answer was chosen and which is
+correct. An automated axe-core scan of the main screens in all five schemes
+runs in CI and fails on serious or critical violations (see
+[Development and deployment](../guides/development-and-deployment.md#accessibility-scan)).
+Remaining Knowledge Point WYSIWYG/IME/touch/accessibility
 verification is [tracked work](future-enhancements.md), not blanket compliance.

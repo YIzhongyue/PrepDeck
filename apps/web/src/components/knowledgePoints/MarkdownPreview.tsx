@@ -24,7 +24,7 @@ function PreRenderer(props: { children?: React.ReactNode }) {
     return (
       <div style={{ margin: "0 0 16px", border: "1px dashed var(--color-divider)", borderRadius: 16, background: "var(--color-neutral-100)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: "1px dashed var(--color-divider)" }}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, opacity: 0.6 }}>Unsupported Markdown — kept as source</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--color-text-muted)" }}>Unsupported Markdown — kept as source</span>
         </div>
         <pre style={{ margin: 0, padding: "12px 16px", overflowX: "auto", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.7, opacity: 0.75 }}>{text}</pre>
       </div>
@@ -38,7 +38,7 @@ export default function MarkdownPreview({ source }: { source: string }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   if (!source.trim()) {
-    return <p style={{ opacity: 0.5, fontStyle: "italic", margin: 0 }}>Nothing to preview yet.</p>;
+    return <p style={{ color: "var(--color-text-muted)", fontStyle: "italic", margin: 0 }}>Nothing to preview yet.</p>;
   }
 
   return (
@@ -61,7 +61,7 @@ export default function MarkdownPreview({ source }: { source: string }) {
             </div>
           ),
           th: (p) => (
-            <th style={{ textAlign: "left", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "color-mix(in srgb, var(--color-text) 60%, transparent)", padding: "10px 14px", background: "var(--color-neutral-100)", borderBottom: "1px solid var(--color-divider)" }}>
+            <th style={{ textAlign: "left", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-text-muted)", padding: "10px 14px", background: "var(--color-neutral-100)", borderBottom: "1px solid var(--color-divider)" }}>
               {p.children}
             </th>
           ),

@@ -282,8 +282,8 @@ try {
   assert.ok(/Readiness needs at least 30 answered questions/.test(text), "readiness is withheld below its sample floor");
   assert.ok(text.includes("50%"), "the ring falls back to the fixture's 50% coverage");
   assert.ok(text.includes("vs 75% pass line"), "the pass line is the exam's own, shown separately from accuracy");
-  const ring = page.getByRole("img", { name: /Readiness is not available yet/ });
-  await ring.waitFor();
+  const ring = page.getByRole("progressbar", { name: "Question bank covered", exact: true }).first();
+  assert.match(await ring.getAttribute("aria-valuetext"), /^Readiness is not available yet/);
 
   // --- Delta chip is the API's window, not an invented comparison ---------
   assert.ok(text.includes("+18 pts"), "the accuracy delta is the API's own 7-day comparison");

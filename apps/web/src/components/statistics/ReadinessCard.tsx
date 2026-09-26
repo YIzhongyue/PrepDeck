@@ -73,8 +73,12 @@ export default function ReadinessCard({
           )}
         </div>
 
-        <div className="pd-stats-ring" role="img" aria-label={ringDescription}>
+        {/* The ring itself carries the description (issue #56): a role="img"
+            wrapper left the progressbar inside it unnamed. */}
+        <div className="pd-stats-ring">
           <ProgressBarCircle
+            aria-label={readiness.available ? "Readiness" : "Question bank covered"}
+            aria-valuetext={ringDescription}
             size="xs"
             value={ringValue}
             label={ringLabel}

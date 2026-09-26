@@ -84,7 +84,7 @@ export default function RelatedKnowledgePoints({ questionId, embedded = false }:
       </div>}
 
       {!loading && notes.length === 0 && (
-        <p style={{ margin: 0, fontSize: 12.5, opacity: 0.6 }}>No knowledge points reference this question yet.</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No knowledge points reference this question yet.</p>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

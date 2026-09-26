@@ -6,7 +6,7 @@ export default function CodeBlock({ lang, text }: { lang: string; text: string }
   return (
     <div style={{ margin: "0 0 16px", borderRadius: 16, overflow: "hidden", border: "1px solid var(--color-divider)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "var(--color-neutral-100)", borderBottom: "1px solid var(--color-divider)" }}>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "color-mix(in srgb, var(--color-text) 55%, transparent)" }}>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--color-text-muted)" }}>
           {lang || "text"}
         </span>
         <button

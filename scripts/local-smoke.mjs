@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ROOT, STATE, ACCOUNT, localEnvironment, setup, seed, sql, stopProcess } from "./local.mjs";
+import { scanLocal, summarize } from "./axe-scan.mjs";
 
 const base = "http://127.0.0.1:8787";
 const explorer = `${base}/cdn-cgi/local/explorer/api`;
@@ -105,9 +106,11 @@ try {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.waitForTimeout(250);
       await page.screenshot({ path: resolve(STATE, "local-smoke-mobile.png"), fullPage: true });
+      const violations = await scanLocal(browser);
+      assert.equal(violations.length, 0, `accessibility violations (node scripts/axe-scan.mjs --report lists them):\n${summarize(violations)}`);
     } finally { await browser.close(); }
   }
-  console.log("Local smoke passed: idempotent seed, admin login, D1, R2 roundtrip, KV, Durable Object, both native rate limits, scheduled cleanup and simulated email.");
+  console.log(`Local smoke passed: idempotent seed, admin login, D1, R2 roundtrip, KV, Durable Object, both native rate limits, scheduled cleanup and simulated email${process.argv.includes("--browser") ? ", browser flow and accessibility scan" : ""}.`);
 } finally {
   if (child) {
     if (child.connected) child.send("shutdown");

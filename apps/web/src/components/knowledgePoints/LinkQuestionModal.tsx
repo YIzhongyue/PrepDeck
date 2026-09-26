@@ -84,7 +84,7 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
               {exam.name}
             </button>
           ))}
-          <span style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.55 }}>{total} matches · showing {results.length}</span>
+          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)" }}>{total} matches · showing {results.length}</span>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -93,7 +93,7 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap", minWidth: 0 }}>
                   <span className="tag tag-accent-2" title={r.examName} style={{ minWidth: 0, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.examName}</span>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, opacity: 0.55 }}>{r.externalId ?? r.questionId.slice(0, 8)}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "var(--color-text-muted)" }}>{r.externalId ?? r.questionId.slice(0, 8)}</span>
                 </span>
                 <span style={{ display: "block", fontSize: 13, lineHeight: 1.55, opacity: 0.85 }}>{r.stemExcerpt}</span>
               </span>
@@ -113,11 +113,11 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
               </button>
             </div>
           ))}
-          {results.length === 0 && <p style={{ opacity: 0.6, fontSize: 13 }}>No matching questions.</p>}
+          {results.length === 0 && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>No matching questions.</p>}
         </div>
 
         <div className="dialog-actions" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <p style={{ margin: 0, fontSize: 11.5, opacity: 0.55 }}>Opening a linked question goes to review — it never records an attempt.</p>
+          <p style={{ margin: 0, fontSize: 11.5, color: "var(--color-text-muted)" }}>Opening a linked question goes to review — it never records an attempt.</p>
           <button type="button" className="btn btn-secondary" onClick={onClose}>Done</button>
         </div>
       </div>

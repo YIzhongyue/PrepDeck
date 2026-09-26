@@ -64,7 +64,7 @@ export default function Notes() {
       </p>
 
       {hasMarks && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, maxWidth: 900 }}>
-        <span id="annotation-filter-label" style={{ fontSize: 12, opacity: 0.65, marginRight: 4 }}>Filter:</span>
+        <span id="annotation-filter-label" style={{ fontSize: 12, color: "var(--color-text-muted)", marginRight: 4 }}>Filter:</span>
         <span role="group" aria-labelledby="annotation-filter-label" style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {MARK_STYLES.map((style) => {
           const on = markFilter.includes(style);
@@ -143,7 +143,7 @@ export default function Notes() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>{qq.externalId}</span>
                 {qq.tags.map((t) => <span key={t} className="tag tag-accent-2" style={{ whiteSpace: "nowrap" }}>{t}</span>)}
-                <span style={{ marginLeft: "auto", fontSize: 11.5, color: "color-mix(in srgb, var(--color-text) 50%, transparent)" }}>
+                <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)" }}>
                   {marks.length} mark{marks.length === 1 ? "" : "s"}
                 </span>
               </div>
@@ -176,7 +176,7 @@ export default function Notes() {
                     <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 13px", borderRadius: 16, background: "var(--color-neutral-100)" }}>
                       <span style={{ width: 12, height: 12, flex: "none", marginTop: 5, borderRadius: 4, background: HL[a.style]?.background || "var(--color-accent)", border: "1px solid var(--color-divider)" }} />
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 11, fontWeight: 600, opacity: 0.6, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                           {state.markAliases[a.style as MarkStyle] ?? a.style}
                         </span>
                         <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, margin: "2px 0 4px" }}>&ldquo;{quote}&rdquo;</span>

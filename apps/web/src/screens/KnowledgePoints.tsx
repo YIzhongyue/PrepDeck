@@ -58,7 +58,7 @@ export default function KnowledgePoints({ bp }: { bp: Breakpoints }) {
   const { state } = usePrepDeck();
   return (
     <KnowledgePointsProvider activeExamId={state.examId}>
-      <p style={{ opacity: 0.65, fontSize: 13 }}>Personal library · Available across all exams</p>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>Personal library · Available across all exams</p>
       <KnowledgePointsInner bp={bp} />
     </KnowledgePointsProvider>
   );

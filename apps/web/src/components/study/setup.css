@@ -194,8 +194,9 @@
 .st-banner-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: color-mix(in srgb, var(--st-warn) 14%, var(--color-bg)); color: var(--st-warn); }
 .st-banner-text { flex: 1; min-width: 200px; color: var(--st-warn-fg); font-size: 14px; }
 .st-banner-title { font-weight: 600; }
-.st-banner .st-btn--primary { border-color: var(--st-warn); background: var(--st-warn); }
-.st-banner .st-btn--primary:hover { border-color: var(--st-warn-fg); background: var(--st-warn-fg); }
+/* The darker warning ink, not the warning colour: the label needs 4.5:1 in every scheme (issue #56). */
+.st-banner .st-btn--primary { border-color: var(--st-warn-fg); background: var(--st-warn-fg); }
+.st-banner .st-btn--primary:hover { border-color: color-mix(in srgb, var(--st-warn-fg) 80%, var(--color-text)); background: color-mix(in srgb, var(--st-warn-fg) 80%, var(--color-text)); }
 /* Learning's resume prompt is an offer, not a warning. */
 .st-banner--brand { border-color: var(--st-brand-line); background: var(--st-brand-tint); }
 .st-banner--brand .st-banner-icon { background: var(--st-brand-soft); color: var(--st-brand); }
