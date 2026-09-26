@@ -309,13 +309,19 @@ attemptsRouter.post("/:id/answers", async (c) => {
   return c.json(response);
 });
 
+// Mock draft and flag writes refused because the attempt was submitted
+// elsewhere (another tab or device). `completed` tells the client to stop
+// replaying its local drafts and fetch the result instead: POST /complete
+// returns the finished attempt's result without regrading it.
+const ALREADY_COMPLETED = { error: "Attempt already completed", completed: true } as const;
+
 attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   const id = c.req.param("id");
   const questionId = c.req.param("questionId");
   const attempt = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
   if (!attempt) return c.json({ error: "Attempt not found" }, 404);
   if (attempt.mode !== "mock") return c.json({ error: "This attempt is not in mock mode" }, 400);
-  if (attempt.completed_at) return c.json({ error: "Attempt already completed" }, 409);
+  if (attempt.completed_at) return c.json(ALREADY_COMPLETED, 409);
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
@@ -352,7 +358,7 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   if (!saved.meta.changes) {
     const current = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
     return current?.completed_at
-      ? c.json({ error: "Attempt already completed" }, 409)
+      ? c.json(ALREADY_COMPLETED, 409)
       : c.json({ error: "This mock exam has ended and no longer accepts answers", expired: true }, 409);
   }
 
@@ -365,7 +371,7 @@ attemptsRouter.put("/:id/flags/:questionId", async (c) => {
   const attempt = await loadOwnAttempt(c.env.DB, id, c.get("user").id);
   if (!attempt) return c.json({ error: "Attempt not found" }, 404);
   if (attempt.mode !== "mock") return c.json({ error: "This attempt is not in mock mode" }, 400);
-  if (attempt.completed_at) return c.json({ error: "Attempt already completed" }, 409);
+  if (attempt.completed_at) return c.json(ALREADY_COMPLETED, 409);
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
@@ -380,7 +386,7 @@ attemptsRouter.put("/:id/flags/:questionId", async (c) => {
   // to protect nothing.
   const saved = await c.env.DB.prepare("UPDATE attempts SET flagged_json = json_patch(COALESCE(flagged_json, '{}'), ?) WHERE id = ? AND completed_at IS NULL")
     .bind(JSON.stringify({ [questionId]: body.flagged }), id).run();
-  if (!saved.meta.changes) return c.json({ error: "Attempt already completed" }, 409);
+  if (!saved.meta.changes) return c.json(ALREADY_COMPLETED, 409);
 
   return c.json({ saved: true });
 });

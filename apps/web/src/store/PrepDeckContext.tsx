@@ -319,6 +319,18 @@ function isExpiredAttempt(error: unknown): boolean {
   return error instanceof ApiError && error.status === 409 && (error.body as { expired?: boolean } | null)?.expired === true;
 }
 
+// The attempt was submitted from another tab or device. Local drafts can never
+// be saved to it again, so replaying them would block this tab's submission
+// forever; POST /complete instead returns the result it was graded with.
+function isCompletedElsewhere(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && (error.body as { completed?: boolean } | null)?.completed === true;
+}
+
+// Neither refusal can succeed on a retry.
+function isClosedAttempt(error: unknown): boolean {
+  return isExpiredAttempt(error) || isCompletedElsewhere(error);
+}
+
 function remainingSeconds(active: ActiveAttemptResponse): number {
   if (active.timeLimitSeconds == null) return 0;
   const elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
@@ -896,7 +908,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }, (error) => {
       // An expired attempt will never accept this write, so it must not stay
       // dirty — persistMockDraft would replay it on every submission attempt.
-      if (isExpiredAttempt(error) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
+      if (isClosedAttempt(error) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
       throw error;
     });
   }, [requests]);
@@ -927,6 +939,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           finishMockRef.current();
           return;
         }
+        if (isCompletedElsewhere(error)) {
+          update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
+          finishMockRef.current();
+          return;
+        }
         update({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." });
       });
     }
@@ -944,7 +961,14 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const update = scopedState();
     const flagged = !stateRef.current.mFlag[q.id];
     setState((s) => ({ mFlag: { ...s.mFlag, [q.id]: flagged } }));
-    saveMockChange(attemptId, `/api/attempts/${attemptId}/flags/${q.id}`, { flagged }).catch(() => update({ actionError: "Mock flag is not saved yet. It will be retried before switching or submitting." }));
+    saveMockChange(attemptId, `/api/attempts/${attemptId}/flags/${q.id}`, { flagged }).catch((error) => {
+      if (isCompletedElsewhere(error)) {
+        update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
+        finishMockRef.current();
+        return;
+      }
+      update({ actionError: "Mock flag is not saved yet. It will be retried before switching or submitting." });
+    });
   }, [mockQ, setState, saveMockChange, scopedState]);
 
   const askSubmit = useCallback(() => setState({ mConfirm: true }), [setState]);
@@ -960,10 +984,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       try {
         await requests.write(`mock:${id}`, operation);
       } catch (error) {
-        // A draft the server refused as past the deadline must not block
-        // submission: it was never going to be graded either way, and failing
-        // here would leave the attempt open with no way to close it.
-        if (!isExpiredAttempt(error)) throw error;
+        // A draft the server refused as past the deadline, or for an attempt
+        // already submitted elsewhere, must not block submission: it was never
+        // going to be graded either way, and failing here would leave this tab
+        // with no way to reach the result.
+        if (!isClosedAttempt(error)) throw error;
       }
       if (dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
     }
