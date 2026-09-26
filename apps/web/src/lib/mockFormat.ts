@@ -50,3 +50,21 @@ export function mockPlan(s: {
     requiredCorrect: requiredCorrectFor(official, questionCount)
   };
 }
+
+// Custom mock bounds. The Worker only requires a positive limit; these are the
+// setup screen's own sensible range.
+export const MIN_CUSTOM_MINUTES = 5;
+export const MAX_CUSTOM_MINUTES = 300;
+
+/**
+ * The whole number typed into a setup field, or null when the text is empty,
+ * not a plain whole number, or outside [min, max]. Fields validate with this
+ * instead of clamping each keystroke, which made values such as 120 impossible
+ * to type (1 → 5, 52, 520 → 300).
+ */
+export function wholeNumberInRange(text: string, min: number, max: number): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return n >= min && n <= max ? n : null;
+}
