@@ -22,6 +22,7 @@ TIMESTAMP = re.compile(
 IMPORT_LIMITS = {
     "maxQuestions": 1000, "maxStemLength": 20000, "maxOptionTextLength": 10000,
     "maxOptions": 20, "maxTags": 50, "maxTagLength": 200, "maxExplanationLength": 50000,
+    "maxPoints": 100,
 }
 IMPORT_BODY_MAX_BYTES = 5 * 1024 * 1024
 IMPORT_JSON_MAX_DEPTH = 32
@@ -170,6 +171,8 @@ def validate(data: Any) -> tuple[list[str], list[str]]:
             if not isinstance(options, list) or not options:
                 errors.append(f"{path}.options: must be a non-empty array for choice types")
             else:
+                if question_type == "single_choice" and len(options) < 2:
+                    errors.append(f"{path}.options: single_choice requires at least two options")
                 if len(options) > IMPORT_LIMITS["maxOptions"]:
                     errors.append(f"{path}.options: must contain at most {IMPORT_LIMITS['maxOptions']} options")
                 for option_index, option in enumerate(options):
@@ -218,8 +221,12 @@ def validate(data: Any) -> tuple[list[str], list[str]]:
         if "needsReview" in question and not isinstance(question.get("needsReview"), bool):
             errors.append(f"{path}.needsReview: must be a boolean")
         points = question.get("points")
-        if "points" in question and (isinstance(points, bool) or not isinstance(points, (int, float)) or abs(points) > sys.float_info.max or (isinstance(points, float) and not math.isfinite(points))):
-            errors.append(f"{path}.points: must be a finite number")
+        if "points" in question and (
+            isinstance(points, bool) or not isinstance(points, (int, float))
+            or (isinstance(points, float) and not math.isfinite(points))
+            or not 0 < points <= IMPORT_LIMITS["maxPoints"]
+        ):
+            errors.append(f"{path}.points: must be a number greater than 0 and at most {IMPORT_LIMITS['maxPoints']}")
         for field in ("stem", "explanation"):
             value = question.get(field)
             if isinstance(value, str) and PLACEHOLDER.search(value):

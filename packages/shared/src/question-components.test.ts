@@ -93,3 +93,23 @@ test('component import, content validation and export preserve explicit review s
   const omitted = normalizeImportFile(fixture('code')).questions[0]!;
   for (const field of ['needsReview', 'explanation', 'tags', 'difficulty', 'points']) assert.equal(Object.hasOwn(omitted, field), false);
 });
+
+// Issue #54: a choice with one option, or a matching question with one
+// right-hand item, is always answered correctly; points are a positive number
+// of at most 100. The component schema enforces all three at import.
+test('component packages reject one-option choices, one-item right columns and out-of-range points', () => {
+  for (const mutate of [
+    (f: any) => { const q = f.questions.find((x: any) => x.interaction.type === 'choice'); q.interaction.options = q.interaction.options.slice(0, 1); q.scoring.correctAnswers = [q.interaction.options[0].id]; },
+    (f: any) => { f.questions[0].points = 0; },
+    (f: any) => { f.questions[0].points = -5; },
+    (f: any) => { f.questions[0].points = 101; },
+  ]) { const file = fixture('reading'); mutate(file); assert.ok(validateImportFile(file).issues.length, String(mutate)); }
+  const matching = fixture('case-with-figure');
+  const q = matching.questions[0];
+  q.interaction.right = q.interaction.right.slice(0, 1);
+  q.scoring.correctAnswers = q.interaction.left.map((l: any) => JSON.stringify([l.id, q.interaction.right[0].id]));
+  assert.ok(validateImportFile(matching).issues.some(issue => issue.path.includes('right')), 'a single right-hand item is refused');
+  const fractional = fixture('reading');
+  fractional.questions[0].points = 0.5;
+  assert.deepEqual(validateImportFile(fractional).issues, []);
+});

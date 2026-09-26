@@ -76,7 +76,13 @@ pending. Consult the schema for all constraints.
 Reject duplicate external IDs within a file, duplicate option IDs, missing answer
 references and invalid type-specific option/answer cardinalities. True/false uses
 exactly the `true`/`false` options. Fill-blank omits `options`; multiple choice has
-at least two accepted option IDs. Existing external-ID conflicts require reviewed
+at least two accepted option IDs. A single choice has at least two options, and a
+matching question at least two right-hand items: with one, the question is always
+answered correctly. `points` is a number greater than 0 and at most 100
+(`IMPORT_LIMITS.maxPoints`); fractions are allowed. The same rules apply to the
+editor, JSON and component imports and Admin MCP create/update, so a row saved
+before them is refused on its next save until it is corrected. The Admin MCP
+quality tools report such rows ([issue #54](https://github.com/YIzhongyue/PrepDeck/issues/54)). Existing external-ID conflicts require reviewed
 resolutions, not unconditional overwrite. Review state is question workflow
 metadata, not classification metadata: it lives in `questions.needs_review`, and
 the question-bank tag catalog must not be used to express it. Because the flag is
