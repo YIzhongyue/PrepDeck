@@ -163,14 +163,14 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool(
       "admin_find_questions_with_invalid_answer_references",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find questions in one exam whose correctAnswers reference an option id that does not exist, or true_false questions missing a true/false option pair.",
+      "Find questions in one exam whose correctAnswers reference an option id that does not exist, true_false questions missing a true/false option pair, single_choice questions with fewer than two options, or matching questions with fewer than two right-hand items.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findQuestionsWithInvalidAnswerReferences(input),
     ),
     defineMcpTool(
       "admin_find_questions_missing_metadata",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find questions in one exam with no difficulty set or no tags.",
+      "Find questions in one exam with no difficulty set, no tags, or points outside the accepted range (greater than 0, at most 100).",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findQuestionsMissingMetadata(input),
     ),

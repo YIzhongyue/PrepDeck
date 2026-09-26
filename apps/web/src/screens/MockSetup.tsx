@@ -1,12 +1,12 @@
+import { useEffect, useId, useState } from "react";
 import { MAX_ATTEMPT_QUESTIONS, mockFormatOptions, type MockFormatId } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
 import { ChoiceCard, SetupHeader, SetupRow, SummaryRow, setupLayout } from "../components/study/SetupKit";
-import { mockPlan, officialFormatOf } from "../lib/mockFormat";
+import { MAX_CUSTOM_MINUTES, MIN_CUSTOM_MINUTES, mockPlan, officialFormatOf, wholeNumberInRange } from "../lib/mockFormat";
 import type { Breakpoints } from "../lib/responsive";
 
 const FORMAT_ICON: Record<MockFormatId, string> = { full: IC.fileText, half: IC.hourglass, sprint: IC.zap, custom: IC.sliders };
-const MAX_CUSTOM_MINUTES = 300;
 
 const RULES = [
   { icon: IC.shuffle, title: "Random draw, no repeats", desc: "Questions are sampled from the whole bank." },
@@ -25,6 +25,15 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
   // The API caps an attempt at MAX_ATTEMPT_QUESTIONS, so never offer more
   // than that even for an exam with a larger bank.
   const bankMax = Math.min(state.catalog.length, MAX_ATTEMPT_QUESTIONS);
+  const questionMax = Math.max(1, bankMax);
+  const count = useWholeNumberText(state.mockCount, 1, questionMax, setMockCount);
+  const minutes = useWholeNumberText(state.mockMinutes, MIN_CUSTOM_MINUTES, MAX_CUSTOM_MINUTES, setMockMinutes);
+  // Begin exam starts what the fields show, so it waits for both to be valid.
+  const customInvalid = plan.format === "custom" && (!count.valid || !minutes.valid);
+  // While a field is invalid the store still holds its last valid value (for
+  // 400 minutes, the "40" typed on the way). Show a dash rather than that.
+  const shownCount = plan.format === "custom" && !count.valid ? "—" : plan.questionCount;
+  const shownMinutes = plan.format === "custom" && !minutes.valid ? "—" : plan.timeLimitMinutes;
   const active = state.activeMockAttempt;
   const activeAnswered = active ? Object.values(active.selectedAnswers).filter((a) => a.some((v) => v.trim())).length : 0;
   const activeMinutesLeft = active?.timeLimitSeconds
@@ -69,18 +78,14 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
             </div>
             {plan.format === "custom" && (
               <div className="st-custom" style={{ gridTemplateColumns: layout.cardCols }}>
-                <label className="st-field">Questions
-                  <input
-                    className="st-input" type="number" min={1} max={Math.max(1, bankMax)} value={state.mockCount}
-                    onChange={(e) => setMockCount(Math.max(1, Math.min(bankMax || 1, parseInt(e.target.value, 10) || 1)))}
-                  />
-                </label>
-                <label className="st-field">Time limit (minutes)
-                  <input
-                    className="st-input" type="number" min={5} max={MAX_CUSTOM_MINUTES} value={state.mockMinutes}
-                    onChange={(e) => setMockMinutes(Math.max(5, Math.min(MAX_CUSTOM_MINUTES, parseInt(e.target.value, 10) || 5)))}
-                  />
-                </label>
+                <WholeNumberField
+                  label="Questions" field={count} min={1} max={questionMax}
+                  error={`Enter a whole number from 1 to ${questionMax}.`}
+                />
+                <WholeNumberField
+                  label="Time limit (minutes)" field={minutes} min={MIN_CUSTOM_MINUTES} max={MAX_CUSTOM_MINUTES}
+                  error={`Enter a whole number of minutes from ${MIN_CUSTOM_MINUTES} to ${MAX_CUSTOM_MINUTES}.`}
+                />
               </div>
             )}
             {!official && (
@@ -106,11 +111,11 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
             {exam && <div className="st-summary-sub">{exam.name}</div>}
           </div>
           <div className="st-big-pair">
-            <div><div className="st-big-pair-k">Questions</div><div className="st-big-pair-v">{plan.questionCount}</div></div>
-            <div><div className="st-big-pair-k">Minutes</div><div className="st-big-pair-v">{plan.timeLimitMinutes}</div></div>
+            <div><div className="st-big-pair-k">Questions</div><div className="st-big-pair-v">{shownCount}</div></div>
+            <div><div className="st-big-pair-k">Minutes</div><div className="st-big-pair-v">{shownMinutes}</div></div>
           </div>
           <div className="st-summary-rows">
-            <SummaryRow icon={IC.clock} label="Pace" value={plan.questionCount ? `${(plan.timeLimitMinutes / plan.questionCount).toFixed(1)} min / question` : "—"} />
+            <SummaryRow icon={IC.clock} label="Pace" value={plan.questionCount && !customInvalid ? `${(plan.timeLimitMinutes / plan.questionCount).toFixed(1)} min / question` : "—"} />
             <SummaryRow icon={IC.target} label="Pass mark" value={passMark} />
           </div>
           {plan.questionCount < plan.requested && plan.questionCount > 0 && (
@@ -120,13 +125,62 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
             {active ? (
               <button type="button" className="st-btn st-btn--primary" onClick={beginMock}><Icon d={IC.play} size={18} fill="currentColor" />Resume in-progress exam</button>
             ) : (
-              <button type="button" className="st-btn st-btn--primary" onClick={beginMock} disabled={plan.questionCount === 0}>
+              <button type="button" className="st-btn st-btn--primary" onClick={beginMock} disabled={plan.questionCount === 0 || customInvalid}>
                 <Icon d={IC.play} size={18} fill="currentColor" />Begin exam
               </button>
             )}
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+interface WholeNumberText {
+  text: string;
+  valid: boolean;
+  change: (text: string) => void;
+  blur: () => void;
+}
+
+// A custom-format field keeps exactly what the learner types; the store only
+// ever receives a valid value. Clamping every keystroke used to turn 120
+// minutes into 300 and 45 into 55 (issue #55), because each intermediate digit
+// was replaced before the next one arrived.
+function useWholeNumberText(value: number, min: number, max: number, commit: (n: number) => void): WholeNumberText {
+  const [text, setText] = useState(String(value));
+  // Follow the store when it changes elsewhere (a new exam's defaults), but not
+  // when it changed because this field just committed what is being typed.
+  useEffect(() => {
+    setText((current) => (wholeNumberInRange(current, min, max) === value ? current : String(value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- react to the stored value only
+  }, [value]);
+  const parsed = wholeNumberInRange(text, min, max);
+  return {
+    text,
+    valid: parsed !== null,
+    change: (next) => {
+      setText(next);
+      const n = wholeNumberInRange(next, min, max);
+      if (n !== null && n !== value) commit(n);
+    },
+    // Tidy a valid entry ("045" becomes "45"). An invalid one stays as typed,
+    // next to its error, rather than being silently replaced.
+    blur: () => { if (parsed !== null) setText(String(parsed)); },
+  };
+}
+
+function WholeNumberField({ label, field, min, max, error }: { label: string; field: WholeNumberText; min: number; max: number; error: string }) {
+  const id = useId();
+  return (
+    <div className="st-field">
+      <label htmlFor={`${id}-input`}>{label}</label>
+      <input
+        id={`${id}-input`} className="st-input" type="number" inputMode="numeric" min={min} max={max}
+        value={field.text} onChange={(e) => field.change(e.target.value)} onBlur={field.blur}
+        aria-invalid={!field.valid} aria-describedby={`${id}-error`}
+      />
+      <span id={`${id}-error`} className="st-error" aria-live="polite">{field.valid ? "" : error}</span>
     </div>
   );
 }
