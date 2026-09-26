@@ -106,7 +106,7 @@ try {
   await waitFor(() => pending.length === 1);
   await page.getByText("Loading question…", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Check answer", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("button", { name: "End", exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole("button", { name: "End session", exact: true }).isVisible(), true);
   await page.keyboard.press("a"); await page.keyboard.press("Enter");
   await choose("pick", "q1", "A"); await invoke("submit");
   assert.deepEqual((await state()).sel, {});
@@ -183,8 +183,8 @@ try {
   await page.waitForFunction(() => window.store.state.mStage === "live");
   await page.evaluate(() => window.store.mockGoto(window.store.state.mQueue.indexOf("q1")));
   await page.getByRole("button", { name: "Retry question", exact: true }).waitFor();
-  assert.equal(await page.getByText("Question palette", { exact: true }).isVisible(), true);
-  assert.equal(await page.getByRole("button", { name: "Submit", exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole("complementary", { name: "Question palette", exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole("button", { name: "Submit exam", exact: true }).isVisible(), true);
   const left = (await state()).mLeft;
   await page.waitForFunction(previous => window.store.state.mLeft < previous, left);
   await choose("mockPick", "q1", "A"); assert.equal((await state()).mSel.q1, undefined);

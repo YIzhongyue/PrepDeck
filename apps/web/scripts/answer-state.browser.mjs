@@ -109,7 +109,7 @@ try {
   await page.getByRole("textbox", { name: "Your answer" }).fill("green");
   await page.getByRole("textbox", { name: "Your answer" }).fill("   ");
   await page.getByText("Answered 1 of 3", { exact: true }).waitFor();
-  assert.equal(await page.locator(".card").filter({ hasText: "Question palette" }).locator("button").evaluateAll(buttons => buttons.filter(button => button.style.background === "var(--color-accent)").length), 1);
+  assert.equal(await page.getByRole("complementary", { name: "Question palette" }).locator('button[data-state="answered"]').count(), 1);
   await invoke("askSubmit"); await page.getByText(/You have answered 1 of 3/).waitFor(); await invoke("cancelSubmit");
   const firstId = (await state()).mockAttemptId;
   await invoke("go", "wrong"); // drains the actual draft queue before leaving
@@ -118,7 +118,7 @@ try {
   attempts.get(firstId).selectedAnswers.q3 = ["   "]; // legacy restored draft
   await page.reload(); await ready(); await startMock();
   await page.getByText("Answered 1 of 3", { exact: true }).waitFor();
-  assert.equal(await page.locator(".card").filter({ hasText: "Question palette" }).locator("button").evaluateAll(buttons => buttons.filter(button => button.style.background === "var(--color-accent)").length), 1);
+  assert.equal(await page.getByRole("complementary", { name: "Question palette" }).locator('button[data-state="answered"]').count(), 1);
   await complete(); await checkWrong(["q1"]);
   await page.reload(); await ready(); await checkWrong(["q1"]);
   console.log("PASS deselection, blank fill, restored drafts and partial submission agree across UI and reload");

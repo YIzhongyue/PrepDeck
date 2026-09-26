@@ -13,7 +13,9 @@ import { usePrepDeck } from "../../store/PrepDeckContext";
 import { createKnowledgePoint, linkQuestionToKnowledgePoint, listKnowledgePoints } from "../../lib/knowledgePoints";
 import LinkExistingKnowledgePointModal from "./LinkExistingKnowledgePointModal";
 
-export default function RelatedKnowledgePoints({ questionId }: { questionId: string }) {
+// `embedded` drops the card chrome for use inside another panel (the study
+// screens' review tabs), which already supply the border and the heading.
+export default function RelatedKnowledgePoints({ questionId, embedded = false }: { questionId: string; embedded?: boolean }) {
   const { openKnowledgePointNote } = usePrepDeck();
   const visit = useRef(0);
   useEffect(() => { visit.current++; return () => { visit.current++; }; }, [questionId]);
@@ -66,9 +68,9 @@ export default function RelatedKnowledgePoints({ questionId }: { questionId: str
   };
 
   return (
-    <div className="card elev-sm" style={{ padding: 18, gap: 12 }}>
+    <div className={embedded ? undefined : "card elev-sm"} style={embedded ? { display: "flex", flexDirection: "column", gap: 12, padding: 20 } : { padding: 18, gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className="card-kicker" style={{ marginRight: "auto" }}>Knowledge points</span>
+        <span className={embedded ? undefined : "card-kicker"} style={embedded ? { marginRight: "auto", fontSize: 14, fontWeight: 600 } : { marginRight: "auto" }}>Knowledge points</span>
         <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setShowLinkModal(true)}>
           Link existing
         </button>
