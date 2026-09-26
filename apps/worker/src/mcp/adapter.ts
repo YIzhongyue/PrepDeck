@@ -41,7 +41,7 @@ import {
   countQuestionsForTag, countQuestionsForAnyTag, distinctExamIdsForTags, tagResolutionSnapshot,
   sourceDriftCondition, MAX_MERGE_SOURCE_TAGS,
 } from "../lib/questionBankTags";
-import { pct as accuracyPct, computeStudyActivity, computeExamStatsSummary, computeExamStatsPage } from "../lib/learningStats";
+import { pct as accuracyPct, computeStudyActivity, computeExamStatsSummary, computeExamStatsPage, ANSWERED_AT_SQL, GRADED_ANSWER_SQL } from "../lib/learningStats";
 import { toAttempt, listAttempts as listAttemptRows, getAttemptDetail } from "../lib/attemptQuery";
 import { listWrongQuestions } from "../lib/wrongBookQuery";
 import { listBookmarkedQuestions } from "../lib/bookmarksQuery";
@@ -188,14 +188,16 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
     async getLearningOverview(input: { days: number }) {
       const [attemptRows, bookmarkRows, wrongRows] = await Promise.all([
         db.prepare(
+          // Graded answers count whether or not their session was ended, as in
+          // the dashboard (lib/learningStats.ts, issue #40).
           `SELECT a.exam_id AS exam_id,
                   COUNT(DISTINCT aa.question_id) AS attempted_questions,
                   COUNT(aa.id) AS total_answers,
                   COALESCE(SUM(aa.is_correct), 0) AS correct_answers,
-                  MAX(a.completed_at) AS last_attempt_at
+                  NULLIF(MAX(MAX(COALESCE(a.completed_at, ''), CASE WHEN aa.id IS NULL THEN '' ELSE ${ANSWERED_AT_SQL} END)), '') AS last_attempt_at
            FROM attempts a
            LEFT JOIN attempt_answers aa ON aa.attempt_id = a.id
-           WHERE a.user_id = ? AND a.completed_at IS NOT NULL
+           WHERE a.user_id = ? AND ${GRADED_ANSWER_SQL}
            GROUP BY a.exam_id`,
         ).bind(userId).all<{ exam_id: string; attempted_questions: number; total_answers: number; correct_answers: number; last_attempt_at: string | null }>(),
         db.prepare(

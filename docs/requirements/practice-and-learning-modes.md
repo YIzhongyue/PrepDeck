@@ -50,6 +50,16 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-3.3 (M):** Every answered question is recorded as an `attempt_answer` linked to an `attempt` of mode `practice`, including correctness and time spent, so it feeds statistics and the wrong-question book.
 
+  It feeds statistics as soon as it is graded, not when the session ends
+  ([issue #40](https://github.com/YIzhongyue/PrepDeck/issues/40)): a reload, a
+  closed tab or an expired session no longer hides answers from Statistics while
+  the wrong book and practice sources already count them. Practice has no resume
+  flow, so a session nobody ended is closed as a session (dated by its last
+  answer, its duration running from start to last answer) when the same user
+  starts practice in that exam after an hour without an answer, and by a daily
+  sweep after a day. An answer sent to a session closed that way is refused, and
+  the learner is told to start a new session.
+
 <a id="fr-3-4"></a>
 
 - **FR-3.4 (M):** During unanswered practice and timed mock answering, render questions without personal annotations, notes or answer-revealing explanations. Post-answer review may show them under [review rules](review-notes-and-annotations.md). The old reference to nonexistent FR-3.9 is corrected to FR-8.3; no FR-3.9 requirement was defined.

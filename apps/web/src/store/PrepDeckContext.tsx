@@ -609,7 +609,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (question?.hasContent && !question.content) return;
     const update = scopedState();
     void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
-      .catch(() => update({ actionError: "Could not save your answer. Please submit it again." }));
+      .catch((error) => update({ actionError: error instanceof ApiError && error.status === 409
+        // Closed as idle when a newer session started (issue #40): retrying cannot help.
+        ? "This practice session has ended, so this answer was not saved. Your earlier answers are kept; start a new session to continue."
+        : "Could not save your answer. Please submit it again." }));
   }, [requests, scopedState, savePracticeAnswer]);
 
   const completeAttempt = useCallback(async (attemptId: string | null) => {

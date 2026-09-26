@@ -14,6 +14,7 @@ import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { invalidateExamStats } from "../lib/statsCache";
 import { loadExamPassRule } from "../lib/examManagement";
+import { closeStalePracticeAttempts, PRACTICE_IDLE_ON_START_SECONDS } from "../lib/practiceSessions";
 import {
   attemptDeadlineMs,
   hasAnswer,
@@ -173,6 +174,14 @@ examAttemptsRouter.post("/", async (c) => {
     .first<{ n: number }>();
   if (!owned || owned.n !== uniqueIds.length) {
     return c.json({ error: "One or more questionIds do not belong to this exam" }, 400);
+  }
+
+  // Starting practice means an earlier session for this exam that has sat idle
+  // was abandoned (a reload, a closed tab): close it as a session now rather
+  // than leave it open forever (issue #40). Idle ones only, so a session still
+  // in use in another tab is left alone.
+  if (body.mode === "practice") {
+    await closeStalePracticeAttempts(c.env.DB, { idleSeconds: PRACTICE_IDLE_ON_START_SECONDS, userId, examId });
   }
 
   const id = crypto.randomUUID();

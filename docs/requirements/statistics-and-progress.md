@@ -11,14 +11,24 @@ because their original priority was Should. See
 [view model](../../apps/web/src/lib/statistics.ts) and
 [dashboard](../../apps/web/src/screens/Dashboard.tsx).
 
-Completed attempts feed dashboard answer totals and accuracy; uncompleted drafts
-are not completed activity. Bank coverage/distinct answered questions differ from
+Graded answers feed dashboard answer totals and accuracy
+([issue #40](https://github.com/YIzhongyue/PrepDeck/issues/40)). A practice answer
+is graded and locked when it is checked, so it counts from that moment whether or
+not its session is ever ended; a mock's answers are graded, and count, only when
+the mock is submitted, and its drafts never do. Answers are dated by when they
+were answered. Sessions, recorded time and mock scores still come from completed
+attempts, and practice sessions nobody ended are closed as described in
+[Practice](practice-and-learning-modes.md#fr-3-3). Bank coverage/distinct answered questions differ from
 total answer events (repeated answers can increase the latter). Learning resume
 is separate from attempt statistics. Preserve these definitions across REST and
 User MCP; both use shared learning-statistics services.
 
 Statistics cache keys include the user, the exam and the payload's schema
-version; completion invalidates the cache, with a one-hour TTL fallback. A
+version. Each entry is stored with an activity marker (the count of graded
+answers and the latest session close); a read recomputes when the marker no
+longer matches, so an answer shows on the next visit without a KV write per
+answer. Completion also invalidates the entry, and a one-hour TTL remains the
+fallback for changes the marker does not see. A
 payload cached by an earlier schema version is never served. The question
 catalog's shared cache never contains personal bookmarks or wrong-answer state.
 See [architecture](../architecture/system-overview.md#caches).
@@ -47,8 +57,8 @@ screen is wrong if any two of them are merged
 
 | Figure | Definition |
 | --- | --- |
-| Answer events | Every graded answer in a completed attempt. Answering one question three times is three events. |
-| Answered questions | Distinct question ids answered in completed attempts. |
+| Answer events | Every graded answer: a checked practice answer, or an answer in a submitted mock. Answering one question three times is three events. |
+| Answered questions | Distinct question ids with a graded answer. |
 | Bank size | Questions currently in the exam's bank. The coverage denominator. |
 | Coverage | Answered questions **that still exist in the bank**, over bank size. Answers to deleted questions drop out, so coverage can never exceed 100%. |
 | Accuracy | Correct answer events over answer events. Never an average of daily percentages. |
@@ -60,8 +70,9 @@ screen is wrong if any two of them are merged
 ### Calendar policy
 
 Every day bucket, week boundary, comparison window and countdown is a **UTC**
-calendar day, and weeks run Monday to Sunday. This follows `accuracyTrend`,
-which has always bucketed on `substr(completed_at, 1, 10)` of a UTC timestamp.
+calendar day, and weeks run Monday to Sunday. Answer figures bucket on the UTC
+day each answer was given (`answered_at`, falling back to its session's times for
+rows older than migration 0009); session figures on the day the session closed.
 Moving any one figure to a local calendar means moving all of them, which is
 coordinated API work rather than a display choice.
 
