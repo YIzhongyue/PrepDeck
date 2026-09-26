@@ -19,7 +19,7 @@ const questions = ["single_choice", "multiple_choice", "fill_blank"].map((type, 
   options: type === "fill_blank" ? null : [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }],
 }));
 const attempts = new Map(), wrong = new Map(), calls = [], errors = [];
-let serial = 0, expired = false, failDraft = false;
+let serial = 0, expired = false, failDraft = false, sessionGone = false;
 const selected = answer => answer?.some(value => value.trim()) ? answer : [];
 function grade(qid, answer) { return qid === "q3" ? answer.some(value => value.trim() === "green") : answer.join() === "A"; }
 function recordWrong(qid) {
@@ -39,6 +39,7 @@ const server = createServer(async (req, res) => {
   let raw = ""; for await (const chunk of req) raw += chunk;
   const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+  if (sessionGone && !url.pathname.startsWith("/api/auth/")) return json({ error: "Unauthorized" }, 401);
   if (url.pathname === "/api/auth/me") return json({ user: { id: "qa", email: "qa@example.test", role: "user", displayName: "QA" } });
   if (url.pathname === "/api/exams") return json({ exams: [{ id: "exam", name: "Answer state", slug: "exam", providers: [], questionCount: 3 }, { id: "other", name: "Other exam", slug: "other", providers: [], questionCount: 0 }] });
   if (url.pathname === "/api/exams/other/practice-catalog") return json({ questions: [], bookmarkedIds: [], wrongEntries: [], attemptedIds: [] });
@@ -230,5 +231,37 @@ try {
   await page.waitForFunction(() => !!window.store.state.done["component-0"]);
   assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).isDisabled(), true);
   console.log("PASS component figures/tables/code, order/match controls, restored drafts, practice grading state, keyboard isolation and mobile layout");
+
+  // A session that ends mid-exam (issue #52) asks the learner to sign in again,
+  // instead of every action saying "please retry"; the mock answers it could
+  // not save come back after signing in, and are saved on resume.
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await invoke("go", "mock"); await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  await pick("component-2", "A");
+  await invoke("go", "wrong"); await invoke("go", "mock"); // drains the saved draft
+  const mockId = (await state()).mockAttemptId;
+  assert.deepEqual(attempts.get(mockId).selectedAnswers["component-2"], ["A"]);
+  sessionGone = true;
+  await pick("component-2", "B");
+  const expiredDialog = page.getByRole("dialog", { name: "Your session has expired" });
+  await expiredDialog.waitFor();
+  assert.equal((await state()).actionError, null, "no 'please retry' message for a lost session");
+  await expiredDialog.getByText(/mock answers that could not be saved are restored/).waitFor();
+  await expiredDialog.getByRole("button", { name: "Not now" }).click();
+  await expiredDialog.waitFor({ state: "detached" });
+  await pick("component-2", "B");
+  await expiredDialog.waitFor();
+  await expiredDialog.getByRole("button", { name: "Sign in again" }).click();
+  await page.waitForURL(/\/api\/auth\/google\/start\?returnTo=%2F%3Fscreen%3Dmock$/);
+  sessionGone = false; // Google sends the learner back, signed in
+  await page.goto(`${base}/?screen=mock`); await ready();
+  await page.waitForFunction(() => window.store.state.screen === "mock" && !!window.store.state.activeMockAttempt);
+  await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  assert.deepEqual((await state()).mSel["component-2"], ["B"], "the unsaved answer is back");
+  await invoke("go", "wrong"); // drains the re-saved draft
+  assert.deepEqual(attempts.get(mockId).selectedAnswers["component-2"], ["B"], "and saved");
+  console.log("PASS an expired session asks to sign in again, returns to the mock and restores its unsaved answers");
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

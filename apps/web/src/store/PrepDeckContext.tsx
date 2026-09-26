@@ -28,7 +28,8 @@ import type {
 } from "@prepdeck/shared";
 import { CURATED_MODELS, DEFAULT_MARK_ALIASES, hasAnswer, MAX_ATTEMPT_QUESTIONS, type MockFormatId } from "@prepdeck/shared";
 import { defaultMockFormat, mockPlan, officialFormatOf } from "../lib/mockFormat";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch, ApiError, isSessionLost } from "../lib/api";
+import { stashMockSelections, takeMockSelections } from "../lib/reauth";
 import { fromSharedAnnotation, toCreateAnnotationRequest } from "../lib/annotations";
 import { fromSharedNote } from "../lib/notes";
 import { fetchCachedExplanations, generateExplanation } from "../lib/ai";
@@ -300,8 +301,10 @@ interface PrepDeckStore {
   forgetStoredApiKey: () => Promise<void>;
   setTheme: (t: ThemeId) => void;
 
-  updateDisplayName: (displayName: string) => void;
-  uploadAvatar: (blob: Blob) => void;
+  // Both reject with the server's message, so Settings can show why (issue #52).
+  updateDisplayName: (displayName: string) => Promise<void>;
+  uploadAvatar: (blob: Blob) => Promise<void>;
+  preserveForReauth: () => void;
 }
 
 const PrepDeckCtx = createContext<PrepDeckStore | null>(null);
@@ -347,7 +350,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const dirtyMock = useRef(new Map<string, () => Promise<unknown>>());
 
   const setState = useCallback((patch: Patch) => {
-    const next = { ...stateRef.current, ...(typeof patch === "function" ? patch(stateRef.current) : patch) };
+    const changes = typeof patch === "function" ? patch(stateRef.current) : patch;
+    // While the session is gone every write fails, and each action's own
+    // "please retry" message would be wrong: only signing in again helps, which
+    // the session-expired dialog says (issue #52).
+    if (changes.actionError && isSessionLost()) delete changes.actionError;
+    const next = { ...stateRef.current, ...changes };
     stateRef.current = next;
     setStateRaw(next);
   }, []);
@@ -869,18 +877,25 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const setMockCount = useCallback((n: number) => setState({ mockCount: n }), [setState]);
   const setMockMinutes = useCallback((n: number) => setState({ mockMinutes: n }), [setState]);
 
+  const resaveMockDraftRef = useRef<(attemptId: string, qid: string, sel: string[]) => void>(() => {});
   const beginMock = useCallback(() => {
     const s = stateRef.current;
     if (s.switching || s.workspaceStatus !== "ready" || requests.has("start") || !s.exams.some(e => e.id === s.examId)) return;
     const update = scopedState("start");
     if (s.activeMockAttempt) {
       const active = s.activeMockAttempt;
+      // Answers this tab could not save before signing in again (issue #52)
+      // are put back and saved now; the rest come from the server's draft.
+      const stashed = takeMockSelections(active.attemptId) ?? {};
+      const restored = Object.entries(stashed).filter(([qid, sel]) =>
+        active.questionIds.includes(qid) && JSON.stringify(sel) !== JSON.stringify(active.selectedAnswers[qid] ?? []));
       setState({
         mStage: "live", mQueue: active.questionIds, mIdx: 0,
-        mSel: active.selectedAnswers, mFlag: active.flagged,
+        mSel: { ...active.selectedAnswers, ...Object.fromEntries(restored) }, mFlag: active.flagged,
         mockAttemptId: active.attemptId, mLeft: remainingSeconds(active),
         mockDeadline: new Date(active.startedAt).getTime() + (active.timeLimitSeconds ?? 0) * 1000, mConfirm: false
       });
+      for (const [qid, sel] of restored) resaveMockDraftRef.current(active.attemptId, qid, sel);
       return;
     }
     if (!s.examId || s.catalog.length === 0) return;
@@ -914,6 +929,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       throw error;
     });
   }, [requests]);
+
+  resaveMockDraftRef.current = (attemptId, qid, sel) => {
+    saveMockChange(attemptId, `/api/attempts/${attemptId}/answers/${qid}`, { selectedAnswer: sel })
+      .catch(() => setState({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." }));
+  };
 
   const mockPick = useCallback((q: Question, oid: string | string[]) => {
     // Serialize draft writes for this attempt, retaining the latest local selection.
@@ -1054,7 +1074,9 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     requests.cancelLane("start");
     const update = scopedState("navigation");
     void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
-      update((s) => ({ screen: id, more: false,
+      // An error belongs to the screen that raised it; it used to follow the
+      // learner everywhere until dismissed (issue #52).
+      update((s) => ({ screen: id, more: false, actionError: null,
         pStage: s.pStage,
         mStage: id === "mock" && options?.newMock && s.mStage === "results" ? "setup" : s.mStage,
         lStage: id === "learning" ? "setup" : s.lStage,
@@ -1438,22 +1460,27 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [setState]);
 
   // FR-12.2: edit one's own display name.
-  const updateDisplayName = useCallback((displayName: string) => {
+  const updateDisplayName = useCallback(async (displayName: string) => {
     const trimmed = displayName.trim();
     if (!trimmed) return;
-    apiFetch<ProfileResponse>("/api/me", { method: "PATCH", body: JSON.stringify({ displayName: trimmed }) })
-      .then(({ user }) => setState({ me: user }))
-      .catch(() => {});
+    const { user } = await apiFetch<ProfileResponse>("/api/me", { method: "PATCH", body: JSON.stringify({ displayName: trimmed }) });
+    setState({ me: user });
   }, [setState]);
 
   // FR-12.3/FR-12.4: upload a custom avatar. The caller (Settings) is
   // responsible for client-side resize/compression via lib/avatar.ts before
   // calling this — this just does the upload and reconciles state.me.
-  const uploadAvatar = useCallback((blob: Blob) => {
-    apiFetch<AvatarUploadResponse>("/api/me/avatar", { method: "POST", headers: { "Content-Type": blob.type }, body: blob })
-      .then(({ avatarUrl }) => setState((s) => (s.me ? { me: { ...s.me, avatarUrl } } : {})))
-      .catch(() => {});
+  const uploadAvatar = useCallback(async (blob: Blob) => {
+    const { avatarUrl } = await apiFetch<AvatarUploadResponse>("/api/me/avatar", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+    setState((s) => (s.me ? { me: { ...s.me, avatarUrl } } : {}));
   }, [setState]);
+
+  // Before leaving to sign in again (issue #52): mock answers this tab holds
+  // but the server refused while the session was gone.
+  const preserveForReauth = useCallback(() => {
+    const s = stateRef.current;
+    if (s.mStage === "live" && s.mockAttemptId) stashMockSelections({ attemptId: s.mockAttemptId, sel: s.mSel });
+  }, []);
 
   // Keyboard shortcuts during live practice: number/letter keys pick, Enter checks/advances.
   useEffect(() => {
@@ -1508,7 +1535,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias,
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, setTheme,
-    updateDisplayName, uploadAvatar
+    updateDisplayName, uploadAvatar, preserveForReauth
   };
 
   return <PrepDeckCtx.Provider value={store}>{children}</PrepDeckCtx.Provider>;

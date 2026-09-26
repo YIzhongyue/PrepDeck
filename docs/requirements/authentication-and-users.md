@@ -21,6 +21,24 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-1.1 (M):** Google sign-in uses the application login screen and direct OAuth, establishing a signed session cookie (`AUTH_MODE=cookie`). The invited-user allow-list protects application data. Static assets, login, health and unsubscribe have public entry points. The old requirement to put every route behind Cloudflare Access is superseded; `AUTH_MODE=access` is an optional rollback path, not the default.
 
+  Sign-in returns to the page that asked for it
+  ([issues #41](https://github.com/YIzhongyue/PrepDeck/issues/41) and
+  [#52](https://github.com/YIzhongyue/PrepDeck/issues/52)): `/api/auth/google/start`
+  accepts `returnTo`, a same-origin path (never `/api/`, `/mcp`, `/admin-mcp` or
+  another origin; see [`returnTo.ts`](../../apps/worker/src/lib/returnTo.ts)), carries
+  it in the short-lived OAuth state cookie, re-validates it there, and the
+  callback lands on it. A review email link opened while signed out therefore
+  arrives at its question after sign-in.
+
+  A session that ends during use (its 7 days run out, or it is signed out
+  elsewhere) is detected by the first request that gets a 401. The app then asks
+  the learner to sign in again, once, instead of showing each action's own
+  "please retry" message, which retrying could never satisfy. A mock in progress
+  keeps its unsaved answers across the round trip: they return, and are saved,
+  when the exam is resumed. An account revoked while signed in gets the "access
+  not authorized" screen. Action errors belong to the screen that raised them and
+  clear on navigation.
+
 <a id="fr-1-2"></a>
 
 - **FR-1.2 (M):** From a dedicated **Authorized Users** admin screen, Admin can **invite** a new account by entering its Google email address and choosing an initial role (`admin` or `user`). This creates a `users` row with status `invited` and no `google_sub` yet, since the person has not signed in.
@@ -65,7 +83,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-12-2"></a>
 
-- **FR-12.2 (M):** A user can edit their own display name at any time from their Settings page, overriding the Google-sourced default.
+- **FR-12.2 (M):** A user can edit their own display name at any time from their Settings page, overriding the Google-sourced default. A change the server refuses is reported beside the field with the server's reason, as is a refused avatar upload (for example "Avatar must be 2 MB or smaller"), rather than failing silently ([issue #52](https://github.com/YIzhongyue/PrepDeck/issues/52)).
 
 <a id="fr-12-3"></a>
 

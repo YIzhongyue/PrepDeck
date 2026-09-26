@@ -5,7 +5,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { apiFetch, ApiError } from "./lib/api";
+import { ACCESS_REVOKED_EVENT, apiFetch, ApiError } from "./lib/api";
 import { PrepDeckProvider, usePrepDeck } from "./store/PrepDeckContext";
 import { breakpointsFor } from "./lib/responsive";
 import Login from "./screens/Login";
@@ -14,6 +14,7 @@ import WorkspaceLoading from "./components/WorkspaceLoading";
 import TopBar from "./components/TopBar";
 import TabBar, { MoreSheet } from "./components/TabBar";
 import ConfirmDialog from "./components/ConfirmDialog";
+import SessionExpiredDialog from "./components/SessionExpiredDialog";
 import AnnotationToolbar from "./components/AnnotationToolbar";
 import Dashboard from "./screens/Dashboard";
 import PracticeSetup from "./screens/PracticeSetup";
@@ -70,6 +71,7 @@ export function Shell() {
     return (
       <main data-pd-theme={theme} style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "var(--color-bg)", color: "var(--color-text)", fontFamily: "var(--font-body)" }}>
         <WorkspaceLoading />
+        <SessionExpiredDialog />
       </main>
     );
   }
@@ -138,6 +140,7 @@ export function Shell() {
         {compactNavigation && <TabBar onHeightChange={setTabBarHeight} />}
         <MoreSheet />
         <ConfirmDialog />
+        <SessionExpiredDialog />
         <AnnotationToolbar />
       </div>
     </div>
@@ -194,6 +197,14 @@ function AuthenticatedApp() {
       return;
     }
 
+    // An account revoked while signed in gets the same "not authorized" screen
+    // as a revoked account signing in (issue #52), from whichever request finds out.
+    const revoked = (event: Event) => {
+      const email = (event as CustomEvent<{ email?: unknown }>).detail?.email;
+      setGate({ kind: "denied", email: typeof email === "string" ? email : null });
+    };
+    window.addEventListener(ACCESS_REVOKED_EVENT, revoked);
+
     apiFetch("/api/auth/me")
       .then(() => setGate({ kind: "authed" }))
       .catch((err) => {
@@ -204,6 +215,7 @@ function AuthenticatedApp() {
           setGate({ kind: "signin" });
         }
       });
+    return () => window.removeEventListener(ACCESS_REVOKED_EVENT, revoked);
   }, []);
 
   if (gate.kind === "loading") return null;
