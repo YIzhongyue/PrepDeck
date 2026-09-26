@@ -127,6 +127,37 @@ try {
   await page.reload(); await ready(); await checkWrong(["q1"]);
   console.log("PASS deselection, blank fill, restored drafts and partial submission agree across UI and reload");
 
+  // The submit confirmation is a real modal (issue #51): opened from the
+  // keyboard it takes focus, keeps Tab inside, shields the exam behind it,
+  // closes on Escape and hands focus back to the control that opened it.
+  await startMock();
+  const submitExam = page.getByRole("button", { name: "Submit exam", exact: true });
+  const confirmDialog = page.getByRole("dialog", { name: "Submit your exam?" });
+  const focusInfo = () => page.evaluate(() => ({ text: document.activeElement?.textContent?.trim(), inDialog: !!document.activeElement?.closest("dialog[open]") }));
+  await submitExam.focus(); await page.keyboard.press("Enter"); await confirmDialog.waitFor();
+  assert.deepEqual(await focusInfo(), { text: "Keep going", inDialog: true }, "the safe choice has focus");
+  assert.match(await page.evaluate(() => document.getElementById(document.querySelector("dialog[open]").getAttribute("aria-describedby")).textContent), /You have answered 0 of 3 questions/);
+  for (const key of ["Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {
+    await page.keyboard.press(key);
+    assert.equal((await focusInfo()).inDialog, true, `${key} stays inside the dialog`);
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !window.store.state.mConfirm);
+  assert.deepEqual(await focusInfo(), { text: "Submit exam", inDialog: false }, "focus returns to Submit exam");
+  await show("q1"); await page.locator(".st-opt").first().waitFor();
+  await submitExam.click(); await confirmDialog.waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mock-submit-confirmation.png`, animations: "disabled" });
+  const optionBox = await page.locator(".st-opt").first().boundingBox();
+  const centre = { x: optionBox.x + optionBox.width / 2, y: optionBox.y + optionBox.height / 2 };
+  assert.equal(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest("dialog[open]"), centre), true, "the dialog covers the options");
+  const answersBefore = JSON.stringify((await state()).mSel);
+  await page.mouse.click(centre.x, centre.y);
+  assert.equal(JSON.stringify((await state()).mSel), answersBefore, "no answer can change while the dialog is open");
+  if ((await state()).mConfirm) await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !window.store.state.mConfirm);
+  await complete(); await checkWrong(["q1"]);
+  console.log("PASS the submit confirmation takes focus, contains Tab, blocks the exam, closes on Escape and restores focus");
+
   await invoke("markMastered", "q1"); await page.getByRole("button", { name: "Practice these 0", exact: true }).waitFor();
   await startMock(); await complete(); await checkWrong([]);
   assert.equal((await state()).mastered.q1, true, "Skipping a mastered question preserves mastery");
