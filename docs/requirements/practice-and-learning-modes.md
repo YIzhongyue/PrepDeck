@@ -127,6 +127,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   on the backdrop both mean Keep going, and closing returns focus to the
   control that opened it.
 
+  Answers read as the question's own text wherever they are summarised: the
+  practice feedback banner, the results breakdown, Learning's history, the
+  answer-revision notice and the admin and import previews
+  ([issue #43](https://github.com/YIzhongyue/PrepDeck/issues/43)). A matching
+  answer reads "HTTPS → 443; SSH → 22" rather than its stored `["L1","R2"]`
+  pairs, and an ordering "1. … 2. …" rather than item IDs. Choice and fill-in
+  answers are shown as before. A question whose content is not available falls
+  back to the stored IDs.
+
 <a id="fr-4-5"></a>
 
 - **FR-4.5 (M):** Mock exam attempts are recorded exactly like practice attempts (mode = `mock`) and count toward statistics and the wrong-question book.

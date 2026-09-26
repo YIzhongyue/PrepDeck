@@ -1,5 +1,6 @@
 import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useState } from "react";
+import { formatAnswerText } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { SHOW_KEYBOARD_HINTS } from "../data/constants";
 import { buildPracticePrompt, copyText } from "../lib/practicePrompt";
@@ -146,7 +147,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                 <div>
                   <div className="st-alert-title">{graded === "ok" ? "Correct" : "Incorrect — added to your wrong book"}</div>
                   <div className="st-alert-body">
-                    {correctAnswers.length > 0 && <>Correct answer: {correctAnswers.join(", ")}. </>}
+                    {correctAnswers.length > 0 && <>Correct answer: {formatAnswerText(q, correctAnswers)}. </>}
                     The explanation is open {bp.narrow ? "below" : "on the right"}.
                   </div>
                 </div>

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { transformSync } from "esbuild";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 
-const source = readFileSync(new URL("../src/lib/practicePrompt.ts", import.meta.url), "utf8");
-const { code } = transformSync(source, {
-  loader: "ts", format: "esm", target: "es2022"
+// Bundled: the prompt builder formats structured answers with @prepdeck/shared.
+const { outputFiles } = await build({
+  entryPoints: [fileURLToPath(new URL("../src/lib/practicePrompt.ts", import.meta.url))],
+  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"], target: "es2022",
 });
+const code = outputFiles[0].text;
 const { buildLearningPrompt, buildPracticePrompt, copyText } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`
 );
@@ -176,4 +178,39 @@ test("copyText discards its hidden textarea when the legacy clipboard API throws
   });
   await assert.rejects(copyText("sensitive fixture"), /Legacy clipboard unavailable/);
   assert.equal(removed, true);
+});
+
+// Issue #42: a matching question's options are its left column only, and its
+// answer key is stored as ["left","right"] ID pairs, so the prompt used to name
+// right-hand items it never showed. Ordering answers were bare IDs too.
+const shared = await (async () => {
+  const bundled = await build({ entryPoints: [fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
+  return import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+})();
+const { readFileSync } = await import("node:fs");
+const component = name => {
+  const row = shared.normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions[0];
+  return { row, question: { id: name, externalId: row.externalId, sequenceNumber: 1, type: row.type, chooseCount: null, tags: [], diff: null, stem: row.stem, hasContent: true, content: row.content, options: row.options ?? null } };
+};
+
+test("a matching prompt lists both columns and the answer as readable pairs", () => {
+  const { row, question } = component("case-with-figure");
+  const prompt = buildLearningPrompt(question, "Evidence", { correctAnswers: row.correctAnswers, explanation: null });
+  assert.match(prompt, /## Items to match\n\n- \*\*low\.\*\* Lower observation\n- \*\*high\.\*\* Higher observation/);
+  assert.match(prompt, /## Match with\n\n- \*\*before\.\*\* Before\n- \*\*after\.\*\* After/);
+  assert.match(prompt, /## Correct answer\n\n- Lower observation → Before\n- Higher observation → After/);
+  assert.match(prompt, /includes a figure that is not reproduced here/);
+  assert.match(prompt, /why each pair matches/);
+  assert.doesNotMatch(prompt, /\["low"|why the other options are wrong/);
+  const practice = buildPracticePrompt(question, ['["low","after"]', '["high","before"]'], { correctAnswers: row.correctAnswers, explanation: null, isCorrect: false });
+  assert.match(practice, /## My answer\n\n- Lower observation → After\n- Higher observation → Before/);
+});
+
+test("an ordering prompt shows the order as item text", () => {
+  const { row, question } = component("code");
+  const prompt = buildLearningPrompt(question, "Code", { correctAnswers: row.correctAnswers, explanation: null });
+  assert.match(prompt, /## Items to put in order/);
+  assert.match(prompt, /## Correct answer\n\n- 1\. Read the values\n- 2\. Sum the values\n- 3\. Print the sum/);
+  assert.match(prompt, /why this order is correct/);
+  assert.doesNotMatch(prompt, /figure/);
 });
