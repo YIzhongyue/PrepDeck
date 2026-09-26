@@ -7,7 +7,7 @@ import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, visibleNotes
+  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
 import { questionTypeLabel } from "../lib/questionTypes";
@@ -38,20 +38,11 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   useEffect(() => setTab("exp"), [q?.id]);
 
   const desktop = width >= 1100;
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [gridHeight, setGridHeight] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    if (!desktop) { setGridHeight(null); return; }
-    const el = gridRef.current;
-    if (!el) return;
-    const compute = () => {
-      const top = el.getBoundingClientRect().top + window.scrollY;
-      setGridHeight(Math.max(360, window.innerHeight - top - 40));
-    };
-    compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, [desktop, width, q?.id]);
+  // Desktop sizes the whole two-column grid to the viewport so the review
+  // panels scroll on their own; narrower screens size only the question card,
+  // with the review panels following below it on the page.
+  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone);
+  const gridHeight = desktop ? fitHeight : null;
 
   if (!q) return null;
 
@@ -106,11 +97,16 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
         className="st-grid"
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
-        <section className="st-card st-q" aria-label="Question" style={{ overflowY: scroller, overscrollBehavior: "contain" }}>
-          <div className="st-q-body">
+        <section
+          className="st-card st-q st-q--pinned" aria-label="Question"
+          style={{ height: desktop ? undefined : fitHeight ?? undefined }}
+        >
+          <div className="st-q-head">
             <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags}>
               {ready && detail?.correctAnswers && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} />}
             </QuestionBadges>
+          </div>
+          <div className="st-q-body" ref={bodyRef}>
             <QuestionContentGate question={q} learning>
               <div className="st-stem" onMouseUp={() => capture(q.id, "stem")}>
                 <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={true} onRemoveMark={removeMark} />

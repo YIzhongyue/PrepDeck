@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type DependencyList, type ReactNode } from "react";
 import { CURATED_MODELS } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
@@ -97,13 +97,55 @@ export function CopyPromptButton({ status, onClick }: { status: "idle" | "copied
 }
 
 /* The question's id, type and domain badges, with an optional trailing action. */
+/* Pinned question card (`.st-q--pinned`): its header and footer stay on screen
+   while only `.st-q-body` scrolls. `fitHeight` is the viewport height left
+   below `gridRef` (at least 360px), less the bottom padding of the app's
+   content column (`[data-pd-content]`), which reserves room for the fixed
+   mobile tab bar; size the grid or the card to it. The body scrolls back to
+   the top on every new question. */
+export function usePinnedCard(questionId: string | undefined, phone: boolean, deps: DependencyList = []) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [fitHeight, setFitHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const content = el.closest<HTMLElement>("[data-pd-content]");
+    const compute = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const bottom = content ? parseFloat(getComputedStyle(content).paddingBottom) || 0 : phone ? 16 : 40;
+      setFitHeight(Math.max(360, window.innerHeight - top - bottom));
+    };
+    let frame = 0;
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(compute);
+    };
+    compute();
+    window.addEventListener("resize", schedule);
+    // The tab bar's height (and so the content padding) is only known after it lays out.
+    const observer = content ? new ResizeObserver(schedule) : null;
+    if (content) observer?.observe(content, { box: "border-box" });
+    return () => { window.removeEventListener("resize", schedule); observer?.disconnect(); cancelAnimationFrame(frame); };
+  }, [phone, questionId, ...deps]);
+  useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [questionId]);
+  return { gridRef, bodyRef, fitHeight };
+}
+
 export function QuestionBadges({ label, typeLabel, multi, tags, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; children?: ReactNode }) {
   return (
     <div className="st-badges">
-      {label && <span className="st-badge st-q-id">{label}</span>}
-      <span className="st-badge st-badge--brand"><Icon d={multi ? IC.listChecks : IC.circleDot} size={12} />{typeLabel}</span>
-      {tags?.map((t) => <span key={t} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{t}</span>)}
-      {children}
+      {/* The first row holds only the ID, type and actions, so tags can never push an action onto a new line. */}
+      <div className="st-badges-row">
+        {label && <span className="st-badge st-q-id" title={label}>{label}</span>}
+        <span className="st-badge st-badge--brand"><Icon d={multi ? IC.listChecks : IC.circleDot} size={12} />{typeLabel}</span>
+        {children}
+      </div>
+      {!!tags?.length && (
+        <div className="st-tags">
+          {tags.map((t) => <span key={t} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{t}</span>)}
+        </div>
+      )}
     </div>
   );
 }

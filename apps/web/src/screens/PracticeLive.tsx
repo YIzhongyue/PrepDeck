@@ -1,5 +1,5 @@
 import StructuredResponse from "../components/StructuredResponse";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { hasAnswer } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { SHOW_KEYBOARD_HINTS } from "../data/constants";
@@ -10,7 +10,7 @@ import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, visibleNotes,
+  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes,
   type OptionState
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -28,7 +28,7 @@ const MAX_SEGMENTS = 60;
 
 export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const {
-    state, width, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture, checkAiCache, removeMark
+    state, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture, checkAiCache, removeMark
   } = usePrepDeck();
   const q = curQ();
 
@@ -46,31 +46,14 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   useEffect(() => setTab("exp"), [q?.id, graded]);
 
   // Desktop: cap the two-column area to the remaining viewport height so a
-  // long AI explanation scrolls inside its own panel instead of stretching
-  // the page (the question panel would otherwise end far above a big blank
-  // gap below it). Short viewports use natural height, as mobile already does.
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [gridHeight, setGridHeight] = useState<number | null>(null);
+  // long AI explanation scrolls inside its own panel. Narrow screens size only
+  // the question card, with the review panels following below it on the page.
+  // Either way the card keeps its header and footer on screen while only the
+  // stem and answers scroll.
+  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone, [graded, state.workspaceNotice, state.actionError]);
+  const gridHeight = bp.narrow ? null : fitHeight;
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   useEffect(() => setCopyStatus("idle"), [q?.id]);
-  useLayoutEffect(() => {
-    if (bp.narrow) { setGridHeight(null); return; }
-    const el = gridRef.current;
-    if (!el) return;
-    const compute = () => {
-      const top = el.getBoundingClientRect().top + window.scrollY;
-      const available = window.innerHeight - top - 40;
-      setGridHeight(available >= 360 ? available : null);
-    };
-    let frame = 0;
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(compute);
-    };
-    compute();
-    window.addEventListener("resize", schedule);
-    return () => { window.removeEventListener("resize", schedule); cancelAnimationFrame(frame); };
-  }, [bp.narrow, width, q?.id, graded, state.workspaceNotice, state.actionError]);
 
   if (!q) return null;
 
@@ -133,11 +116,17 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         className="st-grid"
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
-        <section className="st-card st-q" aria-label="Question" style={{ overflowY: scroller, overscrollBehavior: "auto" }}>
-          <div className="st-q-body">
+        <section
+          className="st-card st-q st-q--pinned" aria-label="Question"
+          style={{ height: bp.narrow ? fitHeight ?? undefined : undefined }}
+        >
+          <div className="st-q-head">
             <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags}>
               {!!graded && !contentPending && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} />}
             </QuestionBadges>
+          </div>
+          {/* Practice lets the wheel hand off to the page at the top and bottom of the question. */}
+          <div className="st-q-body" ref={bodyRef} style={{ overscrollBehavior: "auto" }}>
             <QuestionContentGate question={q}>
               <div className="st-stem" onMouseUp={() => { if (graded) capture(q.id, "stem"); }}>
                 <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />
