@@ -150,7 +150,8 @@ const server = createServer(async (req, res) => {
     }
     if (path === "/api/daily-email-settings") {
       if (req.method !== "GET") emailSettings = { ...emailSettings, ...input };
-      return json(200, emailSettings);
+      // The email is sent in the account's zone (issue #47).
+      return json(200, { ...emailSettings, timezone: userSettings.timezone ?? "UTC" });
     }
     if (path === "/api/me" && req.method === "PATCH") {
       if (nameStatus !== 200) return json(nameStatus, { error: "displayName must be 100 characters or fewer" });
@@ -475,8 +476,39 @@ try {
   assert.equal(await app(() => localStorage.getItem("prepdeck.keyMode")), null, "the browser-wide mode is gone");
   assert.equal(await page.evaluate(async () => (await indexedDB.databases()).some(db => db.name === "prepdeck-keystore")), false, "so is the browser-wide key store");
 
+  // --- One time zone for the account (issue #47) -------------------------------
+  // An account without one takes the browser's, and the Time zone card changes
+  // it for the statistics and the daily email alike.
+  userSettings = { ...userSettings, timezone: null };
+  const tokyo = await browser.newContext({ timezoneId: "Asia/Tokyo", viewport: { width: 1280, height: 1000 } });
+  try {
+    const tokyoPage = await tokyo.newPage();
+    tokyoPage.on("pageerror", err => failures.push(String(err)));
+    await tokyoPage.goto(base);
+    const zone = tokyoPage.getByRole("combobox", { name: "Time zone" });
+    await zone.waitFor();
+    await tokyoPage.waitForFunction(() => window.fixtureApp?.state.timeZone === "Asia/Tokyo");
+    assert.equal(userSettings.timezone, "Asia/Tokyo", "the browser's zone was saved for the account");
+    await wait(async () => await zone.inputValue() === "Asia/Tokyo", "the Time zone field to show it");
+    // React Aria closes the list when the page scrolls, so the field is
+    // brought into view first and the option is chosen from the keyboard.
+    await zone.scrollIntoViewIfNeeded();
+    await zone.fill("America/New_Y");
+    await tokyoPage.getByRole("option", { name: "America/New_York" }).waitFor();
+    await zone.press("ArrowDown");
+    await zone.press("Enter");
+    await tokyoPage.waitForFunction(() => window.fixtureApp.state.timeZone === "America/New_York");
+    assert.equal(userSettings.timezone, "America/New_York");
+    await tokyoPage.getByRole("switch", { name: "Daily review email" }).focus();
+    await tokyoPage.keyboard.press("Space");
+    await tokyoPage.getByText("In your time zone, America/New_York.").waitFor();
+    assert.equal(await tokyoPage.getByRole("combobox", { name: "Time zone" }).count(), 1, "the email has no zone picker of its own");
+  } finally {
+    await tokyo.close();
+  }
+
   assert.deepEqual(failures, [], "no uncaught browser exceptions");
-  console.log("Settings/Untitled UI browser regression passed: labels, validation, keyboard, disabled and loading states, portaled overlay re-theming, scheme persistence, every imported primitive above its contrast floor, and 1280/375px in all five schemes.");
+  console.log("Settings/Untitled UI browser regression passed: labels, validation, keyboard, disabled and loading states, portaled overlay re-theming, scheme persistence, every imported primitive above its contrast floor, 1280/375px in all five schemes, and the account's time zone.");
 } finally {
   await browser.close();
   server.close();

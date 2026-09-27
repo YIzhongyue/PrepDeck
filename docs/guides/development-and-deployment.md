@@ -67,7 +67,7 @@ to one another.
 
 Email uses the native simulator (`remote = false`). Nothing is delivered to a
 recipient. Open Settings, enable daily email, select a source with questions, and
-set the timezone/delivery hour to the current hour. Then run:
+set the delivery hour (in the zone under Settings → Time zone) to the current hour. Then run:
 
 ```bash
 npm run dev:scheduled -- email

@@ -53,7 +53,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const {
     state, setTheme, setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut,
-    toggleShared, updateDisplayName, uploadAvatar, updateMarkAlias, updateEmailSettings
+    toggleShared, updateTimeZone, updateDisplayName, uploadAvatar, updateMarkAlias, updateEmailSettings
   } = usePrepDeck();
   const theme = state.theme || DEFAULT_THEME;
   const [removeSavedKey, setRemoveSavedKey] = useState(false);
@@ -176,7 +176,11 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
       return [Intl.DateTimeFormat().resolvedOptions().timeZone];
     }
   }, []);
-  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
+  const changeTimeZone = (timeZone: string) => {
+    setTimeZoneError(null);
+    updateTimeZone(timeZone).catch(() => setTimeZoneError("Could not save your time zone. Please retry."));
+  };
   const deliveryHourOptions = useMemo(
     () => Array.from({ length: 24 }, (_, h) => ({
       id: String(h),
@@ -187,10 +191,10 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   // A zone the server already stores but this browser does not list still has
   // to be selectable, exactly as the native <select> kept it as an option.
   const timezoneSelectOptions = useMemo(() => {
-    const current = emailSettings?.timezone;
+    const current = state.timeZone;
     const names = current && !timezoneOptions.includes(current) ? [current, ...timezoneOptions] : timezoneOptions;
     return names.map((tz) => ({ id: tz, label: tz }));
-  }, [emailSettings?.timezone, timezoneOptions]);
+  }, [state.timeZone, timezoneOptions]);
   const SOURCE_LABELS: Record<DailyEmailSource, { title: string; body: string }> = {
     wrong: { title: "Wrong book", body: "Questions you've previously answered incorrectly." },
     bm: { title: "Bookmarks", body: "Questions you've saved for later." },
@@ -550,6 +554,25 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
         />
       </div>
 
+      {/* issue #47: one zone for the account. The Statistics screen counts its
+          days, weeks and countdown in it, and the daily email is sent in it. */}
+      <div className="card elev-sm" style={{ padding: 22, gap: 14, marginTop: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 20 }}>Time zone</h3>
+        {/* A combo box rather than a plain select: the zone list runs to
+            several hundred entries, which the native control made
+            searchable by type-ahead. */}
+        <Select.ComboBox
+          label="Time zone"
+          hint={timeZoneError ?? "Statistics count days and weeks in this zone, and the daily review email arrives at its delivery time here."}
+          isInvalid={!!timeZoneError}
+          selectedKey={state.timeZone}
+          onSelectionChange={(key) => key !== null && changeTimeZone(String(key))}
+          items={timezoneSelectOptions}
+        >
+          {(item) => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
+        </Select.ComboBox>
+      </div>
+
       <div className="card elev-sm" style={{ padding: 22, gap: 16, marginTop: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ flex: 1 }}>
@@ -560,13 +583,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             size="md"
             aria-label="Daily review email"
             isSelected={!!emailSettings?.enabled}
-            onChange={(enabling) => {
-              // First time this is turned on with the server's untouched
-              // "UTC" default, switch to the browser's own zone instead of
-              // silently scheduling delivery against UTC.
-              const timezone = enabling && emailSettings?.timezone === "UTC" ? browserTimezone : undefined;
-              updateEmailSettings({ enabled: enabling, ...(timezone ? { timezone } : {}) });
-            }}
+            onChange={(enabling) => updateEmailSettings({ enabled: enabling })}
           />
         </div>
 
@@ -611,30 +628,16 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
               </RadioGroup>
             </div>
 
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <Select
-                  label="Delivery time"
-                  selectedKey={String(emailSettings.sendHourLocal)}
-                  onSelectionChange={(key) => updateEmailSettings({ sendHourLocal: Number(key) })}
-                  items={deliveryHourOptions}
-                >
-                  {(item) => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
-                </Select>
-              </div>
-              <div style={{ flex: 2, minWidth: 220 }}>
-                {/* A combo box rather than a plain select: the zone list runs to
-                    several hundred entries, which the native control made
-                    searchable by type-ahead. */}
-                <Select.ComboBox
-                  label="Timezone"
-                  selectedKey={emailSettings.timezone}
-                  onSelectionChange={(key) => key !== null && updateEmailSettings({ timezone: String(key) })}
-                  items={timezoneSelectOptions}
-                >
-                  {(item) => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
-                </Select.ComboBox>
-              </div>
+            <div style={{ maxWidth: 320 }}>
+              <Select
+                label="Delivery time"
+                hint={`In your time zone, ${emailSettings.timezone}.`}
+                selectedKey={String(emailSettings.sendHourLocal)}
+                onSelectionChange={(key) => updateEmailSettings({ sendHourLocal: Number(key) })}
+                items={deliveryHourOptions}
+              >
+                {(item) => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
+              </Select>
             </div>
           </>
         )}

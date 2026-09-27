@@ -12,12 +12,14 @@ import { Button } from "@/components/base/buttons/button";
 import { DateField } from "@/components/base/date-picker/date-field";
 import { Input } from "@/components/base/input/input";
 import { useDialogFocus } from "../knowledgePoints/useDialogFocus";
+import { timeZoneLabel } from "../../lib/statistics";
 
 export default function StudyPlanDialog({
-  preferences, examName, onClose, onSave,
+  preferences, examName, timeZone, onClose, onSave,
 }: {
   preferences: ExamStudyPreferencesResponse;
   examName: string | null;
+  timeZone: string;
   onClose: () => void;
   onSave: (patch: UpdateExamStudyPreferencesRequest) => Promise<void>;
 }) {
@@ -75,7 +77,7 @@ export default function StudyPlanDialog({
             value={date}
             onChange={value => { setDate(value); setDateEdited(true); }}
             isInvalid={dateInvalid}
-            hint={dateInvalid ? "Enter a real calendar date." : "Counted down in whole days (UTC)."}
+            hint={dateInvalid ? "Enter a real calendar date." : `Counted down in whole days (${timeZoneLabel(timeZone)}).`}
           />
           <Input
             label="Weekly study goal (hours)"

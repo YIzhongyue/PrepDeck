@@ -59,7 +59,9 @@ export interface DailyReviewEmailRunResult {
 
 export async function runDailyReviewEmailDelivery(env: Env, now: () => number = Date.now): Promise<DailyReviewEmailRunResult> {
   const settings = await env.DB.prepare(
-    "SELECT user_id, questions_per_email, source, timezone, send_hour_local FROM user_email_settings WHERE enabled = 1"
+    // The account's zone (issue #47), UTC until one is chosen.
+    `SELECT s.user_id, s.questions_per_email, s.source, COALESCE(u.timezone, 'UTC') AS timezone, s.send_hour_local
+     FROM user_email_settings s JOIN users u ON u.id = s.user_id WHERE s.enabled = 1`
   ).all<EmailSettingsRow>();
 
   let sent = 0;

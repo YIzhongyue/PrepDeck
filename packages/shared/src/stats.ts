@@ -1,18 +1,17 @@
 // DTOs for the Personal Statistics Dashboard API (docs/requirements/statistics-and-progress.md), shared
 // between the Worker's responses and the web client.
 //
-// Calendar policy (implementation, decision 2): every day bucket in this file is a
-// UTC calendar day, because `accuracyTrend` has always bucketed on
-// `substr(completed_at, 1, 10)` and completed_at is stored as a UTC ISO
-// string. Countdowns, week boundaries and window deltas therefore all use UTC
-// too, so no two figures on the dashboard can disagree about which day an
-// attempt landed on. Moving any of them to a local calendar means moving all
-// of them, and that is coordinated API work, not a display choice.
+// Calendar policy (issue #47): every day bucket in this file is a calendar
+// day in the account's time zone (users.timezone, UTC until one is chosen),
+// and each payload names the zone it was computed in as `timeZone`.
+// Countdowns, week boundaries and window deltas all use that same zone, so no
+// two figures on the dashboard can disagree about which day an answer landed
+// on. See packages/shared/src/timeZone.ts.
 
 import type { Difficulty } from "./types";
 
 // FR-9.1: one bucket of the accuracy-over-time trend, keyed by the calendar
-// day (UTC, "YYYY-MM-DD") on which the contributing attempts were completed.
+// day ("YYYY-MM-DD", in the payload's `timeZone`) the answers were given on.
 export interface AccuracyTrendPoint {
   date: string;
   attempted: number;
@@ -72,13 +71,16 @@ export interface AccuracyComparison {
 // by an older deployment is recomputed rather than served with fields missing.
 // Also bumped when the figures change meaning: 3 counts practice answers from
 // the moment they are graded and dates answers by when they were given
-// (issue #40), and caches its payload together with an activity marker.
-export const STATS_SCHEMA_VERSION = 3;
+// (issue #40), and caches its payload together with an activity marker. 4
+// counts days and weeks in the account's time zone (issue #47).
+export const STATS_SCHEMA_VERSION = 4;
 
 export interface ExamStatsResponse {
   examId: string;
   // See STATS_SCHEMA_VERSION. Absent on pre-implementation cached payloads.
   schemaVersion?: number;
+  // The IANA zone every day and window in this payload was computed in.
+  timeZone: string;
   // Distinct question ids answered in completed attempts, INCLUDING questions
   // since removed from the bank. Kept as-is for the User MCP's existing
   // contract; `attemptedInBank` is the figure coverage is drawn from.
@@ -129,6 +131,8 @@ export interface StudyActivityDay {
 }
 
 export interface StudyActivityResponse {
+  // The IANA zone `days` are calendar days in.
+  timeZone: string;
   days: StudyActivityDay[];
   activeDayCount: number;
   averageSessionSeconds: number;

@@ -9,6 +9,7 @@ import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { getOrComputeExamStats } from "../lib/statsCache";
 import { computeStudyActivity } from "../lib/learningStats";
+import { loadUserTimeZone } from "../lib/userTimeZone";
 
 // Mounted at /api/exams/:examId/stats
 export const examStatsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -30,6 +31,7 @@ studyActivityRouter.get("/", async (c) => {
   const examId = c.req.query("examId") ?? null;
   const days = parseInt(c.req.query("days") ?? "84", 10) || 84;
 
-  const response = await computeStudyActivity(c.env.DB, userId, { examId, days });
+  const timeZone = await loadUserTimeZone(c.env.DB, userId);
+  const response = await computeStudyActivity(c.env.DB, userId, { examId, days, timeZone });
   return c.json(response);
 });

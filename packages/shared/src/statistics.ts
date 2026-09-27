@@ -16,9 +16,10 @@
 
 import type { AccuracyTrendPoint, DifficultyBreakdown, StudyActivityDay } from "./stats";
 import type { Difficulty } from "./types";
+import { DEFAULT_TIME_ZONE, daysBetweenDateKeys, isDateKey, weekStartOfDateKey, zonedDateKey } from "./timeZone.ts";
 
-// Every day bucket here is a UTC calendar day — see the header of stats.ts.
-export const STATISTICS_CALENDAR = "UTC";
+// Every day bucket here is a calendar day in the account's time zone, which the
+// stats payloads carry as `timeZone` (issue #47; see timeZone.ts).
 
 export function pctOf(correct: number, total: number): number {
   return total > 0 ? Math.round((correct / total) * 100) : 0;
@@ -333,11 +334,9 @@ export function toUtcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Monday of the ISO week containing `date`, as a UTC "YYYY-MM-DD" key. */
-export function isoWeekStartKey(date: Date): string {
-  const utc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const isoWeekday = (new Date(utc).getUTCDay() + 6) % 7; // Monday = 0
-  return toUtcDateKey(new Date(utc - isoWeekday * DAY_MS));
+/** Monday of the week containing `date` in `timeZone`, as a "YYYY-MM-DD" key. */
+export function isoWeekStartKey(date: Date, timeZone: string = DEFAULT_TIME_ZONE): string {
+  return weekStartOfDateKey(zonedDateKey(date, timeZone));
 }
 
 export interface StudyWeekDay {
@@ -429,10 +428,8 @@ export function latestActiveDays(trend: readonly AccuracyTrendPoint[], count = A
   return trend.slice(Math.max(0, trend.length - count));
 }
 
-/** Whole UTC days from `today` to `targetDate`. Negative once the date passes. */
-export function daysUntil(targetDate: string, today: Date): number | null {
-  const target = Date.parse(`${targetDate}T00:00:00Z`);
-  if (Number.isNaN(target)) return null;
-  const from = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  return Math.round((target - from) / DAY_MS);
+/** Whole days from today in `timeZone` to `targetDate`. Negative once the date passes. */
+export function daysUntil(targetDate: string, today: Date, timeZone: string = DEFAULT_TIME_ZONE): number | null {
+  if (!isDateKey(targetDate)) return null;
+  return daysBetweenDateKeys(zonedDateKey(today, timeZone), targetDate);
 }

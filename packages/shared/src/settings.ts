@@ -8,6 +8,9 @@ export type ThemeId = "cream" | "sage" | "clay" | "dusk";
 export interface UserSettingsResponse {
   showSharedNotes: boolean;
   theme: ThemeId | null;
+  // issue #47: the account's IANA time zone, used for statistics and the daily
+  // email. Null until one is chosen; the server counts in UTC until then.
+  timezone: string | null;
 }
 
 // Partial: the two preferences are edited independently in the UI (the
@@ -16,4 +19,5 @@ export interface UserSettingsResponse {
 export interface UpdateUserSettingsRequest {
   showSharedNotes?: boolean;
   theme?: ThemeId | null;
+  timezone?: string;
 }
