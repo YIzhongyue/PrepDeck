@@ -1,6 +1,7 @@
 import { reviewIds } from "../lib/reviewLists";
 import { NAV } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
@@ -14,6 +15,7 @@ const NAV_GROUPS = [
 
 export default function Sidebar({ rail }: { rail: boolean }) {
   const { state, go } = usePrepDeck();
+  const hrefFor = useScreenHref();
   const wrongCount = reviewIds(state, "wrong").length;
   const bmCount = reviewIds(state, "bm").length;
   // FR-13.1: the Admin nav entry is visible only to admin-role accounts.
@@ -48,15 +50,22 @@ export default function Sidebar({ rail }: { rail: boolean }) {
                 const on = state.screen === item.id;
                 const badge = item.id === "wrong" ? String(wrongCount) : item.id === "bookmarks" ? String(bmCount) : "";
                 const showBadge = badge && badge !== "0" && rail;
+                // A link, so it can be opened in a new tab (issue #41); a plain
+                // click still navigates in place through go()'s save gate.
                 return (
-                  <button
+                  <a
                     key={item.id}
-                    type="button"
-                    onClick={() => go(item.id as typeof state.screen)}
+                    href={hrefFor(item.id as typeof state.screen)}
+                    aria-current={on ? "page" : undefined}
+                    onClick={(event) => {
+                      if (isModifiedClick(event)) return;
+                      event.preventDefault();
+                      go(item.id as typeof state.screen);
+                    }}
                     title={item.label}
                     style={{
-                      display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px",
-                      border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 14, textAlign: "left",
+                      display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px", boxSizing: "border-box",
+                      border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 14, textAlign: "left", textDecoration: "none",
                       background: on ? "var(--color-accent-200)" : "transparent", color: on ? "var(--color-accent-800)" : "var(--color-text)"
                     }}
                   >
@@ -69,7 +78,7 @@ export default function Sidebar({ rail }: { rail: boolean }) {
                         {badge}
                       </span>
                     )}
-                  </button>
+                  </a>
                 );
               })}
             </div>

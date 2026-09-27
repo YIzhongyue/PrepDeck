@@ -111,7 +111,7 @@ at the root for `typescript-eslint`; `tsc` in each workspace is still
 TypeScript 7.
 
 `npm test` only picks up `*.test.mjs`, so the component-level regressions in
-`apps/web/scripts/*.browser.mjs` — the exam workspace, the Knowledge Points
+`apps/web/scripts/*.browser.mjs` — the exam workspace, URL routing and history, the Knowledge Points
 editor, question authoring, MCP setup and the Bookmarks/Wrong-book tag filter —
 run under `npm run test:browser`
 instead. Playwright is a dev dependency; `npx playwright install chromium`

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { MORE_ICON_D, NAV } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import type { ScreenId } from "../types";
 
 const TAB_IDS: ScreenId[] = ["dash", "practice", "mock", "wrong"];
@@ -21,6 +22,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
     return () => observer.disconnect();
   }, [onHeightChange]);
   const { state, go, openMore } = usePrepDeck();
+  const hrefFor = useScreenHref();
 
   return (
     <nav
@@ -36,21 +38,26 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
           const n = NAV.find((x) => x.id === id)!;
           const on = state.screen === id;
           return (
-            <button
+            <a
               key={id}
-              type="button"
-              onClick={() => go(id)}
+              href={hrefFor(id)}
+              aria-current={on ? "page" : undefined}
+              onClick={(event) => {
+                if (isModifiedClick(event)) return;
+                event.preventDefault();
+                go(id);
+              }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 2px",
                 minHeight: 52, border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 10.5,
-                borderRadius: 16, color: on ? "var(--color-accent-700)" : "var(--color-text-muted)"
+                borderRadius: 16, color: on ? "var(--color-accent-700)" : "var(--color-text-muted)", textDecoration: "none"
               }}
             >
               <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d={n.d} />
               </svg>
               <span>{TAB_LABELS[id]}</span>
-            </button>
+            </a>
           );
         })}
         <button
@@ -74,6 +81,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
 
 export function MoreSheet() {
   const { state, go, closeMore } = usePrepDeck();
+  const hrefFor = useScreenHref();
   if (!state.more) return null;
   // FR-13.1: the Admin entry is visible only to admin-role accounts.
   const moreIds = state.me?.role === "admin" ? [...MORE_IDS, "admin" as ScreenId] : MORE_IDS;
@@ -86,22 +94,27 @@ export function MoreSheet() {
             const n = NAV.find((x) => x.id === id)!;
             const on = state.screen === id;
             return (
-              <button
+              <a
                 key={id}
-                type="button"
-                onClick={() => go(id)}
+                href={hrefFor(id)}
+                aria-current={on ? "page" : undefined}
+                onClick={(event) => {
+                  if (isModifiedClick(event)) return;
+                  event.preventDefault();
+                  go(id);
+                }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", border: 0, borderRadius: 999,
                   background: on ? "var(--color-accent-200)" : "var(--color-neutral-100)",
                   color: on ? "var(--color-accent-800)" : "var(--color-text)",
-                  cursor: "pointer", font: "inherit", fontSize: 15, textAlign: "left"
+                  cursor: "pointer", font: "inherit", fontSize: 15, textAlign: "left", textDecoration: "none"
                 }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d={n.d} />
                 </svg>
                 <span>{n.label}</span>
-              </button>
+              </a>
             );
           })}
         </div>

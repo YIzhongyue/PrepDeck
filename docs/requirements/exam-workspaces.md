@@ -10,7 +10,31 @@ needed.
 Selecting an exam in the sidebar or mobile header preserves the current page.
 Selecting the already-active exam does nothing. The last exam is remembered
 per account in this browser. An unavailable remembered exam falls back to an
-available exam with a notice. No available exams, loading failures, and empty
+available exam with a notice.
+
+## Addresses and history
+
+The URL names the current screen and, for exam screens, the exam's slug
+(issue #41): `/exams/:slug` is Statistics, `/exams/:slug/learning/57` is
+Learning question 57, and `/knowledge-points/:id` is one Knowledge Point. The tab
+title follows, for example "Learning #57 · Cloud Pro · PrepDeck".
+
+- **Reload** restores the screen, the exam and the Learning position. An exam
+  in the URL wins over the remembered one; "/" opens the remembered exam.
+- **Back/Forward** move between screens and across exam switches. Moving from
+  question to question in Learning replaces the entry, and Practice and Mock
+  keep their questions out of the URL, so Back leaves the session rather than
+  stepping through it. Back goes through the same save gate as the navigation
+  buttons: an editor can ask to keep its changes, and a draft that cannot be
+  saved keeps the page and restores its address.
+- **Links** open where they point, also after Google sign-in, which returns
+  to the same path. A missing exam falls back to an available one with a
+  notice; a missing Learning question opens Learning setup with a message; an
+  unknown path opens Statistics. Navigation entries are links, so they can be
+  opened in a new tab.
+- The daily review email's older links, `/?screen=…` and
+  `/learning/exam?exam=<slug>&question_id=<id>`, still open their screen or
+  question, and the address is then replaced with the new one. No available exams, loading failures, and empty
 question banks have distinct states; answering cannot start from an unready
 catalog.
 

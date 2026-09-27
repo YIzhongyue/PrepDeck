@@ -124,8 +124,11 @@ try {
   assert.equal((await state()).screen, 'bookmarks');
   const generation = (await state()).workspaceGeneration; await switchTo('B'); assert.equal((await state()).workspaceGeneration, generation);
   await page.reload(); await ready('B');
-  user = 'u2'; await page.reload(); await ready('A'); assert.equal(Object.keys((await state()).bookmarks).length, 1);
-  user = 'u1'; await page.reload(); await ready('B');
+  // The address names the exam (issue #41), so the per-account choice is what
+  // "/" opens.
+  const root = `http://127.0.0.1:${server.address().port}/`;
+  user = 'u2'; await page.goto(root); await ready('A'); assert.equal(Object.keys((await state()).bookmarks).length, 1);
+  user = 'u1'; await page.goto(root); await ready('B');
   console.log('Passed: counts, page preservation, same-exam no-op, refresh and account-specific selection.');
 
   hold('/api/exams/A/practice-catalog'); await invoke('setExamId', 'A'); await waitHeld('/api/exams/A/practice-catalog');

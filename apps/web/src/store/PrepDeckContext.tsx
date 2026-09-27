@@ -32,6 +32,7 @@ import { CURATED_MODELS, DEFAULT_MARK_ALIASES, hasAnswer, MAX_ATTEMPT_QUESTIONS,
 import { defaultMockFormat, mockPlan, officialFormatOf } from "../lib/mockFormat";
 import { apiFetch, ApiError, isSessionLost } from "../lib/api";
 import { stashMockSelections, takeMockSelections } from "../lib/reauth";
+import { parseRoute, type Route, type RouteIntent } from "../lib/routes";
 import { fromSharedAnnotation, toCreateAnnotationRequest } from "../lib/annotations";
 import { fromSharedNote } from "../lib/notes";
 import { fetchCachedExplanations, generateExplanation } from "../lib/ai";
@@ -125,13 +126,17 @@ export interface AppState {
   lResume: number | null;
   lDetail: Record<string, LearningDetail>;
 
-  // implementation — cross-screen navigation intents: "jump to this question in
-  // Learning Mode for pure review" (from a Knowledge Point's linked-
-  // questions card) and "open this Knowledge Point note" (from a question's
-  // related-notes card). Each is consumed and cleared by the screen/effect
-  // that handles it.
+  // implementation — cross-screen navigation intent: "jump to this question in
+  // Learning Mode for pure review" (from a Knowledge Point's linked-questions
+  // card). Consumed and cleared by the effect that handles it.
   pendingQuestionJump: { examId: string; questionId: string } | null;
-  pendingKnowledgePointId: string | null;
+  // issue #41: a Learning position asked for by the URL (a link, a reload,
+  // Back/Forward), resolved once the exam's catalog is ready.
+  pendingLearningSequence: number | null;
+  // The Knowledge Point open in the editor (/knowledge-points/:id); null for
+  // the list. Knowledge Points belong to the account, so an exam switch
+  // leaves it alone.
+  kpNoteId: string | null;
   // Daily review email deep link (/learning/exam?exam=<slug>&question_id=<id>)
   // — the exam is only known by slug at that point, so this is resolved to
   // an examId (once state.exams has loaded) into pendingQuestionJump above.
@@ -196,7 +201,7 @@ const initialState: AppState = {
   tags: [], queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
 
   lStage: "setup", lTags: [], lDiff: "all", lStartInput: 1, lQueue: [], lIdx: 0, lResume: null, lDetail: {},
-  pendingQuestionJump: null, pendingKnowledgePointId: null, pendingSlugQuestionJump: null,
+  pendingQuestionJump: null, pendingLearningSequence: null, kpNoteId: null, pendingSlugQuestionJump: null,
 
   mStage: "setup", mQueue: [], mIdx: 0, mSel: {}, mFlag: {}, mLeft: 0, mockDeadline: null, mConfirm: false,
   mockAttemptId: null, mockFormat: "custom", mockCount: 10, mockMinutes: 30, mockResult: null, activeMockAttempt: null,
@@ -223,6 +228,8 @@ interface PrepDeckStore {
   loadLearningDetail: (questionId: string) => void;
 
   go: (id: ScreenId, options?: { newMock?: boolean }) => void;
+  /** issue #41: moves to what a URL asks for (Back/Forward), through the same save gate as go(). */
+  navigateTo: (route: Route) => Promise<boolean>;
   openMore: () => void;
   closeMore: () => void;
 
@@ -264,7 +271,8 @@ interface PrepDeckStore {
   // implementation — Knowledge Points ↔ Learning Mode cross-navigation.
   goToQuestionForReview: (examId: string, questionId: string) => void;
   openKnowledgePointNote: (noteId: string) => void;
-  clearPendingKnowledgePoint: () => void;
+  /** Within the Knowledge Points screen: open a note, or return to the list. */
+  showKnowledgePoint: (noteId: string | null) => void;
 
   setMockFormat: (format: MockFormatId) => void;
   setMockCount: (n: number) => void;
@@ -360,6 +368,26 @@ function remainingSeconds(active: ActiveAttemptResponse): number {
   return Math.max(0, active.timeLimitSeconds - elapsed);
 }
 
+// issue #41: the screen a URL asks for is the first one shown. Its exam is
+// chosen when the exam list arrives (below), and a Learning position once that
+// exam's catalog has loaded.
+function initialRouteIntent(): RouteIntent | null {
+  return typeof window === "undefined" ? null : parseRoute(window.location.pathname, window.location.search);
+}
+
+function stateForInitialRoute(route: RouteIntent | null): AppState {
+  if (!route) return initialState;
+  return {
+    ...initialState,
+    screen: route.screen,
+    listMode: route.screen === "bookmarks" ? "bm" : route.screen === "wrong" ? "wrong" : initialState.listMode,
+    source: route.source ?? initialState.source,
+    kpNoteId: route.knowledgePointId,
+    pendingLearningSequence: route.learningSequence,
+    pendingSlugQuestionJump: route.examSlug && route.questionId ? { examSlug: route.examSlug, questionId: route.questionId } : null,
+  };
+}
+
 function browserTimeZone(): string | null {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
@@ -384,7 +412,9 @@ function timeZoneSaved(timeZone: string | null) {
 }
 
 export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
-  const [state, setStateRaw] = useState<AppState>(initialState);
+  const initialRoute = useRef<RouteIntent | null | undefined>(undefined);
+  if (initialRoute.current === undefined) initialRoute.current = initialRouteIntent();
+  const [state, setStateRaw] = useState<AppState>(() => stateForInitialRoute(initialRoute.current ?? null));
   const [width, setWidth] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1280);
   const stateRef = useRef(state);
   const requests = useRef(new WorkspaceRequests()).current;
@@ -442,7 +472,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         const { exams } = examsResult.value;
         const user = meResult.status === "fulfilled" ? meResult.value.user : null;
         const previous = stateRef.current.examId;
-        const saved = previous ?? (user ? storedExam(user.id) : null);
+        // A link names its exam by slug; it wins over the last exam used.
+        const linkedSlug = previous ? null : initialRoute.current?.examSlug ?? null;
+        const linked = linkedSlug ? exams.find(e => e.slug === linkedSlug)?.id ?? null : null;
+        const saved = previous ?? linked ?? (user ? storedExam(user.id) : null);
         const selected = exams.some(e => e.id === saved) ? saved : exams[0]?.id ?? null;
         setState(s => ({ me: user ?? s.me, exams }));
         if (previous && selected !== previous) {
@@ -452,7 +485,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           requests.invalidate();
           setState(s => ({ examId: selected, workspaceStatus: selected ? "loading" : "empty",
             workspaceGeneration: s.workspaceGeneration + 1,
-            workspaceNotice: saved && saved !== selected ? "Your previous exam is unavailable. An available exam has been selected." : null }));
+            workspaceNotice: linkedSlug && !linked ? "The linked exam is not available to you. Another exam has been opened instead."
+              : saved && saved !== selected ? "Your previous exam is unavailable. An available exam has been selected." : null }));
           if (user) storeExam(user.id, selected);
         }
       });
@@ -1143,6 +1177,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         pStage: s.pStage,
         mStage: id === "mock" && options?.newMock && s.mStage === "results" ? "setup" : s.mStage,
         lStage: id === "learning" ? "setup" : s.lStage,
+        pendingLearningSequence: null,
+        kpNoteId: id === "knowledgePoints" ? null : s.kpNoteId,
         listMode: id === "bookmarks" ? "bm" : id === "wrong" ? "wrong" : s.listMode
       }));
     }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
@@ -1183,7 +1219,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       // Only exam/session fields reset; account preferences and personal
       // Knowledge Points remain available across exams.
       const keys = ["catalog", "catalogBy", "catalogRevision", "questionContent", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
-        "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingKnowledgePointId",
+        "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingLearningSequence",
         "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockFormat", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
         "bookmarks", "wrong", "attempted", "mastered", "ai", "anns", "notes", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
       for (const key of keys) Object.assign(next, { [key]: initialState[key] });
@@ -1217,14 +1253,49 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   // implementation — open a specific Knowledge Point note from outside the
   // Knowledge Points screen (e.g. Learning Mode's related-notes card).
-  // screens/KnowledgePoints.tsx reads and clears pendingKnowledgePointId.
   const openKnowledgePointNote = useCallback((noteId: string) => {
     if (stateRef.current.switching || !allowAuthoringNavigation()) return;
     const update = scopedState("navigation");
-    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update({ screen: "knowledgePoints", pendingKnowledgePointId: noteId }))
+    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update({ screen: "knowledgePoints", more: false, actionError: null, kpNoteId: noteId }))
       .catch(() => update({ actionError: "Could not save your current note. Please retry before leaving." }));
   }, [scopedState, saveQuestionDraft]);
-  const clearPendingKnowledgePoint = useCallback(() => setState({ pendingKnowledgePointId: null }), [setState]);
+  // The Knowledge Points screen's own list/editor moves, which save their
+  // drafts themselves as before.
+  const showKnowledgePoint = useCallback((noteId: string | null) => setState({ kpNoteId: noteId }), [setState]);
+
+  // issue #41: Back/Forward and a pasted URL. The same save gate as go(): an
+  // editor with unsaved changes can still refuse, and drafts are flushed
+  // before the screen changes. A different exam goes through switchExam, with
+  // its own confirmation and saves.
+  const navigateTo = useCallback(async (route: Route): Promise<boolean> => {
+    const s = stateRef.current;
+    const exam = route.examSlug ? s.exams.find(e => e.slug === route.examSlug) : undefined;
+    if (route.examSlug && !exam) {
+      setState({ actionError: "That exam is not available to you." });
+      return false;
+    }
+    if (exam && exam.id !== s.examId) {
+      if (!await switchExam(exam.id)) return false;
+    } else {
+      if (s.switching || !allowAuthoringNavigation()) return false;
+      requests.cancelLane("start");
+      try {
+        await beforeWorkspaceNavigation();
+        await saveQuestionDraft();
+      } catch {
+        setState({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." });
+        return false;
+      }
+    }
+    setState(cur => ({
+      screen: route.screen, more: false, actionError: null,
+      lStage: route.screen === "learning" && route.learningSequence == null ? "setup" : cur.lStage,
+      pendingLearningSequence: route.screen === "learning" ? route.learningSequence : null,
+      kpNoteId: route.screen === "knowledgePoints" ? route.knowledgePointId : cur.kpNoteId,
+      listMode: route.screen === "bookmarks" ? "bm" : route.screen === "wrong" ? "wrong" : cur.listMode,
+    }));
+    return true;
+  }, [requests, setState, switchExam, saveQuestionDraft]);
 
   // Resolve only after the target catalog is ready, including invalid links.
   useEffect(() => {
@@ -1239,53 +1310,33 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     beginLearning(q.sequenceNumber);
   }, [state.pendingQuestionJump, state.examId, state.catalogBy, state.workspaceStatus, setState, beginLearning]);
 
+  // issue #41: a Learning position from the URL. Inside the running session it
+  // is a move within its queue; otherwise Learning starts there unfiltered,
+  // as a linked question does. A number the exam does not have opens setup.
+  useEffect(() => {
+    const seq = state.pendingLearningSequence;
+    if (seq == null || state.screen !== "learning" || state.workspaceStatus !== "ready" || state.switching) return;
+    const s = stateRef.current;
+    setState({ pendingLearningSequence: null });
+    if (s.lStage === "live" && s.lQueue.some(id => s.catalogBy[id]?.sequenceNumber === seq)) {
+      learningGotoSequence(seq);
+    } else if (s.catalog.some(q => q.sequenceNumber === seq)) {
+      setState({ lTags: [], lDiff: "all" });
+      beginLearning(seq);
+    } else {
+      setState({ lStage: "setup", actionError: `This exam has no question ${seq}.` });
+    }
+  }, [state.pendingLearningSequence, state.screen, state.workspaceStatus, state.switching, setState, beginLearning, learningGotoSequence]);
+
   const setSource = useCallback((id: PracticeSource) => setState({ source: id }), [setState]);
 
-  // implementation — this SPA has no client-side router (screen is plain state
-  // that always initializes to "dash"), so a link from the daily review
-  // email (e.g. "?screen=wrong") needs this one-time bridge to land
-  // somewhere other than the dashboard. Runs once on mount, then strips the
-  // query string so it doesn't re-apply on a later in-app navigation/refresh.
+  // The daily review email's links predate routing: "?screen=wrong" and
+  // "/learning/exam?exam=<slug>&question_id=<id>" (apps/worker/src/lib/
+  // emailTemplates/dailyReview.ts). stateForInitialRoute reads them like any
+  // other URL; the question, known only by exam slug and id, is resolved below
+  // and the address then becomes the question's own (store/urlRouting.ts).
   //
-  // Also handles the daily review email's per-question deep link,
-  // "/learning/exam?exam=<slug>&question_id=<id>" (served here via
-  // wrangler.toml's SPA fallback — see apps/worker/src/lib/emailTemplates/
-  // dailyReview.ts). The exam is only known by slug at this point, so it is
-  // stashed as pendingSlugQuestionJump for the effect below to resolve once
-  // state.exams has loaded.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const screenParam = params.get("screen");
-    const sourceParam = params.get("source");
-    const isExamDeepLink = window.location.pathname.replace(/\/$/, "") === "/learning/exam";
-    const examSlugParam = params.get("exam");
-    const questionIdParam = params.get("question_id");
-    if (!screenParam && !sourceParam && !(isExamDeepLink && examSlugParam && questionIdParam)) return;
-
-    const knownScreens: ScreenId[] = ["dash", "practice", "mock", "learning", "wrong", "bookmarks", "notes", "knowledgePoints", "settings", "admin"];
-    if (screenParam && (knownScreens as string[]).includes(screenParam)) go(screenParam as ScreenId);
-
-    const knownSources: PracticeSource[] = ["all", "new", "wrong", "bm", "focus"];
-    if (sourceParam && (knownSources as string[]).includes(sourceParam)) setSource(sourceParam as PracticeSource);
-
-    if (isExamDeepLink && examSlugParam && questionIdParam) {
-      setState({ pendingSlugQuestionJump: { examSlug: examSlugParam, questionId: questionIdParam } });
-    }
-
-    const url = new URL(window.location.href);
-    url.searchParams.delete("screen");
-    url.searchParams.delete("source");
-    if (isExamDeepLink) {
-      url.searchParams.delete("exam");
-      url.searchParams.delete("question_id");
-      url.pathname = "/";
-    }
-    window.history.replaceState(null, "", url.toString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- read the one-time deep-link parameters on mount only
-  }, []);
-
-  // Resolves pendingSlugQuestionJump (set above) once state.exams has
+  // Resolves pendingSlugQuestionJump (set on load) once state.exams has
   // loaded: looks up the exam by slug and hands off to
   // goToQuestionForReview, which drives the same catalog-load-then-jump path
   // as the Knowledge Points deep link. An unknown slug (stale/bad link)
@@ -1295,6 +1346,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const pending = state.pendingSlugQuestionJump;
     if (!pending || state.exams.length === 0) return;
     const exam = state.exams.find((e) => e.slug === pending.examSlug);
+    // Already in that exam (the link chose it on load): nothing to save, so the
+    // jump is set at once, and the address goes straight to the question.
+    if (exam && exam.id === stateRef.current.examId) {
+      setState({ pendingSlugQuestionJump: null, screen: "learning", pendingQuestionJump: { examId: exam.id, questionId: pending.questionId } });
+      return;
+    }
     setState({ pendingSlugQuestionJump: null });
     if (exam) goToQuestionForReview(exam.id, pending.questionId);
   }, [state.pendingSlugQuestionJump, state.exams, setState, goToQuestionForReview]);
@@ -1626,7 +1683,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, showAlternateAi,
     learningPool, learningQ, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
-    goToQuestionForReview, openKnowledgePointNote, clearPendingKnowledgePoint,
+    goToQuestionForReview, openKnowledgePointNote, showKnowledgePoint, navigateTo,
     setMockFormat, setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
     askSubmit, cancelSubmit, finishMock, practiceWrong,
     setListMode, removeBookmark, markMastered, practiceList,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SESSION_EXPIRED_EVENT, isSessionExpiryPending, resetSessionLoss } from "../lib/api";
 import { signInUrl } from "../lib/reauth";
+import { routePath } from "../lib/routes";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
 
@@ -31,8 +32,10 @@ export default function SessionExpiredDialog() {
   const signIn = () => {
     setLeaving(true);
     preserveForReauth();
-    // Back to the mock when one is running, so its answers are restored on resume.
-    window.location.assign(signInUrl(inMock ? "/?screen=mock" : undefined));
+    // Back to the mock when one is running, so its answers are restored on
+    // resume; otherwise to this page, whose address names it (issue #41).
+    const examSlug = state.exams.find((e) => e.id === state.examId)?.slug ?? null;
+    window.location.assign(signInUrl(inMock ? routePath({ screen: "mock", examSlug, learningSequence: null, knowledgePointId: null }) : undefined));
   };
   // Staying keeps the page readable; the next refused request asks again.
   const stay = () => {

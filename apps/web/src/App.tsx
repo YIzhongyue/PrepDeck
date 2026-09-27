@@ -30,6 +30,7 @@ import Admin from "./screens/Admin";
 import PrivacyPolicy from "./screens/PrivacyPolicy";
 import TermsOfService from "./screens/TermsOfService";
 import { DEFAULT_THEME } from "./lib/themeStorage";
+import { useUrlRouting } from "./store/urlRouting";
 
 // implementation — code-split: react-markdown, mermaid, and @dnd-kit are sizable
 // dependencies only this feature needs, so they load in their own chunk on
@@ -45,6 +46,7 @@ const Settings = lazy(() => import("./screens/Settings"));
 
 export function Shell() {
   const { state, width, curQ, mockQ, learningQ, retryWorkspace, dismissActionError } = usePrepDeck();
+  useUrlRouting();
   const bp = breakpointsFor(width);
   // Measured height includes the bottom safe-area padding and text scaling.
   const [tabBarHeight, setTabBarHeight] = useState(0);
