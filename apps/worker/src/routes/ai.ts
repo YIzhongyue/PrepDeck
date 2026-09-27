@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { renderExplanationPrompt } from "../lib/prompts";
-import { allContentBlocks, answerParts, matchingTargets, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
+import { allContentBlocks, continueListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
 
 // Request guard; see docs/requirements/ai-explanations.md for byte-count limitations.
 const MAX_BODY_BYTES = 32 * 1024;
@@ -69,6 +69,11 @@ function toDto(row: ExplanationRow, viewerId: string, viewerRole: "admin" | "use
 // (issue #42): a matching question's options are only its left column, and its
 // answer key is stored as ID pairs, so without the content the model was asked
 // to explain pairings with items it had never seen.
+//
+// Option text keeps its whitespace, with code fenced (review of #69): two
+// snippets that differ only in indentation must not reach the model, and the
+// shared cache, as the same text. A multi-line entry is indented under its list
+// item so the template's "- " lists stay unambiguous.
 export function buildPrompt(q: QuestionRow): string {
   const options: { id: string; text: string }[] = q.options_json ? JSON.parse(q.options_json) : [];
   const correctAnswers: string[] = JSON.parse(q.correct_answers_json);
@@ -76,12 +81,13 @@ export function buildPrompt(q: QuestionRow): string {
   try { content = q.content_json ? JSON.parse(q.content_json) as QuestionContentModel : null; } catch { content = null; }
   const question = { type: q.type, options, content };
   const kind = q.type === "matching" || q.type === "ordering" ? q.type : q.type === "fill_blank" ? "text" : "choice";
+  const listed = (items: { id: string; text: string }[]) => items.map((o) => ({ id: o.id, text: continueListItem(o.text) }));
   return renderExplanationPrompt({
     stem: q.stem,
     kind,
-    options,
-    matchTargets: matchingTargets(question),
-    correctAnswers: kind === "matching" || kind === "ordering" ? answerParts(question, correctAnswers) : correctAnswers,
+    options: listed(promptOptions(question)),
+    matchTargets: listed(matchingTargets(question)),
+    correctAnswers: kind === "matching" || kind === "ordering" ? promptAnswerParts(question, correctAnswers).map((part) => continueListItem(part)) : correctAnswers,
     officialExplanation: q.explanation,
     figureOmitted: !!content && allContentBlocks(content).some((block) => block.type === "figure"),
   });

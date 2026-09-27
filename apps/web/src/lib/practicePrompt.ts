@@ -1,4 +1,4 @@
-import { allContentBlocks, answerParts, matchingTargets } from "@prepdeck/shared";
+import { allContentBlocks, continueListItem, matchingTargets, promptAnswerParts, promptOptions } from "@prepdeck/shared";
 import type { GradedAnswer, Question } from "../types";
 
 const STRUCTURED = new Set(["ordering", "matching"]);
@@ -6,12 +6,14 @@ const STRUCTURED = new Set(["ordering", "matching"]);
 function answerLines(question: Question, answerIds: string[]): string {
   if (!answerIds.length) return "- No answer provided";
   // Matching pairs and orderings read as the question's own text (issue #42),
-  // not as stored IDs such as ["L1","R2"].
-  if (STRUCTURED.has(question.type)) return answerParts(question, answerIds).map((part) => `- ${part}`).join("\n");
+  // not as stored IDs such as ["L1","R2"], and with their whitespace and code
+  // kept (review of #69), so a part can span lines under its list item.
+  if (STRUCTURED.has(question.type)) return promptAnswerParts(question, answerIds).map((part) => `- ${continueListItem(part)}`).join("\n");
 
+  const options = promptOptions(question);
   return answerIds.map((answerId) => {
-    const option = question.options?.find((candidate) => candidate.id === answerId);
-    return option ? `- **${option.id}.** ${option.text}` : `- ${answerId}`;
+    const option = options.find((candidate) => candidate.id === answerId);
+    return option ? `- **${option.id}.** ${continueListItem(option.text)}` : `- ${answerId}`;
   }).join("\n");
 }
 
@@ -26,9 +28,9 @@ function buildQuestionPrompt(
   }
 ): string {
   const { attempt } = context;
-  const listed = (items: readonly { id: string; text: string }[]) => items.map((option) => `- **${option.id}.** ${option.text}`).join("\n");
+  const listed = (items: readonly { id: string; text: string }[]) => items.map((option) => `- **${option.id}.** ${continueListItem(option.text)}`).join("\n");
   const options = question.options?.length
-    ? listed(question.options)
+    ? listed(promptOptions(question))
     : attempt ? "- No options (free-response question)" : "Free text (fill in the blank); accepted answers are listed below.";
   // A matching question's options are its left column only; the right column
   // has to be listed too, or its answer names items the prompt never shows.

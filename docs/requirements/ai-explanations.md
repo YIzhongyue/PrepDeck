@@ -60,9 +60,19 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   where it does, and fill-in has no option instructions. Figures reach the
   prompt as caption and alt text only, and the prompt says so. **Copy as
   prompt** in Learning and Practice formats answers the same way, through
-  `answerParts` in [`answerFormat.ts`](../../packages/shared/src/answerFormat.ts).
+  `promptAnswerParts` in [`answerFormat.ts`](../../packages/shared/src/answerFormat.ts).
   Migration `0038` removed cached explanations for matching and ordering
   questions that were generated from the older, incomplete prompts.
+
+  Both prompts keep option text exactly as written: line breaks and
+  indentation are preserved, code blocks are fenced, and an entry that spans
+  lines is indented under its list item. Code is valid option content, and
+  collapsing its whitespace made snippets that differ only in indentation, and
+  a wrong pairing and the right one, read as the same text. The one-line form
+  (`answerParts`, `formatAnswerText`) is only for summaries on screen. Migration
+  `0039` removed cached explanations for matching and ordering questions whose
+  content has a line break or a code block, since the old prompts could have
+  collapsed them.
 
 <a id="fr-7-5"></a>
 

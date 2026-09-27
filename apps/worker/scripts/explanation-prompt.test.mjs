@@ -90,3 +90,51 @@ test("ordering: the items, the order as item text, and why each step comes where
   assert.match(text, /\*\*Why this order\*\*/);
   assert.doesNotMatch(text, /figure|incorrect option/);
 });
+
+// Review of #69: code is valid option content. Collapsing its whitespace sent
+// an unconditional stop() and one inside the `if` as the same text, so the model
+// could not tell the targets, or a right and a wrong pairing, apart.
+test("matching: code targets keep their line breaks and indentation", () => {
+  const snippet = (id, text) => ({ id, body: [{ id: `code-${id}`, type: "code", language: "python", text }] });
+  const item = (id, text) => ({ id, body: [{ id: `p-${id}`, type: "paragraph", text }] });
+  const row = normalizeImportFile({
+    schemaVersion: "2.0", exam: { id: "exam", name: "code" }, assets: [],
+    questions: [{ externalId: "m1", body: [{ id: "prompt", type: "paragraph", text: "Match each behaviour to its code." }],
+      interaction: { id: "response", type: "match",
+        left: [item("always", "stop() always runs"), item("guarded", "stop() runs only when enabled")],
+        right: [snippet("outside", "if enabled:\n    start()\nstop()"), snippet("inside", "if enabled:\n    start()\n    stop()")] },
+      scoring: { method: "exact", correctAnswers: ['["always","outside"]', '["guarded","inside"]'] } }],
+  }).questions[0];
+  const text = body(buildPrompt({ id: "q", revision: 1, type: row.type, stem: row.stem, options_json: JSON.stringify(row.options),
+    correct_answers_json: JSON.stringify(row.correctAnswers), explanation: null, content_json: JSON.stringify(row.content) }));
+  const fence = "```";
+  assert.ok(text.includes(`Match with:
+- (outside) ${fence}python
+  if enabled:
+      start()
+  stop()
+  ${fence}
+- (inside) ${fence}python
+  if enabled:
+      start()
+      stop()
+  ${fence}
+
+Correct answer(s):
+- stop() always runs
+  →
+  ${fence}python
+  if enabled:
+      start()
+  stop()
+  ${fence}
+- stop() runs only when enabled
+  →
+  ${fence}python
+  if enabled:
+      start()
+      stop()
+  ${fence}
+`), text);
+  assert.doesNotMatch(text, /if enabled: start\(\) stop\(\)/);
+});

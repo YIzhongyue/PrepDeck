@@ -214,3 +214,45 @@ test("an ordering prompt shows the order as item text", () => {
   assert.match(prompt, /why this order is correct/);
   assert.doesNotMatch(prompt, /figure/);
 });
+
+// Review of #69: a matching target that is code keeps its line breaks and
+// indentation, so two snippets that differ only in indentation, and a wrong
+// pairing and the right one, no longer read the same.
+test("a matching prompt keeps code targets intact, fenced under their list items", () => {
+  const snippet = (id, text) => ({ id, body: [{ id: `code-${id}`, type: "code", language: "python", text }] });
+  const item = (id, text) => ({ id, body: [{ id: `p-${id}`, type: "paragraph", text }] });
+  const row = shared.normalizeImportFile({
+    schemaVersion: "2.0", exam: { id: "exam", name: "code" }, assets: [],
+    questions: [{ externalId: "m1", body: [{ id: "prompt", type: "paragraph", text: "Match each behaviour to its code." }],
+      interaction: { id: "response", type: "match",
+        left: [item("always", "stop() always runs"), item("guarded", "stop() runs only when enabled")],
+        right: [snippet("outside", "if enabled:\n    start()\nstop()"), snippet("inside", "if enabled:\n    start()\n    stop()")] },
+      scoring: { method: "exact", correctAnswers: ['["always","outside"]', '["guarded","inside"]'] } }],
+  }).questions[0];
+  const question = { id: "m1", externalId: "m1", sequenceNumber: 1, type: row.type, chooseCount: null, tags: [], diff: null, stem: row.stem, hasContent: true, content: row.content, options: row.options };
+  const prompt = buildPracticePrompt(question, ['["always","inside"]', '["guarded","outside"]'], { correctAnswers: row.correctAnswers, explanation: null, isCorrect: false });
+  const fence = "```";
+  assert.ok(prompt.includes(`## Match with
+
+- **outside.** ${fence}python
+  if enabled:
+      start()
+  stop()
+  ${fence}
+- **inside.** ${fence}python
+  if enabled:
+      start()
+      stop()
+  ${fence}
+`), prompt);
+  const section = heading => prompt.slice(prompt.indexOf(heading), prompt.indexOf("\n## ", prompt.indexOf(heading) + 1));
+  assert.notEqual(section("## My answer"), section("## Correct answer").replace("## Correct answer", "## My answer"), "the wrong pairing reads differently");
+  assert.ok(section("## My answer").includes(`- stop() always runs
+  →
+  ${fence}python
+  if enabled:
+      start()
+      stop()
+  ${fence}`));
+  assert.doesNotMatch(prompt, /if enabled: start\(\) stop\(\)/);
+});
