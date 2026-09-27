@@ -43,7 +43,9 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   // long AI explanation scrolls inside its own panel. Narrow screens size only
   // the question card, with the review panels following below it on the page.
   // Either way the card keeps its header and footer on screen while only the
-  // stem and answers scroll.
+  // stem and answers scroll. Phones size nothing: the page scrolls as one,
+  // between a sticky header and action bar.
+  const flow = bp.phone;
   const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone, [graded, state.workspaceNotice, state.actionError]);
   const gridHeight = bp.narrow ? null : fitHeight;
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -76,13 +78,42 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
     }
   };
 
+  // Phones show only the score, under the title, where the kicker line was.
+  const stats = (
+    <div className="st-stats">
+      <span><span className="st-ic-ok"><Icon d={IC.circleCheck} /></span>{okCount} correct</span>
+      <span><span className="st-ic-bad"><Icon d={IC.circleX} /></span>{noCount} incorrect</span>
+      {!flow && <span><span className="st-ic-muted"><Icon d={IC.timerOff} /></span>No timer · feedback per question</span>}
+    </div>
+  );
+
+  // Phones keep the actions in one row, so Back is an icon.
+  const foot = (
+    <div className="st-q-foot">
+      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={prevQ} aria-label={flow ? "Back" : undefined}>
+        <Icon d={IC.chevLeft} size={18} />{!flow && "Back"}
+      </button>
+      <span className="st-spacer" />
+      {!graded ? (
+        <button type="button" className="st-btn st-btn--primary" onClick={submit} disabled={!canCheck}>
+          {q.type === "multiple_choice" ? `Check answer (${chosen.length}/${need})` : "Check answer"}<Icon d={IC.chevRight} size={18} />
+        </button>
+      ) : (
+        <button type="button" className="st-btn st-btn--primary" onClick={next}>
+          {last ? "Finish" : "Next question"}<Icon d={IC.chevRight} size={18} />
+        </button>
+      )}
+    </div>
+  );
+
   return (
-    <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
+    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}`}>
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">
             <div className="st-kicker"><Icon d={IC.squarePen} />Free practice</div>
             <h1 className="st-title">Question {state.idx + 1} <span className="st-title-sub">of {state.queue.length}</span></h1>
+            {flow && stats}
           </div>
           <BookmarkButton on={bookmarked} onClick={() => toggleBookmark()} />
           <button type="button" className="st-btn" onClick={endSession}><Icon d={IC.x} />{bp.phone ? "End" : "End session"}</button>
@@ -96,11 +127,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         ) : (
           <div className="st-bar" aria-hidden="true"><span style={{ width: `${Math.round((state.idx / state.queue.length) * 100)}%` }} /></div>
         )}
-        <div className="st-stats">
-          <span><span className="st-ic-ok"><Icon d={IC.circleCheck} /></span>{okCount} correct</span>
-          <span><span className="st-ic-bad"><Icon d={IC.circleX} /></span>{noCount} incorrect</span>
-          <span><span className="st-ic-muted"><Icon d={IC.timerOff} /></span>No timer · feedback per question</span>
-        </div>
+        {!flow && stats}
       </header>
 
       <div
@@ -109,12 +136,12 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
         <section
-          className="st-card st-q st-q--pinned" aria-label="Question"
-          style={{ height: bp.narrow ? fitHeight ?? undefined : undefined }}
+          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label="Question"
+          style={{ height: bp.narrow && !flow ? fitHeight ?? undefined : undefined }}
         >
           <div className="st-q-head">
-            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags}>
-              {!!graded && !contentPending && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} />}
+            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow}>
+              {!!graded && !contentPending && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} compact={flow} />}
             </QuestionBadges>
           </div>
           {/* Practice lets the wheel hand off to the page at the top and bottom of the question. */}
@@ -159,19 +186,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
             )}
           </div>
 
-          <div className="st-q-foot">
-            <button type="button" className="st-btn" onClick={prevQ}><Icon d={IC.chevLeft} size={18} />Back</button>
-            <span className="st-spacer" />
-            {!graded ? (
-              <button type="button" className="st-btn st-btn--primary" onClick={submit} disabled={!canCheck}>
-                {q.type === "multiple_choice" ? `Check answer (${chosen.length}/${need})` : "Check answer"}<Icon d={IC.chevRight} size={18} />
-              </button>
-            ) : (
-              <button type="button" className="st-btn st-btn--primary" onClick={next}>
-                {last ? "Finish" : "Next question"}<Icon d={IC.chevRight} size={18} />
-              </button>
-            )}
-          </div>
+          {!flow && foot}
         </section>
 
         <div className="st-side" style={{ overflowY: scroller, overscrollBehavior: "auto" }}>
@@ -210,6 +225,9 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
           )}
         </div>
       </div>
+
+      {/* After the review panels, so it sticks while any of the page is on screen. */}
+      {flow && foot}
     </div>
   );
 }

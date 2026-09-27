@@ -40,7 +40,9 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   const desktop = width >= 1100;
   // Desktop sizes the whole two-column grid to the viewport so the review
   // panels scroll on their own; narrower screens size only the question card,
-  // with the review panels following below it on the page.
+  // with the review panels following below it on the page. Phones size
+  // nothing: the page scrolls as one, between a sticky header and action bar.
+  const flow = bp.phone;
   const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone);
   const gridHeight = desktop ? fitHeight : null;
 
@@ -76,8 +78,29 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
     setJumpText("");
   };
 
+  // Phones keep the actions in one row, so Back is an icon and Next is short.
+  const foot = (
+    <div className="st-q-foot">
+      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={learningPrev} disabled={state.lIdx === 0} aria-label={flow ? "Back" : undefined}>
+        <Icon d={IC.chevLeft} size={18} />{!flow && "Back"}
+      </button>
+      <div className="st-segmented">
+        <input
+          type="number" min={1} className="st-jump" placeholder="Jump to #" aria-label="Jump to question number" enterKeyHint="go"
+          value={jumpText} onChange={(e) => setJumpText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") jumpToInput(); }}
+        />
+        <button type="button" className="st-seg-btn" onClick={jumpToInput}>Go</button>
+      </div>
+      <span className="st-spacer" />
+      <button type="button" className="st-btn st-btn--primary" onClick={learningNext} disabled={atEnd}>
+        {flow ? "Next" : atEnd ? "Last question" : "Next question"}<Icon d={IC.chevRight} size={18} />
+      </button>
+    </div>
+  );
+
   return (
-    <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
+    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}`}>
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">
@@ -98,12 +121,12 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
         <section
-          className="st-card st-q st-q--pinned" aria-label="Question"
-          style={{ height: desktop ? undefined : fitHeight ?? undefined }}
+          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label="Question"
+          style={{ height: desktop || flow ? undefined : fitHeight ?? undefined }}
         >
           <div className="st-q-head">
-            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags}>
-              {ready && detail?.correctAnswers && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} />}
+            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow}>
+              {ready && detail?.correctAnswers && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} compact={flow} />}
             </QuestionBadges>
           </div>
           <div className="st-q-body" ref={bodyRef}>
@@ -128,21 +151,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
             </QuestionContentGate>
           </div>
 
-          <div className="st-q-foot">
-            <button type="button" className="st-btn" onClick={learningPrev} disabled={state.lIdx === 0}><Icon d={IC.chevLeft} size={18} />Back</button>
-            <div className="st-segmented">
-              <input
-                type="number" min={1} className="st-jump" placeholder="Jump to #" aria-label="Jump to question number"
-                value={jumpText} onChange={(e) => setJumpText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") jumpToInput(); }}
-              />
-              <button type="button" className="st-seg-btn" onClick={jumpToInput}>Go</button>
-            </div>
-            <span className="st-spacer" />
-            <button type="button" className="st-btn st-btn--primary" onClick={learningNext} disabled={atEnd}>
-              {atEnd ? "Last question" : "Next question"}<Icon d={IC.chevRight} size={18} />
-            </button>
-          </div>
+          {!flow && foot}
         </section>
 
         <div className="st-side" style={{ overflowY: scroller, overscrollBehavior: "contain" }}>
@@ -163,6 +172,9 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
           </ReviewTabs>
         </div>
       </div>
+
+      {/* After the review panels, so it sticks while any of the page is on screen. */}
+      {flow && foot}
     </div>
   );
 }

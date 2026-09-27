@@ -5,7 +5,7 @@ import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
 
-export default function TopBar({ onHeightChange }: { onHeightChange?: (height: number) => void }) {
+export default function TopBar({ onHeightChange, sticky = true }: { onHeightChange?: (height: number) => void; sticky?: boolean }) {
   // Measured like the TabBar's, so a screen can stick its own bar right below
   // this one whatever the text scaling makes its height.
   const headerRef = useRef<HTMLElement>(null);
@@ -25,7 +25,7 @@ export default function TopBar({ onHeightChange }: { onHeightChange?: (height: n
       ref={headerRef}
       style={{
         display: "flex", alignItems: "center", gap: 12, padding: "14px 18px",
-        borderBottom: "1px solid var(--color-divider)", position: "sticky", top: 0, zIndex: 30,
+        borderBottom: "1px solid var(--color-divider)", position: sticky ? "sticky" : "relative", top: 0, zIndex: 30,
         background: "var(--color-bg)"
       }}
     >
