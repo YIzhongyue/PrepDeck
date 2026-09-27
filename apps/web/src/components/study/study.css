@@ -146,14 +146,8 @@
 .st-head { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
 .st-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .st-head-titles { flex: 1; min-width: 180px; }
-.st-kicker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--st-brand-fg);
-}
+/* The breadcrumb sits 4px over the title, as on the setup screens. */
+.st-head-titles .pd-crumbs { margin-bottom: 4px; }
 .st-title { font-size: 20px; font-weight: 600; line-height: 30px; color: var(--st-fg); }
 .st-title-sub { font-weight: 400; color: var(--st-fg-4); }
 .st-phone .st-head-titles { min-width: 0; }
@@ -276,8 +270,8 @@
   background: var(--st-card);
 }
 .st-flow .st-head-row { flex-wrap: nowrap; gap: 8px; }
-/* The top bar already names the mode; the score takes the kicker's place. */
-.st-flow .st-kicker { display: none; }
+/* The top bar already names the mode; the score takes the breadcrumb's place. */
+.st-flow .pd-crumbs { display: none; }
 .st-flow .st-title { overflow: hidden; font-size: 17px; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
 .st-flow .st-head-titles .st-stats { gap: 2px 12px; font-size: 12px; line-height: 18px; }
 .st-flow .st-head .st-btn, .st-flow .st-q-foot .st-btn { min-height: 44px; }

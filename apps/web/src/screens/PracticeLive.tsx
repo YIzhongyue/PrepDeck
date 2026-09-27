@@ -10,6 +10,7 @@ import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
+import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
   BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes,
   type OptionState
@@ -78,7 +79,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
     }
   };
 
-  // Phones show only the score, under the title, where the kicker line was.
+  // Phones show only the score, under the title, where the breadcrumb was.
   const stats = (
     <div className="st-stats">
       <span><span className="st-ic-ok"><Icon d={IC.circleCheck} /></span>{okCount} correct</span>
@@ -111,7 +112,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">
-            <div className="st-kicker"><Icon d={IC.squarePen} />Free practice</div>
+            <PageBreadcrumb screen="practice" />
             <h1 className="st-title">Question {state.idx + 1} <span className="st-title-sub">of {state.queue.length}</span></h1>
             {flow && stats}
           </div>

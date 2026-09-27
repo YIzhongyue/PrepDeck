@@ -7,6 +7,7 @@ import { apiFetch } from "../lib/api";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import HighlightedText from "../components/HighlightedText";
 import NoteCard from "../components/NoteCard";
+import PageBreadcrumb from "../components/PageBreadcrumb";
 
 // Known FR-8.4 gap: this list uses placeholder text for AI-targeted marks.
 // Other review screens load real explanations; see docs/requirements/review-notes-and-annotations.md.
@@ -56,7 +57,7 @@ export default function Notes() {
 
   return (
     <div style={{ animation: "pd-rise .28s ease backwards" }}>
-      <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Review</p>
+      <PageBreadcrumb screen="notes" />
       <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>My annotations</h1>
       <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: 0.7, maxWidth: 620 }}>
         {cardQids.length > 0 && "Select any text below to highlight, underline or bold it. "}

@@ -35,7 +35,7 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
-      <SetupHeader icon={IC.bookOpen} kicker="Learning mode" title="Work through the bank in order">
+      <SetupHeader screen="learning" title="Work through the bank in order">
         Answers revealed, nothing graded. Pick where to start, narrow by domain, then read on.
       </SetupHeader>
 

@@ -1,17 +1,10 @@
 import { reviewIds } from "../lib/reviewLists";
-import { NAV } from "../data/constants";
+import { NAV, NAV_GROUPS } from "../data/constants";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
-
-const NAV_GROUPS = [
-  { label: "Overview", ids: ["dash"] },
-  { label: "Study", ids: ["learning", "practice", "mock"] },
-  { label: "Resources", ids: ["knowledgePoints", "bookmarks", "wrong", "notes"] },
-  { label: "System", ids: ["settings", "admin"] }
-];
 
 export default function Sidebar({ rail }: { rail: boolean }) {
   const { state, go } = usePrepDeck();

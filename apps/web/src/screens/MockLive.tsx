@@ -1,6 +1,7 @@
 import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
+import PageBreadcrumb from "../components/PageBreadcrumb";
 import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, usePinnedCard } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
@@ -32,6 +33,8 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
+      {/* Phones leave this to the top bar, as Learning and Practice do. */}
+      {!bp.phone && <PageBreadcrumb screen="mock" />}
       <div className="st-card st-mockbar">
         <span className="st-timer" data-low={lowTime} role="timer" aria-label={`${mm} minutes ${ss} seconds left`}>
           <Icon d={IC.timer} size={20} />{mm}:{ss < 10 ? "0" : ""}{ss}

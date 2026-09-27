@@ -45,7 +45,7 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
-      <SetupHeader icon={IC.timer} kicker="Mock exam" title="Simulate the real thing">
+      <SetupHeader screen="mock" title="Simulate the real thing">
         Timed, randomly drawn, no feedback until you submit.
       </SetupHeader>
 
