@@ -20,6 +20,15 @@ export const NAV: NavItem[] = [
   { id: "admin", label: "Admin", d: "M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z" }
 ];
 
+// The sidebar's sections. The page breadcrumb names a screen by its section,
+// so the two read the same way.
+export const NAV_GROUPS: { label: string; ids: string[] }[] = [
+  { label: "Overview", ids: ["dash"] },
+  { label: "Study", ids: ["learning", "practice", "mock"] },
+  { label: "Resources", ids: ["knowledgePoints", "bookmarks", "wrong", "notes"] },
+  { label: "System", ids: ["settings", "admin"] }
+];
+
 export const MORE_ICON_D = "M5 12h.01 M12 12h.01 M19 12h.01";
 
 export const THEMES: ThemeOption[] = [

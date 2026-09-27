@@ -91,6 +91,17 @@ header .exam-selector--compact .exam-selector__menu {
   right: 0; left: auto; width: min(270px, calc(100vw - 24px));
 }
 
+/* Page breadcrumb (components/PageBreadcrumb.tsx): the one row above the
+   title on every Study and Resources page. */
+.pd-crumbs { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 8px; font-family: var(--font-body); font-size: 14px; line-height: 20px; }
+.pd-crumbs ol { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.pd-crumbs li { display: inline-flex; align-items: center; gap: 8px; }
+.pd-crumbs-section > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--color-text-muted); }
+.pd-crumbs svg { flex: none; }
+.pd-crumbs-sep { color: color-mix(in srgb, var(--color-text) 40%, var(--color-bg)); }
+.pd-crumbs [aria-current="page"] { font-weight: 600; color: var(--color-accent-700); }
+.pd-crumbs-meta { padding: 2px 8px; border-radius: 16px; background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg)); color: color-mix(in srgb, var(--color-text) 82%, var(--color-bg)); font-size: 12px; font-weight: 500; line-height: 18px; }
+
 /* Shared public legal header */
 .legal-header { height: 76px; display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: auto; padding: 0 28px; border-bottom: 1px solid #e8edf5; }
 .legal-header > a:first-child { display: flex; }

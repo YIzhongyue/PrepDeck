@@ -47,7 +47,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
-      <SetupHeader icon={IC.squarePen} kicker="Free practice" title="Build a practice session">
+      <SetupHeader screen="practice" title="Build a practice session">
         Untimed, with instant feedback. Pick where questions come from, narrow by domain, then start.
       </SetupHeader>
 

@@ -48,6 +48,7 @@ records the gaps between the original specification, current code and open issue
 | [Shared UI components](guides/ui-components.md) | Vendored Untitled UI primitives, the design-token mapping behind the five color schemes, and remaining migration scope. |
 | [Settings layout](screenshots/settings.md) | Desktop/mobile screenshots of the grouped Settings page and its section index. |
 | [Phone question layout](screenshots/mobile-question-viewport.md) | Before/after phone screenshots of Learning and Practice, with the sticky session header and actions. |
+| [Page breadcrumbs](screenshots/breadcrumbs.md) | Before/after headers of the Study and Resources pages, with the shared Section › Page breadcrumb. |
 | [Cloudflare cost containment](operations/cloudflare-cost-containment.md) | Account-specific budget checks, incident controls and automation boundaries. |
 | [Rate limits](operations/cloudflare-rate-limits.md) | Edge rules, Worker quotas and failure policies. |
 | [MCP metrics](operations/mcp-observability.md) | Privacy-safe counter schema, five-minute queries, volume estimate and rollout checks. |

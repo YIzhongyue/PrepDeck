@@ -1,4 +1,6 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import PageBreadcrumb from "../PageBreadcrumb";
+import type { ScreenId } from "../../types";
 import { IC, Icon } from "./StudyKit";
 import "./setup.css";
 
@@ -26,10 +28,10 @@ export function setupLayout(width: number, phone: boolean): SetupLayout {
   };
 }
 
-export function SetupHeader({ icon, kicker, title, children }: { icon: string; kicker: string; title: string; children: ReactNode }) {
+export function SetupHeader({ screen, title, children }: { screen: ScreenId; title: string; children: ReactNode }) {
   return (
     <header className="st-setup-head">
-      <span className="st-kicker"><Icon d={icon} />{kicker}</span>
+      <PageBreadcrumb screen={screen} />
       <h1>{title}</h1>
       <p>{children}</p>
     </header>

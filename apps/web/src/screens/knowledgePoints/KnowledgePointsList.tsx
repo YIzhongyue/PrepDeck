@@ -7,6 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { KnowledgePointSort, KnowledgePointSummary } from "@prepdeck/shared";
 import type { Breakpoints } from "../../lib/responsive";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
+import PageBreadcrumb from "../../components/PageBreadcrumb";
 
 const SORTS: { id: KnowledgePointSort; label: string }[] = [
   { id: "updated", label: "Last updated" },
@@ -139,7 +140,7 @@ export default function KnowledgePointsList({ bp, onOpenNote, onManage }: { bp: 
     <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
-          <p style={{ margin: "0 0 4px", fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Personal knowledge</p>
+          <PageBreadcrumb screen="knowledgePoints" meta="Available across all exams" />
           <h1 style={{ margin: 0, fontSize: 34 }}>Knowledge points</h1>
           <p style={{ margin: "8px 0 0", maxWidth: 560, fontSize: 13.5, color: "var(--color-text-muted)" }}>
             Concept-level notes you write and organise yourself. Private to you — link them to any question across your exams.

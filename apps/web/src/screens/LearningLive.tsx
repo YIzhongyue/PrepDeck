@@ -6,6 +6,7 @@ import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
+import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
   BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes
 } from "../components/study/StudyKit";
@@ -104,7 +105,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">
-            <div className="st-kicker"><Icon d={IC.bookOpen} />Learning · read-through</div>
+            <PageBreadcrumb screen="learning" />
             <h1 className="st-title">Question #{q.sequenceNumber} <span className="st-title-sub">· {state.lIdx + 1} of {state.lQueue.length}</span></h1>
           </div>
           <BookmarkButton on={!!state.bookmarks[q.id]} onClick={() => toggleBookmark(q.id)} />

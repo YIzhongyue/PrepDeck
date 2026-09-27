@@ -2,6 +2,7 @@
    `--st-*` tokens that study.css defines on `.pd-study`. */
 
 .st-setup-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--st-line); }
+.st-setup-head .pd-crumbs { margin-bottom: 0; }
 .st-setup-head h1 { font-size: 30px; }
 .st-phone .st-setup-head h1 { font-size: 24px; }
 .st-setup-head p { margin: 0; font-size: 16px; line-height: 24px; color: var(--st-fg-3); }
