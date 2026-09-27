@@ -32,8 +32,14 @@ User/Admin MCP validates independent bearer credentials before protocol dispatch
 Google OAuth, health and signed unsubscribe are deliberately separate entry points.
 Static assets are not a private-data authorization boundary.
 
-The SPA uses screen state and supported query parameters rather than a general
-nested URL router. The Admin screen is role-gated; `/admin-mcp` is a protocol
+The SPA keeps navigation as store state and mirrors it into the URL
+([`lib/routes.ts`](../../apps/web/src/lib/routes.ts),
+[`store/urlRouting.ts`](../../apps/web/src/store/urlRouting.ts), issue #41).
+Exam screens live under `/exams/:slug` (`/learning/:sequence`, `/practice`,
+`/mock`, `/bookmarks`, `/wrong`, `/annotations`); `/knowledge-points/:id`,
+`/settings` and `/admin` belong to the account. None of these first segments
+may be Worker-first; `apps/web/scripts/routes.test.mjs` checks them against
+`wrangler.toml`. The Admin screen is role-gated; `/admin-mcp` is a protocol
 endpoint and must not be confused with Admin UI navigation.
 
 ## Storage and services

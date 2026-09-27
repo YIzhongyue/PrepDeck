@@ -1,10 +1,11 @@
 // implementation — Knowledge Points: personal, concept-level Markdown notes.
 // Top-level screen: owns the feature's own provider and its internal
-// list/editor/groups-and-tags navigation as local state, the same way
-// Practice/Mock/Learning each own an internal "Stage" rather than adding
-// more top-level ScreenId values for a single feature's sub-views.
+// list/editor/groups-and-tags navigation, the same way Practice/Mock/Learning
+// each own an internal "Stage" rather than adding more top-level ScreenId
+// values for a single feature's sub-views. The open note is the store's
+// kpNoteId, so the URL can name it (/knowledge-points/:id, issue #41).
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Breakpoints } from "../lib/responsive";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { KnowledgePointsProvider } from "../store/useKnowledgePoints";
@@ -12,44 +13,32 @@ import KnowledgePointsList from "./knowledgePoints/KnowledgePointsList";
 import KnowledgePointEditor from "./knowledgePoints/KnowledgePointEditor";
 import KnowledgePointGroupsAndTags from "./knowledgePoints/KnowledgePointGroupsAndTags";
 
-type View = { kind: "list" } | { kind: "editor"; noteId: string } | { kind: "manage" };
-
 function KnowledgePointsInner({ bp }: { bp: Breakpoints }) {
-  // implementation — arriving here via usePrepDeck().openKnowledgePointNote(id)
-  // (e.g. from Learning Mode's related-notes card) should land straight in
-  // the editor for that note, not the list. The lazy initializer covers a
-  // fresh mount; the effect covers navigating to another related note while
-  // this screen is already mounted (state.screen stays "knowledgePoints", so
-  // no remount happens).
-  const { state: appState, clearPendingKnowledgePoint } = usePrepDeck();
-  const [view, setView] = useState<View>(() =>
-    appState.pendingKnowledgePointId ? { kind: "editor", noteId: appState.pendingKnowledgePointId } : { kind: "list" }
-  );
-  useEffect(() => {
-    if (!appState.pendingKnowledgePointId) return;
-    setView({ kind: "editor", noteId: appState.pendingKnowledgePointId });
-    clearPendingKnowledgePoint();
-  }, [appState.pendingKnowledgePointId, clearPendingKnowledgePoint]);
+  // An open note (arriving from Learning Mode's related-notes card, a link, or
+  // Back/Forward) wins over the list and the groups-and-tags view.
+  const { state: appState, showKnowledgePoint } = usePrepDeck();
+  const [managing, setManaging] = useState(false);
+  const noteId = appState.kpNoteId;
 
-  if (view.kind === "editor") {
+  if (noteId) {
     return (
       <KnowledgePointEditor
         bp={bp}
-        noteId={view.noteId}
-        onBack={() => setView({ kind: "list" })}
-        onOpenNote={(id) => setView({ kind: "editor", noteId: id })}
-        onDeleted={() => setView({ kind: "list" })}
+        noteId={noteId}
+        onBack={() => showKnowledgePoint(null)}
+        onOpenNote={(id) => showKnowledgePoint(id)}
+        onDeleted={() => showKnowledgePoint(null)}
       />
     );
   }
-  if (view.kind === "manage") {
-    return <KnowledgePointGroupsAndTags onBack={() => setView({ kind: "list" })} />;
+  if (managing) {
+    return <KnowledgePointGroupsAndTags onBack={() => setManaging(false)} />;
   }
   return (
     <KnowledgePointsList
       bp={bp}
-      onOpenNote={(id) => setView({ kind: "editor", noteId: id })}
-      onManage={() => setView({ kind: "manage" })}
+      onOpenNote={(id) => { setManaging(false); showKnowledgePoint(id); }}
+      onManage={() => setManaging(true)}
     />
   );
 }

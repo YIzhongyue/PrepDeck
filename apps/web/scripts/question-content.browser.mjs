@@ -178,7 +178,9 @@ try {
 
   // A failed current question must not hide the mock timer/palette or prevent
   // submission of answers already saved to other questions.
-  await page.reload(); await ready(); failures.add("q1");
+  // From "/": a reload would restore the Learning question above (issue #41),
+  // whose detail request already loaded q1's content.
+  await page.goto(`http://127.0.0.1:${server.address().port}/`); await ready(); failures.add("q1");
   await invoke("go", "mock"); await invoke("beginMock");
   await page.waitForFunction(() => window.store.state.mStage === "live");
   await page.evaluate(() => window.store.mockGoto(window.store.state.mQueue.indexOf("q1")));

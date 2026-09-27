@@ -390,9 +390,11 @@ try {
   await pick("component-2", "B");
   await expiredDialog.waitFor();
   await expiredDialog.getByRole("button", { name: "Sign in again" }).click();
-  await page.waitForURL(/\/api\/auth\/google\/start\?returnTo=%2F%3Fscreen%3Dmock$/);
+  // Back to the mock's own address (issue #41), where resume restores its answers.
+  await page.waitForURL(/\/api\/auth\/google\/start\?returnTo=%2Fexams%2F[^%]+%2Fmock$/);
+  const returnTo = new URL(page.url()).searchParams.get("returnTo");
   sessionGone = false; // Google sends the learner back, signed in
-  await page.goto(`${base}/?screen=mock`); await ready();
+  await page.goto(`${base}${returnTo}`); await ready();
   await page.waitForFunction(() => window.store.state.screen === "mock" && !!window.store.state.activeMockAttempt);
   await invoke("beginMock");
   await page.waitForFunction(() => window.store.state.mStage === "live");
