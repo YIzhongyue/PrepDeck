@@ -245,11 +245,16 @@ scroll container cannot be scrolled back to its own top edge.
 `Settings` is migrated and is the reference for how these components are used:
 labelled fields, inline validation, disabled and loading buttons, a portaled
 select popover, radio cards and toggles. It is also code-split, so
-`react-aria-components` loads only when that screen opens.
+`react-aria-components` loads only when that screen opens. Its controls are
+pills, like PrepDeck's own `.btn` and `.input`: the vendored fields, selects
+and buttons take no radius prop, so `screens/settings/settings.css` rounds
+their `rounded-lg` corners inside `.pd-settings` (text areas excepted;
+portaled popovers sit outside that subtree and keep theirs).
 
 `McpTokensCard` is migrated with it, because it renders inside Settings — and
 inside the Admin console, which therefore picks up the shared controls too. Its
-stylesheet keeps only layout rules now; appearance comes from the primitives.
+stylesheet lays out the card itself (surface, header actions, token rows);
+the controls' appearance comes from the primitives.
 
 `Statistics` (`screens/Dashboard.tsx` and `components/statistics/`) is migrated
 by issue implementation, and is the

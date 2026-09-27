@@ -46,6 +46,7 @@ records the gaps between the original specification, current code and open issue
 | [Skill verification](guides/skill-verification.md) | Safe client verification and packaged User/Admin Skill checks. |
 | [Knowledge Point editor](guides/knowledge-point-editor.md) | Visual authoring, Markdown fallback and recovery. |
 | [Shared UI components](guides/ui-components.md) | Vendored Untitled UI primitives, the design-token mapping behind the five color schemes, and remaining migration scope. |
+| [Settings layout](screenshots/settings.md) | Desktop/mobile screenshots of the grouped Settings page and its section index. |
 | [Cloudflare cost containment](operations/cloudflare-cost-containment.md) | Account-specific budget checks, incident controls and automation boundaries. |
 | [Rate limits](operations/cloudflare-rate-limits.md) | Edge rules, Worker quotas and failure policies. |
 | [MCP metrics](operations/mcp-observability.md) | Privacy-safe counter schema, five-minute queries, volume estimate and rollout checks. |

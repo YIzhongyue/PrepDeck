@@ -251,6 +251,18 @@ try {
   await page.getByRole("switch", { name: /shared notes/ }).waitFor();
   await page.getByRole("button", { name: "Sign out", exact: true }).waitFor();
 
+  // --- One focus indicator on a text field -----------------------------------
+  // The field's ring marks focus; the app-wide :focus-visible outline would
+  // draw a second, rectangular box around the input inside it.
+  await name.focus();
+  const fieldFocus = await name.evaluate(el => ({
+    outline: getComputedStyle(el).outlineStyle,
+    ring: getComputedStyle(el.closest("[data-focus-within]")).boxShadow
+  }));
+  assert.equal(fieldFocus.outline, "none", "the focused input draws no outline of its own");
+  assert.notEqual(fieldFocus.ring, "none", "the field's ring still marks focus");
+  await name.blur();
+
   // --- Validation feedback -------------------------------------------------
   await name.fill("");
   await page.getByText("Enter a display name to save it.").waitFor();
@@ -280,6 +292,35 @@ try {
   await sharedNotes.focus();
   await page.keyboard.press("Space");
   await wait(() => userSettings.showSharedNotes === true, "shared-notes toggle PUT");
+
+  // --- The section index jumps to a section and follows the scroll ---------
+  // The wide layout indexes the page beside the content; the phone layout
+  // swaps it for a sticky row of chips.
+  const toc = page.getByRole("navigation", { name: "Settings sections" });
+  const tocLink = label => toc.getByRole("link", { name: label });
+  const isCurrent = async label => (await tocLink(label).getAttribute("aria-current")) === "location";
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await wait(() => isCurrent(/^Profile/), "the index to start on the profile");
+  await tocLink(/^Time zone/).click();
+  await wait(() => isCurrent(/^Time zone/), "the index to mark the section it jumped to");
+  await wait(
+    () => page.evaluate(() => Math.abs(document.getElementById("settings-timezone").getBoundingClientRect().top - 24) < 3),
+    "the jump to land the section at the top of the window"
+  );
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "settings-timezone", "the jump moves focus to the section");
+  // Let the smooth scroll finish, or its last frames carry on past the wheel.
+  const scrollY = () => page.evaluate(() => window.scrollY);
+  await wait(async () => { const before = await scrollY(); await page.waitForTimeout(120); return before === await scrollY(); }, "the jump's scroll to settle");
+  await page.mouse.move(640, 500);
+  await page.mouse.wheel(0, -20000);
+  await wait(() => isCurrent(/^Profile/), "scrolling back up to mark the profile again");
+  assert.match(await tocLink(/^Daily email/).innerText(), /Off/, "the index shows the daily email's state");
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.locator(".settings-toc").waitFor({ state: "detached" });
+  await page.locator(".settings-chips").getByRole("link", { name: /^Appearance/ }).waitFor();
+  assert.equal(await page.getByRole("navigation", { name: "Settings sections" }).count(), 1, "phones get the chip row instead of the side index");
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.evaluate(() => window.scrollTo(0, 0));
 
   // --- Disabled state ------------------------------------------------------
   await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -334,6 +375,11 @@ try {
     assert.ok(!seen.has(painted.bg + painted.fg), `${theme} paints the imported button differently from the previous schemes`);
     seen.add(painted.bg + painted.fg);
     assert.notEqual(painted.bg, painted.fg, `${theme} keeps the imported button's label distinguishable from its surface`);
+    // The profile card paints its own accent fill, which Dusk inverts.
+    for (const selector of [".settings-hero h2", ".settings-hero-email", ".settings-hero-pill", ".settings-ai-title"]) {
+      const { ratio, color, bg } = await contrastOf(page.locator(selector).first());
+      assert.ok(ratio >= 4.5, `${theme} ${selector}: ${color} on ${bg} is ${ratio.toFixed(2)}:1, below 4.5:1`);
+    }
 
     for (const width of [1280, 375]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -466,7 +512,7 @@ try {
   assert.equal(await page.getByRole("checkbox", { name: "Also remove my saved AI key from this browser" }).count(), 0);
   await reloadAs("me");
   assert.deepEqual(await keyState(), { mode: "encrypted", stored: true }, "the owner still has it");
-  await page.getByText("Signing out ends your session on every device and browser.", { exact: false }).waitFor();
+  await page.getByText("Ends your session on every device and browser.", { exact: false }).waitFor();
   await page.getByText("Also remove my saved AI key from this browser", { exact: true }).click();
   assert.equal(await page.getByRole("checkbox", { name: "Also remove my saved AI key from this browser" }).isChecked(), true);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

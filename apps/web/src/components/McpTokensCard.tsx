@@ -18,18 +18,34 @@ const DANGER = "var(--color-danger)";
 const EXPIRY_OPTIONS = [["never", "Never"], ["30", "30 days"], ["90", "90 days"], ["365", "1 year"]] as const;
 const STATUS_TAG_CLASS: Record<McpCredentialSummary["status"], string> = { active: "tag-accent-2", revoked: "tag-neutral", expired: "tag-neutral" };
 
-function formatDate(ms: number | null): string {
-  return ms === null ? "—" : new Date(ms).toLocaleString();
+// "today, 8:02 AM" for today, "Sep 12" this year, "Sep 12, 2025" before that.
+function formatWhen(ms: number, withTime: boolean): string {
+  const date = new Date(ms);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return withTime ? `today, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "today";
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
+}
+
+function tokenMeta(t: McpCredentialSummary): string {
+  const parts = [`Created ${formatWhen(t.createdAt, false)}`, t.lastUsedAt === null ? "Never used" : `Last used ${formatWhen(t.lastUsedAt, true)}`];
+  if (t.expiresAt !== null) parts.push(`${t.expiresAt <= Date.now() ? "Expired" : "Expires"} ${formatWhen(t.expiresAt, false)}`);
+  else if (t.status === "active") parts.push("Never expires");
+  return parts.join(" · ");
 }
 
 export default function McpTokensCard({
-  title, description, apiBase, namePlaceholder, enableSetupPrompt = false
+  title, description, apiBase, namePlaceholder, enableSetupPrompt = false, onActiveCountChange
 }: {
   title: string;
   description: string;
   apiBase: string;
   namePlaceholder?: string;
   enableSetupPrompt?: boolean;
+  // Told how many tokens are active once they load and after every change,
+  // for a summary shown outside the card (Settings' section index).
+  onActiveCountChange?: (count: number) => void;
 }) {
   const [tokens, setTokens] = useState<McpCredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +81,11 @@ export default function McpTokensCard({
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+
+  const activeCount = loading || loadError ? null : tokens.filter((t) => t.status === "active").length;
+  useEffect(() => {
+    if (activeCount !== null) onActiveCountChange?.(activeCount);
+  }, [activeCount, onActiveCountChange]);
 
   useEffect(() => {
     let active = true;
@@ -169,127 +190,126 @@ export default function McpTokensCard({
   };
 
   return (
-    <div className="card elev-sm" style={{ padding: 22, gap: 16, marginBottom: 16 }}>
-      <div>
-        <h3 style={{ margin: "0 0 4px", fontSize: 20 }}>{title}</h3>
-        <p style={{ margin: 0, fontSize: 12.5, opacity: 0.7 }}>{description}</p>
+    <div className="mcp-card">
+      <div className="mcp-head">
+        <div className="mcp-head-text">
+          <h3>{title}</h3>
+          <p>{description}</p>
+          {userSetupEnabled && (
+            <p>Copy the setup prompt into your AI chatbot to connect PrepDeck. Enter your token securely in the client when prompted.</p>
+          )}
+        </div>
+        <div className="mcp-head-actions">
+          {userSetupEnabled && (
+            <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(false)}>Copy setup prompt</Button>
+          )}
+          {!creating && <Button size="md" onClick={() => setCreating(true)}>+ Create token</Button>}
+        </div>
       </div>
 
-      {userSetupEnabled && (
-        <div className="mcp-setup-actions">
-          <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(false)}>Copy setup prompt</Button>
-          <p>Paste this into your AI chatbot to connect PrepDeck. Enter your token securely in the client when prompted.</p>
-        </div>
-      )}
-
-      {revealed && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "15px 16px", borderRadius: 20, background: "var(--color-accent-100)", border: "1.5px solid var(--color-accent-300)" }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Copy &quot;{revealed.name}&quot; now — it won&apos;t be shown again</p>
-          <div className="mcp-secret-actions">
+      {/* Empty, and so hidden, unless one of these has something to show. */}
+      <div className="mcp-body">
+        {creating && (
+          <div className="mcp-panel">
             <Input
-              className="mcp-secret-field"
-              aria-label="New MCP token"
-              isReadOnly
-              type={showToken ? "text" : "password"}
-              value={revealed.token}
-              inputClassName={showToken ? "font-mono text-xs" : undefined}
-              onFocus={(e) => e.currentTarget.select()}
+              label="Name"
+              placeholder={namePlaceholder ?? "e.g. local-cli"}
+              maxLength={MCP_TOKEN_NAME_MAX_LENGTH}
+              value={nameDraft}
+              onChange={(value) => { setNameDraft(value); setCreateError(null); }}
+              isInvalid={!!createError}
             />
-            <Button color="secondary" size="md" onClick={() => setShowToken((v) => !v)}>{showToken ? "Hide" : "Show"}</Button>
-            <Button color="secondary" size="md" onClick={copyToken}>{copyOk ? "Copied" : "Copy"}</Button>
+            <div>
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Expiration</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {EXPIRY_OPTIONS.map(([id, label]) => {
+                  const on = expiresDraft === id;
+                  return (
+                    <button
+                      key={id} type="button" onClick={() => setExpiresDraft(id)}
+                      style={{
+                        padding: "6px 14px", borderRadius: 999, fontSize: 12.5, cursor: "pointer", font: "inherit",
+                        background: on ? "var(--color-accent)" : "transparent", color: on ? "var(--color-bg)" : "var(--color-text)",
+                        border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {createError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{createError}</p>}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Button size="md" isDisabled={createBusy || !nameDraft.trim()} isLoading={createBusy} showTextWhileLoading onClick={create}>
+                {createBusy ? "Creating…" : "Create token"}
+              </Button>
+              <Button color="secondary" size="md" onClick={() => { setCreating(false); setCreateError(null); }}>Cancel</Button>
+            </div>
           </div>
-          {userSetupEnabled && (
-            <div className="mcp-setup-actions">
-              <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(true)}>Copy setup prompt with token</Button>
-              <p>Includes a secret. Pasting this shares your token with the selected AI service.</p>
+        )}
+
+        {revealed && (
+          <div className="mcp-panel mcp-panel-reveal">
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Copy &quot;{revealed.name}&quot; now — it won&apos;t be shown again</p>
+            <div className="mcp-secret-actions">
+              <Input
+                className="mcp-secret-field"
+                aria-label="New MCP token"
+                isReadOnly
+                type={showToken ? "text" : "password"}
+                value={revealed.token}
+                inputClassName={showToken ? "font-mono text-xs" : undefined}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+              <Button color="secondary" size="md" onClick={() => setShowToken((v) => !v)}>{showToken ? "Hide" : "Show"}</Button>
+              <Button color="secondary" size="md" onClick={copyToken}>{copyOk ? "Copied" : "Copy"}</Button>
+            </div>
+            {userSetupEnabled && (
+              <div className="mcp-setup-actions">
+                <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(true)}>Copy setup prompt with token</Button>
+                <p>Includes a secret. Pasting this shares your token with the selected AI service.</p>
+              </div>
+            )}
+            <Button color="link-color" size="sm" className="self-start" onClick={() => reveal(null)}>Done</Button>
+          </div>
+        )}
+
+        {copyMessage && <p role="status" style={{ margin: 0, fontSize: 12.5 }}>{copyMessage}</p>}
+        {copyFallback && (
+          <div className="mcp-setup-actions">
+            <p role="alert">Could not copy to the clipboard. Select and copy the {copyFallback.label.toLowerCase()} below.</p>
+            <TextArea className="mcp-setup-fallback" aria-label={`${copyFallback.label} to copy manually`} isReadOnly
+              rows={6} value={copyFallback.text} textAreaClassName="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+          </div>
+        )}
+
+        {loadError && <p style={{ margin: 0, fontSize: 13, color: DANGER }}>{loadError}</p>}
+        {loading && !loadError && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>Loading…</p>}
+        {!loading && !loadError && tokens.length === 0 && !creating && (
+          <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No tokens yet.</p>
+        )}
+        {rowError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{rowError}</p>}
+      </div>
+
+      {!loading && !loadError && tokens.map((t) => (
+        <div key={t.id} className="mcp-token" data-status={t.status}>
+          <span className="mcp-token-icon" aria-hidden="true">{t.name.trim().charAt(0).toUpperCase() || "?"}</span>
+          <div className="mcp-token-text">
+            <div className="mcp-token-name-row">
+              <span className="mcp-token-name">{t.name}</span>
+              <span className={`tag ${STATUS_TAG_CLASS[t.status]}`}>{t.status}</span>
+            </div>
+            <div className="mcp-token-meta">{tokenMeta(t)}</div>
+          </div>
+          {t.status !== "revoked" && (
+            <div className="mcp-token-actions">
+              <Button color="secondary" size="sm" isDisabled={busyId === t.id} isLoading={busyId === t.id} onClick={() => rotate(t)}>Rotate</Button>
+              <Button color="link-destructive" size="sm" isDisabled={busyId === t.id} onClick={() => revoke(t)}>Revoke</Button>
             </div>
           )}
-          <Button color="link-color" size="sm" className="self-start" onClick={() => reveal(null)}>Done</Button>
         </div>
-      )}
-
-      {copyMessage && <p role="status" style={{ margin: 0, fontSize: 12.5 }}>{copyMessage}</p>}
-      {copyFallback && (
-        <div className="mcp-setup-actions">
-          <p role="alert">Could not copy to the clipboard. Select and copy the {copyFallback.label.toLowerCase()} below.</p>
-          <TextArea className="mcp-setup-fallback" aria-label={`${copyFallback.label} to copy manually`} isReadOnly
-            rows={6} value={copyFallback.text} textAreaClassName="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-        </div>
-      )}
-
-      {loadError && <p style={{ margin: 0, fontSize: 13, color: DANGER }}>{loadError}</p>}
-      {loading && !loadError && <p style={{ margin: 0, fontSize: 13, opacity: 0.7 }}>Loading…</p>}
-
-      {!loading && !loadError && tokens.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {tokens.map((t) => (
-            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 16, background: "var(--color-neutral-100)", flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t.name}</span>
-                  <span className={`tag ${STATUS_TAG_CLASS[t.status]}`}>{t.status}</span>
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--color-text-muted)", marginTop: 3 }}>
-                  Created {formatDate(t.createdAt)} · Last used {formatDate(t.lastUsedAt)}
-                  {t.expiresAt !== null && <> · Expires {formatDate(t.expiresAt)}</>}
-                </div>
-              </div>
-              {t.status !== "revoked" && (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Button color="secondary" size="sm" isDisabled={busyId === t.id} isLoading={busyId === t.id} onClick={() => rotate(t)}>Rotate</Button>
-                  <Button color="link-destructive" size="sm" isDisabled={busyId === t.id} onClick={() => revoke(t)}>Revoke</Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {!loading && !loadError && tokens.length === 0 && !creating && (
-        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No tokens yet.</p>
-      )}
-      {rowError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{rowError}</p>}
-
-      {creating ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 15px", borderRadius: 18, background: "var(--color-neutral-100)" }}>
-          <Input
-            label="Name"
-            placeholder={namePlaceholder ?? "e.g. local-cli"}
-            maxLength={MCP_TOKEN_NAME_MAX_LENGTH}
-            value={nameDraft}
-            onChange={(value) => { setNameDraft(value); setCreateError(null); }}
-            isInvalid={!!createError}
-          />
-          <div>
-            <span style={{ display: "block", fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Expiration</span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {EXPIRY_OPTIONS.map(([id, label]) => {
-                const on = expiresDraft === id;
-                return (
-                  <button
-                    key={id} type="button" onClick={() => setExpiresDraft(id)}
-                    style={{
-                      padding: "6px 14px", borderRadius: 999, fontSize: 12.5, cursor: "pointer", font: "inherit",
-                      background: on ? "var(--color-accent)" : "transparent", color: on ? "var(--color-bg)" : "var(--color-text)",
-                      border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          {createError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{createError}</p>}
-          <div style={{ display: "flex", gap: 10 }}>
-            <Button size="md" isDisabled={createBusy || !nameDraft.trim()} isLoading={createBusy} showTextWhileLoading onClick={create}>
-              {createBusy ? "Creating…" : "Create token"}
-            </Button>
-            <Button color="secondary" size="md" onClick={() => { setCreating(false); setCreateError(null); }}>Cancel</Button>
-          </div>
-        </div>
-      ) : (
-        <Button color="secondary" size="md" className="self-start" onClick={() => setCreating(true)}>+ Create token</Button>
-      )}
+      ))}
     </div>
   );
 }

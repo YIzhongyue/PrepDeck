@@ -122,6 +122,10 @@ figcaption { font-size: 11px; margin-top: var(--space-1); color: var(--color-tex
 .text-muted { color: var(--color-text-muted); }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+/* Untitled UI's text fields and combo boxes mark focus with a ring on the
+   group around the input, so the input itself takes no outline: the rule
+   above would draw a second, rectangular box inside that ring. */
+[data-rac][data-focus-within] input:focus-visible { outline: none; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 
 .sr-only {
