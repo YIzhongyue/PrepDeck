@@ -1,0 +1,4 @@
+# Prompt templates are rendered as-is into the text sent to the model, and
+# their tests compare that text exactly. Keep them LF on every checkout
+# (scripts/precompile-prompts.mjs also normalises, for older checkouts).
+*.njk text eol=lf
