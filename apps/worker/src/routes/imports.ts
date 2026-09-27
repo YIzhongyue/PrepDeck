@@ -9,7 +9,7 @@ import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody, runD1Batches } from "../lib/importSecurity";
-import { normalizeImportFile, validateImportFile, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, validateImportFile } from "@prepdeck/shared";
 
 import { canonical, createStatement, toQuestion, updateStatement, type QuestionRow } from "../lib/questionManagement";
 import { importConflict, type ImportConflict } from "../lib/importConflicts";

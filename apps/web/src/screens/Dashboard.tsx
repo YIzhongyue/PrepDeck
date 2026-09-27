@@ -14,7 +14,7 @@
 import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { AlertTriangle, CheckDone01, TrendUp02, Trophy01 } from "@untitledui/icons";
 import type { ExamStatsResponse, ExamStudyPreferencesResponse, FocusTag, StudyActivityResponse, UpdateExamStudyPreferencesRequest } from "@prepdeck/shared";
-import { MAX_ATTEMPT_QUESTIONS } from "@prepdeck/shared";
+import { DEFAULT_TIME_ZONE, MAX_ATTEMPT_QUESTIONS, addDaysToDateKey, zonedDateKey } from "@prepdeck/shared";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
 import { ProgressBarBase } from "@/components/base/progress-indicators/progress-indicators";
@@ -67,14 +67,14 @@ function heatColor(questions: number): string {
   return "var(--color-accent-2-600)";
 }
 
-function heatCells(activity: StudyActivityResponse | null) {
+// The days are the activity payload's calendar days, so "today" is taken in
+// the zone they were counted in, not the browser's or UTC.
+function heatCells(activity: StudyActivityResponse | null, timeZone: string) {
   const byDate = new Map((activity?.days ?? []).map((d) => [d.date, d.questionsAnswered]));
   const cells: { key: number; bg: string; title: string }[] = [];
-  const today = new Date();
+  const today = zonedDateKey(new Date(), timeZone);
   for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = addDaysToDateKey(today, -i);
     const questions = byDate.get(iso) ?? 0;
     cells.push({
       key: i,
@@ -129,7 +129,9 @@ export default function Dashboard() {
     wrong: state.wrong,
     mastered: state.mastered,
     now: new Date(),
-  }), [stats, activity, preferences, state.catalog, state.attempted, state.wrong, state.mastered]);
+    // Both payloads name the zone they were counted in (issue #47).
+    timeZone: activity?.timeZone ?? stats?.timeZone ?? state.timeZone ?? DEFAULT_TIME_ZONE,
+  }), [stats, activity, preferences, state.catalog, state.attempted, state.wrong, state.mastered, state.timeZone]);
 
   const model = useMemo(() => buildStatisticsModel(sources), [sources]);
 
@@ -178,7 +180,7 @@ export default function Dashboard() {
     preferencesError && "your study plan",
   ].filter(Boolean) as string[];
 
-  const heat = heatCells(activity);
+  const heat = heatCells(activity, model.timeZone);
   const { answered, accuracy, wrongBook, bestMock, coverage } = model;
 
   return (
@@ -272,7 +274,7 @@ export default function Dashboard() {
               </Badge>
             )}
             footer={bestMock.best
-              ? `${formatDate(bestMock.best.completedAt)} · ${bestMock.attempts} attempt${bestMock.attempts === 1 ? "" : "s"}`
+              ? `${formatDate(bestMock.best.completedAt, model.timeZone)} · ${bestMock.attempts} attempt${bestMock.attempts === 1 ? "" : "s"}`
               : "No mock exams completed yet"}
           >
             {bestMock.recent.length > 0 && (
@@ -294,10 +296,10 @@ export default function Dashboard() {
 
       <div className="pd-stats-row">
         {stats ? <Suspense fallback={<ChartPlaceholder label="the accuracy trend" />}>
-          <AccuracyTrendCard trend={model.trend} />
+          <AccuracyTrendCard trend={model.trend} timeZone={model.timeZone} />
         </Suspense> : <DataUnavailable title="Accuracy trend" failed={statsError} />}
         {activity ? <Suspense fallback={<ChartPlaceholder label="study time" />}>
-          <StudyTimeCard week={model.week} weeklyGoalMinutes={model.weeklyGoalMinutes} planStatus={preferencesRequest.status} onEditPlan={() => setPlanOpen(true)} />
+          <StudyTimeCard week={model.week} timeZone={model.timeZone} weeklyGoalMinutes={model.weeklyGoalMinutes} planStatus={preferencesRequest.status} onEditPlan={() => setPlanOpen(true)} />
         </Suspense> : <DataUnavailable title="Study time" failed={activityError} />}
       </div>
 
@@ -332,7 +334,7 @@ export default function Dashboard() {
                   <tbody>
                     {stats.mockScoreHistory.slice().reverse().map((m) => (
                       <tr key={m.attemptId}>
-                        <td>{formatDate(m.completedAt)}</td>
+                        <td>{formatDate(m.completedAt, model.timeZone)}</td>
                         <td style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(m.score)}%</td>
                         <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.totalQuestions}</td>
                         <td>{m.passed == null ? "—" : m.passed ? "Passed" : "Below line"}</td>
@@ -370,6 +372,7 @@ export default function Dashboard() {
           <StudyPlanDialog
             preferences={preferences}
             examName={activeExam?.name ?? null}
+            timeZone={model.timeZone}
             onClose={() => setPlanOpen(false)}
             onSave={savePlan}
           />

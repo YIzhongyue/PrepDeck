@@ -14,7 +14,7 @@ import {
   answerKey, createStatement, getQuestion as getQuestionRow,
   listQuestionTags as listQuestionTagRows, listQuestions as listQuestionRows,
   listRecentContentChanges as listRecentContentChangeRows, payloadOf, searchQuestions as searchQuestionsQuery, toQuestion,
-  updateStatement, validatePayload, type QuestionPayload, type QuestionRow,
+  updateStatement, validatePayload, type QuestionRow,
 } from "../lib/questionManagement";
 import {
   buildCreateOperationStatement, diffPayload, getCreateOperation, getCreateOperations,
@@ -32,7 +32,7 @@ import {
   type ImportConflictResolution,
 } from "../lib/importExecution";
 import { assertBoundedDepth, IMPORT_JSON_MAX_DEPTH } from "../lib/importSecurity";
-import { normalizeImportFile, officialFormatError, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, officialFormatError, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents } from "@prepdeck/shared";
 import {
   normalizeTagName, resolveOrCreateTags, fetchTagIdsForQuestions, buildTagLinkStatements,
   buildTagNameResolver, findTagCatalogRowByName, listTagCatalogNames,
@@ -42,6 +42,7 @@ import {
   sourceDriftCondition, MAX_MERGE_SOURCE_TAGS,
 } from "../lib/questionBankTags";
 import { pct as accuracyPct, computeStudyActivity, computeExamStatsSummary, computeExamStatsPage, ANSWERED_AT_SQL, GRADED_ANSWER_SQL } from "../lib/learningStats";
+import { loadUserTimeZone } from "../lib/userTimeZone";
 import { toAttempt, listAttempts as listAttemptRows, getAttemptDetail } from "../lib/attemptQuery";
 import { listWrongQuestions } from "../lib/wrongBookQuery";
 import { listBookmarkedQuestions } from "../lib/bookmarksQuery";
@@ -186,7 +187,8 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
     // fan out rows and inflate counts (e.g. 3 bookmarks x 5 wrong entries on
     // one exam miscounted as 15 of something).
     async getLearningOverview(input: { days: number }) {
-      const [attemptRows, bookmarkRows, wrongRows] = await Promise.all([
+      const [timeZone, attemptRows, bookmarkRows, wrongRows] = await Promise.all([
+        loadUserTimeZone(db, userId),
         db.prepare(
           // Graded answers count whether or not their session was ended, as in
           // the dashboard (lib/learningStats.ts, issue #40).
@@ -218,7 +220,7 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
         ...wrongByExam.keys(),
       ]);
       if (examIds.size === 0) {
-        return { exams: [], truncated: false, activity: await computeStudyActivity(db, userId, { days: input.days }) };
+        return { exams: [], truncated: false, activity: await computeStudyActivity(db, userId, { days: input.days, timeZone }) };
       }
 
       // A single JSON parameter, not one bound parameter per touched exam —
@@ -257,7 +259,7 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
         truncated: merged.length > MAX_OVERVIEW_EXAMS,
         // `days` only bounds the activity summary below — the per-exam
         // accuracy figures above are all-time, matching computeExamStats.
-        activity: await computeStudyActivity(db, userId, { days: input.days }),
+        activity: await computeStudyActivity(db, userId, { days: input.days, timeZone }),
       };
     },
 
@@ -302,12 +304,14 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
     async getLearningStats(input: { examId: string; limit: number; offset: number }) {
       const page = await computeExamStatsPage(db, userId, input.examId, {
         trendCap: MAX_TREND_POINTS, tagCap: MAX_TAG_BREAKDOWN, mockLimit: input.limit, mockOffset: input.offset,
+        timeZone: await loadUserTimeZone(db, userId),
       });
       if (!page) throw new McpApplicationError("not_found");
       const { items: mockScoreHistory, nextOffset: mockScoreHistoryNextOffset } =
         pageResult(page.mockScoreHistoryRows, { limit: input.limit, offset: input.offset });
       return {
         examId: page.examId,
+        timeZone: page.timeZone,
         totalAttempted: page.totalAttempted,
         overallAccuracyPct: page.overallAccuracyPct,
         lastAttemptAt: page.lastAttemptAt,

@@ -273,5 +273,5 @@ test("an ordering prompt keeps a code step as a code block under its number", as
   const prompt = buildLearningPrompt(question, "Evidence", { correctAnswers: row.correctAnswers, explanation: null });
   const code = []; marked.walkTokens(marked.lexer(prompt), t => { if (t.type === "code") code.push(t.text); });
   assert.deepEqual(code, [step, step], "the step, once among the items and once in the correct order");
-  assert.match(prompt, /## Correct answer\n\n- 1\. ```python\n     for x in xs:\n         total \+= x\n     ```\n- 2\. Print the total/);
+  assert.match(prompt, /## Correct answer\n\n- 1\. ```python\n {5}for x in xs:\n {9}total \+= x\n {5}```\n- 2\. Print the total/);
 });

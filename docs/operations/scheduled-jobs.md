@@ -11,8 +11,9 @@ the source of storage or email usage.
 ## Daily review email
 
 implementation adds Settings opt-in,
-1–5 questions per email, source `wrong` / `bm` / `new`, an IANA timezone and local
-delivery hour (0–23). Defaults and validation live in
+1–5 questions per email, source `wrong` / `bm` / `new`, and a local delivery hour
+(0–23) in the account's IANA time zone (`users.timezone`, shared with the
+statistics since issue #47; UTC until one is chosen). Defaults and validation live in
 [settings routes](../../apps/worker/src/routes/dailyEmailSettings.ts) and
 [shared settings](../../packages/shared/src/dailyEmailSettings.ts).
 

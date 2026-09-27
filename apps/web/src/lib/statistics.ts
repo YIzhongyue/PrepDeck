@@ -27,6 +27,9 @@ export interface StatisticsSources {
   wrong: Record<string, WrongEntry>;
   mastered: Record<string, boolean>;
   now: Date;
+  /** The zone the stats payloads were counted in (issue #47). "Today", the
+   *  week and the countdown are taken in the same zone. */
+  timeZone: string;
 }
 
 export interface CoverageModel {
@@ -92,6 +95,7 @@ export interface TrendModel {
 }
 
 export interface StatisticsModel {
+  timeZone: string;
   coverage: CoverageModel;
   readiness: ReadinessResult;
   passMarkPct: number | null;
@@ -131,7 +135,7 @@ export function eligibleQuestionIdsForTags(sources: StatisticsSources, tags: rea
 }
 
 export function buildStatisticsModel(sources: StatisticsSources): StatisticsModel {
-  const { stats, activity, preferences, catalog, now } = sources;
+  const { stats, activity, preferences, catalog, now, timeZone } = sources;
 
   // The bank size is the server's figure when it is available: it is the same
   // denominator the readiness sample is drawn from, and it reconciles
@@ -152,7 +156,7 @@ export function buildStatisticsModel(sources: StatisticsSources): StatisticsMode
 
   let countdown: CountdownModel | null = null;
   if (preferences?.targetDate) {
-    const daysLeft = daysUntil(preferences.targetDate, now);
+    const daysLeft = daysUntil(preferences.targetDate, now, timeZone);
     if (daysLeft != null) countdown = { targetDate: preferences.targetDate, daysLeft, passed: daysLeft < 0 };
   }
 
@@ -215,7 +219,7 @@ export function buildStatisticsModel(sources: StatisticsSources): StatisticsMode
     domain: [Math.floor(lo), Math.ceil(Math.max(hi, lo + 1))],
   };
 
-  const week = buildStudyWeek(activity?.days ?? [], isoWeekStartKey(now));
+  const week = buildStudyWeek(activity?.days ?? [], isoWeekStartKey(now, timeZone));
 
   const accuracyByTag = new Map<string, FocusTagAccuracy>(
     (stats?.byTag ?? []).map((t) => [t.tag, { attempted: t.attempted, correct: t.correct, accuracyPct: t.accuracyPct }]),
@@ -245,7 +249,7 @@ export function buildStatisticsModel(sources: StatisticsSources): StatisticsMode
     .map((t) => t.tag);
 
   return {
-    coverage, readiness, passMarkPct, countdown,
+    timeZone, coverage, readiness, passMarkPct, countdown,
     weeklyGoalMinutes: preferences?.weeklyGoalMinutes ?? null,
     answered, accuracy, wrongBook, bestMock, trend, week, focus, weakTags,
   };
@@ -264,8 +268,22 @@ export function formatDuration(seconds: number | null): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+/** An instant, as the date it fell on in `timeZone` (the browser's when omitted). */
+export function formatDate(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone });
+}
+
+/** A "YYYY-MM-DD" calendar date. Read as a date, not as an instant, so no
+ *  zone can move it to the day before. */
+export function formatDateKey(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** "Tokyo time" for "Asia/Tokyo", "New York time" for "America/New_York",
+ *  "UTC" for UTC: short enough for a footnote. */
+export function timeZoneLabel(timeZone: string): string {
+  if (timeZone === "UTC" || timeZone === "Etc/UTC") return "UTC";
+  return `${(timeZone.split("/").pop() ?? timeZone).replace(/_/g, " ")} time`;
 }
 
 export function formatSignedPoints(deltaPts: number): string {

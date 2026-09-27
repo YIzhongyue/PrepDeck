@@ -12,16 +12,23 @@
 // never per answer. POST /complete still deletes the entry eagerly; the TTL
 // remains a safety net for changes the marker does not see (a bank edit or a
 // new pass rule).
+//
+// Days and windows are counted in the account's time zone (issue #47), so the
+// zone is part of the key: changing it reads a different entry, and one zone's
+// buckets are never served for another.
 
 import type { Env } from "../bindings";
 import type { ExamStatsResponse } from "@prepdeck/shared";
-import { STATS_SCHEMA_VERSION } from "@prepdeck/shared";
+import { STATS_SCHEMA_VERSION, zonedDateKey } from "@prepdeck/shared";
 import { computeExamStats, GRADED_ANSWER_SQL } from "./learningStats";
+import { loadUserTimeZone } from "./userTimeZone";
 
 const TTL_SECONDS = 3600;
 
 interface CachedExamStats {
   marker: string;
+  // The local day it was computed on: the comparison windows end today.
+  today: string;
   stats: ExamStatsResponse;
 }
 
@@ -29,7 +36,8 @@ interface CachedExamStats {
 // that adds fields to ExamStatsResponse reads a fresh key rather than serving
 // a previously cached payload that is missing them. Old keys are left to
 // expire on their own TTL; there is nothing to migrate.
-const cacheKey = (userId: string, examId: string) => `stats:v${STATS_SCHEMA_VERSION}:${userId}:${examId}`;
+const cacheKey = (userId: string, examId: string, timeZone: string) =>
+  `stats:v${STATS_SCHEMA_VERSION}:${userId}:${examId}:${timeZone}`;
 
 /** What the cached statistics were computed from; any study changes it. */
 export async function examActivityMarker(db: D1Database, userId: string, examId: string): Promise<string> {
@@ -43,17 +51,18 @@ export async function examActivityMarker(db: D1Database, userId: string, examId:
   return `${row?.answers ?? 0}|${row?.closed ?? ""}`;
 }
 
-async function getCachedExamStats(env: Env, userId: string, examId: string): Promise<CachedExamStats | null> {
-  const cached = (await env.KV.get(cacheKey(userId, examId), "json")) as CachedExamStats | null;
+async function getCachedExamStats(env: Env, key: string, timeZone: string): Promise<CachedExamStats | null> {
+  const cached = (await env.KV.get(key, "json")) as CachedExamStats | null;
   // Belt and braces alongside the versioned key: a payload written by a
   // deployment that shares this key but not this schema is discarded rather
   // than handed to a dashboard that would read `undefined` off it.
   if (!cached || typeof cached.marker !== "string" || cached.stats?.schemaVersion !== STATS_SCHEMA_VERSION) return null;
+  if (cached.stats.timeZone !== timeZone) return null;
   return cached;
 }
 
 export async function invalidateExamStats(env: Env, userId: string, examId: string): Promise<void> {
-  await env.KV.delete(cacheKey(userId, examId));
+  await env.KV.delete(cacheKey(userId, examId, await loadUserTimeZone(env.DB, userId)));
 }
 
 // Shared cache-check/compute/cache-set path for both the REST stats dashboard
@@ -62,11 +71,17 @@ export async function invalidateExamStats(env: Env, userId: string, examId: stri
 // Returns null if the exam doesn't exist (never cached, so a since-deleted
 // exam id doesn't leave a stale cache entry).
 export async function getOrComputeExamStats(env: Env, userId: string, examId: string): Promise<ExamStatsResponse | null> {
-  const [cached, marker] = await Promise.all([getCachedExamStats(env, userId, examId), examActivityMarker(env.DB, userId, examId)]);
-  if (cached && cached.marker === marker) return cached.stats;
-  const computed = await computeExamStats(env.DB, userId, examId);
+  const timeZone = await loadUserTimeZone(env.DB, userId);
+  const key = cacheKey(userId, examId, timeZone);
+  const [cached, marker] = await Promise.all([getCachedExamStats(env, key, timeZone), examActivityMarker(env.DB, userId, examId)]);
+  // An entry is only good for the local day it was computed on: the
+  // comparison windows end today, so midnight moves them without any study.
+  const now = new Date();
+  const today = zonedDateKey(now, timeZone);
+  if (cached && cached.marker === marker && cached.today === today) return cached.stats;
+  const computed = await computeExamStats(env.DB, userId, examId, now, timeZone);
   if (!computed) return null;
-  const entry: CachedExamStats = { marker, stats: computed };
-  await env.KV.put(cacheKey(userId, examId), JSON.stringify(entry), { expirationTtl: TTL_SECONDS });
+  const entry: CachedExamStats = { marker, today, stats: computed };
+  await env.KV.put(key, JSON.stringify(entry), { expirationTtl: TTL_SECONDS });
   return computed;
 }

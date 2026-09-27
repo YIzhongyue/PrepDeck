@@ -287,6 +287,21 @@ test("countdown: whole UTC days, and negative once the date has passed", () => {
   assert.equal(daysUntil("2026-09-20", today), 0);
   assert.equal(daysUntil("2026-09-19", today), -1);
   assert.equal(daysUntil("not-a-date", today), null);
+  assert.equal(daysUntil("2026-02-30", today), null);
+});
+
+test("countdown: counts from today in the user's time zone", () => {
+  // 03:00 JST on the 21st is still the 20th in UTC.
+  const now = new Date("2026-09-20T18:00:00Z");
+  assert.equal(daysUntil("2026-09-21", now, "Asia/Tokyo"), 0);
+  assert.equal(daysUntil("2026-09-21", now, "UTC"), 1);
+});
+
+test("study week: starts on Monday in the user's time zone", () => {
+  // Monday 2026-09-21 07:30 JST is still Sunday in UTC.
+  const mondayMorning = new Date("2026-09-20T22:30:00Z");
+  assert.equal(isoWeekStartKey(mondayMorning, "Asia/Tokyo"), "2026-09-21");
+  assert.equal(isoWeekStartKey(mondayMorning, "UTC"), "2026-09-14");
 });
 
 /* --- Preferences validation ---------------------------------------------- */

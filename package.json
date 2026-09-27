@@ -12,7 +12,7 @@
     "dev:worker": "node scripts/local.mjs worker",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "eslint .",
     "deploy": "npm run build --workspace apps/web && npm run deploy --workspace apps/worker",
     "test:pdf2json": "node --test tests/*.test.mjs && python3 -B -m unittest discover -s tests/pdf-to-quiz -v",
     "test:browser": "node apps/web/scripts/exam-workspace.browser.mjs && node apps/web/scripts/url-routing.browser.mjs && node apps/web/scripts/knowledge-points.browser.mjs && node apps/web/scripts/question-authoring.browser.mjs && node apps/web/scripts/mcp-setup.browser.mjs && node apps/web/scripts/answer-state.browser.mjs && node apps/web/scripts/question-card-layout.browser.mjs && node apps/web/scripts/review-lists.browser.mjs && node apps/web/scripts/settings.browser.mjs && node apps/web/scripts/statistics.browser.mjs && node apps/web/scripts/admin-console.browser.mjs && node apps/web/scripts/component-annotations.browser.mjs && node apps/web/scripts/question-content.browser.mjs && node apps/web/scripts/mcp-presentation.browser.mjs && node tests/pdf-to-quiz/review.browser.mjs",
@@ -33,10 +33,15 @@
     "node": ">=24"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "playwright": "^1.63.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "typescript-eslint": "^8.70.1",
     "wrangler": "^4.134.0"
   },
   "overrides": {

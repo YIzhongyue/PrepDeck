@@ -31,8 +31,7 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
     // `pruneTags` hands back the same array when nothing was dropped, so this
     // is a no-op state write in the common case.
     setSelectedTags((previous) => pruneTags(previous, available));
-    // `available` is a fresh array every render; its membership is what matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `available` is a fresh array every render; availableKey tracks its membership
   }, [availableKey]);
 
   // Every active tag still has at least one question behind it, so a filtered

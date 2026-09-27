@@ -18,6 +18,7 @@ export * from "./dailyEmailSettings.ts";
 export * from "./profile.ts";
 export * from "./stats.ts";
 export * from "./statistics.ts";
+export * from "./timeZone.ts";
 export * from "./examPreferences.ts";
 export * from "./admin.ts";
 export * from "./mcp.ts";

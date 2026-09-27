@@ -12,7 +12,7 @@ import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, XAxis, YAxis } fro
 import type { StudyWeek } from "@prepdeck/shared";
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
-import { formatDuration } from "../../lib/statistics";
+import { formatDuration, timeZoneLabel } from "../../lib/statistics";
 import { ChartData, usePrefersReducedMotion } from "./chartSupport";
 import type { StatisticsResourceStatus } from "../../hooks/useStatisticsResource";
 
@@ -25,9 +25,10 @@ interface Datum {
 }
 
 export default function StudyTimeCard({
-  week, weeklyGoalMinutes, planStatus, onEditPlan,
+  week, timeZone, weeklyGoalMinutes, planStatus, onEditPlan,
 }: {
   week: StudyWeek;
+  timeZone: string;
   weeklyGoalMinutes: number | null;
   planStatus: StatisticsResourceStatus;
   onEditPlan: () => void;
@@ -108,14 +109,14 @@ export default function StudyTimeCard({
       {/* Decision 4: this is time a session was open, which is not the same as
           time spent engaged, and the difference is worth stating once. */}
       <p className="pd-stats-muted" style={{ margin: 0, fontSize: 11 }}>
-        Recorded session time, Monday to Sunday in UTC.
+        Recorded session time, Monday to Sunday in {timeZoneLabel(timeZone)}.
         {week.sessionsMissingDuration > 0 && ` ${week.sessionsMissingDuration} session${week.sessionsMissingDuration === 1 ? "" : "s"} recorded no duration and show as “?”.`}
       </p>
 
       <ChartData
         summary={summary}
         caption="Recorded study time by day this week"
-        columns={["Day", "Date (UTC)", "Sessions", "Recorded time"]}
+        columns={["Day", "Date", "Sessions", "Recorded time"]}
         rows={week.days.map((d) => [d.weekday, d.date, d.sessionsCompleted, formatDuration(d.durationSeconds)])}
       />
     </section>

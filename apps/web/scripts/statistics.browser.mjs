@@ -88,7 +88,7 @@ const ACTIVITY_DAYS = [
 const RECORDED_SECONDS = 9360;
 
 const fullStats = () => ({
-  examId: "exam", schemaVersion: 2,
+  examId: "exam", schemaVersion: 4, timeZone: "UTC",
   totalAttempted: 6, attemptedInBank: 6, bankSize: 12,
   totalAnswers: 41, totalCorrect: 27, overallAccuracyPct: 66,
   passMarkPct: 75, weeklyNewQuestions: 4,
@@ -123,7 +123,7 @@ const fullStats = () => ({
 });
 
 let stats = fullStats();
-let activity = { days: ACTIVITY_DAYS, activeDayCount: 4, averageSessionSeconds: 1560, sessionsCompleted: 6, sessionsWithDuration: 5 };
+let activity = { timeZone: "UTC", days: ACTIVITY_DAYS, activeDayCount: 4, averageSessionSeconds: 1560, sessionsCompleted: 6, sessionsWithDuration: 5 };
 let preferences = { examId: "exam", targetDate: null, weeklyGoalMinutes: null };
 let statsStatus = 200;
 let activityStatus = 200;
@@ -275,6 +275,7 @@ try {
   assert.ok(text.includes("66%"), "accuracy comes from the fixture");
   assert.ok(!text.includes("287") && !text.includes("420"), "no figure from the design concept survives as live data");
   assert.ok(!/\b71%\s*ready/i.test(text), "the concept's 71% readiness is not hardcoded");
+  assert.ok(text.includes("Monday to Sunday in UTC") && text.includes("days are counted in UTC"), "the footnotes name the payload's zone");
 
   // --- Readiness, coverage, accuracy and the pass line stay distinct ------
   // 41 answers over 6 questions is below the evidence floor, so the ring shows
@@ -412,6 +413,23 @@ try {
 
   const cardText = title => page.getByRole("heading", { name: title, exact: true })
     .locator("xpath=ancestor::section[1]").innerText();
+
+  // --- Issue #47: the week is the account's week ---------------------------
+  // 22:30 UTC on Sunday the 20th is 07:30 on Monday the 21st in Tokyo, so a
+  // Tokyo account has started a new, empty week while a UTC one has not.
+  await page.clock.setFixedTime(new Date("2026-09-20T22:30:00Z"));
+  await reload();
+  assert.match(await cardText("Study time"), /\b[1-9]\d* sessions?\b/, "the UTC week still holds the fixture's sessions");
+  stats = { ...fullStats(), timeZone: "Asia/Tokyo" };
+  activity = { ...activity, timeZone: "Asia/Tokyo" };
+  await reload();
+  const tokyoWeek = await cardText("Study time");
+  assert.match(tokyoWeek, /\b0 sessions\b/, "Monday morning in Tokyo starts a new week");
+  assert.ok(tokyoWeek.includes("Monday to Sunday in Tokyo time"));
+  assert.ok((await cardText("Accuracy trend")).includes("days are counted in Tokyo time"));
+  stats = fullStats();
+  activity = { ...activity, timeZone: "UTC" };
+  await page.clock.setFixedTime(new Date("2026-09-19T12:00:00Z"));
 
   // --- Partial failure: one request down, the rest of the page intact -----
   statsStatus = 500;

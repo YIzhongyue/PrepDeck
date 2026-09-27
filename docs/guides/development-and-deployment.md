@@ -67,7 +67,7 @@ to one another.
 
 Email uses the native simulator (`remote = false`). Nothing is delivered to a
 recipient. Open Settings, enable daily email, select a source with questions, and
-set the timezone/delivery hour to the current hour. Then run:
+set the delivery hour (in the zone under Settings → Time zone) to the current hour. Then run:
 
 ```bash
 npm run dev:scheduled -- email
@@ -92,11 +92,23 @@ these HTML/text-only review messages.
 ```bash
 npm run test:local
 npm run test:local:smoke
+npm run lint
 npm run typecheck
 npm test --workspaces --if-present
 npm run test:browser
 npm run build --workspace apps/web
 ```
+
+`npm run lint` runs ESLint over every workspace and the root `scripts/` and
+`tests/` from the one [`eslint.config.mjs`](../../eslint.config.mjs):
+`typescript-eslint`'s recommended rules, plus React's `rules-of-hooks` and
+`exhaustive-deps` for `apps/web/src`. Each workspace also has its own `lint`
+script (`npm run lint --workspace apps/web`). Vendored Untitled UI source and
+generated files are not linted. A rule may be suppressed only with a reason,
+`// eslint-disable-next-line <rule> -- <why>`, and an unused suppression is an
+error. The linter parses with TypeScript 6's JavaScript API, which npm installs
+at the root for `typescript-eslint`; `tsc` in each workspace is still
+TypeScript 7.
 
 `npm test` only picks up `*.test.mjs`, so the component-level regressions in
 `apps/web/scripts/*.browser.mjs` — the exam workspace, URL routing and history, the Knowledge Points

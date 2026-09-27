@@ -1,5 +1,5 @@
 import { registerNavigationSave } from "../lib/examWorkspace";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MAX_NOTE_LENGTH } from "@prepdeck/shared";
 import LengthHint from "./LengthHint";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -14,16 +14,16 @@ export default function NoteCard({ note }: { note: Note }) {
   const [draftVis, setDraftVis] = useState(note.vis);
 
   const [error, setError] = useState<string | null>(null);
-  const save = async () => {
+  const save = useCallback(async () => {
     const t = draft.trim();
     if (!t) throw new Error("A question note cannot be empty.");
     await updateNote(note.id, t, draftVis);
     setError(null);
     setEditing(false);
-  };
+  }, [draft, draftVis, note.id, updateNote]);
   useEffect(() => registerNavigationSave(async () => {
     if (editing && (draft !== note.text || draftVis !== note.vis)) await save();
-  }), [editing, draft, draftVis, note.text, note.vis, updateNote]);
+  }), [editing, draft, draftVis, note.text, note.vis, save]);
   const cancel = () => {
     setDraft(note.text);
     setDraftVis(note.vis);

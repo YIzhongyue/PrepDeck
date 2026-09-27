@@ -69,12 +69,37 @@ screen is wrong if any two of them are merged
 
 ### Calendar policy
 
-Every day bucket, week boundary, comparison window and countdown is a **UTC**
-calendar day, and weeks run Monday to Sunday. Answer figures bucket on the UTC
-day each answer was given (`answered_at`, falling back to its session's times for
-rows older than migration 0009); session figures on the day the session closed.
-Moving any one figure to a local calendar means moving all of them, which is
-coordinated API work rather than a display choice.
+Every day bucket, week boundary, comparison window and countdown is a calendar
+day in the **account's time zone** (issue #47), and weeks run Monday 00:00 to
+Sunday 23:59 in that zone. Answer figures bucket on the local day each answer was
+given (`answered_at`, falling back to its session's times for rows older than
+migration 0009); session figures on the local day the session closed. The exam
+date stays a plain calendar date; the countdown counts from today in the same
+zone.
+
+- **The zone.** `users.timezone` (migration 0040) holds one IANA name per
+  account, which the daily review email is also sent in. It is null until
+  chosen, and everything counts in UTC until then. On its next load the web app
+  sets it to the browser's zone, and Settings → Time zone changes it. Writes are
+  validated with `Intl` and stored in its spelling (`asia/tokyo` →
+  `Asia/Tokyo`). Only IANA names and aliases are accepted: `Intl` also takes
+  UTC offsets such as `+01:01`, which are refused, because bucketing below
+  relies on quarter-hour offsets between -12:00 and +14:00. A stored value that
+  is not a valid zone counts in UTC, for the statistics and the email alike.
+- **Bucketing.** D1 has no time zones, so a query groups by the UTC quarter-hour
+  and the Worker assigns each quarter-hour to its local day with `Intl`, which
+  knows DST (`lib/learningStats.ts`). Every UTC offset in use is a whole number of
+  quarter-hours, so a quarter-hour never straddles local midnight. Window starts
+  are the first instant of the local day
+  ([`packages/shared/src/timeZone.ts`](../../packages/shared/src/timeZone.ts)),
+  which the web app uses for "today", the week and the countdown too.
+- **Payloads.** The stats and activity responses name the zone they were
+  counted in as `timeZone`, and the dashboard labels its footnotes with it. The
+  User MCP's `user_get_learning_stats` and `user_get_learning_overview` count in
+  the same zone and return it.
+- **Cache.** The KV key carries the zone and `STATS_SCHEMA_VERSION` (4), so one
+  zone's buckets are never served for another, and an entry is only reused on
+  the local day it was computed.
 
 ### Readiness, method v1
 

@@ -61,7 +61,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/auth/me") return json({ user: { id: "qa", email: "qa@example.test", role: "user", displayName: "QA" } });
   if (url.pathname === "/api/exams") return json({ exams: [{ id: "exam", name: "Review lists", slug: "exam", providers: [], questionCount: questions.length }] });
   if (url.pathname.endsWith("/practice-catalog")) {
-    return json({ questions, bookmarkedIds: bookmarkedIds.filter(id => !payload.removed), wrongEntries: [...wrong.values()].filter(row => !row.mastered), attemptedIds: [] });
+    return json({ questions, bookmarkedIds: bookmarkedIds.filter(() => !payload.removed), wrongEntries: [...wrong.values()].filter(row => !row.mastered), attemptedIds: [] });
   }
   if (url.pathname === "/api/settings") return json({ showSharedNotes: true });
   if (url.pathname === "/api/annotation-settings") return json({ hl1Alias: "First", hl2Alias: "Second", hl3Alias: "Third" });

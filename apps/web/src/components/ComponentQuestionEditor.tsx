@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { exportComponentPackage, formatAnswerText, normalizeImportFile, validateImportFile, type Question } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 import QuestionContent from "./QuestionContent";
@@ -11,7 +11,7 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
   const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false), saved = useRef(false);
   const backdropPress = useRef(false);
   const dirty = text !== initial.current;
-  const canClose = () => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?"));
+  const canClose = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
   const close = () => { if (canClose()) onClose(); };
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -25,7 +25,7 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
     const navigate = (e: Event) => { if (!canClose()) e.preventDefault(); };
     window.addEventListener("beforeunload", leave); window.addEventListener("prepdeck:before-navigate", navigate);
     return () => { window.removeEventListener("beforeunload", leave); window.removeEventListener("prepdeck:before-navigate", navigate); };
-  }, [dirty]);
+  }, [dirty, canClose]);
   let preview: ReturnType<typeof normalizeImportFile>["questions"][number] | undefined;
   try { const data = JSON.parse(text); if (data.schemaVersion === "2.0" && !validateImportFile(data).issues.length && data.questions.length === 1) preview = normalizeImportFile(data).questions[0]; } catch { /* Keep invalid drafts editable. */ }
   const save = async () => {
