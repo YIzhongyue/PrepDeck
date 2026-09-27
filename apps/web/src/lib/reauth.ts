@@ -31,7 +31,7 @@ export function stashMockSelections(stash: MockStash): void {
 
 /** The stashed selections for `attemptId`, removed as they are read. */
 export function takeMockSelections(attemptId: string, now = Date.now()): Record<string, string[]> | null {
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = sessionStorage.getItem(MOCK_STASH_KEY);
     sessionStorage.removeItem(MOCK_STASH_KEY);

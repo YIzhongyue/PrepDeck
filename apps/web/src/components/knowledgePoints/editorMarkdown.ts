@@ -84,6 +84,7 @@ function unsupported(token: unknown, footnotes: ReadonlySet<string>): boolean {
 }
 
 export function safeUrl(url: string): boolean {
+  // eslint-disable-next-line no-control-regex -- control characters and spaces are what it rejects
   return /^(?:https?:\/\/|mailto:|\/(?!\/)|#)/i.test(url) && !/[\u0000-\u0020]/.test(url);
 }
 
@@ -107,7 +108,7 @@ export function markdownImage(alt: string, src: string, title?: string | null): 
   // A newline in alt text or a title would end the image's own construct and
   // silently turn the rest of it into body text on the next parse, so both are
   // flattened to spaces before escaping.
-  const label = alt.replace(/\s*[\r\n]+\s*/g, " ").replace(/([\\\[\]])/g, "\\$1");
+  const label = alt.replace(/\s*[\r\n]+\s*/g, " ").replace(/([\\[\]])/g, "\\$1");
   const destination = src.replace(/ /g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29");
   return `![${label}](${destination}${title ? ` "${title.replace(/\s*[\r\n]+\s*/g, " ").replace(/([\\"])/g, "\\$1")}"` : ""})`;
 }

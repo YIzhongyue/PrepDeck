@@ -128,6 +128,7 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     const observer = content ? new ResizeObserver(schedule) : null;
     if (content) observer?.observe(content, { box: "border-box" });
     return () => { window.removeEventListener("resize", schedule); observer?.disconnect(); cancelAnimationFrame(frame); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass extra re-measure triggers, like useEffect's own list
   }, [phone, questionId, ...deps]);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [questionId]);
   return { gridRef, bodyRef, fitHeight };
@@ -288,7 +289,7 @@ export function ReviewTabs({ tabs, active, onChange, children }: { tabs: ReviewT
 
 /* Official explanation, then the AI explanation with its cache / generate states. */
 export function ExplanationPanel({ q, explanation, collapsible }: { q: Question; explanation?: string | null; collapsible: boolean }) {
-  const { state, genAi, useAlternateAi, capture, removeMark } = usePrepDeck();
+  const { state, genAi, showAlternateAi, capture, removeMark } = usePrepDeck();
   const aiRec = state.ai[q.id];
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
@@ -342,7 +343,7 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
           {aiRec.alternates?.map((alt) => (
             <div key={`${alt.provider}:${alt.model}`} className="st-alt">
               <span style={{ flex: 1 }}>Already explained with <strong>{modelLabelFor(alt.provider, alt.model)}</strong></span>
-              <button type="button" className="st-btn st-btn--sm" onClick={() => useAlternateAi(q, alt)}>Show it</button>
+              <button type="button" className="st-btn st-btn--sm" onClick={() => showAlternateAi(q, alt)}>Show it</button>
             </div>
           ))}
           {aiRec.status === "error" && <p className="st-error">{aiRec.error}</p>}

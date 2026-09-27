@@ -1,5 +1,5 @@
 import ComponentQuestionEditor from "./ComponentQuestionEditor";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IMPORT_LIMITS, normalizeTagKey, validateQuestionRow, type Question, type QuestionType, type ValidationIssue } from "@prepdeck/shared";
 import { apiFetch, ApiError } from "../lib/api";
 import { blankQuestion, formPayload, questionForm, type QuestionForm } from "../lib/questionAuthoring";
@@ -19,7 +19,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const saving = useRef(false), saved = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null), stem = useRef<HTMLTextAreaElement>(null);
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const mayLeave = () => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?"));
+  const mayLeave = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
   const close = () => { if (mayLeave()) onClose(); };
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -42,7 +42,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     const navigate = (e: Event) => { if (!mayLeave()) e.preventDefault(); };
     window.addEventListener("beforeunload", unload); window.addEventListener("prepdeck:before-navigate", navigate);
     return () => { window.removeEventListener("beforeunload", unload); window.removeEventListener("prepdeck:before-navigate", navigate); };
-  }, [dirty]);
+  }, [dirty, mayLeave]);
   const change = <K extends keyof QuestionForm>(key: K, value: QuestionForm[K]) => setForm(f => ({ ...f, [key]: value }));
   const fieldErrors = (field: string) => issues.filter(i => i.path === `$.${field}` || i.path.startsWith(`$.${field}[`) || i.path.startsWith(`$.${field}.`));
   const errors = (field: string) => <div id={`error-${field}`} className="authoring-errors">{fieldErrors(field).map((i, n) => <div key={n}>{i.path.replace("$.", "")}: {i.message}</div>)}</div>;

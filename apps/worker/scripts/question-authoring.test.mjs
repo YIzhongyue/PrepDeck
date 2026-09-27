@@ -93,7 +93,7 @@ function setup(t) {
     IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) }, IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
     BUCKET: { put: async () => {}, list: async () => ({ objects: [], truncated: false }) } };
   const app = new Hono();
-  app.onError((err, c) => { throw new Error(err.message); });
+  app.onError((err) => { throw new Error(err.message); });
   app.use("*", async (c, next) => { c.set("user", { id: "admin", role: c.req.header("x-role") ?? "admin" }); await next(); });
   app.route("/exams/:examId/questions", questionsRouter); app.route("/exams/:examId/import", importsRouter);
   app.route("/admin/question-tags", questionTagsRouter);
@@ -218,7 +218,7 @@ test("imports carry review state, and clearing it locally is a reviewable confli
   assert.equal((await request("/exams/exam/import", "POST", file([incoming]))).data.outcomes[0].reason, "identical");
   // Once an admin signs the question off, the same file no longer overwrites
   // that decision unattended: it surfaces as a conflict naming the field.
-  q = (await update(q, { needsReview: false })).data.question;
+  await update(q, { needsReview: false });
   const again = await request("/exams/exam/import", "POST", file([incoming]));
   assert.equal(again.data.updated, 0);
   assert.equal(again.data.conflicts[0].reason, "locally_edited");
@@ -261,7 +261,7 @@ test("re-import preserves edited and legacy content, returns diffs, and applies 
   assert.equal(q.answerRevision, 2); assert.equal(q.stem, "Incoming");
   // Identical retry is safely skipped, even though the resolution is now stale.
   assert.equal((await request("/exams/exam/import", "POST", file([incoming], { conflictResolutions: [{ ...conflict, action: "apply" }] }))).data.updated, 0);
-  q = (await update(q, { stem: "Admin correction" })).data.question;
+  await update(q, { stem: "Admin correction" });
   imported = await request("/exams/exam/import", "POST", file([incoming], { conflictResolutions: [{ ...conflict, action: "apply" }] }));
   assert.equal(imported.data.updated, 0); assert.equal(imported.data.conflicts[0].reason, "locally_edited");
   const fresh = imported.data.conflicts[0];

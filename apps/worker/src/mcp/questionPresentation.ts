@@ -27,7 +27,7 @@ export type ImageMode = "inline" | "text-only";
 // in table cells). Explicit markdown paragraphs and legacy Markdown stay intact.
 function literal(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/([\\`*_{}\[\]()#+.!~>-])/g, "\\$1").replace(/\|/g, "&#124;");
+    .replace(/([\\`*_{}[\]()#+.!~>-])/g, "\\$1").replace(/\|/g, "&#124;");
 }
 function fence(text: string, language = ""): string {
   const delimiter = "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), m => m[0].length + 1)));

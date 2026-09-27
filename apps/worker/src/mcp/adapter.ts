@@ -14,7 +14,7 @@ import {
   answerKey, createStatement, getQuestion as getQuestionRow,
   listQuestionTags as listQuestionTagRows, listQuestions as listQuestionRows,
   listRecentContentChanges as listRecentContentChangeRows, payloadOf, searchQuestions as searchQuestionsQuery, toQuestion,
-  updateStatement, validatePayload, type QuestionPayload, type QuestionRow,
+  updateStatement, validatePayload, type QuestionRow,
 } from "../lib/questionManagement";
 import {
   buildCreateOperationStatement, diffPayload, getCreateOperation, getCreateOperations,
@@ -32,7 +32,7 @@ import {
   type ImportConflictResolution,
 } from "../lib/importExecution";
 import { assertBoundedDepth, IMPORT_JSON_MAX_DEPTH } from "../lib/importSecurity";
-import { normalizeImportFile, officialFormatError, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents, type QuestionImportFile } from "@prepdeck/shared";
+import { normalizeImportFile, officialFormatError, exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents } from "@prepdeck/shared";
 import {
   normalizeTagName, resolveOrCreateTags, fetchTagIdsForQuestions, buildTagLinkStatements,
   buildTagNameResolver, findTagCatalogRowByName, listTagCatalogNames,

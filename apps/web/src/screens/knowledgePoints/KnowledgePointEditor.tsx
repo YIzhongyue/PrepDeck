@@ -57,15 +57,14 @@ export default function KnowledgePointEditor({
 }) {
   const kp = useKnowledgePoints();
   const { goToQuestionForReview } = usePrepDeck();
-  const { state } = kp;
+  const { state, openNote } = kp;
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [navigationError, setNavigationError] = useState<string | null>(null);
 
   useEffect(() => {
-    kp.openNote(noteId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteId]);
+    openNote(noteId);
+  }, [noteId, openNote]);
 
   const editing = state.editing;
   const inSequence = kp.canReorder && state.items.some((i) => i.id === noteId);

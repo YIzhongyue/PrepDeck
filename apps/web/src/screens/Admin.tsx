@@ -270,7 +270,6 @@ function McpTokensPanel() {
 }
 
 const STATUS_COLOR: Record<UserStatus, string> = { active: "var(--color-accent-2)", invited: "var(--color-accent-600)", revoked: "var(--color-neutral-500)" };
-const STATUS_TAG_CLASS: Record<UserStatus, string> = { active: "tag-accent-2", invited: "tag-accent", revoked: "tag-neutral" };
 
 // FR-1.2/FR-1.4 — Authorized Users: invite, change role, revoke/restore.
 function UsersPanel({ myId, onCount }: { myId: string; onCount: (n: number) => void }) {

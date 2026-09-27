@@ -248,7 +248,7 @@ interface PrepDeckStore {
   toggleBookmark: (questionId?: string) => void;
   checkAiCache: (q: Question) => void;
   genAi: (q: Question, force?: boolean) => void;
-  useAlternateAi: (q: Question, alt: AiExplanationEntry) => void;
+  showAlternateAi: (q: Question, alt: AiExplanationEntry) => void;
 
   learningPool: () => Question[];
   learningQ: () => Question | undefined;
@@ -792,7 +792,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   // FR-7.3: show an already-cached explanation from a different provider/
   // model, clearly labeled, instead of generating a fresh one.
-  const useAlternateAi = useCallback((q: Question, alt: AiExplanationEntry) => {
+  const showAlternateAi = useCallback((q: Question, alt: AiExplanationEntry) => {
     setState((s) => ({
       ai: {
         ...s.ai,
@@ -1282,7 +1282,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       url.pathname = "/";
     }
     window.history.replaceState(null, "", url.toString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read the one-time deep-link parameters on mount only
   }, []);
 
   // Resolves pendingSlugQuestionJump (set above) once state.exams has
@@ -1623,7 +1623,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     state, width, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
     setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
-    begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, useAlternateAi,
+    begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, showAlternateAi,
     learningPool, learningQ, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
     goToQuestionForReview, openKnowledgePointNote, clearPendingKnowledgePoint,

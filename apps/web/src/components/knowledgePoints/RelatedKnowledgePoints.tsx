@@ -18,7 +18,13 @@ import LinkExistingKnowledgePointModal from "./LinkExistingKnowledgePointModal";
 export default function RelatedKnowledgePoints({ questionId, embedded = false }: { questionId: string; embedded?: boolean }) {
   const { openKnowledgePointNote } = usePrepDeck();
   const visit = useRef(0);
-  useEffect(() => { visit.current++; return () => { visit.current++; }; }, [questionId]);
+  useEffect(() => {
+    visit.current++;
+    // A request counter, not a DOM ref: the cleanup must bump its latest value
+    // so responses for the previous question are ignored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional read of the latest counter value
+    return () => { visit.current++; };
+  }, [questionId]);
   const [notes, setNotes] = useState<KnowledgePointSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);

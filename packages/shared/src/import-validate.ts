@@ -24,6 +24,7 @@ export const IMPORT_LIMITS = {
 } as const;
 
 function nonempty(value: unknown): value is string {
+  // eslint-disable-next-line no-control-regex -- U+001C–U+001F are whitespace to String.prototype.trim
   return typeof value === "string" && /[^\s\u0085\u001c-\u001f\ufeff]/.test(value);
 }
 
@@ -211,7 +212,8 @@ function validateImportEnvelope(data: unknown, normalized = false): ImportFileVa
   }
   if ((data as Record<string, unknown>).schemaVersion === "2.0") {
     const issues = validateComponentPackage(data);
-    if (issues.length) return { issues, duplicateExternalIdsInFile: [], questionCount: Array.isArray((data as any).questions) ? (data as any).questions.length : 0 };
+    const questions = (data as { questions?: unknown }).questions;
+    if (issues.length) return { issues, duplicateExternalIdsInFile: [], questionCount: Array.isArray(questions) ? questions.length : 0 };
     return validateImportEnvelope(normalizeImportFile(data), true);
   }
   const d = data as Record<string, unknown>;
