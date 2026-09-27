@@ -98,7 +98,7 @@ try {
       assert.equal((await page.request.get("http://localhost:5173/api/auth/me")).status(), 200);
       await page.reload();
       assert.equal((await page.request.get("http://localhost:5173/api/exams/local-exam/practice-catalog")).status(), 200);
-      await page.getByRole("button", { name: "Learning", exact: true }).first().click();
+      await page.getByRole("navigation", { name: "Main navigation" }).getByTitle("Learning", { exact: true }).click();
       await page.getByRole("button", { name: "Start learning", exact: true }).click();
       await page.getByText("What is two plus two?", { exact: true }).first().waitFor();
       await page.getByText("Adding two and two gives four.", { exact: true }).first().waitFor();

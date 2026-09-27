@@ -43,7 +43,7 @@ export const SCREENS = [
 ];
 
 async function nav(page, label) {
-  // By title: a count badge ("Bookmarks 3") becomes part of the button's name.
+  // By title: a count badge ("Bookmarks 3") becomes part of the link's name.
   await page.getByRole("navigation", { name: "Main navigation" }).getByTitle(label, { exact: true }).click();
 }
 
