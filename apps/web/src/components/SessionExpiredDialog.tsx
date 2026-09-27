@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SESSION_EXPIRED_EVENT, resetSessionLoss } from "../lib/api";
+import { SESSION_EXPIRED_EVENT, isSessionExpiryPending, resetSessionLoss } from "../lib/api";
 import { signInUrl } from "../lib/reauth";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
@@ -10,12 +10,18 @@ import ModalLayer from "./ModalLayer";
 // retrying can never succeed until the learner signs in again.
 export default function SessionExpiredDialog() {
   const { state, preserveForReauth } = usePrepDeck();
-  const [open, setOpen] = useState(false);
+  // The Shell mounts one of these in its loading layout and one in its normal
+  // layout. A refused request can announce the loss to the first and then, by
+  // failing, swap in the second, so a newly mounted dialog starts from the
+  // announced state instead of waiting for an event that already fired.
+  const [open, setOpen] = useState(isSessionExpiryPending);
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     const show = () => setOpen(true);
     window.addEventListener(SESSION_EXPIRED_EVENT, show);
+    // Covers an announcement between the first render and this subscription.
+    if (isSessionExpiryPending()) setOpen(true);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, show);
   }, []);
 

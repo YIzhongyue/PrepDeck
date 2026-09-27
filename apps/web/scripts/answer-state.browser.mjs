@@ -400,5 +400,21 @@ try {
   await invoke("go", "wrong"); // drains the re-saved draft
   assert.deepEqual(attempts.get(mockId).selectedAnswers["component-2"], ["B"], "and saved");
   console.log("PASS an expired session asks to sign in again, returns to the mock and restores its unsaved answers");
+
+  // The session ends while the workspace is still loading. The refused request
+  // announces it to the loading layout's dialog, then fails and swaps in the
+  // error layout, which mounts a dialog of its own. That one must open too, and
+  // Retry must ask again after "Not now" rather than leave a dead Retry button.
+  sessionGone = true;
+  await page.goto(base);
+  await page.waitForFunction(() => window.store?.state.workspaceStatus === "error");
+  await expiredDialog.waitFor();
+  assert.equal(await expiredDialog.count(), 1, "exactly one dialog after the loading layout gives way");
+  await expiredDialog.getByRole("button", { name: "Not now" }).click();
+  await expiredDialog.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expiredDialog.waitFor();
+  sessionGone = false;
+  console.log("PASS a session lost while the workspace loads still asks to sign in again, also after Retry");
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
