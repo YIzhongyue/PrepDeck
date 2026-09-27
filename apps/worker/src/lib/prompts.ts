@@ -25,9 +25,11 @@ export interface ExplanationPromptContext {
   // positions, and a fill-in has no options at all.
   kind: "choice" | "text" | "ordering" | "matching";
   // A matching question's left column, or the items to order, or the choices.
-  options: { id: string; text: string }[];
+  // `item` is the whole list item after "- ": "(id) text", or "(id)" with a
+  // multi-line text indented under it (labelledListItem).
+  options: { id: string; item: string }[];
   // A matching question's right column; empty otherwise.
-  matchTargets: { id: string; text: string }[];
+  matchTargets: { id: string; item: string }[];
   // Readable lines for matching and ordering ("HTTPS → 443"); IDs or accepted
   // answers otherwise.
   correctAnswers: string[];

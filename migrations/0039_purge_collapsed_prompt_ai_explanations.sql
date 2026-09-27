@@ -7,18 +7,17 @@
 -- every learner.
 --
 -- The prompt now keeps whitespace and fences code (packages/shared/src/
--- answerFormat.ts, promptOptionText). Remove cached results for the matching
--- and ordering questions whose content has a line break or a code block, the
--- only ones the collapse could change, so the next request regenerates them.
--- content_json is compact JSON, so a line break in any text appears as the two
--- characters \n. Other explanations are kept.
+-- answerFormat.ts, promptOptionText). Remove the cached results for every
+-- matching and ordering question so the next request regenerates them.
+--
+-- All of them, not only those whose content_json looks multi-line: the
+-- collapse also merged whitespace that is not in the stored JSON (an option of
+-- two paragraphs is joined with a blank line only when it is formatted) or is
+-- easy to miss in it (tabs, runs of spaces), and a narrower filter kept
+-- explanations the new prompt would change. Choice and fill-in explanations
+-- are unaffected and kept.
 --
 -- Applied via: wrangler d1 migrations apply <DB_NAME>
 
 DELETE FROM ai_explanations
-WHERE question_id IN (
-  SELECT id FROM questions
-  WHERE type IN ('matching', 'ordering')
-    AND content_json IS NOT NULL
-    AND (instr(content_json, '\n') > 0 OR instr(content_json, '"type":"code"') > 0)
-);
+WHERE question_id IN (SELECT id FROM questions WHERE type IN ('matching', 'ordering'));

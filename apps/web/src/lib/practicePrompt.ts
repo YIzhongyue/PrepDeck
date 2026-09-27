@@ -1,4 +1,4 @@
-import { allContentBlocks, continueListItem, matchingTargets, promptAnswerParts, promptOptions } from "@prepdeck/shared";
+import { allContentBlocks, continueListItem, labelledListItem, matchingTargets, promptAnswerParts, promptOptions } from "@prepdeck/shared";
 import type { GradedAnswer, Question } from "../types";
 
 const STRUCTURED = new Set(["ordering", "matching"]);
@@ -13,7 +13,7 @@ function answerLines(question: Question, answerIds: string[]): string {
   const options = promptOptions(question);
   return answerIds.map((answerId) => {
     const option = options.find((candidate) => candidate.id === answerId);
-    return option ? `- **${option.id}.** ${continueListItem(option.text)}` : `- ${answerId}`;
+    return option ? `- ${labelledListItem(`**${option.id}.**`, option.text)}` : `- ${answerId}`;
   }).join("\n");
 }
 
@@ -28,7 +28,7 @@ function buildQuestionPrompt(
   }
 ): string {
   const { attempt } = context;
-  const listed = (items: readonly { id: string; text: string }[]) => items.map((option) => `- **${option.id}.** ${continueListItem(option.text)}`).join("\n");
+  const listed = (items: readonly { id: string; text: string }[]) => items.map((option) => `- ${labelledListItem(`**${option.id}.**`, option.text)}`).join("\n");
   const options = question.options?.length
     ? listed(promptOptions(question))
     : attempt ? "- No options (free-response question)" : "Free text (fill in the blank); accepted answers are listed below.";

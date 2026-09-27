@@ -91,10 +91,14 @@ test("ordering: the items, the order as item text, and why each step comes where
   assert.doesNotMatch(text, /figure|incorrect option/);
 });
 
-// Review of #69: code is valid option content. Collapsing its whitespace sent
-// an unconditional stop() and one inside the `if` as the same text, so the model
-// could not tell the targets, or a right and a wrong pairing, apart.
-test("matching: code targets keep their line breaks and indentation", () => {
+// Review of #69 and #72: code is valid option content. Collapsing its
+// whitespace sent an unconditional stop() and one inside the `if` as the same
+// text, so the model could not tell the targets, or a right and a wrong pairing,
+// apart. A fence right after "(outside)" would not open a code block either, so
+// the sections are checked the way a Markdown reader parses them.
+test("matching: code targets keep their line breaks and indentation, as code blocks", async () => {
+  const { marked } = await import("marked");
+  const outside = "if enabled:\n    start()\nstop()", inside = "if enabled:\n    start()\n    stop()";
   const snippet = (id, text) => ({ id, body: [{ id: `code-${id}`, type: "code", language: "python", text }] });
   const item = (id, text) => ({ id, body: [{ id: `p-${id}`, type: "paragraph", text }] });
   const row = normalizeImportFile({
@@ -102,39 +106,31 @@ test("matching: code targets keep their line breaks and indentation", () => {
     questions: [{ externalId: "m1", body: [{ id: "prompt", type: "paragraph", text: "Match each behaviour to its code." }],
       interaction: { id: "response", type: "match",
         left: [item("always", "stop() always runs"), item("guarded", "stop() runs only when enabled")],
-        right: [snippet("outside", "if enabled:\n    start()\nstop()"), snippet("inside", "if enabled:\n    start()\n    stop()")] },
+        right: [snippet("outside", outside), snippet("inside", inside)] },
       scoring: { method: "exact", correctAnswers: ['["always","outside"]', '["guarded","inside"]'] } }],
   }).questions[0];
   const text = body(buildPrompt({ id: "q", revision: 1, type: row.type, stem: row.stem, options_json: JSON.stringify(row.options),
     correct_answers_json: JSON.stringify(row.correctAnswers), explanation: null, content_json: JSON.stringify(row.content) }));
-  const fence = "```";
-  assert.ok(text.includes(`Match with:
-- (outside) ${fence}python
-  if enabled:
-      start()
-  stop()
-  ${fence}
-- (inside) ${fence}python
-  if enabled:
-      start()
-      stop()
-  ${fence}
 
-Correct answer(s):
-- stop() always runs
-  →
-  ${fence}python
-  if enabled:
-      start()
-  stop()
-  ${fence}
-- stop() runs only when enabled
-  →
-  ${fence}python
-  if enabled:
-      start()
-      stop()
-  ${fence}
-`), text);
+  const tokens = marked.lexer(text);
+  const listAfter = label => {
+    const at = tokens.findIndex(t => t.type === "paragraph" && t.text === label);
+    assert.ok(at >= 0, `${label} is in the prompt`);
+    const list = tokens[at + 1]?.type === "space" ? tokens[at + 2] : tokens[at + 1];
+    assert.equal(list?.type, "list", `${label} is followed by a list`);
+    return list.items.map(entry => {
+      const code = [];
+      marked.walkTokens(entry.tokens, t => { if (t.type === "code") code.push({ lang: t.lang, text: t.text }); });
+      return { lead: entry.tokens.find(t => t.type === "text" || t.type === "paragraph")?.text.split("\n")[0], code };
+    });
+  };
+  assert.deepEqual(listAfter("Match with:"), [
+    { lead: "(outside)", code: [{ lang: "python", text: outside }] },
+    { lead: "(inside)", code: [{ lang: "python", text: inside }] },
+  ]);
+  assert.deepEqual(listAfter("Items to match:").map(entry => entry.lead), ["(always) stop() always runs", "(guarded) stop() runs only when enabled"], "one-line items read as before");
+  assert.deepEqual(listAfter("Correct answer(s):").map(entry => entry.code.map(c => c.text)), [[outside], [inside]]);
+  const empty = []; marked.walkTokens(tokens, t => { if (t.type === "code" && !t.text) empty.push(t.raw); });
+  assert.deepEqual(empty, [], "no stray fence opens an empty code block");
   assert.doesNotMatch(text, /if enabled: start\(\) stop\(\)/);
 });

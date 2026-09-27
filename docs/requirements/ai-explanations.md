@@ -65,14 +65,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   questions that were generated from the older, incomplete prompts.
 
   Both prompts keep option text exactly as written: line breaks and
-  indentation are preserved, code blocks are fenced, and an entry that spans
-  lines is indented under its list item. Code is valid option content, and
+  indentation are preserved and code blocks are fenced. An option that spans
+  lines puts its label ("**R.**", "(R)") on its own line and the text indented
+  under it, because a fence that follows a label on the same line is paragraph
+  text to a Markdown reader, not a code block. Code is valid option content, and
   collapsing its whitespace made snippets that differ only in indentation, and
   a wrong pairing and the right one, read as the same text. The one-line form
   (`answerParts`, `formatAnswerText`) is only for summaries on screen. Migration
-  `0039` removed cached explanations for matching and ordering questions whose
-  content has a line break or a code block, since the old prompts could have
-  collapsed them.
+  `0039` removed the cached explanations of every matching and ordering
+  question, since the old prompts could have collapsed any of them.
 
 <a id="fr-7-5"></a>
 

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { QuestionContentModel } from "./question-components.ts";
-import { answerParts, continueListItem, formatAnswerText, matchingTargets, promptAnswerParts, promptOptions } from "./answerFormat.ts";
+import { answerParts, continueListItem, formatAnswerText, labelledListItem, matchingTargets, promptAnswerParts, promptOptions } from "./answerFormat.ts";
 
 const paragraph = (id: string, text: string) => [{ id: `b-${id}`, type: "paragraph" as const, text }];
 const content = (interaction: QuestionContentModel["interaction"]): QuestionContentModel =>
@@ -72,7 +72,8 @@ test("the one-line UI summary of the same answer is unchanged", () => {
 test("prompt orderings keep an item's whitespace, and single-line parts read as before", () => {
   const codeOrdering = { type: "ordering", content: content({ id: "r", type: "order",
     options: [{ id: "a", body: code("a", "for x in xs:\n    total += x") }, { id: "b", body: paragraph("b", "Print") }] }) };
-  assert.deepEqual(promptAnswerParts(codeOrdering, ["a", "b"]), [`1.\n${FENCE}python\nfor x in xs:\n    total += x\n${FENCE}`, "2. Print"]);
+  // The fence follows the "1." marker, and its lines sit at the marker's content column.
+  assert.deepEqual(promptAnswerParts(codeOrdering, ["a", "b"]), [`1. ${FENCE}python\n   for x in xs:\n       total += x\n   ${FENCE}`, "2. Print"]);
   assert.deepEqual(promptAnswerParts(matching, ['["L1","R2"]']), ["HTTPS → 443"]);
   assert.deepEqual(promptOptions(codeOrdering).map(o => o.text), [`${FENCE}python\nfor x in xs:\n    total += x\n${FENCE}`, "Print"]);
   assert.deepEqual(promptOptions({ type: "single_choice", options: [{ id: "A", text: "x" }] }), [{ id: "A", text: "x" }], "no content: the stored options");
@@ -80,10 +81,16 @@ test("prompt orderings keep an item's whitespace, and single-line parts read as 
 
 test("a fence is longer than any backtick run inside the code", () => {
   const q = { type: "ordering", content: content({ id: "r", type: "order", options: [{ id: "a", body: code("a", 'print("```")') }] }) };
-  assert.equal(promptAnswerParts(q, ["a"])[0], '1.\n````python\nprint("```")\n````');
+  assert.equal(promptAnswerParts(q, ["a"])[0], '1. ````python\n   print("```")\n   ````');
 });
 
 test("continueListItem keeps a multi-line entry inside its list item", () => {
   assert.equal(continueListItem(`${FENCE}python\nif x:\n    a()\n\nb()\n${FENCE}`), `${FENCE}python\n  if x:\n      a()\n\n  b()\n  ${FENCE}`);
   assert.equal(continueListItem("one line"), "one line");
+});
+
+test("labelledListItem puts multi-line text under its label, so a fence starts its own line", () => {
+  assert.equal(labelledListItem("**R.**", "443"), "**R.** 443", "one line reads as before");
+  assert.equal(labelledListItem("(R)", `${FENCE}python\nif x:\n    a()\n${FENCE}`), `(R)\n  ${FENCE}python\n  if x:\n      a()\n  ${FENCE}`);
+  assert.equal(labelledListItem("(R)", "alpha\n\nbeta"), "(R)\n  alpha\n\n  beta", "two paragraphs stay two paragraphs");
 });

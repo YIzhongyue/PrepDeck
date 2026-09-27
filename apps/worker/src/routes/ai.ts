@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { renderExplanationPrompt } from "../lib/prompts";
-import { allContentBlocks, continueListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
+import { allContentBlocks, continueListItem, labelledListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
 
 // Request guard; see docs/requirements/ai-explanations.md for byte-count limitations.
 const MAX_BODY_BYTES = 32 * 1024;
@@ -72,8 +72,9 @@ function toDto(row: ExplanationRow, viewerId: string, viewerRole: "admin" | "use
 //
 // Option text keeps its whitespace, with code fenced (review of #69): two
 // snippets that differ only in indentation must not reach the model, and the
-// shared cache, as the same text. A multi-line entry is indented under its list
-// item so the template's "- " lists stay unambiguous.
+// shared cache, as the same text. The template prints each option as "- " plus
+// a prebuilt item: "(id) text" on one line, or, for a multi-line text, "(id)"
+// with the text indented on the lines under it, so a fence starts its own line.
 export function buildPrompt(q: QuestionRow): string {
   const options: { id: string; text: string }[] = q.options_json ? JSON.parse(q.options_json) : [];
   const correctAnswers: string[] = JSON.parse(q.correct_answers_json);
@@ -81,7 +82,7 @@ export function buildPrompt(q: QuestionRow): string {
   try { content = q.content_json ? JSON.parse(q.content_json) as QuestionContentModel : null; } catch { content = null; }
   const question = { type: q.type, options, content };
   const kind = q.type === "matching" || q.type === "ordering" ? q.type : q.type === "fill_blank" ? "text" : "choice";
-  const listed = (items: { id: string; text: string }[]) => items.map((o) => ({ id: o.id, text: continueListItem(o.text) }));
+  const listed = (items: { id: string; text: string }[]) => items.map((o) => ({ id: o.id, item: labelledListItem(`(${o.id})`, o.text) }));
   return renderExplanationPrompt({
     stem: q.stem,
     kind,

@@ -62,7 +62,11 @@ function parts(question: FormattableQuestion, values: readonly string[], style: 
     const order = interaction?.type === "order" ? interaction : null;
     return values.map((id, n) => {
       const text = flat(!id ? "—" : componentText(order?.options.find((o) => o.id === id), question.content, style) ?? question.options?.find((o) => o.id === id)?.text ?? id);
-      return `${n + 1}.${text.includes("\n") ? "\n" : " "}${text}`;
+      // "1." is a list marker, so a fence may follow it on the same line; the
+      // lines after it are indented to the marker's content column. (A "1."
+      // alone on its line would be read as an empty list item.)
+      const marker = `${n + 1}. `;
+      return marker + continueListItem(text, marker.length);
     });
   }
   return [...values];
@@ -107,4 +111,15 @@ export function matchingTargets(question: FormattableQuestion): { id: string; te
 export function continueListItem(text: string, width = 2): string {
   const pad = " ".repeat(width);
   return text.split("\n").map((line, n) => n && line ? pad + line : line).join("\n");
+}
+
+/**
+ * A labelled list item's content, such as "**R.** 443" or "(R) 443". A
+ * multi-line text goes on the lines under the label, indented to the item's
+ * content column: text after a label is a paragraph, so a code fence there
+ * would not open a code block, and its closing fence would open an empty one.
+ */
+export function labelledListItem(label: string, text: string, width = 2): string {
+  if (!text.includes("\n")) return `${label} ${text}`;
+  return `${label}\n${" ".repeat(width)}${continueListItem(text, width)}`;
 }
