@@ -23,11 +23,11 @@ export const NAV: NavItem[] = [
 export const MORE_ICON_D = "M5 12h.01 M12 12h.01 M19 12h.01";
 
 export const THEMES: ThemeOption[] = [
-  { id: "light", name: "Light", hint: "default", bg: "#ffffff", accent: "#2563eb", accent2: "#0f9f8f", line: "#dbe3ef" },
-  { id: "cream", name: "Cream", hint: "soft", bg: "#f5ead8", accent: "#c67139", accent2: "#7a8a5e", line: "#dcd3c4" },
-  { id: "sage", name: "Sage", hint: "calm", bg: "#f2f1e3", accent: "#7a8a5e", accent2: "#c67139", line: "#ccdbb2" },
-  { id: "clay", name: "Clay", hint: "warm", bg: "#f6e3d2", accent: "#b2622d", accent2: "#7a8a5e", line: "#ddc7ae" },
-  { id: "dusk", name: "Dusk", hint: "low light", bg: "#2a2721", accent: "#e0894f", accent2: "#a3b788", line: "#645c50" }
+  { id: "light", name: "Light", hint: "default", bg: "#ffffff", accent: "#2563eb", accent2: "#0f9f8f", line: "#dbe3ef", surface: "#f5f7fb", ink: "#172033" },
+  { id: "cream", name: "Cream", hint: "soft", bg: "#f5ead8", accent: "#c67139", accent2: "#7a8a5e", line: "#dcd3c4", surface: "#fbf5ea", ink: "#3a2a1c" },
+  { id: "sage", name: "Sage", hint: "calm", bg: "#f2f1e3", accent: "#7a8a5e", accent2: "#c67139", line: "#ccdbb2", surface: "#f9f8ee", ink: "#2d3322" },
+  { id: "clay", name: "Clay", hint: "warm", bg: "#f6e3d2", accent: "#b2622d", accent2: "#7a8a5e", line: "#ddc7ae", surface: "#fbf0e5", ink: "#3b2415" },
+  { id: "dusk", name: "Dusk", hint: "low light", bg: "#2a2721", accent: "#e0894f", accent2: "#a3b788", line: "#645c50", surface: "#35312a", ink: "#efe6d8" }
 ];
 
 export const HL: Record<string, { background: string; text: string }> = {

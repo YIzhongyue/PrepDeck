@@ -102,6 +102,10 @@ export interface ThemeOption {
   accent: string;
   accent2: string;
   line: string;
+  // The scheme's card surface and body text, for the miniature page the
+  // Appearance picker draws in each swatch.
+  surface: string;
+  ink: string;
 }
 
 export interface TextSegment {

@@ -10,3 +10,9 @@ export function breakpointsFor(width: number): Breakpoints {
   const rail = !narrow && width >= 1100;
   return { phone, narrow, rail };
 }
+
+// The padding the app shell puts around every screen. A screen that runs a bar
+// edge to edge (Settings' section chips) pulls itself out by the same amount.
+export function contentInset(bp: Breakpoints): { top: number; inline: number } {
+  return { top: bp.phone ? 18 : bp.narrow ? 22 : 30, inline: bp.phone ? 16 : bp.narrow ? 22 : 34 };
+}

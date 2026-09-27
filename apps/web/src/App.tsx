@@ -4,10 +4,10 @@ import "./styles/untitled-ui.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ACCESS_REVOKED_EVENT, apiFetch, ApiError } from "./lib/api";
 import { PrepDeckProvider, usePrepDeck } from "./store/PrepDeckContext";
-import { breakpointsFor } from "./lib/responsive";
+import { breakpointsFor, contentInset } from "./lib/responsive";
 import Login from "./screens/Login";
 import Sidebar from "./components/Sidebar";
 import WorkspaceLoading from "./components/WorkspaceLoading";
@@ -50,6 +50,7 @@ export function Shell() {
   const bp = breakpointsFor(width);
   // Measured height includes the bottom safe-area padding and text scaling.
   const [tabBarHeight, setTabBarHeight] = useState(0);
+  const [topBarHeight, setTopBarHeight] = useState(0);
   const compactNavigation = bp.narrow && !(state.screen === "learning" && width >= 768);
   const theme = state.theme || DEFAULT_THEME;
 
@@ -84,11 +85,13 @@ export function Shell() {
         <div inert={state.switching} style={{ display: "flex", alignItems: "stretch", flex: 1, minHeight: 0 }}>
           {!compactNavigation && <Sidebar rail={bp.rail} />}
 
-          <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-            {compactNavigation && <TopBar />}
+          {/* --pd-topbar-height: where a screen's own sticky bar (Settings' section
+              chips) sits, so it stays below the top bar rather than under it. */}
+          <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", "--pd-topbar-height": `${compactNavigation ? topBarHeight : 0}px` } as CSSProperties}>
+            {compactNavigation && <TopBar onHeightChange={setTopBarHeight} />}
 
             {/* data-pd-content: pinned question cards stop above this padding (and so above the tab bar). */}
-            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: bp.phone ? 18 : bp.narrow ? 22 : 30, paddingInline: bp.phone ? 16 : bp.narrow ? 22 : 34, paddingBottom: compactNavigation ? tabBarHeight + 20 : 40 }}>
+            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: contentInset(bp).top, paddingInline: contentInset(bp).inline, paddingBottom: compactNavigation ? tabBarHeight + 20 : 40 }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", width: "100%", maxWidth: 1160, margin: "0 auto" }}>
                 {state.workspaceNotice && <p role="status">{state.workspaceNotice}</p>}
                 {state.actionError && <div role="alert" className="card" style={{ padding: 16, marginBottom: 16 }}>

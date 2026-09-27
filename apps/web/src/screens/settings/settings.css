@@ -1,0 +1,282 @@
+/* Settings (Claude Design "Settings Redesign", desktop + mobile): one long page
+   in three groups — Account, Study, AI & integrations — indexed by a sticky
+   list beside the content on wide screens and by a sticky row of chips under
+   the top bar on narrow ones. The breakpoints match lib/responsive.ts. */
+
+.pd-settings {
+  --settings-hairline: color-mix(in srgb, var(--color-text) 8%, transparent);
+  animation: pd-rise .28s ease backwards;
+}
+
+/* Untitled UI's fields, selects and buttons are rounded-lg; on this screen
+   they are pills, like PrepDeck's own .btn and .input. Popovers are portaled
+   out of this subtree and keep their corners, and so does a text area. */
+.pd-settings .rounded-lg:not(textarea),
+.pd-settings .rounded-lg:not(textarea)::before { border-radius: 999px; }
+.pd-settings [data-input-wrapper] input { padding-left: 16px; }
+/* A field sitting on a card takes the recessed surface colour. */
+.pd-settings .settings-field .bg-primary { background-color: var(--color-surface); }
+
+/* Jumping to a section leaves it just below the sticky bars. */
+.pd-settings [data-settings-section] { scroll-margin-top: 24px; }
+.pd-settings.is-narrow [data-settings-section] { scroll-margin-top: calc(var(--pd-topbar-height, 0px) + 68px); }
+.pd-settings [data-settings-section]:focus:not(:focus-visible) { outline: none; }
+
+/* --- Layout -------------------------------------------------------------- */
+
+.settings-layout { display: flex; gap: 56px; align-items: flex-start; }
+.settings-main { flex: 1; min-width: 0; max-width: 800px; display: flex; flex-direction: column; gap: 44px; }
+.pd-settings.is-narrow .settings-main { max-width: none; gap: 36px; }
+
+.settings-header { display: flex; flex-direction: column; gap: 6px; }
+.settings-header h1 { margin: 0; font-size: 42px; }
+.settings-kicker { margin: 0; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent-700); }
+
+.settings-section { display: flex; flex-direction: column; gap: 16px; }
+.settings-section-head { display: flex; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; }
+.settings-section-head h2 { margin: 0; font-size: 28px; }
+.settings-section-head p { margin: 0; font-size: 13.5px; color: var(--color-text-muted); }
+
+/* --- Section index: the wide list and the narrow chips ------------------- */
+
+.settings-toc {
+  width: 196px; flex: none; position: sticky; top: 30px;
+  display: flex; flex-direction: column; gap: 22px;
+  /* Lines the first entry up with the profile card, below the page heading. */
+  padding-top: 94px;
+}
+.settings-toc-group { display: flex; flex-direction: column; gap: 2px; }
+.settings-toc-heading {
+  margin: 0; padding: 0 12px 6px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted);
+}
+.settings-toc-link {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+  font-size: 13.5px; color: var(--color-text); text-decoration: none;
+}
+.settings-toc-link:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.settings-toc-link[aria-current] { background: var(--color-accent-200); color: var(--color-accent-800); font-weight: 600; }
+.settings-nav-label { flex: 1; }
+.settings-nav-meta { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; color: var(--color-text-muted); }
+[aria-current] > .settings-nav-meta { color: inherit; }
+.settings-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
+
+.settings-chips {
+  position: sticky; top: var(--pd-topbar-height, 0px); z-index: 20; margin-bottom: 20px;
+  background: var(--color-bg); border-bottom: 1px solid var(--settings-hairline);
+}
+.settings-chips-track { display: flex; gap: 6px; padding-block: 10px; overflow-x: auto; scrollbar-width: none; }
+.settings-chips-track::-webkit-scrollbar { display: none; }
+/* Relative so its screen-reader-only status stays inside the scrolling track
+   rather than stretching the page. */
+.settings-chip {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px;
+  font-size: 13px; white-space: nowrap; text-decoration: none;
+  color: var(--color-text); border: 1px solid var(--color-divider);
+}
+.settings-chip[aria-current] { background: var(--color-accent-200); border-color: var(--color-accent-200); color: var(--color-accent-800); font-weight: 600; }
+
+@media (max-width: 1099.98px) {
+  .settings-layout { gap: 32px; }
+  .settings-toc { width: 176px; }
+}
+
+/* --- Profile ------------------------------------------------------------- */
+
+.settings-hero {
+  --hero-bg: var(--color-accent-800);
+  --hero-orb: var(--color-accent-700);
+  --hero-orb-2: var(--color-accent-2-600);
+  --hero-fg: #ffffff;
+  --hero-muted: var(--color-accent-200);
+  position: relative; overflow: hidden;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 22px;
+  padding: 28px; border-radius: 32px;
+  background: var(--hero-bg); color: var(--hero-fg);
+}
+/* Dusk's accent ramp runs light-to-dark the other way round. */
+[data-pd-theme="dusk"] .settings-hero {
+  --hero-bg: var(--color-accent-100);
+  --hero-orb: var(--color-accent-200);
+  --hero-orb-2: var(--color-accent-2-300);
+  --hero-fg: var(--color-text);
+  --hero-muted: var(--color-accent-800);
+}
+.settings-hero > * { position: relative; }
+.settings-hero > .settings-hero-orb {
+  position: absolute; right: -60px; top: -80px; width: 260px; height: 260px;
+  border-radius: 50%; background: var(--hero-orb); pointer-events: none;
+}
+.settings-hero > .settings-hero-orb-2 { top: auto; right: 90px; bottom: -110px; width: 180px; height: 180px; background: var(--hero-orb-2); opacity: 0.55; }
+.settings-hero-avatar { flex: none; display: flex; border-radius: 50%; box-shadow: 0 0 0 4px var(--hero-fg); }
+.settings-hero-id { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.settings-hero-id h2 { margin: 0; font-size: 32px; color: var(--hero-fg); overflow-wrap: anywhere; }
+.settings-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; color: var(--hero-muted); }
+.settings-hero-email { overflow-wrap: anywhere; }
+.settings-hero-pill {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em; padding: 3px 10px; border-radius: 999px;
+  background: var(--hero-fg); color: var(--hero-bg);
+}
+.settings-hero-pill-google { background: var(--color-accent-2-200); color: var(--color-accent-2-800); }
+.settings-hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.pd-settings .settings-hero-button { background: var(--hero-fg); color: var(--hero-bg); }
+.pd-settings .settings-hero-button:hover { background: color-mix(in srgb, var(--hero-fg) 88%, var(--hero-bg)); color: var(--hero-bg); }
+.settings-hero-error {
+  margin: 0; max-width: 220px; padding: 4px 10px; border-radius: 12px; text-align: right;
+  font-size: 12px; background: var(--color-danger-bg); color: var(--color-danger-text);
+}
+
+/* --- Cards and rows ------------------------------------------------------ */
+
+.settings-card {
+  display: flex; flex-direction: column; border-radius: 28px; background: var(--color-bg);
+  border: 1px solid var(--color-divider); box-shadow: var(--pd-shadow-sm);
+}
+.settings-card-clip { overflow: hidden; }
+.settings-row { display: flex; flex-wrap: wrap; gap: 12px 32px; padding: 22px 24px; }
+.settings-card > * + .settings-row { border-top: 1px solid var(--settings-hairline); }
+.settings-row-inline { align-items: center; gap: 12px 16px; }
+.settings-row-text { flex: 0 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.settings-row-text-grow { flex: 1 1 240px; }
+.settings-row-title { margin: 0; font-family: var(--font-body); font-size: 15px; font-weight: 600; line-height: 1.4; letter-spacing: 0; }
+.settings-row-desc { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+.settings-row-control { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.settings-row-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.settings-inline { display: flex; align-items: flex-start; gap: 8px; }
+.settings-card-note { margin: 0; padding: 14px 24px; font-size: 12.5px; color: var(--color-text-muted); border-top: 1px solid var(--settings-hairline); }
+.settings-status-pill {
+  font-size: 11px; letter-spacing: 0.02em; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  background: var(--color-accent-2-100); color: var(--color-accent-2-800);
+}
+.settings-field-label {
+  margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.settings-error-box {
+  display: flex; gap: 10px; padding: 9px 13px; border-radius: 16px; font-size: 12.5px;
+  background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); color: var(--color-danger-text);
+}
+.settings-error-box > :first-child { color: var(--color-danger); }
+.settings-check {
+  width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: var(--color-accent); color: var(--color-bg); font-size: 11px; line-height: 1;
+}
+
+/* A row of pill options (questions per email, AI provider). */
+.settings-seg { display: inline-flex; flex-wrap: wrap; padding: 3px; border-radius: 999px; background: var(--color-bg); border: 1px solid var(--color-divider); }
+.settings-seg > button {
+  min-width: 38px; height: 34px; padding: 0 12px; display: grid; place-items: center; border: 0; border-radius: 999px;
+  background: transparent; color: var(--color-text); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.settings-seg > button:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.settings-seg > button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+.settings-seg-wide > button { padding: 0 17px; }
+
+/* --- Appearance ---------------------------------------------------------- */
+
+.settings-panel { display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 28px; background: var(--color-surface); }
+.settings-panel-text { display: flex; flex-direction: column; gap: 3px; }
+.settings-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.settings-theme {
+  display: flex; flex-direction: column; gap: 10px; padding: 8px 8px 12px; border: 0; border-radius: 22px;
+  text-align: left; font: inherit; color: var(--color-text); cursor: pointer;
+  background: var(--color-bg); box-shadow: 0 0 0 1px var(--color-divider);
+}
+.settings-theme:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-text) 40%, transparent); }
+.settings-theme[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--color-accent); }
+.settings-theme-preview { display: flex; height: 84px; border-radius: 15px; overflow: hidden; border: 1px solid var(--settings-hairline); }
+.settings-theme-rail { width: 24px; flex: none; display: flex; flex-direction: column; gap: 5px; padding: 10px 6px; border-right: 1px solid; }
+.settings-theme-rail > span { height: 5px; border-radius: 3px; }
+.settings-theme-page { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.settings-theme-title { width: 60%; height: 7px; border-radius: 4px; }
+.settings-theme-card { flex: 1; display: flex; align-items: center; gap: 5px; padding: 0 7px; border-radius: 8px; }
+.settings-theme-card > span { flex: none; border-radius: 50%; }
+.settings-theme-card > .settings-theme-line { flex: 1; height: 4px; border-radius: 2px; }
+.settings-theme-name { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
+.settings-theme-label { font-size: 13.5px; font-weight: 600; }
+.settings-theme-hint { margin-right: auto; font-size: 11px; color: var(--color-text-muted); }
+
+/* --- Mark aliases -------------------------------------------------------- */
+
+.settings-marks { display: flex; flex-direction: column; gap: 10px; }
+.settings-mark { display: flex; align-items: center; gap: 10px; }
+.settings-mark-swatch {
+  width: 42px; height: 42px; flex: none; display: grid; place-items: center;
+  border-radius: 14px; font-size: 15px; font-weight: 700;
+}
+.pd-settings .settings-mark-field { position: relative; flex: 1; min-width: 0; }
+.pd-settings .settings-mark-field input { padding-right: 104px; }
+.settings-mark-tag {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--color-text-muted); pointer-events: none;
+}
+.settings-mark-sample {
+  margin: 6px 0 0; padding: 14px 16px; border-radius: 18px;
+  background: var(--color-neutral-100); font-size: 14px; line-height: 1.9;
+}
+.settings-mark-sample mark { padding: 2px 4px; border-radius: 4px; }
+
+/* --- Daily email --------------------------------------------------------- */
+
+.settings-email-body {
+  display: flex; flex-direction: column; gap: 20px; padding: 22px 24px 24px;
+  background: var(--color-surface); border-top: 1px solid var(--settings-hairline);
+}
+.settings-email-fields { display: flex; flex-wrap: wrap; gap: 20px 40px; }
+.settings-email-field { display: flex; flex-direction: column; }
+.settings-email-time { min-width: 190px; }
+.pd-settings .settings-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+
+/* --- AI explanations ----------------------------------------------------- */
+
+.settings-ai-status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px 16px; padding: 22px 24px;
+  background: var(--color-neutral-100); border-bottom: 1px solid var(--settings-hairline);
+  --ai-icon-bg: var(--color-neutral-200); --ai-icon-fg: var(--color-text); --ai-kicker: var(--color-text-muted);
+}
+.settings-ai-status.is-done {
+  background: var(--color-accent-2-100); border-bottom-color: var(--color-accent-2-300);
+  --ai-icon-bg: var(--color-accent-2-600); --ai-icon-fg: var(--color-bg); --ai-kicker: var(--color-accent-2-800);
+}
+.settings-ai-status.is-locked {
+  background: var(--color-accent-100); border-bottom-color: var(--color-accent-300);
+  --ai-icon-bg: var(--color-accent-600); --ai-icon-fg: var(--color-bg); --ai-kicker: var(--color-accent-800);
+}
+.settings-ai-icon {
+  width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: var(--ai-icon-bg); color: var(--ai-icon-fg); font-size: 18px;
+}
+.settings-ai-heading { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings-ai-kicker { margin: 0; font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; line-height: 1.4; color: var(--ai-kicker); }
+.settings-ai-title { margin: 0; font-family: var(--font-heading); font-size: 22px; line-height: 1.2; }
+.settings-ai-spec { display: flex; flex-wrap: wrap; gap: 1px; margin: 0; background: var(--settings-hairline); }
+.settings-ai-spec > div { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 24px; background: var(--color-bg); }
+.settings-ai-spec dt { font-size: 12px; color: var(--color-text-muted); }
+.settings-ai-spec dd { margin: 0; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.settings-ai-body { display: flex; flex-direction: column; gap: 16px; padding: 22px 24px; }
+.settings-steps { display: flex; align-items: center; gap: 8px; }
+.settings-step { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--color-text-muted); }
+.settings-step.is-on { color: var(--color-text); }
+.settings-step-dot {
+  width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; font-size: 11px;
+  background: var(--color-neutral-200); color: var(--color-text-muted);
+}
+.settings-step-dot.is-on { background: var(--color-accent); color: var(--color-bg); }
+.settings-step-line { flex: 1; height: 2px; border-radius: 2px; background: var(--color-neutral-300); }
+.settings-step-line.is-on { background: var(--color-accent); }
+
+/* --- Phones -------------------------------------------------------------- */
+
+@media (max-width: 619.98px) {
+  .settings-hero { padding: 22px; gap: 18px; border-radius: 28px; }
+  .settings-hero-id h2 { font-size: 26px; }
+  .settings-hero-actions { align-items: flex-start; }
+  .settings-hero-error { text-align: left; }
+  .settings-row, .settings-ai-status, .settings-ai-body { padding: 20px 18px; }
+  .settings-email-body { padding: 20px 18px; }
+  .settings-card-note, .settings-ai-spec > div { padding-inline: 18px; }
+  .settings-panel { padding: 18px; }
+  .settings-themes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-mark-tag { display: none; }
+  .pd-settings .settings-mark-field input { padding-right: 12px; }
+}

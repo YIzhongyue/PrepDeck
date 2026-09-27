@@ -23,6 +23,9 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
   }, [onHeightChange]);
   const { state, go, openMore } = usePrepDeck();
   const hrefFor = useScreenHref();
+  // The screens without a tab of their own live behind More, so it stands in
+  // for them while one is open.
+  const moreOn = state.more || MORE_IDS.includes(state.screen) || state.screen === "admin";
 
   return (
     <nav
@@ -66,7 +69,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
           style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 2px",
             minHeight: 52, border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 10.5,
-            borderRadius: 16, color: state.more ? "var(--color-accent-700)" : "var(--color-text-muted)"
+            borderRadius: 16, color: moreOn ? "var(--color-accent-700)" : "var(--color-text-muted)"
           }}
         >
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
