@@ -2,16 +2,7 @@
 // pure helper so validation is unit testable without a D1 binding; the route
 // (routes/dailyEmailSettings.ts) only does DB plumbing.
 
-import { DAILY_EMAIL_MAX_QUESTIONS, DAILY_EMAIL_MIN_QUESTIONS, DAILY_EMAIL_SOURCES } from "@prepdeck/shared";
-
-function isValidTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { DAILY_EMAIL_MAX_QUESTIONS, DAILY_EMAIL_MIN_QUESTIONS, DAILY_EMAIL_SOURCES, isValidTimeZone } from "@prepdeck/shared";
 
 // null = valid; otherwise the error message to return as a 400.
 export function dailyEmailSettingsValidationError(field: string, value: unknown): string | null {
@@ -41,7 +32,7 @@ export function dailyEmailSettingsValidationError(field: string, value: unknown)
       }
       return null;
     case "timezone":
-      if (typeof value !== "string" || value.length === 0 || !isValidTimeZone(value)) {
+      if (!isValidTimeZone(value)) {
         return "timezone must be a valid IANA time zone name";
       }
       return null;

@@ -24,6 +24,7 @@ import type {
   SubmitPracticeAnswerResponse,
   UpdateAnnotationSettingsRequest,
   UpdateDailyEmailSettingsRequest,
+  UpdateUserSettingsRequest,
   UserProfile,
   UserSettingsResponse
 } from "@prepdeck/shared";
@@ -165,6 +166,9 @@ export interface AppState {
   noteDraftQuestionId: string | null;
   noteVis: "private" | "shared";
   showShared: boolean;
+  // issue #47: the account's IANA time zone, which statistics count days in
+  // and the daily email is sent in. Null until loaded or chosen.
+  timeZone: string | null;
   // implementation — null until the load-once GET below resolves (server-default
   // shape, never persisted, so no offline placeholder is meaningful yet).
   emailSettings: DailyEmailSettingsResponse | null;
@@ -199,7 +203,7 @@ const initialState: AppState = {
 
   listMode: "wrong",
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
-  noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, emailSettings: null,
+  noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, timeZone: null, emailSettings: null,
   provider: "anthropic", model: CURATED_MODELS.anthropic[0]!.id,
   // Both are per account (issue #46), so they are read once the account is known.
   keyMode: "memory", hasSessionKey: false, hasStoredKey: false,
@@ -287,6 +291,7 @@ interface PrepDeckStore {
   updateNote: (id: string, content: string, visibility: "private" | "shared") => Promise<void>;
   removeNote: (id: string) => void;
   toggleShared: () => void;
+  updateTimeZone: (timeZone: string) => Promise<void>;
   updateEmailSettings: (patch: UpdateDailyEmailSettingsRequest) => void;
 
   capture: (qid: string, target: AnnotationTarget) => void;
@@ -353,6 +358,29 @@ function remainingSeconds(active: ActiveAttemptResponse): number {
   if (active.timeLimitSeconds == null) return 0;
   const elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
   return Math.max(0, active.timeLimitSeconds - elapsed);
+}
+
+function browserTimeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveTimeZone(timeZone: string): Promise<string | null> {
+  const body: UpdateUserSettingsRequest = { timezone: timeZone };
+  const { timezone } = await apiFetch<UserSettingsResponse>("/api/settings", { method: "PATCH", body: JSON.stringify(body) });
+  return timezone;
+}
+
+/** The state change for a saved zone: the email shares it, and statistics refetch. */
+function timeZoneSaved(timeZone: string | null) {
+  return (s: AppState): Partial<AppState> => ({
+    timeZone,
+    emailSettings: s.emailSettings && timeZone ? { ...s.emailSettings, timezone: timeZone } : s.emailSettings,
+    activityRevision: s.activityRevision + 1,
+  });
 }
 
 export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
@@ -469,7 +497,13 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // default for that browser.
   useEffect(() => {
     apiFetch<UserSettingsResponse>("/api/settings")
-      .then(({ showSharedNotes }) => setState({ showShared: showSharedNotes }))
+      .then(({ showSharedNotes, timezone }) => {
+        setState({ showShared: showSharedNotes, timeZone: timezone });
+        // issue #47: an account that has not chosen a time zone takes this
+        // browser's, so its statistics count days where the user is.
+        const browserZone = browserTimeZone();
+        if (!timezone && browserZone) return saveTimeZone(browserZone).then((saved) => setState(timeZoneSaved(saved)));
+      })
       .catch(() => {});
   }, [setState]);
 
@@ -1359,6 +1393,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [scopedState]);
 
+  // issue #47. Not optimistic: every statistic is recounted in the new zone,
+  // so the Statistics screen refetches once the server has it.
+  const updateTimeZone = useCallback(async (timeZone: string) => {
+    setState(timeZoneSaved(await saveTimeZone(timeZone)));
+  }, [setState]);
+
   // implementation — daily review email settings. Not optimistic (unlike
   // toggleShared above): the enabled/source/timing fields are meaningful
   // enough to wait for the server's resolved response, same as
@@ -1590,7 +1630,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setMockFormat, setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
     askSubmit, cancelSubmit, finishMock, practiceWrong,
     setListMode, removeBookmark, markMastered, practiceList,
-    setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateEmailSettings,
+    setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateTimeZone, updateEmailSettings,
     capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias,
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut, setTheme,

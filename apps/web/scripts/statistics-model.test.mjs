@@ -16,7 +16,7 @@ const { outputFiles } = await build({
   alias: { '@': resolve(web, 'src') },
 });
 const {
-  buildStatisticsModel, eligibleQuestionIdsForTags, formatDuration, formatSignedPoints, readinessNarrative,
+  buildStatisticsModel, eligibleQuestionIdsForTags, formatDateKey, formatDuration, formatSignedPoints, readinessNarrative, timeZoneLabel,
 } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString('base64')}`);
 
 const NOW = new Date('2026-09-20T12:00:00Z');
@@ -77,6 +77,7 @@ const sources = (over = {}) => ({
   wrong: { n1: { c: 3, at: '2026-09-19T10:00:00Z' }, c1: { c: 1, at: '2026-08-01T10:00:00Z' } },
   mastered: {},
   now: NOW,
+  timeZone: 'UTC',
   ...over,
 });
 
@@ -215,6 +216,34 @@ test('an empty bank, no attempts and no preferences all have their own wording',
     attempted: {}, wrong: {},
   }));
   assert.match(readinessNarrative(noAttempts, 'Cloud Pro'), /answer some questions/i);
+});
+
+test('issue #47: the week and the countdown start from today in the account\'s time zone', () => {
+  // Monday 2026-09-21 07:30 in Tokyo is still Sunday the 20th in UTC.
+  const mondayMorning = new Date('2026-09-20T22:30:00Z');
+  const tokyo = buildStatisticsModel(sources({ now: mondayMorning, timeZone: 'Asia/Tokyo' }));
+  assert.equal(tokyo.timeZone, 'Asia/Tokyo');
+  assert.equal(tokyo.week.weekStart, '2026-09-21', 'a new week has begun in Tokyo');
+  assert.equal(tokyo.countdown.daysLeft, 36);
+  const utc = buildStatisticsModel(sources({ now: mondayMorning }));
+  assert.equal(utc.week.weekStart, '2026-09-14');
+  assert.equal(utc.countdown.daysLeft, 37);
+  assert.equal(timeZoneLabel('Asia/Tokyo'), 'Tokyo time');
+  assert.equal(timeZoneLabel('America/New_York'), 'New York time');
+  assert.equal(timeZoneLabel('UTC'), 'UTC');
+});
+
+test('a trend day is shown as its own date whatever the browser\'s zone', () => {
+  // Read as an instant in a zone west of UTC, "2026-09-27" would print as the 26th.
+  const previous = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    assert.match(new Date('2026-09-27').toLocaleDateString('en-US', { day: 'numeric' }), /^26$/, 'the zone took effect');
+    assert.match(formatDateKey('2026-09-27'), /27/);
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
 });
 
 test('the countdown is whole UTC days from the user-supplied date', () => {

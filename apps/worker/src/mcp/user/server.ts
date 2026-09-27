@@ -60,7 +60,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_get_learning_overview",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Cross-exam summary of your own study activity: per-exam attempt/accuracy totals, bookmark and active wrong-question counts, and a recent activity summary. `days` bounds only the activity summary, not the per-exam (all-time) figures.",
+      "Cross-exam summary of your own study activity: per-exam attempt/accuracy totals, bookmark and active wrong-question counts, and a recent activity summary. `days` bounds only the activity summary, not the per-exam (all-time) figures. Activity days are calendar days in your account's time zone, returned as `activity.timeZone`.",
       z.strictObject({ days: z.number().int().min(7).max(365).default(84) }),
       (input) => services.getLearningOverview(input),
     ),
@@ -74,7 +74,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_get_learning_stats",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Detailed per-exam statistics: accuracy trend, breakdown by tag/difficulty, and mock exam score history (paginated via limit/offset).",
+      "Detailed per-exam statistics: accuracy trend, breakdown by tag/difficulty, and mock exam score history (paginated via limit/offset). Trend days are calendar days in your account's time zone, returned as `timeZone`.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.getLearningStats(input),
     ),

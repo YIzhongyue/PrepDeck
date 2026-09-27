@@ -14,6 +14,8 @@ export interface DailyEmailSettingsResponse {
   enabled: boolean;
   questionsPerEmail: number;
   source: DailyEmailSource;
+  // The account's time zone (users.timezone, issue #47), which the email is
+  // sent in. Writing it here changes it for the statistics too.
   timezone: string;
   sendHourLocal: number;
   unsubscribedAt: string | null;

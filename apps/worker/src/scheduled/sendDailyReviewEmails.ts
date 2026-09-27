@@ -5,7 +5,7 @@
 // file's own comment).
 
 import type { Env } from "../bindings";
-import type { DailyEmailSource } from "@prepdeck/shared";
+import { resolveTimeZone, type DailyEmailSource } from "@prepdeck/shared";
 import { createUnsubscribeToken } from "../lib/unsubscribeToken";
 import { recentlySentQuestionIds, selectDailyReviewQuestions } from "../lib/dailyReviewSelection";
 import { renderDailyReviewHtml, renderDailyReviewText } from "../lib/emailTemplates/dailyReview";
@@ -15,7 +15,7 @@ interface EmailSettingsRow {
   user_id: string;
   questions_per_email: number;
   source: DailyEmailSource;
-  timezone: string;
+  timezone: string | null;
   send_hour_local: number;
 }
 
@@ -59,7 +59,9 @@ export interface DailyReviewEmailRunResult {
 
 export async function runDailyReviewEmailDelivery(env: Env, now: () => number = Date.now): Promise<DailyReviewEmailRunResult> {
   const settings = await env.DB.prepare(
-    "SELECT user_id, questions_per_email, source, timezone, send_hour_local FROM user_email_settings WHERE enabled = 1"
+    // The account's zone (issue #47), UTC until one is chosen.
+    `SELECT s.user_id, s.questions_per_email, s.source, u.timezone AS timezone, s.send_hour_local
+     FROM user_email_settings s JOIN users u ON u.id = s.user_id WHERE s.enabled = 1`
   ).all<EmailSettingsRow>();
 
   let sent = 0;
@@ -68,7 +70,9 @@ export async function runDailyReviewEmailDelivery(env: Env, now: () => number = 
 
   for (const row of settings.results ?? []) {
     try {
-      const { date: localDate, hour: localHour } = localDateAndHour(row.timezone, now());
+      // Resolved as the statistics resolve it, so both use the same zone.
+      const timeZone = resolveTimeZone(row.timezone);
+      const { date: localDate, hour: localHour } = localDateAndHour(timeZone, now());
       if (localHour !== row.send_hour_local) continue;
 
       const user = await env.DB.prepare("SELECT id, email, display_name, status FROM users WHERE id = ?")
@@ -103,7 +107,7 @@ export async function runDailyReviewEmailDelivery(env: Env, now: () => number = 
       const cta = ctaUrl(env.APP_BASE_URL, row.source);
       const displayName = user.display_name?.trim() || "there";
       const dateLabel = new Intl.DateTimeFormat("en-US", {
-        timeZone: row.timezone,
+        timeZone,
         weekday: "long",
         day: "numeric",
         month: "long",

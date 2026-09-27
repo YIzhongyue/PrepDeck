@@ -9,12 +9,12 @@
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartTooltipContent } from "@/components/application/charts/charts-base";
 import type { TrendModel } from "../../lib/statistics";
-import { formatDate } from "../../lib/statistics";
+import { formatDateKey, timeZoneLabel } from "../../lib/statistics";
 import { ChartData, usePrefersReducedMotion } from "./chartSupport";
 
-export default function AccuracyTrendCard({ trend }: { trend: TrendModel }) {
+export default function AccuracyTrendCard({ trend, timeZone }: { trend: TrendModel; timeZone: string }) {
   const reducedMotion = usePrefersReducedMotion();
-  const data = trend.points.map((p) => ({ ...p, label: formatDate(p.date) }));
+  const data = trend.points.map((p) => ({ ...p, label: formatDateKey(p.date) }));
 
   // One active day is a dot, not a line, so the chart still renders something
   // truthful rather than an empty plot area.
@@ -32,7 +32,7 @@ export default function AccuracyTrendCard({ trend }: { trend: TrendModel }) {
           <h3 id="pd-stats-trend-title">Accuracy trend</h3>
           <p className="pd-stats-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
             {enough
-              ? `Last ${trend.activeDays} active day${trend.activeDays === 1 ? "" : "s"} (days are counted in UTC)`
+              ? `Last ${trend.activeDays} active day${trend.activeDays === 1 ? "" : "s"} (days are counted in ${timeZoneLabel(timeZone)})`
               : "Needs at least one completed answer"}
           </p>
         </div>
@@ -91,7 +91,7 @@ export default function AccuracyTrendCard({ trend }: { trend: TrendModel }) {
       <ChartData
         summary={summary}
         caption="Accuracy by active day"
-        columns={["Day (UTC)", "Answers", "Correct", "Accuracy"]}
+        columns={["Day", "Answers", "Correct", "Accuracy"]}
         rows={data.map((p) => [p.label, p.attempted, p.correct, `${p.accuracyPct}%`])}
       />
     </section>
