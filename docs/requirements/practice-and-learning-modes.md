@@ -44,6 +44,15 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   the page's scroll offset to the panel height. Panels allow native scrolling to
   continue on the outer page at their boundaries when the page has room to scroll.
 
+  On phones (under 620px wide), Practice and Learning give the question the
+  viewport ([issue #78](https://github.com/YIzhongyue/PrepDeck/issues/78)): the
+  page scrolls as one, with no scroller nested inside the question. A compact
+  session header (question number, progress, bookmark, end/exit) sticks to the
+  top while the app's top bar scrolls away, and Back and Next/Check answer stick
+  just above the tab bar. Tags keep to one row that scrolls sideways. Moving to
+  another question brings its start back into view below the header, and
+  anything scrolled into view, such as a focused option, stops clear of both bars.
+
   A practice answer is graded and locked when it is first recorded. Re-submitting the same question replays the stored grading — including the answer key it was graded against, so the replayed result stays consistent with itself even if the key has since changed — rather than failing. That makes a retry after a lost response recover the feedback instead of leaving the client stuck on a question the server has already graded, while still refusing to revise the recorded answer.
 
   Keyboard shortcuts ([issue #50](https://github.com/YIzhongyue/PrepDeck/issues/50)):

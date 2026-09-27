@@ -83,12 +83,14 @@ export function BookmarkButton({ on, onClick }: { on: boolean; onClick: () => vo
   );
 }
 
-export function CopyPromptButton({ status, onClick }: { status: "idle" | "copied" | "error"; onClick: () => void }) {
+/* `compact` (phones) shows only the icon until a copy reports back, which
+   leaves the question ID room to show in full beside it. */
+export function CopyPromptButton({ status, onClick, compact = false }: { status: "idle" | "copied" | "error"; onClick: () => void; compact?: boolean }) {
   return (
     <>
       <button type="button" className="st-btn st-btn--sm st-copy" onClick={onClick} aria-label="Copy question and answers as a Markdown prompt">
         <Icon d={status === "copied" ? IC.check : IC.copy} style={status === "copied" ? { animation: "st-pop .35s cubic-bezier(.3,1.5,.5,1) both" } : undefined} />
-        {status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy as prompt"}
+        {status === "copied" ? "Copied" : status === "error" ? "Copy failed" : !compact && "Copy as prompt"}
       </button>
       <span className="sr-only" aria-live="polite">
         {status === "copied" ? "Markdown prompt copied to clipboard." : status === "error" ? "Could not copy the Markdown prompt." : ""}
@@ -103,7 +105,9 @@ export function CopyPromptButton({ status, onClick }: { status: "idle" | "copied
    below `gridRef` (at least 360px), less the bottom padding of the app's
    content column (`[data-pd-content]`), which reserves room for the fixed
    mobile tab bar; size the grid or the card to it. The body scrolls back to
-   the top on every new question. */
+   the top on every new question, and so does the page wherever the question's
+   top has gone under the sticky top bar or session header (the phone layout,
+   where the page itself scrolls, or a palette below the card). */
 export function usePinnedCard(questionId: string | undefined, phone: boolean, deps: DependencyList = []) {
   const gridRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -130,11 +134,20 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     return () => { window.removeEventListener("resize", schedule); observer?.disconnect(); cancelAnimationFrame(frame); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass extra re-measure triggers, like useEffect's own list
   }, [phone, questionId, ...deps]);
-  useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [questionId]);
+  useLayoutEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const topBar = parseFloat(getComputedStyle(grid).getPropertyValue("--pd-topbar-height")) || 0;
+    const head = grid.parentElement?.querySelector(".st-head")?.getBoundingClientRect().bottom ?? 0;
+    const hidden = Math.max(topBar, head) - grid.getBoundingClientRect().top;
+    if (hidden > 0) window.scrollBy(0, -(hidden + 12));
+  }, [questionId]);
   return { gridRef, bodyRef, fitHeight };
 }
 
-export function QuestionBadges({ label, typeLabel, multi, tags, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; children?: ReactNode }) {
+/* `compact` (phones) keeps the tags to a single row that scrolls sideways. */
+export function QuestionBadges({ label, typeLabel, multi, tags, compact = false, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; compact?: boolean; children?: ReactNode }) {
   return (
     <div className="st-badges">
       {/* The first row holds only the ID, type and actions, so tags can never push an action onto a new line. */}
@@ -144,7 +157,8 @@ export function QuestionBadges({ label, typeLabel, multi, tags, children }: { la
         {children}
       </div>
       {!!tags?.length && (
-        <div className="st-tags">
+        // Focusable when it scrolls, so keyboard users can reach the hidden tags too.
+        <div className={`st-tags${compact ? " st-tags--scroll" : ""}`} {...(compact ? { role: "group", "aria-label": "Tags", tabIndex: 0 } : {})}>
           {tags.map((t) => <span key={t} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{t}</span>)}
         </div>
       )}

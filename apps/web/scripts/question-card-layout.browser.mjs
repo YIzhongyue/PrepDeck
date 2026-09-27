@@ -1,7 +1,8 @@
 // Optional integration suite: the Learning, Practice and Mock question cards
 // keep their header (ID, type, Copy as prompt, then tags) and footer navigation
-// in place while only the stem/answer body scrolls. Runs against a local,
-// deterministic fixture.
+// in place while only the stem/answer body scrolls. On phones, Learning and
+// Practice instead scroll as one page between a sticky session header and
+// action bar (issue #78). Runs against a local, deterministic fixture.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -119,9 +120,42 @@ async function checkShortBody(page, label, viewport) {
   assert.ok(foot.bottom <= viewport.height, `${label}: footer below the viewport for a short question`);
 }
 
+// Phones: nothing scrolls but the page. The tags keep to one row, the session
+// header sticks to the top and the actions to the bottom, and an option
+// scrolled into view (as focus does) clears both.
+async function checkFlow(page, label, viewport) {
+  const body = page.locator(".st-q-body");
+  assert.equal(await body.evaluate(el => getComputedStyle(el).overflowY), "visible", `${label}: the question body scrolls on its own`);
+  if (await page.locator(".st-tags").count()) {
+    const tags = await page.locator(".st-tags").evaluate(el => ({ height: el.clientHeight, badge: el.firstElementChild.offsetHeight, scrolls: el.scrollWidth > el.clientWidth, tabIndex: el.tabIndex }));
+    assert.ok(tags.height <= tags.badge + 1 && tags.scrolls && tags.tabIndex === 0, `${label}: tags are not one focusable row that scrolls: ${JSON.stringify(tags)}`);
+  }
+  const bodyBox = await body.evaluate(el => el.getBoundingClientRect().toJSON());
+  await page.mouse.move(bodyBox.x + bodyBox.width / 2, viewport.height / 2);
+  await page.mouse.wheel(0, 300); await page.waitForTimeout(100);
+  assert.ok(await page.evaluate(() => window.scrollY) > 0, `${label}: the page does not scroll`);
+  assert.equal((await rect(page, ".st-head")).top, 0, `${label}: the session header does not stick to the top`);
+  assert.equal((await rect(page, ".st-q-foot")).bottom, viewport.height, `${label}: the actions do not stick to the bottom`);
+  const atEnd = () => page.evaluate(() => window.scrollY + innerHeight >= document.documentElement.scrollHeight - 1);
+  for (let i = 0; i < 80 && !(await atEnd()); i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(50); }
+  assert.ok(await atEnd(), `${label}: wheel never reached the end of the page`);
+  await page.locator(".st-opt:last-child").evaluate(el => el.scrollIntoView({ block: "end" }));
+  const head = await rect(page, ".st-head"), foot = await rect(page, ".st-q-foot"), lastOption = await rect(page, ".st-opt:last-child");
+  assert.ok(lastOption.top >= head.bottom && lastOption.bottom <= foot.top, `${label}: last option under a sticky bar: ${JSON.stringify({ head, lastOption, foot })}`);
+}
+
+// Phones: the next question starts right below the sticky header, however far the last one was scrolled.
+async function checkFlowNext(page, label, viewport) {
+  await page.getByText("Short question").waitFor();
+  const head = await rect(page, ".st-head"), grid = await rect(page, ".st-grid"), foot = await rect(page, ".st-q-foot");
+  assert.ok(grid.top >= head.bottom && grid.top <= head.bottom + 24, `${label}: the next question does not start below the header`);
+  assert.ok(foot.bottom <= viewport.height, `${label}: actions below the viewport`);
+}
+
 try {
   for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 1000 }, { width: 820, height: 700 }, { width: 390, height: 720 }]) {
     const size = `${viewport.width}x${viewport.height}`;
+    const phone = viewport.width < 620;
     const page = await browser.newPage({ viewport });
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -134,10 +168,11 @@ try {
     await page.evaluate(() => window.fixtureApp.beginLearning(1));
     await copyButton(page).waitFor(); await settle(page);
     await checkHeader(page, label, { tags: true, copy: true });
-    await checkLongBody(page, label, viewport);
-    await page.getByRole("button", { name: "Next question", exact: true }).click();
+    await (phone ? checkFlow : checkLongBody)(page, label, viewport);
+    // Phones fit Back, Jump and Next on one row, so Next is short there.
+    await page.getByRole("button", { name: phone ? "Next" : "Next question", exact: true }).click();
     await page.waitForFunction(() => window.fixtureApp.state.lIdx === 1);
-    await checkShortBody(page, label, viewport);
+    await (phone ? checkFlowNext : checkShortBody)(page, label, viewport);
     await checkHeader(page, label, { tags: false, copy: true });
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await page.waitForFunction(() => window.fixtureApp.state.lIdx === 0);
@@ -152,14 +187,14 @@ try {
     await page.waitForFunction(() => window.fixtureApp.state.screen === "practice" && window.fixtureApp.state.pStage === "live");
     await page.getByRole("button", { name: "Check answer", exact: true }).waitFor(); await settle(page);
     await checkHeader(page, label, { tags: true, copy: false });
-    await checkLongBody(page, label, viewport);
+    await (phone ? checkFlow : checkLongBody)(page, label, viewport);
     await page.locator(".st-opt:last-child").click();
     await page.getByRole("button", { name: "Check answer", exact: true }).click();
     await copyButton(page).waitFor();
     await checkHeader(page, label, { tags: true, copy: true });
     await page.getByRole("button", { name: "Next question", exact: true }).click();
     await page.waitForFunction(() => window.fixtureApp.state.idx === 1);
-    await checkShortBody(page, label, viewport);
+    await (phone ? checkFlowNext : checkShortBody)(page, label, viewport);
     await shot("practice");
     console.log(`PASS ${label}`);
 

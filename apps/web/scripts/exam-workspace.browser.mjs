@@ -321,7 +321,7 @@ try {
     return { width: innerWidth, height: innerHeight, documentTop: grid.getBoundingClientRect().top + scrollY,
       contentBottom: parseFloat(getComputedStyle(content).paddingBottom), tabBarTop: tabBar ? tabBar.getBoundingClientRect().top : innerHeight,
       outer: measure(document.scrollingElement), grid: measure(grid), card: measure(panel), question: measure(panel.querySelector('.st-q-body')),
-      foot: measure(panel.querySelector('.st-q-foot')), right: measure(right) };
+      foot: measure(panel.closest('.pd-study').querySelector('.st-q-foot')), right: measure(right) };
   });
   const settleScroll = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const resizePractice = async (width, height) => { await page.setViewportSize({ width, height }); await settleScroll(); };
@@ -337,12 +337,19 @@ try {
     const layout = await measureScroll();
     const available = layout.height - layout.documentTop - layout.contentBottom;
     const fit = Math.max(360, available);
-    assert.equal(layout.question.overflowY, 'auto', 'Only the question body scrolls inside the pinned card');
+    // Phones pin no card: the page scrolls as one, and the actions stick above the tab bar (issue #78).
+    const phone = layout.width < 620;
+    assert.equal(layout.question.overflowY, phone ? 'visible' : 'auto', 'Only the question body scrolls inside the pinned card');
     assert.equal(layout.right.overflowY, bounded ? 'auto' : 'visible');
     assert.equal(layout.right.position, 'static', 'Natural-height explanations must not become sticky');
     assert.equal(layout.question.overscrollY, 'auto'); assert.equal(layout.right.overscrollY, 'auto');
     if (bounded) assert.ok(Math.abs(layout.grid.height - fit) <= 2, `Grid height must use document coordinates: ${JSON.stringify(layout)}`);
-    else {
+    else if (phone) {
+      assert.equal(layout.grid.inlineHeight, ''); assert.equal(layout.card.inlineHeight, '');
+      assert.equal(layout.foot.position, 'sticky');
+      assert.ok(Math.abs(layout.foot.top + layout.foot.height - layout.tabBarTop) <= 1,
+        `The phone actions must sit on the tab bar: ${JSON.stringify(layout)}`);
+    } else {
       assert.equal(layout.grid.inlineHeight, '');
       assert.ok(Math.abs(layout.card.height - fit) <= 2, `Card height must use document coordinates: ${JSON.stringify(layout)}`);
     }
@@ -432,10 +439,11 @@ try {
       await resetScroll();
       const nextBounds = await page.getByRole('button', { name: 'Next question', exact: true }).boundingBox();
       const { tabBarTop } = await measureScroll();
-      assert.ok(nextBounds.y >= 75 && nextBounds.y + nextBounds.height <= tabBarTop, 'The pinned footer keeps the mobile next action above fixed navigation');
+      assert.ok(nextBounds.y >= 75 && nextBounds.y + nextBounds.height <= tabBarTop, 'The sticky actions keep the mobile next action above fixed navigation');
       scrolled = await wheelPractice('question', 240);
-      assert.ok(scrolled.after.question.scrollTop > 0, 'The mobile question scrolls inside its card');
-      assert.equal(scrolled.after.outer.scrollTop, scrolled.before.outer.scrollTop);
+      assert.equal(scrolled.after.question.scrollTop, 0, 'The mobile question has no scroller of its own');
+      assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop, 'The mobile question scrolls with the page');
+      assert.ok(Math.abs(scrolled.after.foot.top + scrolled.after.foot.height - scrolled.after.tabBarTop) <= 1, 'The mobile actions stay on the tab bar while the page scrolls');
       if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-mobile.png` });
       if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/practice-scroll-mobile-actions.png` });
     }

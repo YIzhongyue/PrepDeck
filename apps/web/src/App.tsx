@@ -67,6 +67,10 @@ export function Shell() {
   const isKnowledgePoints = state.screen === "knowledgePoints";
   const isSettings = state.screen === "settings";
   const isAdmin = state.screen === "admin";
+  // A live Learning or Practice session on a phone scrolls as one page, with
+  // its own session header and actions sticking instead (issue #78). The top
+  // bar scrolls away there, and the page runs down to the tab bar.
+  const studyFlow = bp.phone && (isLive || isLearningLive);
 
   // The loading scene owns the viewport, outside the padded content column
   // and navigation. Keep independent screens available during exam refreshes.
@@ -86,12 +90,19 @@ export function Shell() {
           {!compactNavigation && <Sidebar rail={bp.rail} />}
 
           {/* --pd-topbar-height: where a screen's own sticky bar (Settings' section
-              chips) sits, so it stays below the top bar rather than under it. */}
-          <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", "--pd-topbar-height": `${compactNavigation ? topBarHeight : 0}px` } as CSSProperties}>
-            {compactNavigation && <TopBar onHeightChange={setTopBarHeight} />}
+              chips) sits, so it stays below the top bar rather than under it.
+              --pd-tabbar-height: likewise for a bar stuck to the bottom.
+              --pd-content-inline: the side padding such a bar reaches over. */}
+          <main style={{
+            flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
+            "--pd-topbar-height": `${compactNavigation && !studyFlow ? topBarHeight : 0}px`,
+            "--pd-tabbar-height": `${compactNavigation ? tabBarHeight : 0}px`,
+            "--pd-content-inline": `${contentInset(bp).inline}px`
+          } as CSSProperties}>
+            {compactNavigation && <TopBar onHeightChange={setTopBarHeight} sticky={!studyFlow} />}
 
             {/* data-pd-content: pinned question cards stop above this padding (and so above the tab bar). */}
-            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: contentInset(bp).top, paddingInline: contentInset(bp).inline, paddingBottom: compactNavigation ? tabBarHeight + 20 : 40 }}>
+            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: contentInset(bp).top, paddingInline: contentInset(bp).inline, paddingBottom: compactNavigation ? tabBarHeight + (studyFlow ? 0 : 20) : 40 }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", width: "100%", maxWidth: 1160, margin: "0 auto" }}>
                 {state.workspaceNotice && <p role="status">{state.workspaceNotice}</p>}
                 {state.actionError && <div role="alert" className="card" style={{ padding: 16, marginBottom: 16 }}>
