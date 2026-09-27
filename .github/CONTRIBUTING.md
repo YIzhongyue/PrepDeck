@@ -68,6 +68,9 @@ All local bindings are explicit and the launcher disables remote bindings.
 Run the checks relevant to your change from the repository root:
 
 ```bash
+# Lint all workspaces (ESLint; CI fails on any finding)
+npm run lint
+
 # Type-check all workspaces
 npm run typecheck
 
@@ -101,7 +104,7 @@ include:
 
 Before requesting review, confirm that:
 
-- [ ] The type checks, Worker tests, and relevant builds pass.
+- [ ] Lint, the type checks, Worker tests, and relevant builds pass.
 - [ ] New behavior is covered by tests where practical.
 - [ ] Documentation and examples reflect the change.
 - [ ] No secrets, generated artifacts, or unrelated changes are included.

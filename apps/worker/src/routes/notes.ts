@@ -47,6 +47,7 @@ const SELECT_NOTE = `SELECT n.*, u.display_name, u.avatar_url FROM notes n JOIN 
 
 const TOO_LONG = `content must be ${MAX_NOTE_LENGTH.toLocaleString("en")} characters or fewer`;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
 function validateCreate(body: any): string | null {
   if (!body || typeof body !== "object") return "Invalid JSON body";
   if (typeof body.content !== "string" || !body.content.trim()) return "content is required";

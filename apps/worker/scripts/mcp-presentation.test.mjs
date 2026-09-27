@@ -24,7 +24,7 @@ test("full shared material retains tables, original pixels, code, source omissio
   assert.match(output, /\| System \| Interval \| Retention \|\n\| --- \| --- \| --- \|/);
   assert.match(output, /\| Primary &#124; A \| 7 days \| 2 generations \|/);
   assert.match(output, /Line 1<br>Line 2/);
-  assert.match(output, /````python\nif changed:\n    print\("```", "__"\)/);
+  assert.match(output, /````python\nif changed:\n {4}print\("```", "__"\)/);
   assert.match(output, /### ア\n\n- \*\*i\*\*: Review interval\n- \*\*ii\*\*: Review retention/);
   assert.match(output, /省略/);
   assert.ok(output.indexOf("Shared material") < output.indexOf("## Question"));

@@ -15,6 +15,7 @@ import { buildAnnotationsListQuery, toAnnotation, type AnnotationRow } from "../
 
 const TARGET_TYPES: AnnotationTargetType[] = ["stem", "option", "ai_explanation"];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
 function validateCreate(body: any): string | null {
   if (!body || typeof body !== "object") return "Invalid JSON body";
   if (!TARGET_TYPES.includes(body.targetType)) return "targetType must be one of stem, option, ai_explanation";

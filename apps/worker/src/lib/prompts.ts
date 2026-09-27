@@ -14,7 +14,7 @@ import { precompiledTemplates } from "../prompts/generated/precompiled";
 // but at runtime it's actually a { [templateName]: compiledTemplate } map
 // (see node_modules/nunjucks/src/precompiled-loader.js) — the type itself is
 // simply wrong here, hence the cast.
-const env = new nunjucks.Environment(new nunjucks.PrecompiledLoader(precompiledTemplates as any), {
+const env = new nunjucks.Environment(new nunjucks.PrecompiledLoader(precompiledTemplates as unknown as ConstructorParameters<typeof nunjucks.PrecompiledLoader>[0]), {
   autoescape: false, // this feeds an LLM prompt, not HTML — don't entity-escape it
 });
 

@@ -78,7 +78,7 @@ function toDto(row: ExplanationRow, viewerId: string, viewerRole: "admin" | "use
 export function buildPrompt(q: QuestionRow): string {
   const options: { id: string; text: string }[] = q.options_json ? JSON.parse(q.options_json) : [];
   const correctAnswers: string[] = JSON.parse(q.correct_answers_json);
-  let content: QuestionContentModel | null = null;
+  let content: QuestionContentModel | null;
   try { content = q.content_json ? JSON.parse(q.content_json) as QuestionContentModel : null; } catch { content = null; }
   const question = { type: q.type, options, content };
   const kind = q.type === "matching" || q.type === "ordering" ? q.type : q.type === "fill_blank" ? "text" : "choice";
@@ -127,7 +127,7 @@ async function callUpstream(provider: AiProvider, model: string, apiKey: string,
       logAiFailure("openai", "http_error", res.status);
       throw new Error(`OpenAI request failed (${res.status})`);
     }
-    const data = await res.json<any>();
+    const data = await res.json<{ choices?: { message?: { content?: unknown } }[] } | null>();
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) {
       logAiFailure("openai", "empty_content");
@@ -145,10 +145,10 @@ async function callUpstream(provider: AiProvider, model: string, apiKey: string,
     logAiFailure("anthropic", "http_error", res.status);
     throw new Error(`Anthropic request failed (${res.status})`);
   }
-  const data = await res.json<any>();
+  const data = await res.json<{ content?: unknown } | null>();
   // Anthropic's `content` is an array of blocks (text/thinking/tool_use/...);
   // find the first text block rather than assuming index 0 is text.
-  const blocks: any[] = Array.isArray(data?.content) ? data.content : [];
+  const blocks: ({ type?: unknown; text?: unknown } | null)[] = Array.isArray(data?.content) ? data.content : [];
   const textBlock = blocks.find((b) => b && b.type === "text" && typeof b.text === "string");
   const content = textBlock?.text;
   if (typeof content !== "string" || !content.trim()) {
@@ -158,6 +158,7 @@ async function callUpstream(provider: AiProvider, model: string, apiKey: string,
   return content.trim();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
 function validateProviderModel(body: any): string | null {
   if (!body || typeof body !== "object") return "Invalid JSON body";
   if (body.provider !== "openai" && body.provider !== "anthropic") return "provider must be 'openai' or 'anthropic'";
@@ -229,6 +230,7 @@ aiGenerateRouter.post("/", async (c) => {
   const raw = await c.req.text();
   if (raw.length > MAX_BODY_BYTES) return c.json({ error: "Request too large" }, 413);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field below
   let body: any;
   try {
     body = JSON.parse(raw);
