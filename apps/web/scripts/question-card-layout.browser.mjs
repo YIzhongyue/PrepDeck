@@ -64,7 +64,8 @@ const server = createServer(async (req, res) => {
   return json(200, {});
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-const browser = await playwright.chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
+// PLAYWRIGHT_BROWSER=webkit runs the same checks in Safari's engine (the sticky phone bars, #78).
+const browser = await playwright[process.env.PLAYWRIGHT_BROWSER || "chromium"].launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
 const url = `http://127.0.0.1:${server.address().port}`;
 const rect = (page, selector) => page.locator(selector).first().evaluate(el => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; });
 // Wait out entry animations (not infinite ones like spinners) so positions are final.
@@ -120,9 +121,11 @@ async function checkShortBody(page, label, viewport) {
   assert.ok(foot.bottom <= viewport.height, `${label}: footer below the viewport for a short question`);
 }
 
-// Phones: nothing scrolls but the page. The tags keep to one row, the session
-// header sticks to the top and the actions to the bottom, and an option
-// scrolled into view (as focus does) clears both.
+// Phones: nothing scrolls but the page, and the tags keep to one row. On a
+// page several screens long, the actions are at the bottom from the first
+// scroll position to the last, although they come after the question and the
+// review panels, and the session header stays at the top once reached. An
+// option scrolled into view (as focus does) clears both.
 async function checkFlow(page, label, viewport) {
   const body = page.locator(".st-q-body");
   assert.equal(await body.evaluate(el => getComputedStyle(el).overflowY), "visible", `${label}: the question body scrolls on its own`);
@@ -130,15 +133,28 @@ async function checkFlow(page, label, viewport) {
     const tags = await page.locator(".st-tags").evaluate(el => ({ height: el.clientHeight, badge: el.firstElementChild.offsetHeight, scrolls: el.scrollWidth > el.clientWidth, tabIndex: el.tabIndex }));
     assert.ok(tags.height <= tags.badge + 1 && tags.scrolls && tags.tabIndex === 0, `${label}: tags are not one focusable row that scrolls: ${JSON.stringify(tags)}`);
   }
+  const range = await page.evaluate(async () => {
+    const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const box = selector => document.querySelector(selector).getBoundingClientRect();
+    const max = document.documentElement.scrollHeight - innerHeight, stops = [];
+    for (let i = 0; i <= 10; i++) {
+      window.scrollTo(0, Math.round(max * i / 10)); await frame();
+      stops.push({ y: scrollY, head: Math.round(box(".st-head").top), foot: Math.round(box(".st-q-foot").bottom) });
+    }
+    window.scrollTo(0, 0); await frame();
+    return { screens: document.documentElement.scrollHeight / innerHeight, pageEnd: parseFloat(getComputedStyle(document.querySelector("main")).paddingBottom), stops };
+  });
+  assert.ok(range.screens >= 3, `${label}: the page is only ${range.screens.toFixed(1)} screens long`);
+  range.stops.forEach(({ y, head, foot }, i) => {
+    // Only at the very end do the actions rise, by the page's own bottom padding, to where they sit in the page.
+    const bottom = i === range.stops.length - 1 ? viewport.height - range.pageEnd : viewport.height;
+    assert.ok(Math.abs(foot - bottom) <= 1, `${label}: the actions are not at the bottom at scrollY ${y}: ${JSON.stringify(range.stops)}`);
+    if (i) assert.ok(Math.abs(head) <= 1, `${label}: the session header left the top at scrollY ${y}: ${JSON.stringify(range.stops)}`);
+  });
   const bodyBox = await body.evaluate(el => el.getBoundingClientRect().toJSON());
   await page.mouse.move(bodyBox.x + bodyBox.width / 2, viewport.height / 2);
   await page.mouse.wheel(0, 300); await page.waitForTimeout(100);
-  assert.ok(await page.evaluate(() => window.scrollY) > 0, `${label}: the page does not scroll`);
-  assert.equal((await rect(page, ".st-head")).top, 0, `${label}: the session header does not stick to the top`);
-  assert.equal((await rect(page, ".st-q-foot")).bottom, viewport.height, `${label}: the actions do not stick to the bottom`);
-  const atEnd = () => page.evaluate(() => window.scrollY + innerHeight >= document.documentElement.scrollHeight - 1);
-  for (let i = 0; i < 80 && !(await atEnd()); i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(50); }
-  assert.ok(await atEnd(), `${label}: wheel never reached the end of the page`);
+  assert.ok(await page.evaluate(() => window.scrollY) > 0, `${label}: the wheel does not scroll the page`);
   await page.locator(".st-opt:last-child").evaluate(el => el.scrollIntoView({ block: "end" }));
   const head = await rect(page, ".st-head"), foot = await rect(page, ".st-q-foot"), lastOption = await rect(page, ".st-opt:last-child");
   assert.ok(lastOption.top >= head.bottom && lastOption.bottom <= foot.top, `${label}: last option under a sticky bar: ${JSON.stringify({ head, lastOption, foot })}`);

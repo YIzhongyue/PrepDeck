@@ -26,14 +26,26 @@ actions stay in place:
 
 ![Practice after grading, scrolled: the header is stuck to the top and Next question to the tab bar](mobile-question-viewport/practice-graded-scrolled.png)
 
-`apps/web/scripts/question-card-layout.browser.mjs` checks at 390px that only
-the page scrolls, the header and actions stick, the tags keep to one focusable
-row, a new question starts below the header, and an option scrolled into view
-stops clear of both bars. `apps/web/scripts/exam-workspace.browser.mjs` checks
-at 375px that the actions sit on the tab bar while the page scrolls. With
-`QUESTION_CARD_SCREENSHOTS` set, the first suite writes a capture of each
-screen at every width it tests:
+`apps/web/scripts/question-card-layout.browser.mjs` checks the following at 390px:
+
+- Only the page scrolls.
+- The tags keep to one focusable row.
+- On pages at least three screens long, the actions are at the bottom at eleven
+  scroll positions from the top to the end, and the header stays at the top.
+- A new question starts below the header.
+- An option scrolled into view stops clear of both bars.
+
+The actions come after the question and its review panels in the page, and
+the check at the first scroll position is what shows they still stick from the
+start. `apps/web/scripts/exam-workspace.browser.mjs` makes the same sweep at
+375px in the real shell, where the actions must sit on the tab bar.
+
+`PLAYWRIGHT_BROWSER=webkit` runs the first suite in WebKit, Safari's engine,
+after `npx playwright install webkit`. That does not replace a pass on a real
+iPhone. With `QUESTION_CARD_SCREENSHOTS` set, the suite writes a capture of
+each screen at every width it tests:
 
 ```sh
+PLAYWRIGHT_BROWSER=webkit node apps/web/scripts/question-card-layout.browser.mjs
 QUESTION_CARD_SCREENSHOTS=docs/screenshots node apps/web/scripts/question-card-layout.browser.mjs
 ```

@@ -440,6 +440,21 @@ try {
       const nextBounds = await page.getByRole('button', { name: 'Next question', exact: true }).boundingBox();
       const { tabBarTop } = await measureScroll();
       assert.ok(nextBounds.y >= 75 && nextBounds.y + nextBounds.height <= tabBarTop, 'The sticky actions keep the mobile next action above fixed navigation');
+      // The actions come after the question and its explanation, yet sit on
+      // the tab bar from the first scroll position of a long page to the last.
+      const sweep = await page.evaluate(async () => {
+        const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const foot = document.querySelector('.pd-study .st-q-foot'), outer = document.scrollingElement;
+        const tabBar = [...document.querySelectorAll('nav[aria-label="Main navigation"]')].find(nav => getComputedStyle(nav).position === 'fixed');
+        const max = outer.scrollHeight - innerHeight, gaps = [];
+        for (let i = 0; i <= 10; i++) {
+          outer.scrollTop = Math.round(max * i / 10); await frame();
+          gaps.push(Math.round(tabBar.getBoundingClientRect().top - foot.getBoundingClientRect().bottom));
+        }
+        return { screens: outer.scrollHeight / innerHeight, gaps };
+      });
+      assert.ok(sweep.screens >= 3 && sweep.gaps.every(gap => Math.abs(gap) <= 1), `The mobile actions must stay on the tab bar across a long page: ${JSON.stringify(sweep)}`);
+      await resetScroll();
       scrolled = await wheelPractice('question', 240);
       assert.equal(scrolled.after.question.scrollTop, 0, 'The mobile question has no scroller of its own');
       assert.ok(scrolled.after.outer.scrollTop > scrolled.before.outer.scrollTop, 'The mobile question scrolls with the page');
