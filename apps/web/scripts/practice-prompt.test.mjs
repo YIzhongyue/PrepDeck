@@ -214,3 +214,64 @@ test("an ordering prompt shows the order as item text", () => {
   assert.match(prompt, /why this order is correct/);
   assert.doesNotMatch(prompt, /figure/);
 });
+
+// Review of #69 and #72: a matching target that is code keeps its line breaks
+// and indentation, and reaches a Markdown reader as a code block. A fence right
+// after a "**R.**" label is paragraph text, not a code block, so these checks
+// parse the prompt the way a chat app renders it rather than compare strings.
+test("a matching prompt keeps code targets intact, as code blocks a Markdown reader sees", async () => {
+  const { marked } = await import("marked");
+  const outside = "if enabled:\n    start()\nstop()", inside = "if enabled:\n    start()\n    stop()";
+  const snippet = (id, text) => ({ id, body: [{ id: `code-${id}`, type: "code", language: "python", text }] });
+  const item = (id, text) => ({ id, body: [{ id: `p-${id}`, type: "paragraph", text }] });
+  const row = shared.normalizeImportFile({
+    schemaVersion: "2.0", exam: { id: "exam", name: "code" }, assets: [],
+    questions: [{ externalId: "m1", body: [{ id: "prompt", type: "paragraph", text: "Match each behaviour to its code." }],
+      interaction: { id: "response", type: "match",
+        left: [item("always", "stop() always runs"), item("guarded", "stop() runs only when enabled")],
+        right: [snippet("outside", outside), snippet("inside", inside)] },
+      scoring: { method: "exact", correctAnswers: ['["always","outside"]', '["guarded","inside"]'] } }],
+  }).questions[0];
+  const question = { id: "m1", externalId: "m1", sequenceNumber: 1, type: row.type, chooseCount: null, tags: [], diff: null, stem: row.stem, hasContent: true, content: row.content, options: row.options };
+  const prompt = buildPracticePrompt(question, ['["always","inside"]', '["guarded","outside"]'], { correctAnswers: row.correctAnswers, explanation: null, isCorrect: false });
+
+  // Each section's list, as Markdown sees it: every item's leading text and its code blocks.
+  const tokens = marked.lexer(prompt);
+  const listAfter = heading => {
+    const at = tokens.findIndex(t => t.type === "heading" && t.text === heading);
+    const list = tokens.slice(at + 1).find(t => t.type === "list" || t.type === "heading");
+    assert.equal(list?.type, "list", `${heading} is followed by a list`);
+    return list.items.map(entry => {
+      const code = [];
+      marked.walkTokens(entry.tokens, t => { if (t.type === "code") code.push({ lang: t.lang, text: t.text }); });
+      return { lead: entry.tokens.find(t => t.type === "text" || t.type === "paragraph")?.text.split("\n")[0], code };
+    });
+  };
+  assert.deepEqual(listAfter("Match with"), [
+    { lead: "**outside.**", code: [{ lang: "python", text: outside }] },
+    { lead: "**inside.**", code: [{ lang: "python", text: inside }] },
+  ]);
+  assert.deepEqual(listAfter("My answer").map(entry => entry.code.map(c => c.text)), [[inside], [outside]]);
+  assert.deepEqual(listAfter("Correct answer").map(entry => entry.code.map(c => c.text)), [[outside], [inside]]);
+  const empty = []; marked.walkTokens(tokens, t => { if (t.type === "code" && !t.text) empty.push(t.raw); });
+  assert.deepEqual(empty, [], "no stray fence opens an empty code block");
+  assert.doesNotMatch(prompt, /if enabled: start\(\) stop\(\)/);
+});
+
+test("an ordering prompt keeps a code step as a code block under its number", async () => {
+  const { marked } = await import("marked");
+  const step = "for x in xs:\n    total += x";
+  const row = shared.normalizeImportFile({
+    schemaVersion: "2.0", exam: { id: "exam", name: "code" }, assets: [],
+    questions: [{ externalId: "o1", body: [{ id: "prompt", type: "paragraph", text: "Order the steps." }],
+      interaction: { id: "response", type: "order", options: [
+        { id: "sum", body: [{ id: "c-sum", type: "code", language: "python", text: step }] },
+        { id: "print", body: [{ id: "p-print", type: "paragraph", text: "Print the total" }] }] },
+      scoring: { method: "exact", correctAnswers: ["sum", "print"] } }],
+  }).questions[0];
+  const question = { id: "o1", externalId: "o1", sequenceNumber: 1, type: row.type, chooseCount: null, tags: [], diff: null, stem: row.stem, hasContent: true, content: row.content, options: row.options };
+  const prompt = buildLearningPrompt(question, "Evidence", { correctAnswers: row.correctAnswers, explanation: null });
+  const code = []; marked.walkTokens(marked.lexer(prompt), t => { if (t.type === "code") code.push(t.text); });
+  assert.deepEqual(code, [step, step], "the step, once among the items and once in the correct order");
+  assert.match(prompt, /## Correct answer\n\n- 1\. ```python\n     for x in xs:\n         total \+= x\n     ```\n- 2\. Print the total/);
+});

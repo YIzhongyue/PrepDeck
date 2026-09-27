@@ -31,24 +31,24 @@ Question:
 
 Items to match:
 {%- for o in options %}
-- ({{ o.id }}) {{ o.text }}
+- {{ o.item }}
 {%- endfor %}
 
 Match with:
 {%- for o in matchTargets %}
-- ({{ o.id }}) {{ o.text }}
+- {{ o.item }}
 {%- endfor %}
 {%- elif kind == "ordering" %}
 
 Items to put in order:
 {%- for o in options %}
-- ({{ o.id }}) {{ o.text }}
+- {{ o.item }}
 {%- endfor %}
 {%- elif options and options.length %}
 
 Options:
 {%- for o in options %}
-- ({{ o.id }}) {{ o.text }}
+- {{ o.item }}
 {%- endfor %}
 {%- endif %}
 
