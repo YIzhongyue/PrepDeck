@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
+import test from "node:test";
 import { build } from "esbuild";
 import {
-  runSmokeCheck, parseArgs, USER_TOKEN_PATTERN, ADMIN_TOKEN_PATTERN,
+  runSmokeCheck, parseArgs,
   REQUIRED_USER_TOOLS, REQUIRED_ADMIN_TOOLS,
 } from "./mcp-smoke-check.mjs";
 
@@ -144,7 +144,7 @@ test("cross-audience acceptance (a wrong-audience token NOT rejected) fails the 
 test("CLI: a malformed token supplied on the command line never appears in stdout or stderr", () => {
   const scriptPath = fileURLToPath(new URL("./mcp-smoke-check.mjs", import.meta.url));
   const malformedToken = `Bearer ${MARKER}\nINVALID`;
-  let output = "";
+  let output;
   let status = 0;
   try {
     output = execFileSync("node", [

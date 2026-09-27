@@ -13,6 +13,7 @@ export function safeReturnTo(value: unknown): string | null {
   if (typeof value !== "string" || !value || value.length > MAX_RETURN_TO_LENGTH) return null;
   // One leading slash, no scheme-relative "//host" or "/\host", and nothing a
   // browser would normalise into another origin (backslashes, control chars).
+  // eslint-disable-next-line no-control-regex -- control characters are what it rejects
   if (!value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
   let url: URL;
   try { url = new URL(value, "https://prepdeck.invalid"); } catch { return null; }

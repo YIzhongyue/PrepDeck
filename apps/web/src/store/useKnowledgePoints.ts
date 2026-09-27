@@ -271,7 +271,14 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => { if (hasUnsavedWork()) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", handler);
-    return () => { clearTimers(); generationRef.current++; window.removeEventListener("beforeunload", handler); };
+    return () => {
+      clearTimers();
+      // A load counter, not a DOM ref: bumping whatever it holds at unmount is
+      // the point, so an in-flight load for this editor is ignored.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional read of the latest counter value
+      generationRef.current++;
+      window.removeEventListener("beforeunload", handler);
+    };
   }, [hasUnsavedWork]);
 
   const setTitle = useCallback((title: string) => {
@@ -396,30 +403,27 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
 
   useEffect(() => {
     refreshGroupsAndTags();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshGroupsAndTags]);
 
   // Mirrors the app's active exam (from PrepDeckContext) into local state so
   // refreshList can react to it. Falls back to "all" if the exam-scoped view
   // is active but there's no longer an active exam (e.g. workspace closed).
   useEffect(() => {
     setState((s) => ({ activeExamId, scope: activeExamId ? s.scope : "all" }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeExamId]);
+  }, [activeExamId, setState]);
 
   // Structural filter changes (group/tag/sort/scope) refetch immediately;
   // free-text search is debounced so typing doesn't fire a request per
-  // keystroke.
+  // keystroke. refreshList reads the filters from stateRef, so they are listed
+  // here only as the triggers.
   useEffect(() => {
     refreshList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.groupId, state.ungrouped, state.tagIds, state.sort, state.scope, state.activeExamId]);
+  }, [refreshList, state.groupId, state.ungrouped, state.tagIds, state.sort, state.scope, state.activeExamId]);
 
   useEffect(() => {
     const t = window.setTimeout(() => refreshList(), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.search]);
+  }, [refreshList, state.search]);
 
   const setFilterGroup = useCallback((groupId: string | null, ungrouped: boolean) => {
     const isAll = groupId === null && !ungrouped;
