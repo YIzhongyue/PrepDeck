@@ -14,10 +14,18 @@
 -- on), so it becomes the account's zone. That column is no longer read or
 -- written; it is left in place so a rollback of the Worker still finds it.
 --
+-- Its old validator accepted anything Intl did, including UTC offsets such as
+-- '+01:01'. The account zone must be an IANA name (packages/shared/src/
+-- timeZone.ts), and offsets are the only values that start with a sign, so
+-- those are not copied; the web app then sets the browser's zone.
+--
 -- Applied via: wrangler d1 migrations apply <DB_NAME>
 
 ALTER TABLE users ADD COLUMN timezone TEXT;
 
 UPDATE users
 SET timezone = (SELECT s.timezone FROM user_email_settings s WHERE s.user_id = users.id)
-WHERE EXISTS (SELECT 1 FROM user_email_settings s WHERE s.user_id = users.id AND s.timezone <> 'UTC');
+WHERE EXISTS (
+  SELECT 1 FROM user_email_settings s
+  WHERE s.user_id = users.id AND s.timezone <> 'UTC' AND substr(s.timezone, 1, 1) NOT IN ('+', '-', '−')
+);

@@ -82,7 +82,10 @@ zone.
   chosen, and everything counts in UTC until then. On its next load the web app
   sets it to the browser's zone, and Settings → Time zone changes it. Writes are
   validated with `Intl` and stored in its spelling (`asia/tokyo` →
-  `Asia/Tokyo`).
+  `Asia/Tokyo`). Only IANA names and aliases are accepted: `Intl` also takes
+  UTC offsets such as `+01:01`, which are refused, because bucketing below
+  relies on quarter-hour offsets between -12:00 and +14:00. A stored value that
+  is not a valid zone counts in UTC, for the statistics and the email alike.
 - **Bucketing.** D1 has no time zones, so a query groups by the UTC quarter-hour
   and the Worker assigns each quarter-hour to its local day with `Intl`, which
   knows DST (`lib/learningStats.ts`). Every UTC offset in use is a whole number of

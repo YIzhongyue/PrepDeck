@@ -182,14 +182,44 @@ test("the daily email is sent at its hour in the account's time zone", async t =
   assert.deepEqual(db.prepare("SELECT local_date FROM daily_review_email_deliveries").all().map(r => r.local_date), ["2026-09-27"]);
 });
 
+test("a UTC offset is refused as a zone, so no answer is bucketed by one", async t => {
+  // Review of #75: Intl accepts "+01:01" as a zone. Saved, an answer at
+  // 22:59:30 UTC (00:00:30 on the 27th there) counted on the 26th, the day of
+  // its quarter-hour, 22:45 UTC (23:46 there).
+  const { db, env, request, answerAt, setTimeZone } = setup(t);
+  for (const offset of ["+01:01", "-05:00", "+0100", "+23:00", "\u221201:00"]) {
+    assert.equal((await request("/settings", "PATCH", { timezone: offset })).status, 400, offset);
+    assert.equal((await request("/daily-email-settings", "PATCH", { timezone: offset })).status, 400, offset);
+  }
+  assert.equal(db.prepare("SELECT timezone FROM users WHERE id = 'u'").get().timezone, null, "nothing was saved");
+  assert.equal((await request("/settings", "PATCH", { timezone: "Etc/GMT-1" })).status, 200, "a named fixed-offset zone is fine");
+
+  // One stored some other way is read as UTC, by the statistics and the email alike.
+  answerAt("2026-09-26T22:59:30.000Z");
+  setTimeZone("+01:01");
+  const stats = await cache.getOrComputeExamStats(env, "u", "e");
+  assert.equal(stats.timeZone, "UTC");
+  assert.deepEqual(trend(stats), [["2026-09-26", 1]]);
+  assert.equal((await request("/daily-email-settings")).data.timezone, "UTC");
+  db.exec(`UPDATE users SET status = 'active' WHERE id = 'u';
+    INSERT INTO user_email_settings (user_id, enabled, questions_per_email, source, send_hour_local, created_at, updated_at)
+    VALUES ('u', 1, 3, 'bm', 22, '2026-01-01', '2026-01-01')`);
+  await email.runDailyReviewEmailDelivery(env, () => Date.parse("2026-09-26T22:10:00Z"));
+  assert.deepEqual(db.prepare("SELECT local_date FROM daily_review_email_deliveries").all().map(r => r.local_date), ["2026-09-26"],
+    "the email's 22:00 is UTC's too");
+});
+
 test("migration 0040 keeps a daily email zone the user chose", t => {
   const db = new DatabaseSync(":memory:"); t.after(() => db.close());
   const index = migrationNames.findIndex(n => n.startsWith("0040_"));
   migrate(db, migrationNames.slice(0, index));
-  db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('chose','a@test','user','2026-01-01'), ('default','b@test','user','2026-01-01'), ('none','c@test','user','2026-01-01');
+  db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('chose','a@test','user','2026-01-01'), ('default','b@test','user','2026-01-01'),
+      ('none','c@test','user','2026-01-01'), ('offset','d@test','user','2026-01-01'), ('minus','e@test','user','2026-01-01');
     INSERT INTO user_email_settings (user_id, enabled, timezone, created_at, updated_at) VALUES
-      ('chose', 1, 'Asia/Tokyo', '2026-01-01', '2026-01-01'), ('default', 0, 'UTC', '2026-01-01', '2026-01-01')`);
+      ('chose', 1, 'Asia/Tokyo', '2026-01-01', '2026-01-01'), ('default', 0, 'UTC', '2026-01-01', '2026-01-01'),
+      ('offset', 1, '+01:01', '2026-01-01', '2026-01-01'), ('minus', 1, '\u221205:00', '2026-01-01', '2026-01-01')`);
   migrate(db, migrationNames.slice(index));
   assert.deepEqual(db.prepare("SELECT id, timezone FROM users ORDER BY id").all().map(r => [r.id, r.timezone]),
-    [["chose", "Asia/Tokyo"], ["default", null], ["none", null]]);
+    [["chose", "Asia/Tokyo"], ["default", null], ["minus", null], ["none", null], ["offset", null]],
+    "a UTC offset the old email validator accepted is not carried over");
 });

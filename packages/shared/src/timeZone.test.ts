@@ -20,6 +20,20 @@ test("zone names: Intl decides what is valid, and writes store its spelling", ()
   assert.equal(resolveTimeZone("America/New_York"), "America/New_York");
 });
 
+test("UTC offsets are refused even though Intl accepts them; IANA names and aliases are not", () => {
+  // Day bucketing assumes quarter-hour offsets within -12:00..+14:00. "+01:01"
+  // would put 22:59:30 UTC on the next local day while its quarter-hour,
+  // 22:45, stays on this one; "+23:00" is outside the day-start search.
+  for (const offset of ["+01:01", "-05:00", "+0100", "+01", "+23:00", "−01:00"]) {
+    assert.equal(isValidTimeZone(offset), false, offset);
+    assert.equal(canonicalTimeZone(offset), null, offset);
+    assert.equal(resolveTimeZone(offset), "UTC", offset);
+  }
+  assert.equal(isValidTimeZone("Etc/GMT+5"), true, "a named fixed-offset zone is still a zone");
+  assert.equal(canonicalTimeZone("US/Eastern"), "America/New_York");
+  assert.equal(isValidTimeZone("Asia/Calcutta"), true);
+});
+
 test("a 07:30 JST answer falls on that JST day, not the UTC day before", () => {
   const at = new Date("2026-09-26T22:30:00Z"); // 2026-09-27 07:30 in Tokyo
   assert.equal(zonedDateKey(at, "UTC"), "2026-09-26");

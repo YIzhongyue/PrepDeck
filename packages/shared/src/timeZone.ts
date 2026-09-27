@@ -22,12 +22,18 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return formatter;
 }
 
-/** True for a zone name this runtime's Intl accepts, such as "Asia/Tokyo". */
+// Intl also accepts UTC offsets as zones ("+01:01", "-0500", "−01:00"). Only
+// IANA names are allowed: day bucketing relies on every offset being a whole
+// number of quarter-hours between -12:00 and +14:00 (see zonedDayStart and the
+// Worker's quarterHourSql), which every IANA zone in use is and an arbitrary
+// offset is not. Offset identifiers are the only ones that start with a sign.
+const OFFSET_ZONE = /^[+\-−]/;
+
+/** True for an IANA zone name or alias this runtime's Intl accepts, such as "Asia/Tokyo". */
 export function isValidTimeZone(value: unknown): value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 64) return false;
+  if (typeof value !== "string" || value.length === 0 || value.length > 64 || OFFSET_ZONE.test(value)) return false;
   try {
-    formatterFor(value);
-    return true;
+    return !OFFSET_ZONE.test(formatterFor(value).resolvedOptions().timeZone);
   } catch {
     return false;
   }
