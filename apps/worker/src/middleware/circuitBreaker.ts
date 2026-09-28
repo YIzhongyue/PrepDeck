@@ -15,10 +15,19 @@ export type CircuitMode = "normal" | "degraded" | "emergency";
 // lookup or an OAuth token exchange + session creation) — exactly the cost
 // emergency mode exists to shed — so those two stay behind the
 // EMERGENCY_ADMIN_IPS check below rather than being open to anyone.
+// Human verification (issue #82) keeps sign-in reachable too: the login
+// screen reads its Turnstile site key from /api/auth/turnstile, and starting
+// sign-in calls Cloudflare's Siteverify, an outbound request, not storage.
 const NO_STORAGE_RECOVERY_PATHS = new Set([
   "/api/auth/google/start",
   "/api/auth/logout",
+  "/api/auth/turnstile",
 ]);
+
+// Starting sign-in is a form POST, because it carries the Turnstile token,
+// but it is the same storage-free redirect the GET was, so degraded mode's
+// block on unsafe methods does not apply to it.
+const SIGN_IN_START_PATH = "/api/auth/google/start";
 
 const DEGRADED_BLOCKED_PREFIXES = [
   "/api/ai/",
@@ -76,6 +85,6 @@ export const circuitBreaker: MiddlewareHandler<{ Bindings: Env; Variables: Varia
   const blockedFeature = DEGRADED_BLOCKED_PREFIXES.some((prefix) => path.startsWith(prefix))
     || path.includes("/ai-explanations")
     || path.includes("/import");
-  if (!safeMethod || blockedFeature) return response(mode, path);
+  if ((!safeMethod && path !== SIGN_IN_START_PATH) || blockedFeature) return response(mode, path);
   return next();
 };

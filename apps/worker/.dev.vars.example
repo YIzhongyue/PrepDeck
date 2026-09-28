@@ -3,3 +3,9 @@
 SESSION_SECRET=replace-with-a-random-local-secret
 # Optional remote Google integration only; password login needs neither value.
 # GOOGLE_CLIENT_SECRET=
+# Optional: exercise Cloudflare Turnstile locally with Cloudflare's published
+# test keys, never real ones (these override wrangler.toml's empty site key).
+# This secret passes every token; 2x0000000000000000000000000000000AA fails
+# every one. The widget and Siteverify both need network access.
+# TURNSTILE_SITE_KEY=1x00000000000000000000AA
+# TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

@@ -3,13 +3,34 @@
 // on the way: the page to come back to, and mock answers the server refused
 // to save while the session was gone.
 
+import { TURNSTILE_FORM_FIELD } from "@prepdeck/shared";
+
 const MOCK_STASH_KEY = "prepdeck:reauth-mock";
 // A stash older than this is from another sitting, not this sign-in.
 const MOCK_STASH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
-/** The Google sign-in URL that comes back to `returnTo` (same-origin path). */
-export function signInUrl(returnTo: string = currentPath()): string {
-  return returnTo === "/" ? "/api/auth/google/start" : `/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
+/**
+ * Leaves for Google sign-in, coming back to `returnTo` (a same-origin path).
+ * A form POST rather than a link, so the Turnstile token the Worker checks
+ * first (issue #82) travels in the body, not the address.
+ */
+export function submitSignIn(returnTo: string, turnstileToken: string | null): void {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/api/auth/google/start";
+  form.hidden = true;
+  const field = (name: string, value: string) => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.append(input);
+  };
+  if (returnTo !== "/") field("returnTo", returnTo);
+  if (turnstileToken) field(TURNSTILE_FORM_FIELD, turnstileToken);
+  // Left in place: a detached form cannot submit, and the page is leaving.
+  document.body.append(form);
+  form.submit();
 }
 
 export function currentPath(): string {

@@ -1,0 +1,20 @@
+/* The Turnstile widget and its status line. Cloudflare draws the widget in its
+   own iframe; these rules only size its slot and style PrepDeck's messages. */
+.turnstile { width: 100%; max-width: 420px; display: flex; flex-direction: column; }
+/* Reserves the widget's height while it loads, so the controls below it do
+   not jump when it appears. Nothing is reserved once it cannot load. */
+.turnstile-widget { min-height: 65px; }
+.turnstile[data-phase="unavailable"] .turnstile-widget { min-height: 0; }
+
+/* The live region stays rendered while empty (zero height), so screen
+   readers announce the message that later appears in it. */
+.turnstile-status { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
+.turnstile-status p { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--color-text-muted); }
+.turnstile-status p:not(:empty) { margin-top: 6px; }
+.turnstile-status .turnstile-problem { color: var(--color-danger); }
+.turnstile-retry {
+  padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--color-accent-700); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.turnstile-retry:hover { color: var(--color-accent-800); }
+.turnstile-retry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }

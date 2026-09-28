@@ -87,6 +87,19 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-1.10 (M):** From the Authorized Users screen, Admin can clear an account's stored Google subject. This is the recovery path for FR-1.9's conflict denial — the legitimate case being a person whose Google account was replaced rather than renamed, such as a consumer account displaced when its domain adopted Workspace. Clearing re-arms the one-time email binding, so the next successful Google sign-in on that address claims the account with its data intact; the row itself, and everything referencing its id, is untouched. Because the next sign-in wins the account, the action is confirmed and Admin-only. A subject can only ever be *cleared* here, never entered: subjects are written solely by a sign-in that verified them against Google's JWKS.
 
+<a id="fr-1-11"></a>
+
+- **FR-1.11 (S):** Abuse-prone requests can require Cloudflare Turnstile human verification ([issue #82](https://github.com/YIzhongyue/PrepDeck/issues/82)). A deployment turns it on by setting `TURNSTILE_SITE_KEY`; until then nothing asks for it. Once on, it covers exactly these requests, never every page or every authenticated request:
+
+  | Request | Where the check is shown | Turnstile action |
+  | --- | --- | --- |
+  | Starting Google sign-in (`POST /api/auth/google/start`) | Login screen and the session-expired dialog | `sign_in` |
+  | Creating or rotating a User or Admin MCP token | Settings → MCP access, Admin → MCP tokens | `mcp_token` |
+
+  The browser only obtains a token, from a widget in Cloudflare's Managed mode ([`TurnstileWidget.tsx`](../../apps/web/src/components/TurnstileWidget.tsx)); the Worker decides. [`lib/turnstile.ts`](../../apps/worker/src/lib/turnstile.ts) redeems the token with Cloudflare Siteverify and requires success, the surface's action, and a hostname the deployment accepts (the hostname of `APP_BASE_URL`, or `TURNSTILE_HOSTNAMES`). It fails closed: no token, a refused, expired or already-spent token, a missing or rejected secret and an unreachable Siteverify all refuse the request. A refused sign-in returns to the page it was started from with a notice (`?auth=verification`); a refused JSON request answers 403, or 503 when verification itself is unavailable, with `code: "human_verification_failed"`. Tokens are single-use, so every attempt gets a fresh widget, and an expired one refreshes itself. The secret stays in the Worker, and neither it nor a token is logged. Cloudflare's test keys are accepted only when `ENVIRONMENT=development`.
+
+  Sign-in's token is redeemed before the OAuth state cookie is issued, so the callback, which does the Google and D1 work, cannot complete without it. With Turnstile on, a `GET` of the start endpoint (an old tab, a bookmark) goes back to the page it names instead of to Google. Deliberately not gated: the callback (reachable only with that state cookie), sign-out, revoking an MCP token (it only removes access), and the password login, which exists only in development, answers 404 elsewhere and is driven by the loopback sign-in helper. There is no registration or password reset to protect: accounts are invited (FR-1.2) and passwords belong to Google. Setup is in [development and deployment](../guides/development-and-deployment.md#human-verification-cloudflare-turnstile).
+
 ## User profiles
 
 <a id="fr-12-1"></a>

@@ -29,6 +29,8 @@ export function deploymentReplacements(config) {
     GOOGLE_CLIENT_ID: "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
     APP_BASE_URL: "https://prepdeck.example.com",
     EMAIL_FROM_ADDRESS: "noreply@example.com",
+    // Optional: an export ships with human verification off.
+    TURNSTILE_SITE_KEY: "",
   };
   const production = config.split("[env.development]")[0];
   return [...production.matchAll(/^([A-Za-z_]+)\s*=\s*"([^"]+)"/gm)]

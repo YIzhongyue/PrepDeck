@@ -4,12 +4,17 @@
 // Access's hosted one. Email+password (/login) remains as a local-dev-only
 // fallback that doesn't need a registered OAuth redirect URI. /me is gated
 // by the normal auth middleware, so it doubles as a "is my session still
-// valid" check for the frontend's login gate.
+// valid" check for the frontend's login gate. When the deployment uses
+// Cloudflare Turnstile (issue #82, lib/turnstile.ts), starting Google sign-in
+// requires a verified token; /turnstile tells the login screen whether it does.
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { TURNSTILE_ACTIONS, TURNSTILE_FORM_FIELD, type TurnstileConfigResponse } from "@prepdeck/shared";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { requireAccessUser } from "../middleware/access";
+import { turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken } from "../lib/turnstile";
 import { verifyPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
 import { issueSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
@@ -42,9 +47,34 @@ function googleRedirectUri(c: { req: { url: string } }): string {
   return `${new URL(c.req.url).origin}/api/auth/google/callback`;
 }
 
+// The Turnstile site key the login screen renders its widget with (issue
+// #82), or null when this deployment does not ask for human verification.
+// Public and storage-free: the login screen needs it before anyone is signed in.
+authRouter.get("/turnstile", (c) => {
+  const body: TurnstileConfigResponse = { siteKey: turnstileSiteKey(c.env) };
+  return c.json(body, 200, { "Cache-Control": "no-store" });
+});
+
+// `returnTo` with the `?auth=` flag the login screen reports `reason` from.
+function withAuthFlag(returnTo: string | null, reason: string): string {
+  const url = new URL(returnTo ?? "/", "https://prepdeck.invalid");
+  url.searchParams.set("auth", reason);
+  return `${url.pathname}${url.search}`;
+}
+
 // Kicks off the OAuth round trip: stash a CSRF `state` + PKCE `code_verifier`
 // in a short-lived cookie, then send the browser to Google's consent screen.
-authRouter.get("/google/start", async (c) => {
+//
+// The login screen submits a form POST carrying `returnTo` and, when the
+// deployment uses Turnstile (issue #82), the widget's token. That token is
+// redeemed here, before the state cookie exists, so the callback — which is
+// what does the D1 and Google work — cannot complete without a human having
+// passed the check. GET remains for deployments without Turnstile; with it,
+// a GET (an old tab, a bookmarked link) is sent back to the login screen.
+async function startGoogleSignIn(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  input: { returnTo: unknown; turnstileToken: unknown },
+) {
   // The direct OAuth callback creates a PrepDeck session cookie. Access mode
   // deliberately ignores that cookie and requires Cf-Access-Jwt-Assertion,
   // so allowing this flow in Access mode can only end in a confusing 401.
@@ -53,19 +83,43 @@ authRouter.get("/google/start", async (c) => {
     return c.json({ error: "Direct Google sign-in requires AUTH_MODE=cookie" }, 503);
   }
 
+  // Where to land after signing in (issues #41 and #52): the page a signed-out
+  // learner opened, for example from a review email. Same-origin paths only.
+  const returnTo = safeReturnTo(input.returnTo);
+  // A GET answers 302 as it always has; a form POST answers 303 so the
+  // browser follows it with a GET.
+  const redirectStatus = c.req.method === "POST" ? 303 : 302;
+
+  if (turnstileSiteKey(c.env)) {
+    if (c.req.method !== "POST") return c.redirect(returnTo ?? "/", 302);
+    const verdict = await verifyTurnstileToken(c.env, input.turnstileToken, TURNSTILE_ACTIONS.signIn, turnstileRemoteIp(c.req.raw.headers));
+    if (!verdict.ok) return c.redirect(withAuthFlag(returnTo, "verification"), 303);
+  }
+
   const state = randomBase64Url(24);
   const codeVerifier = randomBase64Url(48);
   const codeChallenge = await pkceChallengeFromVerifier(codeVerifier);
 
   const secure = new URL(c.req.url).protocol === "https:";
-  // Where to land after signing in (issues #41 and #52): the page a signed-out
-  // learner opened, for example from a review email. Same-origin paths only.
-  c.header("Set-Cookie", buildOAuthStateCookie(state, codeVerifier, secure, safeReturnTo(c.req.query("returnTo"))));
+  c.header("Set-Cookie", buildOAuthStateCookie(state, codeVerifier, secure, returnTo));
 
   const redirectUri = googleRedirectUri(c);
   console.info("auth.google.start", { redirectUri });
-  return c.redirect(buildGoogleAuthUrl(c.env, redirectUri, state, codeChallenge), 302);
-});
+  return c.redirect(buildGoogleAuthUrl(c.env, redirectUri, state, codeChallenge), redirectStatus);
+}
+
+authRouter.get("/google/start", (c) => startGoogleSignIn(c, { returnTo: c.req.query("returnTo"), turnstileToken: null }));
+
+authRouter.post(
+  "/google/start",
+  // Two short fields; refuse anything larger before it is buffered.
+  bodyLimit({ maxSize: 8 * 1024, onError: (c) => c.json({ error: "Request body too large" }, 413) }),
+  async (c) => {
+    const form = await c.req.parseBody().catch(() => null);
+    const field = (name: string) => (typeof form?.[name] === "string" ? form[name] : null);
+    return startGoogleSignIn(c, { returnTo: field("returnTo"), turnstileToken: field(TURNSTILE_FORM_FIELD) });
+  },
+);
 
 // Google redirects back here with ?code&state. Exchanges the code, verifies
 // the id_token, runs the FR-1.3 authorization check, and — on success — sets

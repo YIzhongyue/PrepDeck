@@ -10,6 +10,8 @@ const [{ text: bundledWorker }] = (await build({
   bundle: true,
   format: "esm",
   platform: "neutral",
+  // auth.ts imports @prepdeck/shared (Turnstile constants), resolved via "main".
+  mainFields: ["module", "main"],
   write: false,
 })).outputFiles;
 const { authRouter: app } = await import(`data:text/javascript;base64,${Buffer.from(bundledWorker).toString("base64")}`);

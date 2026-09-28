@@ -19,6 +19,8 @@ const questions = ["single_choice", "multiple_choice", "fill_blank"].map((type, 
   options: type === "fill_blank" ? null : [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }],
 }));
 const attempts = new Map(), wrong = new Map(), calls = [], errors = [];
+// The form "Sign in again" posts (issue #82), in place of Google.
+let signInForm = null;
 // Answer keys the fixture grades component questions against (issue #43).
 const answerKeys = new Map();
 let serial = 0, expired = false, failDraft = false, sessionGone = false, rejectDraft = false;
@@ -39,6 +41,11 @@ const server = createServer(async (req, res) => {
     return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
   }
   let raw = ""; for await (const chunk of req) raw += chunk;
+  // Starting sign-in is a form POST, not JSON (issue #82). Stand in for Google.
+  if (url.pathname === "/api/auth/google/start" && req.method === "POST") {
+    signInForm = new URLSearchParams(raw);
+    res.writeHead(200, { "Content-Type": "text/plain" }); return res.end("Google sign-in (fixture)");
+  }
   const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (sessionGone && !url.pathname.startsWith("/api/auth/")) return json({ error: "Unauthorized" }, 401);
@@ -391,8 +398,9 @@ try {
   await expiredDialog.waitFor();
   await expiredDialog.getByRole("button", { name: "Sign in again" }).click();
   // Back to the mock's own address (issue #41), where resume restores its answers.
-  await page.waitForURL(/\/api\/auth\/google\/start\?returnTo=%2Fexams%2F[^%]+%2Fmock$/);
-  const returnTo = new URL(page.url()).searchParams.get("returnTo");
+  await page.waitForURL(/\/api\/auth\/google\/start$/);
+  const returnTo = signInForm.get("returnTo");
+  assert.match(returnTo, /^\/exams\/[^/]+\/mock$/);
   sessionGone = false; // Google sends the learner back, signed in
   await page.goto(`${base}${returnTo}`); await ready();
   await page.waitForFunction(() => window.store.state.screen === "mock" && !!window.store.state.activeMockAttempt);

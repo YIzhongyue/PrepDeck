@@ -178,18 +178,25 @@ type Gate =
   | { kind: "loading" }
   | { kind: "authed" }
   | { kind: "denied"; email: string | null; conflict?: boolean }
-  | { kind: "signin"; signedOut?: boolean; error?: boolean };
+  | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: boolean };
 
-function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boolean } | { kind: "signin"; signedOut?: boolean; error?: boolean } | null {
+function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boolean } | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: boolean } | null {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get("auth");
   if (!auth) return null;
 
-  window.history.replaceState(null, "", window.location.pathname);
-  if (auth === "denied") return { kind: "denied", email: params.get("email") };
-  if (auth === "conflict") return { kind: "denied", email: params.get("email"), conflict: true };
+  const email = params.get("email");
+  // Only the flag and its email go: a refused Turnstile check (issue #82)
+  // returns to the page sign-in was started from, whose own query names it.
+  params.delete("auth");
+  params.delete("email");
+  const rest = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  if (auth === "denied") return { kind: "denied", email };
+  if (auth === "conflict") return { kind: "denied", email, conflict: true };
   if (auth === "signedout") return { kind: "signin", signedOut: true };
   if (auth === "error") return { kind: "signin", error: true };
+  if (auth === "verification") return { kind: "signin", verification: true };
   return null;
 }
 
@@ -236,7 +243,7 @@ function AuthenticatedApp() {
 
   if (gate.kind === "loading") return null;
   if (gate.kind === "denied") return <Login deniedEmail={gate.email} conflict={gate.conflict} />;
-  if (gate.kind === "signin") return <Login signedOut={gate.signedOut} error={gate.error} />;
+  if (gate.kind === "signin") return <Login signedOut={gate.signedOut} error={gate.error} verification={gate.verification} />;
 
   return (
     <PrepDeckProvider>
