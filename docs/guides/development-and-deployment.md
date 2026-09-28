@@ -290,8 +290,9 @@ is created or rotated. It is off by default, in production and locally.
 5. Deploy, then sign in and create an MCP token on the deployed origin.
 
 The site key is what switches verification on. Deployed without the secret,
-it fails closed: sign-in returns to the login screen with a notice and token
-creation answers 503. Remove the site key to turn verification off again.
+it fails closed: sign-in returns to the login screen asking visitors to contact
+an admin, and token creation answers 503. Remove the site key to turn
+verification off again.
 The content security policy in
 [`apps/web/public/_headers`](../../apps/web/public/_headers) allows
 `https://challenges.cloudflare.com` as a script and frame source; keep that if
@@ -322,7 +323,10 @@ in a development profile.
 
 The Worker logs `turnstile.*` events with the action, Siteverify's error codes
 and, on a mismatch, the hostname or action the token carried. They never
-contain the secret or a token.
+contain the secret or a token. The login screen's notice already tells the
+two kinds apart: "contact your admin" is a `turnstile.misconfigured` or
+`turnstile.test_key_outside_development` event, and "try again in a few
+minutes" a `turnstile.siteverify_unavailable` one.
 
 - `turnstile.misconfigured`: the secret is missing, or Siteverify rejected it
   (`invalid-input-secret`). Check `TURNSTILE_SECRET_KEY` belongs to the same

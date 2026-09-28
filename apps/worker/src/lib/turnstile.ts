@@ -6,7 +6,9 @@
 // Verification is on while TURNSTILE_SITE_KEY is set. From then on it fails
 // closed: no token, a token Siteverify refuses, a token solved for another
 // action or hostname, a missing secret and an unreachable Siteverify all
-// refuse the request. Neither the secret nor a token is ever logged.
+// refuse the request. The verdict says which kind of failure it was, so the
+// visitor is only asked to verify again when that can help. Neither the
+// secret nor a token is ever logged.
 
 import type { TurnstileAction } from "@prepdeck/shared";
 import type { Env } from "../bindings";
@@ -15,12 +17,20 @@ const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverif
 // Cloudflare documents 2048 characters as the longest token it issues.
 const MAX_TOKEN_LENGTH = 2048;
 const SITEVERIFY_TIMEOUT_MS = 10_000;
-// Siteverify codes that describe this deployment rather than the visitor.
-const CONFIGURATION_ERROR_CODES = new Set(["missing-input-secret", "invalid-input-secret", "internal-error"]);
+// Siteverify codes that describe this deployment's secret rather than the
+// visitor's token, and the one that describes Siteverify itself.
+const CONFIGURATION_ERROR_CODES = new Set(["missing-input-secret", "invalid-input-secret"]);
+const SERVICE_ERROR_CODES = new Set(["internal-error"]);
 
 type TurnstileEnv = Partial<Pick<Env, "ENVIRONMENT" | "APP_BASE_URL" | "TURNSTILE_SITE_KEY" | "TURNSTILE_SECRET_KEY" | "TURNSTILE_HOSTNAMES">>;
 
-export type TurnstileFailure = "missing" | "rejected" | "unavailable";
+/**
+ * - `missing`/`rejected`: the visitor has no valid token; a fresh check helps.
+ * - `unavailable`: Siteverify could not answer; trying later helps.
+ * - `misconfigured`: this deployment's secret or hostnames are wrong, or it
+ *   runs on test keys outside development; only an administrator can help.
+ */
+export type TurnstileFailure = "missing" | "rejected" | "unavailable" | "misconfigured";
 export type TurnstileVerdict = { ok: true } | { ok: false; reason: TurnstileFailure };
 
 interface SiteverifyResult {
@@ -70,7 +80,7 @@ export async function verifyTurnstileToken(
   const hostnames = expectedHostnames(env);
   if (!secret || hostnames.size === 0) {
     console.error("turnstile.misconfigured", { action, hasSecret: !!secret, hasHostnames: hostnames.size > 0 });
-    return { ok: false, reason: "unavailable" };
+    return { ok: false, reason: "misconfigured" };
   }
 
   let result: SiteverifyResult;
@@ -94,6 +104,10 @@ export async function verifyTurnstileToken(
     const codes = errorCodes(result);
     if (codes.some((code) => CONFIGURATION_ERROR_CODES.has(code))) {
       console.error("turnstile.misconfigured", { action, errorCodes: codes });
+      return { ok: false, reason: "misconfigured" };
+    }
+    if (codes.some((code) => SERVICE_ERROR_CODES.has(code))) {
+      console.error("turnstile.siteverify_unavailable", { action, errorCodes: codes });
       return { ok: false, reason: "unavailable" };
     }
     console.warn("turnstile.rejected", { action, errorCodes: codes });
@@ -106,7 +120,7 @@ export async function verifyTurnstileToken(
   if (result.metadata?.result_with_testing_key === true) {
     if (env.ENVIRONMENT === "development") return { ok: true };
     console.error("turnstile.test_key_outside_development", { action });
-    return { ok: false, reason: "unavailable" };
+    return { ok: false, reason: "misconfigured" };
   }
 
   if (result.action !== action) {
@@ -128,7 +142,8 @@ export function turnstileRemoteIp(headers: Headers): string | null {
 
 /** The status and JSON body a JSON endpoint refuses an unverified request with. */
 export function turnstileRefusal(reason: TurnstileFailure): { status: 403 | 503; message: string } {
-  if (reason === "unavailable") return { status: 503, message: "Human verification is unavailable right now. Try again shortly." };
+  if (reason === "misconfigured") return { status: 503, message: "Human verification isn't set up correctly on this server. Contact your admin." };
+  if (reason === "unavailable") return { status: 503, message: "Human verification is unavailable right now. Try again in a few minutes." };
   if (reason === "missing") return { status: 403, message: "Complete the human verification check, then try again." };
   return { status: 403, message: "Human verification failed or expired. Complete the check again, then retry." };
 }

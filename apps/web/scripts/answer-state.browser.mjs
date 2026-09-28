@@ -46,6 +46,8 @@ const server = createServer(async (req, res) => {
     signInForm = new URLSearchParams(raw);
     res.writeHead(200, { "Content-Type": "text/plain" }); return res.end("Google sign-in (fixture)");
   }
+  // This deployment asks for no human verification.
+  if (url.pathname === "/api/auth/turnstile") { res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"siteKey":null}'); }
   const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (sessionGone && !url.pathname.startsWith("/api/auth/")) return json({ error: "Unauthorized" }, 401);

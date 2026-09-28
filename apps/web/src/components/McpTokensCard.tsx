@@ -8,8 +8,8 @@ import { MCP_TOKEN_NAME_MAX_LENGTH, TURNSTILE_ACTIONS, type CreateMcpCredentialR
 import { apiFetch, ApiError } from "../lib/api";
 import { copyText } from "../lib/practicePrompt";
 import { buildUserMcpSetupPrompt, isFreshMcpSecretUsable, type FreshMcpSecret } from "../lib/mcpSetupPrompt";
-import { turnstileHeaders, useTurnstileSiteKey } from "../lib/turnstile";
-import TurnstileWidget from "./TurnstileWidget";
+import { isHumanVerificationRefusal, turnstileHeaders, useTurnstileConfig } from "../lib/turnstile";
+import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
 // implementation — shared Untitled UI primitives; docs/guides/ui-components.md.
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
@@ -60,15 +60,25 @@ export default function McpTokensCard({
   const [createError, setCreateError] = useState<string | null>(null);
 
   // Creating and rotating both issue a bearer token, so both need a Turnstile
-  // token when the deployment uses it (issue #82). `undefined` while that is
-  // being looked up. Each token is spent by one request: a new widget key
-  // after every attempt mounts a fresh widget for the next one.
-  const turnstileSiteKey = useTurnstileSiteKey();
+  // token when the deployment uses it (issue #82). Until the configuration is
+  // known (loading, or a lookup to retry) neither goes ahead. Each token is
+  // spent by one request: a new widget key after every attempt mounts a fresh
+  // widget for the next one.
+  const { config: turnstileConfig, reload: reloadTurnstile } = useTurnstileConfig();
+  const turnstileSiteKey = turnstileConfig.status === "ready" ? turnstileConfig.siteKey : null;
+  const verificationOff = turnstileConfig.status === "ready" && !turnstileSiteKey;
   const [createHumanToken, setCreateHumanToken] = useState<string | null>(null);
   const [createWidgetKey, setCreateWidgetKey] = useState(0);
-  const awaitingHumanToken = turnstileSiteKey === undefined || (!!turnstileSiteKey && !createHumanToken);
-  // The token to rotate once its row's verification check passes.
+  const awaitingHumanToken = !verificationOff && !createHumanToken;
+  // The token whose row asks for the check; its own button then rotates it.
   const [verifyingRotation, setVerifyingRotation] = useState<McpCredentialSummary | null>(null);
+  const [rotationHumanToken, setRotationHumanToken] = useState<string | null>(null);
+  // The Worker asked for verification the configuration said was off: it
+  // has changed since the card loaded, so look again and show the widget.
+  const noteRefusal = (err: unknown) => { if (verificationOff && isHumanVerificationRefusal(err)) reloadTurnstile(); };
+  const turnstileSlot = (onTokenChange: (token: string | null) => void, key?: number) =>
+    turnstileConfig.status === "failed" ? <TurnstileConfigError onRetry={reloadTurnstile} />
+      : turnstileSiteKey ? <TurnstileWidget key={key} siteKey={turnstileSiteKey} action={TURNSTILE_ACTIONS.mcpToken} onTokenChange={onTokenChange} /> : null;
 
   // The freshly issued/rotated token is shown exactly once, then discarded —
   // it is never retrievable again after this card forgets it.
@@ -141,6 +151,7 @@ export default function McpTokensCard({
       setCreating(false);
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : "Could not create this token.");
+      noteRefusal(err);
     } finally {
       setCreateBusy(false);
       if (turnstileSiteKey) setCreateWidgetKey((key) => key + 1);
@@ -160,11 +171,16 @@ export default function McpTokensCard({
   };
 
   const rotate = (t: McpCredentialSummary) => {
-    if (!window.confirm(`Rotate "${t.name}"? The current token stops working immediately and a new one takes its place.`)) return;
     setRowError(null);
-    // With Turnstile, the row shows its check and rotation starts once it passes.
-    if (turnstileSiteKey) { setVerifyingRotation(t); return; }
-    rotateVerified(t, null);
+    if (verificationOff) {
+      if (!window.confirm(`Rotate "${t.name}"? The current token stops working immediately and a new one takes its place.`)) return;
+      rotateVerified(t, null);
+      return;
+    }
+    // With Turnstile the row takes the confirmation's place: it says what
+    // rotating does, asks for the check, and rotates only on its own button.
+    setRotationHumanToken(null);
+    setVerifyingRotation(t);
   };
 
   const rotateVerified = (t: McpCredentialSummary, humanToken: string | null) => {
@@ -178,7 +194,7 @@ export default function McpTokensCard({
         setTokens((prev) => [credential, ...prev.map((x) => (x.id === t.id ? { ...x, status: "revoked" as const, revokedAt: Date.now() } : x))]);
         reveal({ token, id: credential.id, name: credential.name, expiresAt: credential.expiresAt });
       })
-      .catch((err) => setRowError(err instanceof ApiError ? err.message : "Could not rotate this token."))
+      .catch((err) => { setRowError(err instanceof ApiError ? err.message : "Could not rotate this token."); noteRefusal(err); })
       .finally(() => setBusyId(null));
   };
 
@@ -263,9 +279,7 @@ export default function McpTokensCard({
                 })}
               </div>
             </div>
-            {turnstileSiteKey && (
-              <TurnstileWidget key={createWidgetKey} siteKey={turnstileSiteKey} action={TURNSTILE_ACTIONS.mcpToken} onTokenChange={setCreateHumanToken} />
-            )}
+            {turnstileSlot(setCreateHumanToken, createWidgetKey)}
             {createError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{createError}</p>}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Button size="md" isDisabled={createBusy || !nameDraft.trim() || awaitingHumanToken} isLoading={createBusy} showTextWhileLoading onClick={create}>
@@ -335,12 +349,17 @@ export default function McpTokensCard({
               <Button color="link-destructive" size="sm" isDisabled={busyId === t.id} onClick={() => revoke(t)}>Revoke</Button>
             </div>
           )}
-          {verifyingRotation?.id === t.id && turnstileSiteKey && (
+          {verifyingRotation?.id === t.id && (
             <div className="mcp-token-verify">
-              <p>Complete the check to rotate &quot;{t.name}&quot;. Rotation starts as soon as it passes.</p>
-              <TurnstileWidget siteKey={turnstileSiteKey} action={TURNSTILE_ACTIONS.mcpToken}
-                onTokenChange={(humanToken) => { if (humanToken) rotateVerified(t, humanToken); }} />
-              <Button color="secondary" size="sm" className="self-start" onClick={() => setVerifyingRotation(null)}>Cancel</Button>
+              <p>
+                Rotating &quot;{t.name}&quot; stops the current token immediately and issues a new one.
+                {turnstileSiteKey && " Complete the check, then rotate."}
+              </p>
+              {turnstileSlot(setRotationHumanToken)}
+              <div className="mcp-token-verify-actions">
+                <Button size="sm" isDisabled={!verificationOff && !rotationHumanToken} onClick={() => rotateVerified(t, rotationHumanToken)}>Rotate token</Button>
+                <Button color="secondary" size="sm" onClick={() => setVerifyingRotation(null)}>Cancel</Button>
+              </div>
             </div>
           )}
         </div>

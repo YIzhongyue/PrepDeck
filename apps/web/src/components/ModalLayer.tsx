@@ -1,5 +1,12 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 
+const FOCUSABLE = "button, input, textarea, select, a[href], [tabindex], [contenteditable=true]";
+// A box whose focusable content this document cannot list, such as the
+// Turnstile widget's iframe in a closed shadow root (issue #82). Native Tab
+// moves into and out of it; the trap only has to count it as a stop, and
+// wrap onto it by focusing the box (tabindex=-1), from where Tab goes in.
+const FOCUS_REGION = "[data-focus-region]";
+
 // The shared layer for dialogs that have to cover the whole application rather
 // than the column they happen to be rendered in.
 //
@@ -56,14 +63,20 @@ export default function ModalLayer({ label, labelledBy, describedBy, onClose, ch
       // document for browser controls. Keep both keyboard boundaries inside.
       onKeyDown={(e) => {
         if (e.key !== "Tab" || e.defaultPrevented) return;
-        const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href], [tabindex], [contenteditable=true]"))
-          .filter(el => (el.tabIndex >= 0 || (el.isContentEditable && !el.hasAttribute("tabindex")))
-            && !el.matches(":disabled") && !el.closest("[inert]") && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden");
-        const first = items[0], last = items.at(-1), active = document.activeElement;
+        const active = document.activeElement;
+        const isRegion = (el: Element) => el.matches(FOCUS_REGION);
+        // From a region's own box, Tab goes into the region: let it.
+        if (!e.shiftKey && active && isRegion(active)) return;
+        const stops = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(`${FOCUSABLE}, ${FOCUS_REGION}`))
+          .filter(el => !el.closest("[inert]") && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden"
+            && (isRegion(el) || (!el.parentElement?.closest(FOCUS_REGION)
+              && (el.tabIndex >= 0 || (el.isContentEditable && !el.hasAttribute("tabindex"))) && !el.matches(":disabled"))));
+        const current = stops.find(stop => stop === active || (isRegion(stop) && !!active && stop.contains(active)));
+        const first = stops[0], last = stops.at(-1);
         if (!first) { e.preventDefault(); e.currentTarget.focus(); return; }
         const target = e.shiftKey
-          ? (active === first || active === e.currentTarget ? last : undefined)
-          : (active === last ? first : undefined);
+          ? (current === first || active === e.currentTarget ? last : undefined)
+          : (current === last ? first : undefined);
         if (target) { e.preventDefault(); target.focus(); }
       }}
       // Escape closes through the caller instead of behind its back: the

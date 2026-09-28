@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { TURNSTILE_ACTIONS } from "@prepdeck/shared";
 import BrandLogo from "../components/BrandLogo";
-import TurnstileWidget from "../components/TurnstileWidget";
+import TurnstileWidget, { TurnstileConfigError } from "../components/TurnstileWidget";
 import { useGoogleSignIn } from "../lib/googleSignIn";
 import { currentPath } from "../lib/reauth";
 
@@ -15,9 +15,18 @@ interface LoginProps {
   signedOut?: boolean;
   /** The OAuth round trip didn't complete (bad state, token exchange failed). */
   error?: boolean;
-  /** The Worker refused to start sign-in: the Turnstile check failed or expired (issue #82). */
-  verification?: boolean;
+  /** Why the Worker refused to start sign-in (issue #82): the visitor's
+   * Turnstile check failed or expired, Siteverify was unavailable, or the
+   * deployment's verification is misconfigured. */
+  verification?: "failed" | "unavailable" | "misconfigured";
 }
+
+// Only a failed check is the learner's to fix; the other two are the server's.
+const VERIFICATION_NOTICES = {
+  failed: "We couldn't confirm you're human, or the check expired. Complete it again, then sign in.",
+  unavailable: "Human verification is unavailable right now, so sign-in couldn't start. Nothing is wrong with your check. Try again in a few minutes.",
+  misconfigured: "Sign-in is blocked by a setup problem with human verification on this server. Contact your admin.",
+} as const;
 
 function GoogleIcon() {
   return (
@@ -76,14 +85,17 @@ const noticeStyle: CSSProperties = {
 // the props below). When the deployment uses Turnstile (FR-1.11), the button
 // waits for the widget above it, and a refused check returns `?auth=verification`.
 export default function Login({ deniedEmail, conflict, signedOut, error, verification }: LoginProps) {
-  const { siteKey, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn();
+  const { siteKey, configFailed, reloadConfig, verified, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn();
   const denied = deniedEmail !== undefined && deniedEmail !== null;
   const mascot = denied ? MASCOT.denied : MASCOT.signin;
 
   // Comes back to the page that asked for sign-in, such as a question linked
   // from a daily review email (issue #41), instead of always to "/".
   const signIn = () => start(currentPath());
-  const turnstile = siteKey ? <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} /> : null;
+  const turnstile = configFailed ? <TurnstileConfigError onRetry={reloadConfig} />
+    : siteKey ? <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} /> : null;
+  // A failed check that has since been completed again no longer needs fixing.
+  const reverified = verification === "failed" && verified;
 
   return (
     <div className="login-page">
@@ -156,14 +168,24 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                 </div>
               )}
 
-              {verification && (
+              {verification && !reverified && (
                 <div role="alert" className="login-fade" style={{ ...noticeStyle, alignItems: "flex-start", borderRadius: 22, background: "var(--color-mark-1)", color: "var(--color-mark-1-text)" }}>
                   <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 2 }}>
                     <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3z" />
                     <path d="M12 9v3.5" />
                     <path d="M12 16h.01" />
                   </svg>
-                  <span>We couldn't confirm you're human, or the check expired. Complete it again, then sign in.</span>
+                  <span>{VERIFICATION_NOTICES[verification]}</span>
+                </div>
+              )}
+
+              {reverified && (
+                <div role="status" className="login-fade" style={{ ...noticeStyle, alignItems: "center", borderRadius: 999, background: "var(--color-neutral-200)", color: "var(--color-neutral-800)" }}>
+                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}>
+                    <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3z" />
+                    <path d="m9 12 2 2 4-4" />
+                  </svg>
+                  <span>Verification complete. You can sign in now.</span>
                 </div>
               )}
 

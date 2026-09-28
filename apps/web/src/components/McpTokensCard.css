@@ -34,6 +34,7 @@
 /* Rotating with human verification (issue #82): the row's check, on a line of its own. */
 .mcp-token-verify { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 16px; background: var(--color-neutral-100); }
 .mcp-token-verify p { margin: 0; font-size: 12.5px; }
+.mcp-token-verify-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 619.98px) {
   .mcp-head, .mcp-token { padding-inline: 18px; }

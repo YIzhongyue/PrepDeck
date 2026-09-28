@@ -178,9 +178,18 @@ type Gate =
   | { kind: "loading" }
   | { kind: "authed" }
   | { kind: "denied"; email: string | null; conflict?: boolean }
-  | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: boolean };
+  | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: Verification };
 
-function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boolean } | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: boolean } | null {
+type Verification = "failed" | "unavailable" | "misconfigured";
+
+// routes/auth.ts's flags for a refused Turnstile check (issue #82).
+const VERIFICATION_FLAGS: Record<string, Verification> = {
+  verification: "failed",
+  "verification-unavailable": "unavailable",
+  "verification-misconfigured": "misconfigured",
+};
+
+function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boolean } | { kind: "signin"; signedOut?: boolean; error?: boolean; verification?: Verification } | null {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get("auth");
   if (!auth) return null;
@@ -196,7 +205,7 @@ function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boo
   if (auth === "conflict") return { kind: "denied", email, conflict: true };
   if (auth === "signedout") return { kind: "signin", signedOut: true };
   if (auth === "error") return { kind: "signin", error: true };
-  if (auth === "verification") return { kind: "signin", verification: true };
+  if (Object.hasOwn(VERIFICATION_FLAGS, auth)) return { kind: "signin", verification: VERIFICATION_FLAGS[auth] };
   return null;
 }
 

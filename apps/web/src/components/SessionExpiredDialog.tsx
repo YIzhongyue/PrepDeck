@@ -6,7 +6,7 @@ import { currentPath } from "../lib/reauth";
 import { routePath } from "../lib/routes";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
-import TurnstileWidget from "./TurnstileWidget";
+import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
 
 // Shown the first time any request finds the session gone (issue #52): a
 // 7-day session running out in an open tab, or a sign-out on another device.
@@ -21,7 +21,7 @@ export default function SessionExpiredDialog() {
   const [open, setOpen] = useState(isSessionExpiryPending);
   // Signing in again asks for the same human verification as the login
   // screen when the deployment uses it (issue #82). Looked up once shown.
-  const { siteKey, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn(open);
+  const { siteKey, configFailed, reloadConfig, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn(open);
 
   useEffect(() => {
     const show = () => setOpen(true);
@@ -56,7 +56,8 @@ export default function SessionExpiredDialog() {
           Sign in again to continue. Everything already saved is kept
           {inMock ? ", and your mock answers that could not be saved are restored when you resume the exam. Its timer keeps running." : "."}
         </p>
-        {siteKey && <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} />}
+        {configFailed ? <TurnstileConfigError onRetry={reloadConfig} />
+          : siteKey && <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} />}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary" onClick={stay}>Not now</button>
           <button type="button" className="btn btn-primary" onClick={signIn} disabled={busy || !ready}>Sign in again</button>

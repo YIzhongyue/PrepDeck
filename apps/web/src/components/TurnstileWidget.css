@@ -4,6 +4,7 @@
 /* Reserves the widget's height while it loads, so the controls below it do
    not jump when it appears. Nothing is reserved once it cannot load. */
 .turnstile-widget { min-height: 65px; }
+.turnstile-widget:focus { outline: none; }
 .turnstile[data-phase="unavailable"] .turnstile-widget { min-height: 0; }
 
 /* The live region stays rendered while empty (zero height), so screen

@@ -99,10 +99,29 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
   const problem = phase === "failed" || phase === "unavailable";
   return (
     <div className="turnstile" data-phase={phase}>
-      <div ref={containerRef} className="turnstile-widget" />
+      {/* Cloudflare puts its iframe in a closed shadow root, out of reach of
+          anything that lists focusable elements. `data-focus-region` tells
+          ModalLayer's focus trap it is there; focusing this box puts the next
+          Tab inside it. */}
+      <div ref={containerRef} className="turnstile-widget" data-focus-region="" tabIndex={-1} role="group" aria-label="Human verification" />
       <div className="turnstile-status">
         <p role="status" aria-live="polite" className={problem ? "turnstile-problem" : undefined}>{MESSAGES[phase]}</p>
         {problem && <button type="button" className="turnstile-retry" onClick={retry}>Try again</button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * In place of the widget while the deployment's verification setting could not
+ * be looked up. The protected action stays disabled until a retry succeeds.
+ */
+export function TurnstileConfigError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="turnstile" data-phase="unavailable">
+      <div className="turnstile-status">
+        <p role="alert" className="turnstile-problem">Couldn&apos;t check whether human verification is needed. Check your connection.</p>
+        <button type="button" className="turnstile-retry" onClick={onRetry}>Try again</button>
       </div>
     </div>
   );

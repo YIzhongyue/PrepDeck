@@ -5,11 +5,12 @@
 
 import { useEffect, useState } from "react";
 import { submitSignIn } from "./reauth";
-import { useTurnstileSiteKey } from "./turnstile";
+import { useTurnstileConfig } from "./turnstile";
 
-/** `enabled` defers the site key lookup until sign-in is actually on offer. */
+/** `enabled` defers the configuration lookup until sign-in is actually on offer. */
 export function useGoogleSignIn(enabled = true) {
-  const siteKey = useTurnstileSiteKey(enabled);
+  const { config, reload: reloadConfig } = useTurnstileConfig(enabled);
+  const siteKey = config.status === "ready" ? config.siteKey : null;
   const [token, setToken] = useState<string | null>(null);
   const [widgetKey, setWidgetKey] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -28,8 +29,8 @@ export function useGoogleSignIn(enabled = true) {
     return () => window.removeEventListener("pageshow", restored);
   }, []);
 
-  // Unknown (still loading) waits; no site key needs no token.
-  const ready = siteKey === null || (!!siteKey && !!token);
+  // Unknown (loading, or a lookup that failed) waits; no site key needs no token.
+  const ready = config.status === "ready" && (config.siteKey === null || !!token);
 
   const signIn = (returnTo: string) => {
     if (!ready || busy) return;
@@ -37,5 +38,5 @@ export function useGoogleSignIn(enabled = true) {
     submitSignIn(returnTo, token);
   };
 
-  return { siteKey, widgetKey, onToken: setToken, ready, busy, signIn };
+  return { siteKey, configFailed: config.status === "failed", reloadConfig, verified: !!token, widgetKey, onToken: setToken, ready, busy, signIn };
 }

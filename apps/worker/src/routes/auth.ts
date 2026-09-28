@@ -14,7 +14,7 @@ import { TURNSTILE_ACTIONS, TURNSTILE_FORM_FIELD, type TurnstileConfigResponse }
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { requireAccessUser } from "../middleware/access";
-import { turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken } from "../lib/turnstile";
+import { turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken, type TurnstileFailure } from "../lib/turnstile";
 import { verifyPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
 import { issueSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
@@ -55,6 +55,15 @@ authRouter.get("/turnstile", (c) => {
   return c.json(body, 200, { "Cache-Control": "no-store" });
 });
 
+// The `?auth=` flag the login screen explains a refused check with. Only a
+// missing or rejected token is the visitor's to fix by verifying again.
+const VERIFICATION_FLAGS: Record<TurnstileFailure, string> = {
+  missing: "verification",
+  rejected: "verification",
+  unavailable: "verification-unavailable",
+  misconfigured: "verification-misconfigured",
+};
+
 // `returnTo` with the `?auth=` flag the login screen reports `reason` from.
 function withAuthFlag(returnTo: string | null, reason: string): string {
   const url = new URL(returnTo ?? "/", "https://prepdeck.invalid");
@@ -93,7 +102,7 @@ async function startGoogleSignIn(
   if (turnstileSiteKey(c.env)) {
     if (c.req.method !== "POST") return c.redirect(returnTo ?? "/", 302);
     const verdict = await verifyTurnstileToken(c.env, input.turnstileToken, TURNSTILE_ACTIONS.signIn, turnstileRemoteIp(c.req.raw.headers));
-    if (!verdict.ok) return c.redirect(withAuthFlag(returnTo, "verification"), 303);
+    if (!verdict.ok) return c.redirect(withAuthFlag(returnTo, VERIFICATION_FLAGS[verdict.reason]), 303);
   }
 
   const state = randomBase64Url(24);
@@ -101,7 +110,7 @@ async function startGoogleSignIn(
   const codeChallenge = await pkceChallengeFromVerifier(codeVerifier);
 
   const secure = new URL(c.req.url).protocol === "https:";
-  c.header("Set-Cookie", buildOAuthStateCookie(state, codeVerifier, secure, returnTo));
+  c.header("Set-Cookie", await buildOAuthStateCookie(c.env, state, codeVerifier, secure, returnTo));
 
   const redirectUri = googleRedirectUri(c);
   console.info("auth.google.start", { redirectUri });
@@ -157,7 +166,9 @@ authRouter.get("/google/callback", async (c) => {
     return fail("error");
   }
 
-  const stored = readOAuthStateCookie(c.req.header("Cookie") ?? null);
+  // Signed and expiring (issue #82): a cookie this Worker did not issue from
+  // /google/start, where Turnstile is checked, is refused here.
+  const stored = await readOAuthStateCookie(c.env, c.req.header("Cookie") ?? null);
   if (!stored || stored.state !== state) {
     console.warn("auth.google.callback.invalid_state", { hasStateCookie: !!stored });
     return fail("error");

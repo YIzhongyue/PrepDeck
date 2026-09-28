@@ -19,6 +19,8 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (status, value) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(value)); };
   if (url.pathname.startsWith("/api/")) {
+    // This deployment asks for no human verification (issue #82).
+    if (url.pathname === "/api/auth/turnstile") return json(200, { siteKey: null });
     if (req.method === "GET") return json(200, { credentials: tokens });
     writes++;
     let raw = ""; for await (const chunk of req) raw += chunk;

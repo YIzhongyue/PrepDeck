@@ -84,11 +84,16 @@ test("a refused, spent or expired token is rejected", async t => {
   assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "rejected" });
 });
 
-test("fails closed as unavailable without a secret, on a bad secret, or when Siteverify cannot answer", async t => {
-  let reply = { success: false, "error-codes": ["invalid-input-secret"] };
-  const { calls } = stub(t, () => reply);
-  assert.deepEqual(await verifyTurnstileToken({ ...ENABLED, TURNSTILE_SECRET_KEY: " " }, TOKEN, "sign_in", null), { ok: false, reason: "unavailable" });
+test("fails closed as misconfigured without a secret or with one Siteverify rejects", async t => {
+  const { calls } = stub(t, { success: false, "error-codes": ["invalid-input-secret"] });
+  assert.deepEqual(await verifyTurnstileToken({ ...ENABLED, TURNSTILE_SECRET_KEY: " " }, TOKEN, "sign_in", null), { ok: false, reason: "misconfigured" });
   assert.equal(calls.length, 0, "no secret, no Siteverify call");
+  assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "misconfigured" });
+});
+
+test("fails closed as unavailable when Siteverify cannot answer", async t => {
+  let reply = { success: false, "error-codes": ["internal-error"] };
+  stub(t, () => reply);
   assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "unavailable" });
   reply = new Response("upstream down", { status: 502 });
   assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "unavailable" });
@@ -102,12 +107,12 @@ test("Cloudflare's test keys are accepted in development only", async t => {
   // What Siteverify really answers for a test secret: example.com, no action.
   stub(t, { success: true, "error-codes": [], hostname: "example.com", metadata: { result_with_testing_key: true } });
   assert.deepEqual(await verifyTurnstileToken({ ...ENABLED, ENVIRONMENT: "development" }, TOKEN, "sign_in", null), { ok: true });
-  assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "unavailable" });
+  assert.deepEqual(await verifyTurnstileToken(ENABLED, TOKEN, "sign_in", null), { ok: false, reason: "misconfigured" });
 });
 
 // --- Google sign-in -------------------------------------------------------
 
-const AUTH_ENV = { AUTH_MODE: "cookie", GOOGLE_CLIENT_ID: "client-id" };
+const AUTH_ENV = { AUTH_MODE: "cookie", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", SESSION_SECRET: "synthetic-test-session-key" };
 const startForm = fields => ({ method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
 const startsGoogle = response => response.headers.get("Location")?.startsWith("https://accounts.google.com/") && /pd_oauth=/.test(response.headers.get("Set-Cookie") ?? "");
 
@@ -124,7 +129,8 @@ test("without Turnstile, sign-in starts from the form POST as it did from GET", 
   const response = await authRouter.request("https://prepdeck.test/google/start", startForm({ returnTo: "/settings" }), AUTH_ENV);
   assert.equal(response.status, 303);
   assert.ok(startsGoogle(response));
-  assert.match(decodeURIComponent(response.headers.get("Set-Cookie")), /"returnTo":"\/settings"/);
+  const payload = response.headers.get("Set-Cookie").split(";")[0].slice("pd_oauth=".length).split(".")[0];
+  assert.equal(JSON.parse(Buffer.from(payload, "base64url").toString()).returnTo, "/settings");
   assert.equal((await authRouter.request("https://prepdeck.test/google/start", {}, AUTH_ENV)).status, 302);
   assert.equal(calls.length, 0);
 });
@@ -150,6 +156,68 @@ test("with Turnstile, a missing or refused token returns to the page with ?auth=
   }
   const foreign = await authRouter.request("https://prepdeck.test/google/start", startForm({ returnTo: "//evil.example/" }), env);
   assert.equal(foreign.headers.get("Location"), "/?auth=verification");
+});
+
+test("a refused sign-in says whether to verify again, try later or contact an admin", async t => {
+  let reply;
+  stub(t, () => reply);
+  const env = { ...AUTH_ENV, ...ENABLED };
+  const start = async () => (await authRouter.request("https://prepdeck.test/google/start", startForm({ returnTo: "/settings", "cf-turnstile-response": TOKEN }), env)).headers.get("Location");
+  reply = { success: false, "error-codes": ["timeout-or-duplicate"] };
+  assert.equal(await start(), "/settings?auth=verification");
+  reply = new Response("down", { status: 503 });
+  assert.equal(await start(), "/settings?auth=verification-unavailable");
+  reply = { success: false, "error-codes": ["invalid-input-secret"] };
+  assert.equal(await start(), "/settings?auth=verification-misconfigured");
+});
+
+// The review of the first version: the OAuth state cookie was unsigned JSON,
+// so a client could skip /google/start, and with it Turnstile, by writing a
+// matching cookie and calling the callback directly.
+test("the callback refuses OAuth state /google/start did not issue: forged, tampered or expired", async t => {
+  const env = { ...AUTH_ENV, ...ENABLED };
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  const realNow = Date.now;
+  t.after(() => { globalThis.fetch = originalFetch; Date.now = realNow; });
+  globalThis.fetch = async url => {
+    requests.push(String(url));
+    if (String(url) === SITEVERIFY) return Response.json({ success: true, action: "sign_in", hostname: "prepdeck.test" });
+    return Response.json({ error: "invalid_grant" }, { status: 400 });
+  };
+  const callback = cookie => authRouter.request("https://prepdeck.test/google/callback?code=c&state=s", { headers: { Cookie: cookie } }, env);
+  const refused = async (cookie, label) => {
+    const before = requests.length;
+    const response = await callback(cookie);
+    assert.equal(response.headers.get("Location"), "/?auth=error", label);
+    assert.doesNotMatch(response.headers.get("Set-Cookie") ?? "", /pd_session=/, label);
+    assert.equal(requests.length, before, `${label}: no Google token exchange, no Siteverify`);
+  };
+
+  await refused(`pd_oauth=${encodeURIComponent(JSON.stringify({ state: "s", codeVerifier: "v" }))}`, "the first version's unsigned cookie");
+
+  // A genuine cookie, issued after a verified token, for comparison.
+  const start = await authRouter.request("https://prepdeck.test/google/start", startForm({ "cf-turnstile-response": TOKEN }), env);
+  const issued = start.headers.get("Set-Cookie").split(";")[0];
+  const state = new URL(start.headers.get("Location")).searchParams.get("state");
+  const [payload, signature] = issued.slice("pd_oauth=".length).split(".");
+  const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
+  assert.equal(claims.state, state);
+
+  const forgedPayload = Buffer.from(JSON.stringify({ ...claims, state: "s" })).toString("base64url");
+  await refused(`pd_oauth=${forgedPayload}.${signature}`, "a payload changed under the old signature");
+  await refused(`pd_oauth=${payload}.${"A".repeat(43)}`, "a made-up signature");
+  await refused(`pd_oauth=${payload}`, "no signature");
+
+  const genuine = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: issued } }, env);
+  assert.equal(genuine.headers.get("Location"), "/?auth=error", "Google refuses the made-up code");
+  assert.ok(requests.at(-1).startsWith("https://oauth2.googleapis.com/token"), "a genuine cookie does reach the token exchange");
+
+  Date.now = () => realNow() + 11 * 60 * 1000;
+  const before = requests.length;
+  const expired = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: issued } }, env);
+  assert.equal(expired.headers.get("Location"), "/?auth=error");
+  assert.equal(requests.length, before, "an expired cookie never reaches the token exchange");
 });
 
 test("with Turnstile, a GET cannot start sign-in: it goes back to the page, where the login screen asks for the check", async t => {
@@ -235,5 +303,10 @@ test("with Turnstile, a token for the sign-in action cannot issue an MCP token, 
   const outage = await request("/mcp-tokens", { token: TOKEN, body: { name: "cli" } });
   assert.equal(outage.status, 503);
   assert.equal(outage.body.code, "human_verification_failed");
+  assert.match(outage.body.error, /Try again in a few minutes/);
+  reply = { success: false, "error-codes": ["invalid-input-secret"] };
+  const misconfigured = await request("/mcp-tokens", { token: TOKEN, body: { name: "cli" } });
+  assert.equal(misconfigured.status, 503);
+  assert.match(misconfigured.body.error, /Contact your admin/);
   assert.equal(active(), 0);
 });
