@@ -14,7 +14,7 @@ async function bundle(path) {
   const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
   return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
 }
-const [{ authRouter }, { safeReturnTo }] = await Promise.all([bundle("../src/routes/auth.ts"), bundle("../src/lib/returnTo.ts")]);
+const [{ authRouter }, { safeReturnTo }, { buildOAuthStateCookie }] = await Promise.all([bundle("../src/routes/auth.ts"), bundle("../src/lib/returnTo.ts"), bundle("../src/lib/google-oauth.ts")]);
 
 test("returnTo accepts same-origin paths only", () => {
   for (const [input, expected] of [
@@ -89,10 +89,11 @@ test("without returnTo, or with a foreign one, signing in lands on /", async t =
   assert.equal((await signInThroughGoogle(t)).callback.headers.get("Location"), "/");
   const foreign = await signInThroughGoogle(t, "//evil.example/steal");
   assert.equal(foreign.callback.headers.get("Location"), "/");
-  assert.doesNotMatch(decodeURIComponent(foreign.oauthCookie), /evil/, "a refused returnTo is not even stored");
+  const claims = JSON.parse(Buffer.from(foreign.oauthCookie.slice("pd_oauth=".length).split(".")[0], "base64url").toString());
+  assert.ok(!("returnTo" in claims), "a refused returnTo is not even stored");
 });
 
-test("a returnTo planted in the unsigned state cookie is validated again", async t => {
+test("a state cookie this Worker did not sign is refused, whatever it plants", async t => {
   const env = environment(t);
   const { jwk, sign } = await signingKey();
   const idToken = await sign({ iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
@@ -103,6 +104,20 @@ test("a returnTo planted in the unsigned state cookie is validated again", async
   const state = new URL(start.headers.get("Location")).searchParams.get("state");
   const planted = `pd_oauth=${encodeURIComponent(JSON.stringify({ state, codeVerifier: "v", returnTo: "https://evil.example/" }))}`;
   const callback = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: planted } }, env);
+  assert.doesNotMatch(callback.headers.get("Set-Cookie") ?? "", /pd_session=/, "no session from a cookie we did not issue");
+  assert.equal(callback.headers.get("Location"), "/?auth=error");
+});
+
+test("a returnTo in a signed state cookie is still validated on the way out", async t => {
+  const env = environment(t);
+  const { jwk, sign } = await signingKey();
+  const idToken = await sign({ iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async url => String(url).includes("token") ? Response.json({ id_token: idToken }) : Response.json({ keys: [jwk] });
+  // Signed with the Worker's own key, as if a future caller forgot to validate.
+  const cookie = (await buildOAuthStateCookie(env, "s", "v", true, "https://evil.example/")).split(";")[0];
+  const callback = await authRouter.request("https://prepdeck.test/google/callback?code=c&state=s", { headers: { Cookie: cookie } }, env);
   assert.match(callback.headers.get("Set-Cookie"), /pd_session=/, "the sign-in itself succeeds");
   assert.equal(callback.headers.get("Location"), "/");
 });

@@ -104,35 +104,68 @@ export async function exchangeCodeForIdentity(
   };
 }
 
-// Short-lived cookie carrying the CSRF `state` and PKCE `code_verifier`
-// across the redirect to Google and back. Not HMAC-signed like the real
-// session cookie (session.ts) — a tampered value only ever fails the state
-// comparison in /google/callback and aborts the login, since the final
-// identity always comes from Google's independently-verified id_token, never
-// from anything read out of this cookie.
+// Short-lived cookie carrying the CSRF `state`, the PKCE `code_verifier` and
+// where to land, across the redirect to Google and back. HMAC-signed with
+// SESSION_SECRET under its own purpose prefix (as lib/unsubscribeToken.ts
+// does), with its expiry inside the signed payload (issue #82). Only
+// /google/start issues one, after it has checked Turnstile, so the callback's
+// token exchange cannot be reached by writing a matching cookie by hand.
 const OAUTH_COOKIE_NAME = "pd_oauth";
 const OAUTH_COOKIE_TTL_SECONDS = 10 * 60;
+const OAUTH_COOKIE_PURPOSE = "oauth-state.v1";
 
-export function buildOAuthStateCookie(state: string, codeVerifier: string, secure: boolean, returnTo: string | null = null): string {
-  const value = encodeURIComponent(JSON.stringify({ state, codeVerifier, ...(returnTo ? { returnTo } : {}) }));
+type SigningEnv = Pick<Env, "SESSION_SECRET">;
+
+export interface OAuthState {
+  state: string;
+  codeVerifier: string;
+  returnTo: string | null;
+}
+
+function fromBase64Url(b64url: string): Uint8Array {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64url.length / 4) * 4, "=");
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function oauthStateKey(env: SigningEnv): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(env.SESSION_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+export async function buildOAuthStateCookie(env: SigningEnv, state: string, codeVerifier: string, secure: boolean, returnTo: string | null = null): Promise<string> {
+  const claims = { state, codeVerifier, exp: Date.now() + OAUTH_COOKIE_TTL_SECONDS * 1000, ...(returnTo ? { returnTo } : {}) };
+  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify(claims)));
+  const signature = await crypto.subtle.sign("HMAC", await oauthStateKey(env), new TextEncoder().encode(`${OAUTH_COOKIE_PURPOSE}.${payload}`));
+  const value = `${payload}.${toBase64Url(new Uint8Array(signature))}`;
   return `${OAUTH_COOKIE_NAME}=${value}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${OAUTH_COOKIE_TTL_SECONDS}`;
 }
 
-export function readOAuthStateCookie(cookieHeader: string | null): { state: string; codeVerifier: string; returnTo: string | null } | null {
+/** The state this Worker issued, or null for a missing, unsigned, tampered or expired cookie. */
+export async function readOAuthStateCookie(env: SigningEnv, cookieHeader: string | null): Promise<OAuthState | null> {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() !== OAUTH_COOKIE_NAME) continue;
+    if (eq < 0 || part.slice(0, eq).trim() !== OAUTH_COOKIE_NAME) continue;
+    const value = part.slice(eq + 1).trim();
+    const dot = value.lastIndexOf(".");
+    const payload = value.slice(0, dot);
+    const signature = value.slice(dot + 1);
+    // 43 characters: an unpadded base64url SHA-256 HMAC, as in session.ts.
+    if (dot < 0 || !/^[A-Za-z0-9_-]+$/.test(payload) || !/^[A-Za-z0-9_-]{43}$/.test(signature)) return null;
+    const valid = await crypto.subtle.verify("HMAC", await oauthStateKey(env), fromBase64Url(signature), new TextEncoder().encode(`${OAUTH_COOKIE_PURPOSE}.${payload}`));
+    if (!valid) return null;
+    let claims: { state?: unknown; codeVerifier?: unknown; returnTo?: unknown; exp?: unknown };
     try {
-      const parsed = JSON.parse(decodeURIComponent(part.slice(eq + 1).trim())) as { state?: unknown; codeVerifier?: unknown; returnTo?: unknown };
-      if (typeof parsed.state === "string" && typeof parsed.codeVerifier === "string") {
-        // Re-validated on the way out: this cookie is not signed.
-        return { state: parsed.state, codeVerifier: parsed.codeVerifier, returnTo: safeReturnTo(parsed.returnTo) };
-      }
+      claims = JSON.parse(new TextDecoder().decode(fromBase64Url(payload)));
     } catch {
       return null;
     }
+    if (typeof claims.state !== "string" || typeof claims.codeVerifier !== "string") return null;
+    if (typeof claims.exp !== "number" || !(Date.now() < claims.exp)) return null;
+    // Signed by us, but still re-validated on the way out, as any redirect target is.
+    return { state: claims.state, codeVerifier: claims.codeVerifier, returnTo: safeReturnTo(claims.returnTo) };
   }
   return null;
 }

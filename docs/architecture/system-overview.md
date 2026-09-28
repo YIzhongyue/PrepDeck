@@ -30,6 +30,9 @@ MCP host or PDF-processing server is deployed.
 authentication on API/MCP paths. Browser auth then resolves its session and account;
 User/Admin MCP validates independent bearer credentials before protocol dispatch.
 Google OAuth, health and signed unsubscribe are deliberately separate entry points.
+When a deployment uses Cloudflare Turnstile, starting Google sign-in and issuing an
+MCP token also need a token the Worker verifies with Siteverify
+([FR-1.11](../requirements/authentication-and-users.md#fr-1-11)).
 Static assets are not a private-data authorization boundary.
 
 The SPA keeps navigation as store state and mirrors it into the URL

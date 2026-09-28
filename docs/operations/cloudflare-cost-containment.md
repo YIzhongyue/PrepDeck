@@ -90,13 +90,15 @@ SQL，以实际 rows read/written 而非 SQL 语句数计量；对失败、401/4
 `CIRCUIT_MODE` 只能为 `normal`、`degraded`、`emergency`；未知值按 emergency 失败关闭。
 
 - **degraded：** 允许只读请求；拒绝所有非 GET/HEAD/OPTIONS 写操作，并拒绝 AI 与导入读取路径，
-  因而 AI 生成、导入、上传和其他写入均在认证与存储访问前返回 503。
-- **emergency：** 仅放行最小 `/api/health`、无需存储的 `/api/auth/google/start` 与 `/api/auth/logout`，以及 `EMERGENCY_ADMIN_IPS` 中的精确
+  因而 AI 生成、导入、上传和其他写入均在认证与存储访问前返回 503。唯一例外是发起登录的
+  `POST /api/auth/google/start`：它以表单携带 Turnstile 令牌，但与原来的 GET 一样不访问存储。
+- **emergency：** 仅放行最小 `/api/health`、无需存储的 `/api/auth/google/start`、`/api/auth/turnstile` 与 `/api/auth/logout`，以及 `EMERGENCY_ADMIN_IPS` 中的精确
   来源。CIDR 必须由 WAF 规则实施；Worker 的精确 IP 检查只是纵深防御。管理员来源放行后仍执行正常
   身份/角色校验。
 - 熔断中间件在 `src/index.ts` 中必须先于 API/MCP 路径的认证与限流执行。
   MCP 使用 POST，即使是只读 tool 也会在 degraded 被阻断；返回结构化 `unavailable`。
   Google callback 和本地密码登录会访问存储，emergency 下仍需来源 allowlist。
+  启用 Turnstile 时，发起登录会调用 Cloudflare Siteverify；这是出站请求，不读写 D1/KV/R2。
 - Cron handler 不经过 HTTP 熔断；邮件与图片清理可能继续读写存储。需要阻断后台成本时，
   应另外停用目标环境 Cron 并验证；参考[定时任务](scheduled-jobs.md)。
 - HTTP 熔断响应带 `Retry-After`、

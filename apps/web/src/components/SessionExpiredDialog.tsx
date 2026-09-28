@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { TURNSTILE_ACTIONS } from "@prepdeck/shared";
 import { SESSION_EXPIRED_EVENT, isSessionExpiryPending, resetSessionLoss } from "../lib/api";
-import { signInUrl } from "../lib/reauth";
+import { useGoogleSignIn } from "../lib/googleSignIn";
+import { currentPath } from "../lib/reauth";
 import { routePath } from "../lib/routes";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
+import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
 
 // Shown the first time any request finds the session gone (issue #52): a
 // 7-day session running out in an open tab, or a sign-out on another device.
@@ -16,7 +19,9 @@ export default function SessionExpiredDialog() {
   // failing, swap in the second, so a newly mounted dialog starts from the
   // announced state instead of waiting for an event that already fired.
   const [open, setOpen] = useState(isSessionExpiryPending);
-  const [leaving, setLeaving] = useState(false);
+  // Signing in again asks for the same human verification as the login
+  // screen when the deployment uses it (issue #82). Looked up once shown.
+  const { siteKey, configFailed, reloadConfig, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn(open);
 
   useEffect(() => {
     const show = () => setOpen(true);
@@ -30,12 +35,12 @@ export default function SessionExpiredDialog() {
   const inMock = state.mStage === "live" && !!state.mockAttemptId;
 
   const signIn = () => {
-    setLeaving(true);
+    if (!ready || busy) return;
     preserveForReauth();
     // Back to the mock when one is running, so its answers are restored on
     // resume; otherwise to this page, whose address names it (issue #41).
     const examSlug = state.exams.find((e) => e.id === state.examId)?.slug ?? null;
-    window.location.assign(signInUrl(inMock ? routePath({ screen: "mock", examSlug, learningSequence: null, knowledgePointId: null }) : undefined));
+    start(inMock ? routePath({ screen: "mock", examSlug, learningSequence: null, knowledgePointId: null }) : currentPath());
   };
   // Staying keeps the page readable; the next refused request asks again.
   const stay = () => {
@@ -51,9 +56,11 @@ export default function SessionExpiredDialog() {
           Sign in again to continue. Everything already saved is kept
           {inMock ? ", and your mock answers that could not be saved are restored when you resume the exam. Its timer keeps running." : "."}
         </p>
+        {configFailed ? <TurnstileConfigError onRetry={reloadConfig} />
+          : siteKey && <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} />}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary" onClick={stay}>Not now</button>
-          <button type="button" className="btn btn-primary" onClick={signIn} disabled={leaving}>Sign in again</button>
+          <button type="button" className="btn btn-primary" onClick={signIn} disabled={busy || !ready}>Sign in again</button>
         </div>
       </div>
     </ModalLayer>

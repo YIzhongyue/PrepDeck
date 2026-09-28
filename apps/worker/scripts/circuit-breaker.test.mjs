@@ -62,3 +62,17 @@ test("degraded mode blocks unsafe methods and AI/import/explanation reads, allow
   assert.equal((await app().request("/api/questions/q1/ai-explanations", {}, env)).status, 503);
   assert.equal((await app().request("/api/exams/e1/import", { method: "POST" }, env)).status, 503);
 });
+
+// Issue #82: sign-in is a form POST carrying the Turnstile token, and the login
+// screen reads the site key first. Both stay storage-free, so neither mode may
+// lock learners out of signing in.
+test("sign-in with human verification stays reachable in degraded and emergency modes", async () => {
+  const degraded = { CIRCUIT_MODE: "degraded" };
+  assert.equal((await app().request("/api/auth/google/start", { method: "POST" }, degraded)).status, 200);
+  assert.equal((await app().request("/api/auth/turnstile", {}, degraded)).status, 200);
+  assert.equal((await app().request("/api/auth/logout", { method: "POST" }, degraded)).status, 503, "only sign-in is exempted");
+
+  const emergency = { CIRCUIT_MODE: "emergency", EMERGENCY_ADMIN_IPS: "" };
+  assert.equal((await app().request("/api/auth/google/start", { method: "POST" }, emergency)).status, 200);
+  assert.equal((await app().request("/api/auth/turnstile", {}, emergency)).status, 200);
+});

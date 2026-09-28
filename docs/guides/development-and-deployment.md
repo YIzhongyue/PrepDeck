@@ -112,7 +112,7 @@ TypeScript 7.
 
 `npm test` only picks up `*.test.mjs`, so the component-level regressions in
 `apps/web/scripts/*.browser.mjs` — the exam workspace, URL routing and history, the Knowledge Points
-editor, question authoring, MCP setup and the Bookmarks/Wrong-book tag filter —
+editor, question authoring, MCP setup, Turnstile human verification and the Bookmarks/Wrong-book tag filter —
 run under `npm run test:browser`
 instead. Playwright is a dev dependency; `npx playwright install chromium`
 downloads the browser once (install scripts are not run automatically). CI runs
@@ -206,6 +206,8 @@ the [private configuration workflow](public-private-sync.md#private-deployment-b
    enabling daily email. Verify the target account supports the declared
    Analytics Engine, Durable Object, rate-limit and Email bindings. Keep
    `ENVIRONMENT=production` and `ENABLE_DEV_PASSWORD_LOGIN=false`.
+   To require human verification on sign-in and MCP token creation, also
+   follow [human verification](#human-verification-cloudflare-turnstile).
 6. If Cloudflare Access was previously put in front of this Worker (an
    earlier setup of this project used it), remove or disable that Access
    Application in the Zero Trust dashboard — otherwise Access's own hosted
@@ -262,6 +264,81 @@ and application authorization failures. The logging calls omit authorization
 codes, state and tokens, but some include provider error values/raw exception
 messages; see the [logging gaps](../operations/observability-runbook.md#current-gaps).
 A lone sampled `auth.google.start` event is not proof that no callback occurred.
+
+## Human verification (Cloudflare Turnstile)
+
+[FR-1.11](../requirements/authentication-and-users.md#fr-1-11) can require a
+Cloudflare Turnstile check before Google sign-in starts and before an MCP token
+is created or rotated. It is off by default, in production and locally.
+
+### Turning it on for a deployment
+
+1. In the Cloudflare dashboard, open **Turnstile → Add widget**. Choose
+   **Managed** mode, so visitors are challenged only when Cloudflare is unsure,
+   and add the deployment's hostname. Do not add `localhost` to a production
+   widget; use the test keys below instead.
+2. From `apps/worker`, run `npx wrangler secret put TURNSTILE_SECRET_KEY` and
+   enter the widget's secret key.
+3. Put the widget's site key in `TURNSTILE_SITE_KEY` under `[vars]` in
+   `apps/worker/wrangler.toml`. It is public: the Worker hands it to the login
+   screen from `GET /api/auth/turnstile`, so the web build needs no variable
+   and does not have to be rebuilt when it changes.
+4. Tokens are accepted only from the hostname of `APP_BASE_URL`. If the app is
+   also served elsewhere (a second custom domain, `workers.dev`), list every
+   accepted hostname, comma-separated, in `TURNSTILE_HOSTNAMES`, and add them
+   to the widget too. Never list `localhost` or `127.0.0.1` for production.
+5. Deploy, then sign in and create an MCP token on the deployed origin.
+
+The site key is what switches verification on. Deployed without the secret,
+it fails closed: sign-in returns to the login screen asking visitors to contact
+an admin, and token creation answers 503. Remove the site key to turn
+verification off again.
+The content security policy in
+[`apps/web/public/_headers`](../../apps/web/public/_headers) allows
+`https://challenges.cloudflare.com` as a script and frame source; keep that if
+you change the policy.
+
+### Trying it locally
+
+The development profile leaves `TURNSTILE_SITE_KEY` empty so the default
+workflow stays offline. To exercise the widget, add Cloudflare's published
+test keys to the ignored `apps/worker/.dev.vars.development`, which override
+the empty value, and restart `npm run dev`:
+
+```bash
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+```
+
+The widget and Siteverify then need network access. Sign in through the local
+helper as usual (password login is not gated) and create a token under
+Settings → MCP access. Replace the secret with
+`2x0000000000000000000000000000000AA` to watch every check fail, or
+`3x0000000000000000000000000000000AA` for "token already spent". Test keys
+answer for `example.com` with no action, so the Worker accepts them only when
+`ENVIRONMENT=development`; anywhere else they are refused. Never put real keys
+in a development profile.
+
+### Troubleshooting human verification
+
+The Worker logs `turnstile.*` events with the action, Siteverify's error codes
+and, on a mismatch, the hostname or action the token carried. They never
+contain the secret or a token. The login screen's notice already tells the
+two kinds apart: "contact your admin" is a `turnstile.misconfigured` or
+`turnstile.test_key_outside_development` event, and "try again in a few
+minutes" a `turnstile.siteverify_unavailable` one.
+
+- `turnstile.misconfigured`: the secret is missing, or Siteverify rejected it
+  (`invalid-input-secret`). Check `TURNSTILE_SECRET_KEY` belongs to the same
+  widget as the site key.
+- `turnstile.hostname_mismatch`: the page was served from a hostname other than
+  `APP_BASE_URL`'s. Set `TURNSTILE_HOSTNAMES`.
+- `turnstile.test_key_outside_development`: a test secret is configured on a
+  deployment that is not `ENVIRONMENT=development`.
+- `turnstile.siteverify_unavailable`: the Worker could not reach Siteverify in
+  ten seconds, or it answered with an error.
+- The widget itself shows error `110200`: its hostname is not on the widget's
+  list in the dashboard.
 
 
 

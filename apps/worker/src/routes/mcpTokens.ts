@@ -6,10 +6,11 @@
 // access tokens bound to their own account, not a shared service credential.
 
 import { Hono } from "hono";
-import { MCP_TOKEN_MAX_EXPIRES_IN_DAYS, MCP_TOKEN_NAME_MAX_LENGTH, type McpCredentialSummary } from "@prepdeck/shared";
+import { MCP_TOKEN_MAX_EXPIRES_IN_DAYS, MCP_TOKEN_NAME_MAX_LENGTH, TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
+import { requireTurnstile } from "../middleware/turnstile";
 import {
   getMcpCredentialOwned, issueMcpCredential, listMcpCredentials, revokeMcpCredential, type McpAudience,
 } from "../mcp/credentials";
@@ -42,6 +43,9 @@ function freshSummary(issued: { id: string; name: string; createdAt: number; exp
 export function createMcpTokensRouter(audience: McpAudience) {
   const router = new Hono<{ Bindings: Env; Variables: Variables }>();
   if (audience === "admin") router.use("*", requireAdmin);
+  // Both issue a working bearer token, so both ask for human verification
+  // when the deployment uses it (issue #82). Revoking only takes access away.
+  const verifyHuman = requireTurnstile(TURNSTILE_ACTIONS.mcpToken);
 
   router.get("/", async (c) => {
     const userId = c.get("user").id;
@@ -49,7 +53,7 @@ export function createMcpTokensRouter(audience: McpAudience) {
     return c.json({ credentials });
   });
 
-  router.post("/", async (c) => {
+  router.post("/", verifyHuman, async (c) => {
     const userId = c.get("user").id;
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
@@ -91,7 +95,7 @@ export function createMcpTokensRouter(audience: McpAudience) {
   // leaves the predecessor revoked and no replacement created — the caller
   // loses this credential and must create a new one, but at no point can
   // two credentials from the same rotation ever be active together.
-  router.post("/:id/rotate", async (c) => {
+  router.post("/:id/rotate", verifyHuman, async (c) => {
     const userId = c.get("user").id;
     const id = c.req.param("id");
     const existing = await getMcpCredentialOwned(c.env.DB, { id, userId, audience });

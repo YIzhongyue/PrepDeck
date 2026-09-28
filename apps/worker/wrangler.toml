@@ -138,6 +138,15 @@ MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
 APP_BASE_URL = "https://prepdeck.example.com"
 EMAIL_FROM_ADDRESS = "noreply@example.com"
 
+# Cloudflare Turnstile human verification on sign-in and MCP token creation
+# (docs/guides/development-and-deployment.md#human-verification-cloudflare-turnstile).
+# Empty leaves it off. Put the widget's public site key here to turn it on,
+# then `wrangler secret put TURNSTILE_SECRET_KEY` for its secret: once the
+# site key is set, those requests fail closed without a verified token.
+# Tokens must come from APP_BASE_URL's hostname unless TURNSTILE_HOSTNAMES
+# (comma-separated) lists the accepted hostnames instead.
+TURNSTILE_SITE_KEY = ""
+
 # Local development is intentionally verbose and is never persisted to the
 # production Workers Logs dataset. `npm run dev` selects this environment.
 [env.development]
@@ -207,9 +216,13 @@ GOOGLE_CLIENT_ID = ""
 AUTH_MODE = "cookie"
 APP_BASE_URL = "http://localhost:5173"
 EMAIL_FROM_ADDRESS = "noreply@example.com"
+# Off locally, so the default workflow needs no network. To try it, put
+# Cloudflare's test keys in .dev.vars.development (see .dev.vars.example).
+TURNSTILE_SITE_KEY = ""
 
 # Secrets (never committed): set via `wrangler secret put <NAME>` for deployment.
 # - GOOGLE_CLIENT_SECRET: required only for explicitly configured Google OAuth.
+# - TURNSTILE_SECRET_KEY: required once TURNSTILE_SITE_KEY is set.
 # - SESSION_SECRET: HMAC key for sessions. `npm run dev:setup` generates its
 #   local value in .dev.vars.development; Wrangler never reads deployed secrets.
 # - none required for BYOK AI relay (docs/requirements/ai-explanations.md) — provider keys are supplied

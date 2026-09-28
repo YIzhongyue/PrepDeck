@@ -75,4 +75,16 @@ export interface Env {
   // `wrangler email sending enable <domain>`, or sends fail with
   // E_SENDER_NOT_VERIFIED.
   EMAIL_FROM_ADDRESS: string;
+  // Cloudflare Turnstile human verification (issue #82, lib/turnstile.ts).
+  // The site key is public — the browser renders the widget with it — and it
+  // switches verification on: while it is empty nothing asks for a token.
+  // Once it is set, the protected requests fail closed without a token that
+  // Siteverify accepts, including when the secret below is missing.
+  TURNSTILE_SITE_KEY?: string;
+  // A real secret: `wrangler secret put TURNSTILE_SECRET_KEY` (remote) or
+  // `.dev.vars` (local). Never sent to the browser.
+  TURNSTILE_SECRET_KEY?: string;
+  // Comma-separated hostnames a token may have been solved on. Unset, the
+  // hostname of APP_BASE_URL is the only one accepted.
+  TURNSTILE_HOSTNAMES?: string;
 }

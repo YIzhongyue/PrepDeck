@@ -569,6 +569,8 @@ header .exam-selector--compact .exam-selector__menu {
 .login-primary-btn:hover { background: var(--color-accent-700); }
 
 .login-fade { animation: pd-fade 240ms ease-out; }
+/* The card centres its content, including the Turnstile check's status line. */
+.login-card .turnstile-status { justify-content: center; }
 
 @media (prefers-reduced-motion: reduce) {
   .login-mascot, .login-fade { animation: none; }
