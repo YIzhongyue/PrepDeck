@@ -67,7 +67,7 @@ export function toExam(row: ExamRow): ExamWithQuestionCount {
 }
 
 export const EXAM_SELECT = `SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS question_count,
-  COALESCE((SELECT json_group_array(json_object('id', p.id, 'name', p.name, 'shortName', p.short_name, 'websiteUrl', p.website_url, 'iconUrl', p.icon_url, 'createdAt', p.created_at)) FROM providers p JOIN provider_exams pe ON pe.provider_id = p.id WHERE pe.exam_id = e.id), '[]') AS providers_json FROM exams e`;
+  COALESCE((SELECT json_group_array(json_object('id', p.id, 'name', p.name, 'shortName', p.short_name, 'websiteUrl', p.website_url, 'iconUrl', p.icon_url, 'createdAt', p.created_at, 'archivedAt', p.archived_at)) FROM providers p JOIN provider_exams pe ON pe.provider_id = p.id WHERE pe.exam_id = e.id), '[]') AS providers_json FROM exams e`;
 
 // `limit`/`offset` are optional so the Admin UI's REST route (routes/exams.ts)
 // can keep its unbounded contract, while Admin MCP's admin_list_exams tool
@@ -85,7 +85,13 @@ export async function listExams(
     .prepare(`${EXAM_SELECT} ${where} ORDER BY e.created_at DESC, e.id${pagination}`)
     .bind(...params)
     .all<ExamRow>();
-  return (results ?? []).map(toExam);
+  return (results ?? []).map((row) => {
+    const exam = toExam(row);
+    // Normal selectors retain the exams, but no longer group them under an
+    // archived provider. Admin listings and direct reads retain every link.
+    if (!opts.includeArchived) exam.providers = exam.providers.filter((provider) => !provider.archivedAt);
+    return exam;
+  });
 }
 
 export async function getExam(db: D1Database, id: string): Promise<ExamWithQuestionCount | null> {

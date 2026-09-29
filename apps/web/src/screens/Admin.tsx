@@ -12,6 +12,7 @@ import type {
   UserStatus
 } from "@prepdeck/shared";
 import ModalLayer from "../components/ModalLayer";
+import ProviderManager from "../components/ProviderManager";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import { apiFetch, ApiError } from "../lib/api";
@@ -540,7 +541,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState<string>("all");
-  const [modal, setModal] = useState<"exam" | "provider" | null>(null);
+  const [modal, setModal] = useState<"exam" | "provider" | "providers" | null>(null);
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -549,12 +550,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   const [badgeIcon, setBadgeIcon] = useState<File | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [providerName, setProviderName] = useState("");
-  const [providerShortName, setProviderShortName] = useState("");
-  const [providerWebsite, setProviderWebsite] = useState("");
-  const [providerIcon, setProviderIcon] = useState<File | null>(null);
-  const [providerBusy, setProviderBusy] = useState(false);
-  const [providerError, setProviderError] = useState<string | null>(null);
+  const [providerLoadError, setProviderLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadExams = () => apiFetch<{ exams: ExamRow[] }>("/api/exams?includeArchived=true")
@@ -567,36 +563,35 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   }, []);
 
   useEffect(() => {
-    apiFetch<{ providers: Provider[] }>("/api/providers").then(({ providers }) => setProviders(providers));
+    apiFetch<{ providers: Provider[] }>("/api/providers?includeArchived=true")
+      .then(({ providers }) => setProviders(providers))
+      .catch(() => setProviderLoadError("Could not load providers. Reopen Content to retry."));
   }, []);
 
   useEffect(() => { onCount(exams.length); }, [exams.length, onCount]);
 
-  const createProvider = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setProviderBusy(true);
-    setProviderError(null);
-    try {
-      const { provider } = await apiFetch<{ provider: Provider }>("/api/providers", { method: "POST", body: JSON.stringify({ name: providerName, shortName: providerShortName, websiteUrl: providerWebsite || undefined }) });
-      let created = provider;
-      if (providerIcon) {
-        const { iconUrl } = await apiFetch<{ iconUrl: string }>(`/api/providers/${provider.id}/icon`, { method: "POST", headers: { "Content-Type": providerIcon.type }, body: providerIcon });
-        created = { ...created, iconUrl };
-      }
-      setProviders((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setProviderName(""); setProviderShortName(""); setProviderWebsite(""); setProviderIcon(null);
-      e.currentTarget.reset();
-      setModal(null);
-    } catch (err) {
-      setProviderError(err instanceof ApiError ? err.message : "Could not create provider.");
-    } finally {
-      setProviderBusy(false);
-    }
+  const updateProvider = (provider: Provider) => {
+    setProviders((current) => [...current.filter((p) => p.id !== provider.id), provider].sort((a, b) => a.name.localeCompare(b.name)));
+    setExams((current) => current.map((exam) => ({ ...exam, providers: exam.providers.map((p) => p.id === provider.id ? provider : p) })));
+    if (provider.archivedAt) setProviderFilter((current) => current === provider.id ? "all" : current);
+    questionBankChanged();
   };
+  const deleteProvider = (id: string) => {
+    setProviders((current) => current.filter((p) => p.id !== id));
+    setProviderFilter((current) => current === id ? "all" : current);
+    questionBankChanged();
+  };
+  const providerDialog = (modal === "provider" || modal === "providers") && (
+    <ProviderManager mode={modal === "provider" ? "new" : "manage"} providers={providers}
+      onChange={updateProvider} onDelete={deleteProvider} onClose={() => setModal(null)} />
+  );
 
   const setProviderExam = async (provider: Provider, exam: ExamRow, assigned: boolean) => {
-    await apiFetch(`/api/providers/${provider.id}/exams/${exam.id}`, { method: assigned ? "PUT" : "DELETE" });
-    setExams((current) => current.map((item) => item.id !== exam.id ? item : { ...item, providers: assigned ? [...item.providers, provider] : item.providers.filter((p) => p.id !== provider.id) }));
+    try {
+      await apiFetch(`/api/providers/${provider.id}/exams/${exam.id}`, { method: assigned ? "PUT" : "DELETE" });
+      setExams((current) => current.map((item) => item.id !== exam.id ? item : { ...item, providers: assigned ? [...item.providers, provider] : item.providers.filter((p) => p.id !== provider.id) }));
+      questionBankChanged();
+    } catch (err) { window.alert(err instanceof ApiError ? err.message : "Could not update provider assignment."); }
   };
 
   const uploadBadge = async (examId: string, file: File) => {
@@ -660,16 +655,21 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 
   if (selected) {
     return (
+      <>
+      {providerLoadError && <p role="alert" style={{ color: DANGER }}>{providerLoadError}</p>}
       <ExamDetail
         exam={selected}
         providers={providers}
         onBack={() => setSelectedExamId(null)}
         onToggleProvider={setProviderExam}
         onNewProvider={() => setModal("provider")}
+        onManageProviders={() => setModal("providers")}
         onToggleArchive={toggleArchive}
         onReplaceBadge={replaceBadge}
         onFormatSaved={(officialFormat) => setExams((prev) => prev.map((x) => x.id === selected.id ? { ...x, officialFormat } : x))}
       />
+      {providerDialog}
+      </>
     );
   }
 
@@ -703,17 +703,19 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         </label>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" className={providerFilter === "all" ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter("all")}>All providers</button>
-          {providers.map((p) => (
+          {providers.filter((p) => !p.archivedAt).map((p) => (
             <button key={p.id} type="button" className={providerFilter === p.id ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter(p.id)}>{p.shortName || p.name}</button>
           ))}
           {hasOther && <button type="button" className={providerFilter === "__other__" ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter("__other__")}>Other</button>}
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setModal("providers")}>Manage providers</button>
           <button type="button" className="btn btn-secondary" onClick={() => setModal("provider")}>New provider</button>
           <button type="button" className="btn btn-primary" onClick={() => setModal("exam")}><AdminIcon name="plus" /> New exam</button>
         </div>
       </div>
 
+      {providerLoadError && <p role="alert" style={{ color: DANGER }}>{providerLoadError}</p>}
       {loadError && <p style={{ fontSize: 13, color: DANGER }}>{loadError}</p>}
       {loading && !loadError && <p style={{ fontSize: 13, opacity: 0.7 }}>Loading…</p>}
 
@@ -755,30 +757,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         </>
       )}
 
-      {modal === "provider" && (
-        <AdminModal icon="shield" title="New provider" subtitle="Providers group exams in menus and selectors." onClose={() => setModal(null)}>
-          <form onSubmit={createProvider} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="admin-modal-fields">
-              <div className="field" style={{ flex: "1 1 100%" }}><label>Name</label><input className="input" placeholder="Amazon Web Services" value={providerName} onChange={(e) => setProviderName(e.target.value)} required /></div>
-              <div className="field" style={{ flex: "1 1 140px" }}><label>Short name</label><input className="input" placeholder="AWS" value={providerShortName} onChange={(e) => setProviderShortName(e.target.value)} required /></div>
-              <div className="field" style={{ flex: "1 1 220px" }}><label>Official URL</label><input className="input" type="url" placeholder="https://…" value={providerWebsite} onChange={(e) => setProviderWebsite(e.target.value)} /></div>
-              <div className="field" style={{ flex: "1 1 100%" }}>
-                <label>Icon</label>
-                <div className="admin-modal-file">
-                  <span>square PNG / SVG</span>
-                  <label>{providerIcon ? providerIcon.name : "Browse"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={(e) => setProviderIcon(e.target.files?.[0] ?? null)} /></label>
-                </div>
-              </div>
-            </div>
-            {providerError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{providerError}</p>}
-            <div className="admin-modal-foot">
-              <p>Assign exams from any exam’s detail page.</p>
-              <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={providerBusy || !providerName.trim() || !providerShortName.trim()}>{providerBusy ? "Adding…" : "Add provider"}</button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
+      {providerDialog}
 
       {modal === "exam" && (
         <AdminModal icon="exams" title="New exam" subtitle="The slug is used in imports and URLs — keep it stable." onClose={() => setModal(null)}>
@@ -810,13 +789,14 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 }
 
 function ExamDetail({
-  exam, providers, onBack, onToggleProvider, onNewProvider, onToggleArchive, onReplaceBadge, onFormatSaved
+  exam, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onFormatSaved
 }: {
   exam: ExamRow;
   providers: Provider[];
   onBack: () => void;
   onToggleProvider: (provider: Provider, exam: ExamRow, assigned: boolean) => void;
   onNewProvider: () => void;
+  onManageProviders: () => void;
   onToggleArchive: (exam: ExamRow) => void;
   onReplaceBadge: (exam: ExamRow, file: File) => void;
   onFormatSaved: (format: OfficialMockFormat | null) => void;
@@ -858,14 +838,17 @@ function ExamDetail({
             <span className="admin-panel-kicker">Providers</span>
             <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--color-text-muted)" }}>Tap to assign or unassign this exam.</p>
           </div>
-          <button type="button" className="btn btn-ghost" style={{ flex: "none" }} onClick={onNewProvider}>New provider</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-ghost" onClick={onManageProviders}>Manage providers</button>
+            <button type="button" className="btn btn-ghost" onClick={onNewProvider}>New provider</button>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {providers.map((p) => {
+          {providers.filter((p) => !p.archivedAt || exam.providers.some((assigned) => assigned.id === p.id)).map((p) => {
             const on = exam.providers.some((x) => x.id === p.id);
             return (
               <button key={p.id} type="button" className={on ? "admin-provider-toggle is-on" : "admin-provider-toggle"} onClick={() => onToggleProvider(p, exam, !on)}>
-                <span className="tick">✓</span>{p.name}
+                <span className="tick">✓</span>{p.name}{p.archivedAt ? " (archived)" : ""}
               </button>
             );
           })}

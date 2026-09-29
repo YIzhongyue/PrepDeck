@@ -20,7 +20,8 @@ const exams = [
   { id: "exam", name: "Solutions Architect Professional", slug: "sap-c02", questionCount: 12, archivedAt: null, badgeIconUrl: null, providers: [{ id: "aws", name: "Amazon Web Services", shortName: "AWS" }] },
   { id: "exam-2", name: "Cloud Practitioner", slug: "clf-c02", questionCount: 4, archivedAt: null, badgeIconUrl: null, providers: [] }
 ];
-const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null }];
+const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null, archivedAt: null }];
+let providerCreates = 0, providerDeletes = 0, failNextIcon = false;
 const errors = [];
 // The overview drives the header's status pill (issue #49): it can succeed,
 // fail or answer slowly, and report any exam total.
@@ -38,8 +39,33 @@ const server = createServer(async (req, res) => {
   }
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (url.pathname === "/api/auth/me") return json({ user: { id: "root", email: "root@example.test", role: "admin", displayName: "Root" } });
-  if (url.pathname === "/api/exams") return json({ exams });
-  if (url.pathname === "/api/providers") return json({ providers });
+  if (url.pathname === "/api/exams") return json({ exams: exams.map(exam => ({ ...exam,
+    providers: exam.providers.map(p => providers.find(provider => provider.id === p.id)).filter(p => p && (url.searchParams.get("includeArchived") === "true" || !p.archivedAt)),
+  })) });
+  if (url.pathname === "/api/providers" && req.method === "GET") return json({ providers: providers.filter(p => url.searchParams.get("includeArchived") === "true" || !p.archivedAt) });
+  if (url.pathname.startsWith("/api/providers") && req.method !== "GET") {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const data = Buffer.concat(chunks).toString();
+    if (url.pathname === "/api/providers" && req.method === "POST") {
+      const provider = { ...JSON.parse(data), id: `new-${++providerCreates}`, iconUrl: null, archivedAt: null };
+      providers.push(provider); return json({ provider }, 201);
+    }
+    const [, , , id, action] = url.pathname.split("/");
+    const provider = providers.find(p => p.id === id);
+    if (!provider) return json({ error: "Provider not found" }, 404);
+    if (action === "icon") {
+      if (failNextIcon) { failNextIcon = false; return json({ error: "Upload temporarily unavailable" }, 503); }
+      provider.iconUrl = req.method === "DELETE" ? null : "/fixture-icon.png";
+      return json({ iconUrl: provider.iconUrl });
+    }
+    if (action === "archive" || action === "unarchive") { provider.archivedAt = action === "archive" ? "now" : null; return json({ provider }); }
+    if (req.method === "PATCH") { Object.assign(provider, JSON.parse(data)); return json({ provider }); }
+    if (req.method === "DELETE") {
+      providerDeletes++;
+      if (exams.some(exam => exam.providers.some(p => p.id === id))) return json({ error: "Provider is still assigned to exams. Archive it instead." }, 409);
+      providers.splice(providers.indexOf(provider), 1); res.writeHead(204); return res.end();
+    }
+  }
   if (url.pathname === "/api/admin/overview") {
     if (overviewMode === "fail") return json({ error: "Database unavailable" }, 503);
     if (overviewMode === "slow") await new Promise(resolve => setTimeout(resolve, 3200));
@@ -187,6 +213,65 @@ try {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 0, `page overflows by ${overflow}px at 390px`);
   console.log("PASS narrow viewport: the dialog still covers the window and nothing overflows");
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Manage providers", exact: true }).click();
+  let row = page.getByRole("region", { name: "Amazon Web Services", exact: true });
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Amazon Web Services");
+  await page.getByLabel("Name", { exact: true }).fill("Amazon Cloud");
+  await page.getByLabel("Short name", { exact: true }).fill("AC");
+  await page.getByLabel("Official URL", { exact: true }).fill("https://example.test");
+  await page.getByRole("button", { name: "Save provider", exact: true }).click();
+  row = page.getByRole("region", { name: "Amazon Cloud", exact: true });
+  await row.waitFor();
+  assert.equal(providers[0].websiteUrl, "https://example.test");
+  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await row.waitFor({ state: "detached" });
+  await page.waitForFunction(() => window.store.state.exams.find(e => e.id === "exam").providers.length === 0);
+  assert.equal(await page.locator(".admin-provider-pill").filter({ hasText: "AC" }).count(), 0);
+  await page.getByLabel("Show archived providers").check();
+  await row.getByText("archived", { exact: true }).waitFor();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/providers-phone.png` });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  await row.getByRole("button", { name: "Restore", exact: true }).click();
+  await row.getByText("active", { exact: true }).waitFor();
+  await page.waitForFunction(() => window.store.state.exams.find(e => e.id === "exam").providers[0]?.shortName === "AC");
+  page.once("dialog", dialog => dialog.dismiss());
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  assert.equal(providerDeletes, 0, "cancelling confirmation must not call DELETE");
+  page.once("dialog", dialog => dialog.accept());
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Archive it instead" }).waitFor();
+  await row.waitFor();
+  console.log("PASS phone provider management: edit, archive/restore, live selector refresh, confirmation and referenced-delete error");
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Solutions Architect Professional.*Open/ }).click();
+  await page.getByRole("button", { name: "New provider", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Temporary provider");
+  await page.getByLabel("Short name", { exact: true }).fill("TMP");
+  await page.getByLabel("Icon", { exact: true }).setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: Buffer.from("fixture") });
+  failNextIcon = true;
+  await page.getByRole("button", { name: "Add provider", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Provider saved, but its icon could not be updated" }).waitFor();
+  assert.equal(providerCreates, 1);
+  await page.getByRole("button", { name: "Save provider", exact: true }).click();
+  await layer.waitFor({ state: "detached" });
+  assert.equal(providerCreates, 1, "retrying a failed icon upload must reuse the created provider");
+  await page.getByRole("button", { name: "Manage providers", exact: true }).click();
+  row = page.getByRole("region", { name: "Temporary provider", exact: true });
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Remove current icon").check();
+  await page.getByRole("button", { name: "Save provider", exact: true }).click();
+  await row.waitFor();
+  assert.equal(providers.find(p => p.shortName === "TMP").iconUrl, null);
+  page.once("dialog", dialog => dialog.accept());
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.waitFor({ state: "detached" });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".admin-provider-toggle").filter({ hasText: "Temporary provider" }).count(), 0);
+  console.log("PASS exam-detail provider creation, icon retry without duplication, icon removal and safe deletion");
 
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
