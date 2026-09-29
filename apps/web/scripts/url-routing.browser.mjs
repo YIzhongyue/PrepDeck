@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { readBody } from './browser-fixture.mjs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
@@ -31,7 +32,7 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     return res.end('<!doctype html><html><head><title>PrepDeck</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
   }
-  let raw = ''; for await (const part of req) raw += part; const payload = req.headers['content-type']?.includes('application/json') ? JSON.parse(raw || '{}') : {};
+  const { payload } = await readBody(req);
   requests.push({ path: url.pathname, method: req.method });
   const json = (body, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   if (url.pathname === failPath) return json({ error: 'Fixture save failed' }, 503);

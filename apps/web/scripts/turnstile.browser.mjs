@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import { createRoot } from 'react-dom/client';
@@ -67,10 +68,10 @@ const refusal = { error: "Human verification failed or expired. Complete the che
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const json = (status, value) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(value)); };
-  let raw = ""; for await (const chunk of req) raw += chunk;
+  const { payload, form } = await readBody(req);
   if (url.pathname === "/api/auth/turnstile") return configStatus === 200 ? json(200, { siteKey: turnstileOn ? SITE_KEY : null }) : json(configStatus, { error: "Service temporarily restricted" });
   if (url.pathname === "/api/auth/google/start" && req.method === "POST") {
-    signIns.push(Object.fromEntries(new URLSearchParams(raw)));
+    signIns.push(Object.fromEntries(form ?? []));
     res.writeHead(303, { Location: "/signed-in" }); return res.end();
   }
   if (url.pathname.startsWith("/api/mcp-tokens")) {
@@ -82,7 +83,7 @@ const server = createServer(async (req, res) => {
     if (refuseNextMcpWrite) { refuseNextMcpWrite = false; return json(403, refusal); }
     const id = url.pathname.split("/").at(-2);
     if (url.pathname.endsWith("/rotate")) tokens = tokens.map(t => t.id === id ? { ...t, status: "revoked", revokedAt: Date.now() } : t);
-    const credential = { id: `token-${mcpWrites.length}`, name: JSON.parse(raw || "{}").name ?? "rotated", status: "active", createdAt: Date.now(), expiresAt: null, lastUsedAt: null, revokedAt: null };
+    const credential = { id: `token-${mcpWrites.length}`, name: payload.name ?? "rotated", status: "active", createdAt: Date.now(), expiresAt: null, lastUsedAt: null, revokedAt: null };
     tokens.unshift(credential);
     return json(201, { credential, token: `pd_mcp_user_${"a".repeat(64)}` });
   }

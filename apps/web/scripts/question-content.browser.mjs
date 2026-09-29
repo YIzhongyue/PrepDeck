@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
@@ -39,8 +40,7 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/html");
     return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
   }
-  let raw = ""; for await (const chunk of req) raw += chunk;
-  const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
+  const { payload } = await readBody(req); calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (url.pathname === "/api/auth/me") return json({ user: { id: "qa", email: "qa@example.test", role: "user", displayName: "QA" } });
   if (url.pathname === "/api/exams") return json({ exams: ["exam", "other"].map(id => ({ id, name: id, slug: id, providers: [] })) });

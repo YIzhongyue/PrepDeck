@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { build } from "esbuild";
+import { readBody, waitUntil } from "./browser-fixture.mjs";
 
 const playwright = process.env.PLAYWRIGHT_MODULE
   ? await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href) : await import("playwright");
@@ -116,6 +117,8 @@ let markAliases = { hl1Alias: "Important", hl2Alias: "Review", hl3Alias: "Questi
 let avatarStatus = 200;
 let nameStatus = 200;
 let logouts = 0;
+// Every /api/settings request in order, for the time-zone steps' failures.
+const settingsRequests = [];
 
 const server = createServer(async (req, res) => {
   try {
@@ -132,8 +135,7 @@ const server = createServer(async (req, res) => {
         + '<link rel="stylesheet" href="/untitled-ui.css"><link rel="stylesheet" href="/fixture.css">'
         + '</head><body style="margin:0"><div id="root"></div><script src="/fixture.js"></script></body></html>');
     }
-    let raw = Buffer.alloc(0); for await (const part of req) raw = Buffer.concat([raw, part]);
-    const input = req.headers["content-type"]?.startsWith("image/") ? {} : JSON.parse(raw.toString() || "{}");
+    const { payload: input } = await readBody(req);
     if (path === "/api/auth/me") return json(200, { user: profile });
     if (path === "/api/auth/logout") { logouts++; return json(200, { ok: true }); }
     if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "cloud", name: "Cloud fundamentals" }] });
@@ -141,6 +143,7 @@ const server = createServer(async (req, res) => {
     if (path === "/api/attempts/active") return json(200, { attempt: null });
     if (path.endsWith("/learning/progress")) return json(200, { progress: { lastSequenceNumber: null } });
     if (path === "/api/settings") {
+      settingsRequests.push(req.method === "GET" ? "GET" : `${req.method} ${JSON.stringify(input)}`);
       if (req.method === "PUT" || req.method === "PATCH") userSettings = { ...userSettings, ...input };
       return json(200, userSettings);
     }
@@ -530,11 +533,21 @@ try {
   try {
     const tokyoPage = await tokyo.newPage();
     tokyoPage.on("pageerror", err => failures.push(String(err)));
+    settingsRequests.length = 0;
     await tokyoPage.goto(base);
     const zone = tokyoPage.getByRole("combobox", { name: "Time zone" });
     await zone.waitFor();
-    await tokyoPage.waitForFunction(() => window.fixtureApp?.state.timeZone === "Asia/Tokyo");
-    assert.equal(userSettings.timezone, "Asia/Tokyo", "the browser's zone was saved for the account");
+    // Load, detect, save, update: each link is waited for on its own, so a
+    // failure names the one that did not happen (issue #83).
+    const zoneChain = async () => ({
+      requests: settingsRequests,
+      browserZone: await tokyoPage.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone).catch(error => error.message),
+      providerZone: await tokyoPage.evaluate(() => window.fixtureApp?.state.timeZone).catch(error => error.message),
+      pageErrors: failures,
+    });
+    await waitUntil("the account's settings to load", () => settingsRequests.includes("GET"), { describe: zoneChain });
+    await waitUntil("the browser's zone to be saved for the account", () => userSettings.timezone, { until: saved => saved === "Asia/Tokyo", describe: zoneChain });
+    await waitUntil("the provider to take the saved zone", () => tokyoPage.evaluate(() => window.fixtureApp?.state.timeZone), { until: z => z === "Asia/Tokyo", describe: zoneChain });
     await wait(async () => await zone.inputValue() === "Asia/Tokyo", "the Time zone field to show it");
     // React Aria closes the list when the page scrolls, so the field is
     // brought into view first and the option is chosen from the keyboard.
@@ -543,7 +556,7 @@ try {
     await tokyoPage.getByRole("option", { name: "America/New_York" }).waitFor();
     await zone.press("ArrowDown");
     await zone.press("Enter");
-    await tokyoPage.waitForFunction(() => window.fixtureApp.state.timeZone === "America/New_York");
+    await waitUntil("the chosen zone to be saved and shown", () => tokyoPage.evaluate(() => window.fixtureApp.state.timeZone), { until: z => z === "America/New_York", describe: zoneChain });
     assert.equal(userSettings.timezone, "America/New_York");
     await tokyoPage.getByRole("switch", { name: "Daily review email" }).focus();
     await tokyoPage.keyboard.press("Space");

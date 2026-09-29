@@ -59,9 +59,20 @@ jobs:
     # editor replaced with a contenteditable, another asserted against whichever
     # page happened to be rendered, and a third had a genuine product failure
     # nobody saw. A failing assertion nothing executes is not a regression test.
-    name: Browser regressions
+    #
+    # Split into shards (issue #83): one failing script used to stop the `&&`
+    # chain, hiding every script after it, and a rerun meant the whole suite.
+    # scripts/browser-regressions.mjs runs every script of its shard, reports
+    # each failure, and keeps a failing script's screenshots, DOM and
+    # console/request log. It never retries; a flaky script has to be fixed.
+    name: Browser regressions (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
       - name: Check out repository
@@ -80,19 +91,27 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run browser regressions
-        run: |
-          mkdir -p "$SCREENSHOT_DIR"
-          npm run test:browser
+        run: npm run test:browser -- --shard ${{ matrix.shard }}/3
         env:
           SCREENSHOT_DIR: ${{ runner.temp }}/browser-screenshots
           KP_SCREENSHOTS: ${{ runner.temp }}/browser-screenshots
+          BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics
 
       - name: Save browser screenshots for review
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: browser-screenshots
+          name: browser-screenshots-${{ matrix.shard }}
           path: ${{ runner.temp }}/browser-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-diagnostics-${{ matrix.shard }}
+          path: ${{ runner.temp }}/browser-diagnostics
           if-no-files-found: ignore
           retention-days: 14
 

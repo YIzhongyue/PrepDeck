@@ -334,6 +334,13 @@ function base(node: Node | null): number | null {
   return el ? parseInt(el.dataset.off || "0", 10) : null;
 }
 
+// A navigation clears the error of the screen it leaves (issue #52), not one
+// raised while it was waiting on saves: an expired draft reports "Time is up"
+// exactly then, and wiping it left the exam submitted unexplained (issue #83).
+function errorLeftBehind(before: string | null) {
+  return (s: AppState) => s.actionError === before ? null : s.actionError;
+}
+
 // The Worker refuses draft writes once a mock is past its deadline (FR-4.3) and
 // marks that refusal `expired`, which is the one 409 the client must not treat
 // as retryable: telling the user "it will be retried before submitting" would
@@ -1170,10 +1177,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (stateRef.current.switching || !allowAuthoringNavigation()) return;
     requests.cancelLane("start");
     const update = scopedState("navigation");
+    const clearError = errorLeftBehind(stateRef.current.actionError);
     void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
       // An error belongs to the screen that raised it; it used to follow the
       // learner everywhere until dismissed (issue #52).
-      update((s) => ({ screen: id, more: false, actionError: null,
+      update((s) => ({ screen: id, more: false, actionError: clearError(s),
         pStage: s.pStage,
         mStage: id === "mock" && options?.newMock && s.mStage === "results" ? "setup" : s.mStage,
         lStage: id === "learning" ? "setup" : s.lStage,
@@ -1256,7 +1264,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const openKnowledgePointNote = useCallback((noteId: string) => {
     if (stateRef.current.switching || !allowAuthoringNavigation()) return;
     const update = scopedState("navigation");
-    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update({ screen: "knowledgePoints", more: false, actionError: null, kpNoteId: noteId }))
+    const clearError = errorLeftBehind(stateRef.current.actionError);
+    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update(s => ({ screen: "knowledgePoints", more: false, actionError: clearError(s), kpNoteId: noteId })))
       .catch(() => update({ actionError: "Could not save your current note. Please retry before leaving." }));
   }, [scopedState, saveQuestionDraft]);
   // The Knowledge Points screen's own list/editor moves, which save their
@@ -1269,6 +1278,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // its own confirmation and saves.
   const navigateTo = useCallback(async (route: Route): Promise<boolean> => {
     const s = stateRef.current;
+    const clearError = errorLeftBehind(s.actionError);
     const exam = route.examSlug ? s.exams.find(e => e.slug === route.examSlug) : undefined;
     if (route.examSlug && !exam) {
       setState({ actionError: "That exam is not available to you." });
@@ -1288,7 +1298,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       }
     }
     setState(cur => ({
-      screen: route.screen, more: false, actionError: null,
+      screen: route.screen, more: false, actionError: clearError(cur),
       lStage: route.screen === "learning" && route.learningSequence == null ? "setup" : cur.lStage,
       pendingLearningSequence: route.screen === "learning" ? route.learningSequence : null,
       kpNoteId: route.screen === "knowledgePoints" ? route.knowledgePointId : cur.kpNoteId,

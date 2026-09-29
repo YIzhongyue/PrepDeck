@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import { createRoot } from 'react-dom/client';
   import McpTokensCard from './src/components/McpTokensCard'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -23,8 +24,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/auth/turnstile") return json(200, { siteKey: null });
     if (req.method === "GET") return json(200, { credentials: tokens });
     writes++;
-    let raw = ""; for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw || "{}");
+    const { payload: body } = await readBody(req);
     const id = url.pathname.split("/").at(-2);
     if (url.pathname.endsWith("/revoke") || url.pathname.endsWith("/rotate")) {
       tokens = tokens.map(t => t.id === id ? { ...t, status: "revoked", revokedAt: Date.now() } : t);

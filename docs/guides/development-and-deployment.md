@@ -118,6 +118,25 @@ instead. Playwright is a dev dependency; `npx playwright install chromium`
 downloads the browser once (install scripts are not run automatically). CI runs
 this as its own job, because assertions nothing executes stop being tests.
 
+[`scripts/browser-regressions.mjs`](../../scripts/browser-regressions.mjs) runs
+the scripts one at a time, each in its own process with a five-minute limit
+(`BROWSER_SCRIPT_TIMEOUT_MS`), and reports every failing script rather than
+stopping at the first. Name scripts to run only those
+(`npm run test:browser -- settings answer-state`); `--list` prints what would
+run. CI splits the list into three jobs with `--shard N/3`, balanced on the
+rough durations kept next to each script, so a new script belongs in that list
+too. There is no retry: a flaky script is fixed, not rerun.
+
+For a failing script the runner keeps what
+[`scripts/browser-diagnostics.mjs`](../../scripts/browser-diagnostics.mjs)
+saved when its pages were closed: a screenshot, the DOM and a log of console
+messages, uncaught errors and `/api/` requests for each open page, under
+`BROWSER_DIAGNOSTICS_ROOT` (the system temp folder by default; CI uploads it as
+`browser-diagnostics-N`). Fixture servers read request bodies with
+[`readBody`](../../apps/web/scripts/browser-fixture.mjs), which parses them by
+their `Content-Type`, and wait on multi-step state with `waitUntil`, which on a
+timeout says what it last saw instead of only that 30 s passed.
+
 Stop development servers before the smoke test. It runs setup twice safely,
 starts the actual Worker and web server, verifies admin authentication, D1,
 R2 upload/read, persisted KV catalog data, the Durable Object, both native import
