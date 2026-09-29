@@ -114,7 +114,13 @@ async function checkLongBody(page, label, viewport) {
     await page.waitForFunction(target => document.querySelector('.st-q-body').scrollTop >= target - 1, top + delta);
   }
   assert.ok(await atEnd(), `${label}: wheel never reached the end of the body`);
-  assert.deepEqual({ head: await rect(page, ".st-q-head"), foot: await rect(page, ".st-q-foot"), y: await page.evaluate(() => window.scrollY) }, before, `${label}: header, footer or page moved while scrolling the body`);
+  const after = { head: await rect(page, ".st-q-head"), foot: await rect(page, ".st-q-foot"), y: await page.evaluate(() => window.scrollY) };
+  // Scroll offsets and DOMRects round separately at the scroll boundary in
+  // WebKit. A one-pixel remainder is acceptable; actual page scrolling is not.
+  assert.ok(Math.abs(after.y - before.y) <= 1, `${label}: page moved while scrolling the body: ${JSON.stringify({ before, after })}`);
+  for (const part of ['head', 'foot']) for (const edge of ['top', 'bottom', 'left', 'right']) {
+    assert.ok(Math.abs(after[part][edge] - before[part][edge]) <= 1, `${label}: ${part} moved while scrolling the body: ${JSON.stringify({ before, after })}`);
+  }
   const lastOption = await rect(page, ".st-opt:last-child");
   const scrolledBody = await rect(page, ".st-q-body");
   // The last option's bottom edge is in view, and so is all of it unless it is taller than the body itself.

@@ -96,13 +96,6 @@ jobs:
         if: matrix.shard == 1
         run: npm run test:browser:runner
 
-      - name: Run browser regressions
-        run: npm run test:browser -- --shard ${{ matrix.shard }}/3
-        env:
-          SCREENSHOT_DIR: ${{ runner.temp }}/browser-screenshots
-          KP_SCREENSHOTS: ${{ runner.temp }}/browser-screenshots
-          BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics
-
       - name: Install WebKit for phone reading regressions
         if: matrix.shard == 1
         run: npx playwright install --with-deps webkit
@@ -113,6 +106,13 @@ jobs:
         env:
           PLAYWRIGHT_BROWSER: webkit
           BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics-webkit
+
+      - name: Run browser regressions
+        run: npm run test:browser -- --shard ${{ matrix.shard }}/3
+        env:
+          SCREENSHOT_DIR: ${{ runner.temp }}/browser-screenshots
+          KP_SCREENSHOTS: ${{ runner.temp }}/browser-screenshots
+          BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics
 
       - name: Save browser screenshots for review
         if: always()
