@@ -46,9 +46,9 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   // Either way the card keeps its header and footer on screen while only the
   // stem and answers scroll. Phones size nothing: the page scrolls as one,
   // between a sticky header and action bar.
-  const flow = bp.phone;
-  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone, [graded, state.workspaceNotice, state.actionError]);
-  const gridHeight = bp.narrow ? null : fitHeight;
+  const flow = bp.phone || bp.landscapePhone;
+  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, flow, [graded, state.workspaceNotice, state.actionError]);
+  const gridHeight = bp.narrow || flow ? null : fitHeight;
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   useEffect(() => setCopyStatus("idle"), [q?.id]);
 
@@ -59,7 +59,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const chosen = state.sel[q.id] || [];
   const need = requiredSelections(q);
   const canCheck = canCheckAnswer(q, chosen);
-  const liveCols = !bp.narrow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
+  const liveCols = !bp.narrow && !flow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
   const bookmarked = !!state.bookmarks[q.id];
   const last = state.idx + 1 >= state.queue.length;
   const results = state.queue.map((id) => state.done[id]);
@@ -108,7 +108,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   );
 
   return (
-    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}`}>
+    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}${bp.landscapePhone ? " st-landscape" : ""}`}>
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">
@@ -117,7 +117,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
             {flow && stats}
           </div>
           <BookmarkButton on={bookmarked} onClick={() => toggleBookmark()} />
-          <button type="button" className="st-btn" onClick={endSession}><Icon d={IC.x} />{bp.phone ? "End" : "End session"}</button>
+          <button type="button" className="st-btn" onClick={endSession}><Icon d={IC.x} />{flow ? "End" : "End session"}</button>
         </div>
         {state.queue.length <= MAX_SEGMENTS ? (
           <div className="st-segs" aria-hidden="true">
@@ -167,7 +167,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                   </label>
                 ) : (
                   <OptionGroup kind={graded ? "review" : q.type === "multiple_choice" ? "multiple" : "single"} tabStop={chosen[0] ?? q.options?.[0]?.id}>
-                    {optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark, SHOW_KEYBOARD_HINTS && !bp.phone)}
+                    {optionRows(q, state, graded, gradedAnswer, pick, capture, removeMark, SHOW_KEYBOARD_HINTS && !flow)}
                   </OptionGroup>
                 )}
               </div>
@@ -180,7 +180,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                   <div className="st-alert-title">{graded === "ok" ? "Correct" : "Incorrect — added to your wrong book"}</div>
                   <div className="st-alert-body">
                     {correctAnswers.length > 0 && <>Correct answer: {formatAnswerText(q, correctAnswers)}. </>}
-                    The explanation is open {bp.narrow ? "below" : "on the right"}.
+                    The explanation is open {bp.narrow || flow ? "below" : "on the right"}.
                   </div>
                 </div>
               </div>
@@ -191,7 +191,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         </section>
 
         <div className="st-side" style={{ overflowY: scroller, overscrollBehavior: "auto" }}>
-          {!graded && !bp.phone && (
+          {!graded && !flow && (
             <div className="st-locked">
               <span className="st-locked-icon"><Icon d={IC.lock} size={20} /></span>
               <div>

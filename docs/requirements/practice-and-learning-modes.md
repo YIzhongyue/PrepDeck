@@ -53,6 +53,16 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   another question brings its start back into view below the header, and
   anything scrolled into view, such as a focused option, stops clear of both bars.
 
+  Landscape phones (620–1099px wide and under 500px tall) use the same page
+  scrolling in live Learning and Practice ([issue #80](https://github.com/YIzhongyue/PrepDeck/issues/80)).
+  The global top bar, tab bar and sidebar are hidden during the session. Compact
+  sticky session and action bars keep bookmark, Exit/End, Back and Next/Check
+  answer reachable with touch targets at least 44px square. The question is
+  visible before scrolling and gets at least 65% of the height once scrolled
+  at 844×390 and 932×430. Navigation returns on exit or rotation; portrait
+  phones, taller tablets, desktop widths (1100px and up), and Mock retain
+  their existing layouts.
+
   A practice answer is graded and locked when it is first recorded. Re-submitting the same question replays the stored grading — including the answer key it was graded against, so the replayed result stays consistent with itself even if the key has since changed — rather than failing. That makes a retry after a lost response recover the feedback instead of leaving the client stuck on a question the server has already graded, while still refusing to revise the recorded answer.
 
   Keyboard shortcuts ([issue #50](https://github.com/YIzhongyue/PrepDeck/issues/50)):

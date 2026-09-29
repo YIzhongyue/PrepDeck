@@ -2,7 +2,8 @@
 // keep their header (ID, type, Copy as prompt, then tags) and footer navigation
 // in place while only the stem/answer body scrolls. On phones, Learning and
 // Practice instead scroll as one page between a sticky session header and
-// action bar (issue #78). Runs against a local, deterministic fixture.
+// action bar (#78), including short landscape viewports in the real shell (#80).
+// Runs against a local, deterministic fixture in Chromium or WebKit.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -18,9 +19,12 @@ const { outputFiles } = await build({ stdin: { contents: `
   import LearningLive from './src/screens/LearningLive';
   import PracticeLive from './src/screens/PracticeLive';
   import MockLive from './src/screens/MockLive';
+  import { Shell } from './src/App';
   import { breakpointsFor } from './src/lib/responsive';
   import './src/styles/tokens.css'; import './src/styles/app.css';
-  function Fixture() { const app=usePrepDeck(); window.fixtureApp=app; const bp=breakpointsFor(app.width);
+  const shellFixture = new URLSearchParams(location.search).has('shell');
+  function Fixture() { const app=usePrepDeck(); window.fixtureApp=app; const bp=breakpointsFor(app.width, app.height);
+    if (shellFixture) return <Shell/>;
     return <main data-pd-theme={app.state.theme} style={{minHeight:'100vh',background:'var(--color-bg)',color:'var(--color-text)',padding:16}}>
       {app.state.screen==='learning' && app.state.lStage==='live' && <LearningLive bp={bp}/>}
       {app.state.screen==='practice' && app.state.pStage==='live' && <PracticeLive bp={bp}/>}
@@ -48,7 +52,7 @@ const server = createServer(async (req, res) => {
   if (!path.startsWith("/api/")) { res.setHeader("Content-Type", "text/html"); return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body style="margin:0"><div id="root"></div><script src="/fixture.js"></script></body></html>'); }
   const { payload: input } = await readBody(req);
   if (path === "/api/auth/me") return json(200, { user: { id: "me", displayName: "Student", role: "user" } });
-  if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "cloud", name: "Cloud fundamentals" }] });
+  if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "cloud", name: "Cloud fundamentals", providers: [], questionCount: questions.length }] });
   if (path.includes("practice-catalog")) return json(200, { questions, bookmarkedIds: [], wrongEntries: [], attemptedIds: [] });
   if (path === "/api/attempts/active") return json(200, { attempt: null });
   if (path === "/api/exams/exam/attempts") return json(201, { attemptId: input.mode === "mock" ? `mock-${++mockStarts}` : "practice", startedAt: new Date().toISOString(), timeLimitSeconds: 3600 });
@@ -64,7 +68,7 @@ const server = createServer(async (req, res) => {
   return json(200, {});
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-// PLAYWRIGHT_BROWSER=webkit runs the same checks in Safari's engine (the sticky phone bars, #78).
+// PLAYWRIGHT_BROWSER=webkit checks the sticky phone bars in Safari's engine.
 const browser = await playwright[process.env.PLAYWRIGHT_BROWSER || "chromium"].launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
 const url = `http://127.0.0.1:${server.address().port}`;
 const rect = (page, selector) => page.locator(selector).first().evaluate(el => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; });
@@ -168,6 +172,73 @@ async function checkFlowNext(page, label, viewport) {
   assert.ok(foot.bottom <= viewport.height, `${label}: actions below the viewport`);
 }
 
+// Real shell: bars must not consume the short viewport or mask the touch targets.
+async function checkLandscape(page, label, viewport) {
+  await page.locator('.st-landscape').waitFor();
+  await settle(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  assert.equal(await page.getByRole('navigation', { name: 'Main navigation' }).count(), 0, `${label}: global navigation takes reading space`);
+  assert.equal(await page.locator('main > header').count(), 0, `${label}: global top bar takes reading space`);
+  assert.equal(await page.locator('.st-q--pinned').count(), 0, `${label}: question still pinned`);
+  const stem = await rect(page, '.st-stem');
+  const foot = await rect(page, '.st-q-foot');
+  assert.ok(stem.top < viewport.height / 2 && foot.top - stem.top >= viewport.height / 3, `${label}: too little initial question text: ${JSON.stringify({ stem, foot })}`);
+
+  const measurements = await page.evaluate(async () => {
+    const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const box = selector => document.querySelector(selector).getBoundingClientRect();
+    const max = document.documentElement.scrollHeight - innerHeight;
+    const stops = [];
+    for (const y of [0, 300, Math.round(max / 2), max]) {
+      window.scrollTo(0, y); await frame();
+      const head = box('.st-head'), foot = box('.st-q-foot');
+      const controls = [...document.querySelectorAll('.st-head button, .st-q-foot button, .st-q-foot input')].map(el => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return { name: el.getAttribute('aria-label') || el.textContent, width: r.width, height: r.height,
+          visible: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth && el.contains(hit) };
+      });
+      stops.push({ y: scrollY, headTop: head.top, room: foot.top - head.bottom, footBottom: foot.bottom, controls });
+    }
+    const nested = [...document.querySelectorAll('.pd-study *')].filter(el => /auto|scroll/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1).map(el => el.className);
+    return { stops, nested, overflow: document.documentElement.scrollWidth > innerWidth };
+  });
+  assert.deepEqual(measurements.nested, [], `${label}: nested vertical scrollers`);
+  assert.equal(measurements.overflow, false, `${label}: page overflows horizontally`);
+  for (const stop of measurements.stops) {
+    assert.ok(Math.abs(stop.headTop) <= 1 && Math.abs(stop.footBottom - viewport.height) <= 1, `${label}: bars leave viewport: ${JSON.stringify(stop)}`);
+    assert.ok(stop.room >= viewport.height * .65, `${label}: question gets less than 65% of scrolled viewport`);
+    for (const control of stop.controls) {
+      assert.ok(control.width >= 44 && control.height >= 44 && control.visible, `${label}: inaccessible action at ${stop.y}: ${JSON.stringify(control)}`);
+    }
+  }
+  console.log(`PASS ${label}: stem starts at ${stem.top}px; ${Math.round(measurements.stops[1].room / viewport.height * 100)}% reading space`);
+}
+
+async function checkRotation(page, label, viewport) {
+  const question = await page.locator('.st-q-id').textContent();
+  await page.setViewportSize({ width: viewport.height, height: viewport.width });
+  await page.locator('.st-phone').waitFor();
+  await page.getByRole('navigation', { name: 'Main navigation' }).waitFor();
+  assert.equal(await page.locator('.st-landscape').count(), 0, `${label}: landscape styles survive portrait rotation`);
+  assert.equal(await page.locator('.st-q-id').textContent(), question, `${label}: rotation lost question`);
+  await page.setViewportSize(viewport);
+  await checkLandscape(page, `${label} after rotation`, viewport);
+  // A height-only resize must also restore the normal tablet layout.
+  await page.setViewportSize({ ...viewport, height: 700 });
+  await page.locator('.st-q--pinned').waitFor();
+  await page.getByRole('navigation', { name: 'Main navigation' }).waitFor();
+  assert.equal(await page.locator('.st-flow').count(), 0, `${label}: tall tablet still uses flow`);
+  await page.setViewportSize(viewport);
+  await checkLandscape(page, `${label} after height resize`, viewport);
+  await page.setViewportSize({ width: 1280, height: viewport.height });
+  await page.locator('.st-q--pinned').waitFor();
+  await page.getByRole('navigation', { name: 'Main navigation' }).waitFor();
+  assert.equal(await page.locator('.st-flow').count(), 0, `${label}: short desktop window changed layout`);
+  await page.setViewportSize(viewport);
+  await page.locator('.st-landscape').waitFor();
+}
+
 try {
   for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 1000 }, { width: 820, height: 700 }, { width: 390, height: 720 }]) {
     const size = `${viewport.width}x${viewport.height}`;
@@ -233,6 +304,54 @@ try {
     console.log(`PASS ${label}`);
 
     assert.deepEqual(errors, [], `${size}: unhandled browser errors`);
+    await page.close();
+  }
+
+  for (const viewport of [{ width: 844, height: 390 }, { width: 932, height: 430 }, { width: 667, height: 375 }]) {
+    const size = `${viewport.width}x${viewport.height}`;
+    const page = await browser.newPage({ viewport });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://**', route => route.abort());
+    await page.goto(`${url}/exams/cloud/learning?shell`);
+    await page.waitForFunction(() => window.fixtureApp?.state.workspaceStatus === 'ready');
+    await page.evaluate(() => window.fixtureApp.beginLearning(1));
+    await copyButton(page).waitFor();
+    await checkLandscape(page, `Learning ${size}`, viewport);
+    await checkRotation(page, `Learning ${size}`, viewport);
+    await page.getByRole('button', { name: 'Bookmark', exact: true }).click();
+    await page.waitForFunction(() => !!window.fixtureApp.state.bookmarks.Q1);
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await checkFlowNext(page, `Learning ${size}`, viewport);
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.waitForFunction(() => window.fixtureApp.state.lIdx === 0);
+    await page.getByLabel('Jump to question number').fill('2');
+    await page.getByRole('button', { name: 'Go', exact: true }).click();
+    await page.waitForFunction(() => window.fixtureApp.state.lIdx === 1);
+    await page.getByRole('button', { name: 'Exit', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Main navigation' }).waitFor();
+    assert.equal(await page.locator('.st-flow').count(), 0, `Learning ${size}: exit did not restore setup`);
+
+    await page.evaluate(() => window.fixtureApp.begin(['Q1', 'Q2']));
+    await page.getByRole('button', { name: 'Check answer', exact: true }).waitFor();
+    await checkLandscape(page, `Practice ${size}`, viewport);
+    await checkRotation(page, `Practice ${size}`, viewport);
+    await page.locator('.st-opt:last-child').click();
+    await page.getByRole('button', { name: 'Check answer', exact: true }).click();
+    await copyButton(page).waitFor();
+    await checkLandscape(page, `Practice graded ${size}`, viewport);
+    if (process.env.QUESTION_CARD_SCREENSHOTS) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: `${process.env.QUESTION_CARD_SCREENSHOTS}/landscape-practice-${size}.png` });
+    }
+    await page.getByRole('button', { name: 'Next question', exact: true }).click();
+    await checkFlowNext(page, `Practice ${size}`, viewport);
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.waitForFunction(() => window.fixtureApp.state.idx === 0);
+    await page.getByRole('button', { name: 'End', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Main navigation' }).waitFor();
+    assert.equal(await page.locator('.st-flow').count(), 0, `Practice ${size}: end did not restore setup`);
+    assert.deepEqual(errors, [], `${size}: unhandled shell errors`);
     await page.close();
   }
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

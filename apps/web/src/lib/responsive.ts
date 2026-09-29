@@ -2,13 +2,16 @@ export interface Breakpoints {
   phone: boolean;
   narrow: boolean;
   rail: boolean;
+  landscapePhone: boolean;
 }
 
-export function breakpointsFor(width: number): Breakpoints {
+export function breakpointsFor(width: number, height = Infinity): Breakpoints {
   const narrow = width < 900;
   const phone = width < 620;
   const rail = !narrow && width >= 1100;
-  return { phone, narrow, rail };
+  // Short phone-sized windows need reading room without changing desktop layouts.
+  const landscapePhone = width >= 620 && width < 1100 && height < 500;
+  return { phone, narrow, rail, landscapePhone };
 }
 
 // The padding the app shell puts around every screen. A screen that runs a bar

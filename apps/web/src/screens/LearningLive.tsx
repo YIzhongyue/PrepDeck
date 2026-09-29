@@ -43,15 +43,15 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   // panels scroll on their own; narrower screens size only the question card,
   // with the review panels following below it on the page. Phones size
   // nothing: the page scrolls as one, between a sticky header and action bar.
-  const flow = bp.phone;
-  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, bp.phone);
-  const gridHeight = desktop ? fitHeight : null;
+  const flow = bp.phone || bp.landscapePhone;
+  const { gridRef, bodyRef, fitHeight } = usePinnedCard(q?.id, flow);
+  const gridHeight = desktop && !flow ? fitHeight : null;
 
   if (!q) return null;
 
   const ready = detail?.status === "ready";
   const correctAnswers = detail?.correctAnswers ?? [];
-  const liveCols = desktop ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
+  const liveCols = desktop && !flow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
   const atEnd = state.lIdx + 1 >= state.lQueue.length;
   const scroller = gridHeight ? "auto" : "visible";
   const history = detail?.history ?? [];
@@ -101,7 +101,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   );
 
   return (
-    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}`}>
+    <div className={`pd-study${bp.phone ? " st-phone" : ""}${flow ? " st-flow" : ""}${bp.landscapePhone ? " st-landscape" : ""}`}>
       <header className="st-head">
         <div className="st-head-row">
           <div className="st-head-titles">

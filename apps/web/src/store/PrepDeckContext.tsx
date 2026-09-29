@@ -221,6 +221,7 @@ type Patch = Partial<AppState> | ((s: AppState) => Partial<AppState>);
 interface PrepDeckStore {
   state: AppState;
   width: number;
+  height: number;
   pool: () => Question[];
   curQ: () => Question | undefined;
   mockQ: () => Question | undefined;
@@ -422,7 +423,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const initialRoute = useRef<RouteIntent | null | undefined>(undefined);
   if (initialRoute.current === undefined) initialRoute.current = initialRouteIntent();
   const [state, setStateRaw] = useState<AppState>(() => stateForInitialRoute(initialRoute.current ?? null));
-  const [width, setWidth] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1280);
+  const [{ width, height }, setViewport] = useState(() => ({
+    width: typeof window !== "undefined" ? window.innerWidth : 1280,
+    height: typeof window !== "undefined" ? window.innerHeight : 800
+  }));
   const stateRef = useRef(state);
   const requests = useRef(new WorkspaceRequests()).current;
   const dirtyAnnotations = useRef(new Map<string, string>());
@@ -448,7 +452,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const dismissActionError = useCallback(() => setState({ actionError: null }), [setState]);
 
   useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -1693,7 +1697,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [setState, finishMock]);
 
   const store: PrepDeckStore = {
-    state, width, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
+    state, width, height, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
     setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, showAlternateAi,
