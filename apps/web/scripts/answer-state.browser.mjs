@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { normalizeImportFile } from "../../../packages/shared/src/question-components.ts";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
@@ -24,6 +25,9 @@ let signInForm = null;
 // Answer keys the fixture grades component questions against (issue #43).
 const answerKeys = new Map();
 let serial = 0, expired = false, failDraft = false, sessionGone = false, rejectDraft = false;
+// A promise the next draft write's reply waits for; the write itself is
+// recorded when it arrives.
+let holdDraft = null;
 const selected = answer => answer?.some(value => value.trim()) ? answer : [];
 function grade(qid, answer) { return qid === "q3" ? answer.some(value => value.trim() === "green") : answer.join() === "A"; }
 function recordWrong(qid) {
@@ -40,15 +44,15 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/html");
     return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
   }
-  let raw = ""; for await (const chunk of req) raw += chunk;
+  const { payload, form } = await readBody(req);
   // Starting sign-in is a form POST, not JSON (issue #82). Stand in for Google.
   if (url.pathname === "/api/auth/google/start" && req.method === "POST") {
-    signInForm = new URLSearchParams(raw);
+    signInForm = form ?? new URLSearchParams();
     res.writeHead(200, { "Content-Type": "text/plain" }); return res.end("Google sign-in (fixture)");
   }
   // This deployment asks for no human verification.
   if (url.pathname === "/api/auth/turnstile") { res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"siteKey":null}'); }
-  const payload = JSON.parse(raw || "{}"); calls.push({ path: url.pathname, method: req.method, payload });
+  calls.push({ path: url.pathname, method: req.method, payload });
   const json = (body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
   if (sessionGone && !url.pathname.startsWith("/api/auth/")) return json({ error: "Unauthorized" }, 401);
   if (url.pathname === "/api/auth/me") return json({ user: { id: "qa", email: "qa@example.test", role: "user", displayName: "QA" } });
@@ -73,11 +77,13 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/attempts/")) {
     const [, , , id, action, qid] = url.pathname.split("/"); const attempt = attempts.get(id);
     if (action === "answers" && req.method === "PUT") {
-      if (failDraft) return json({ error: "Draft unavailable" }, 503);
-      if (rejectDraft) return json({ error: "selectedAnswer is not a possible answer to this question: unknown option ID" }, 400);
-      if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
-      if (expired) return json({ expired: true, error: "This mock exam has expired." }, 409);
-      attempt.selectedAnswers[qid] = selected(payload.selectedAnswer); return json({ saved: true });
+      const hold = holdDraft; holdDraft = null;
+      const reply = (body, status) => hold ? hold.then(() => json(body, status)) : json(body, status);
+      if (failDraft) return reply({ error: "Draft unavailable" }, 503);
+      if (rejectDraft) return reply({ error: "selectedAnswer is not a possible answer to this question: unknown option ID" }, 400);
+      if (attempt.completed) return reply({ completed: true, error: "Attempt already completed" }, 409);
+      if (expired) return reply({ expired: true, error: "This mock exam has expired." }, 409);
+      attempt.selectedAnswers[qid] = selected(payload.selectedAnswer); return reply({ saved: true });
     }
     if (action === "flags") {
       if (attempt.completed) return json({ completed: true, error: "Attempt already completed" }, 409);
@@ -215,8 +221,14 @@ try {
   console.log("PASS a draft the server refuses is dropped, not retried, and cannot block submission");
 
   await invoke("endSession");
-  await startMock(); await pick("q1", "B"); await invoke("go", "wrong"); await invoke("go", "mock");
+  // The reply to B is held, so the navigation is still waiting on saves when
+  // the expired write for A fails. Its "Time is up" must survive that
+  // navigation finishing afterwards, or the exam is submitted unexplained.
+  await startMock();
+  let releaseDraft; holdDraft = new Promise(resolve => { releaseDraft = resolve; });
+  await pick("q1", "B"); await invoke("go", "wrong"); await invoke("go", "mock");
   expired = true; await pick("q1", "A");
+  releaseDraft();
   await page.waitForFunction(() => window.store.state.actionError?.startsWith("Time is up."));
   const beforeSubmit = calls.filter(call => call.method === "PUT").length;
   await page.waitForFunction(() => window.store.state.mStage === "results");

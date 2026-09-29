@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 import { normalizeTagName } from "../../../packages/shared/src/questionTags.ts";
 import { normalizeImportFile, exportComponentPackage } from "../../../packages/shared/src/question-components.ts";
 import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
@@ -54,8 +55,7 @@ const server = createServer(async (req, res) => {
       const offset = Number(url.searchParams.get("offset") || 0);
       return json(200, { questions: filtered.slice(offset, offset + 50), total: filtered.length });
     }
-    let raw = ""; for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw || "{}");
+    const { payload: body } = await readBody(req);
     if (url.pathname === "/api/exams/exam/import/validate") return json(200, { valid: true, questionCount: body.questions.length, issues: [], conflicts: [] });
     if (url.pathname === "/api/exams/exam/import") {
       importedFile = body;

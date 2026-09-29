@@ -25,8 +25,8 @@ preview. A graphical block editor is future work.
 
 Regenerate screenshots with `SCREENSHOT_DIR` set when running
 `node apps/web/scripts/question-authoring.browser.mjs` and
-`node apps/web/scripts/answer-state.browser.mjs`. CI retains screenshots as a
-`browser-screenshots` artifact. The fixtures use isolated HTTP services and never
+`node apps/web/scripts/answer-state.browser.mjs`. CI retains screenshots as
+`browser-screenshots-N` artifacts, one per browser-regression shard. The fixtures use isolated HTTP services and never
 write to a production question bank.
 
 ## Local PDF source review

@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 
 const playwright = process.env.PLAYWRIGHT_MODULE
   ? await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href) : await import("playwright");
@@ -148,8 +149,7 @@ const server = createServer(async (req, res) => {
         + '<link rel="stylesheet" href="/untitled-ui.css"><link rel="stylesheet" href="/fixture.css">'
         + '</head><body style="margin:0"><div id="root"></div><script src="/fixture.js"></script></body></html>');
     }
-    let raw = Buffer.alloc(0); for await (const part of req) raw = Buffer.concat([raw, part]);
-    const input = JSON.parse(raw.toString() || "{}");
+    const { payload: input } = await readBody(req);
     if (path === "/api/auth/me") return json(200, { user: { id: "me", displayName: "Example Student", email: "y@example.test", role: "user" } });
     if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "sap-c02", name: EXAM_NAME }] });
     if (path.includes("practice-catalog")) {

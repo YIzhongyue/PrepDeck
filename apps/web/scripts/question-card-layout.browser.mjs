@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { readBody } from "./browser-fixture.mjs";
 
 const playwright = process.env.PLAYWRIGHT_MODULE
   ? await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href) : await import("playwright");
@@ -45,8 +46,7 @@ const server = createServer(async (req, res) => {
   const json = (status, data) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data)); };
   if (path === "/fixture.js" || path === "/fixture.css") { res.setHeader("Content-Type", path.endsWith("css") ? "text/css" : "text/javascript"); return res.end(outputFiles.find(f => f.path.endsWith(path.slice(1)))?.contents); }
   if (!path.startsWith("/api/")) { res.setHeader("Content-Type", "text/html"); return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body style="margin:0"><div id="root"></div><script src="/fixture.js"></script></body></html>'); }
-  let raw = ""; for await (const part of req) raw += part;
-  const input = JSON.parse(raw || "{}");
+  const { payload: input } = await readBody(req);
   if (path === "/api/auth/me") return json(200, { user: { id: "me", displayName: "Student", role: "user" } });
   if (path === "/api/exams") return json(200, { exams: [{ id: "exam", slug: "cloud", name: "Cloud fundamentals" }] });
   if (path.includes("practice-catalog")) return json(200, { questions, bookmarkedIds: [], wrongEntries: [], attemptedIds: [] });
