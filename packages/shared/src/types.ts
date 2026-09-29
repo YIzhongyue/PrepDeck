@@ -43,6 +43,7 @@ export interface Provider {
   websiteUrl: string | null;
   iconUrl: string | null;
   createdAt: string;
+  archivedAt: string | null;
 }
 
 // Extensible per FR-10.3: new values may be added without breaking existing questions.

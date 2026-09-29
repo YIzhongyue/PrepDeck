@@ -3,13 +3,15 @@
 // server re-validates type and the 2 MB cap regardless (see routes/profile.ts).
 
 const MAX_DIMENSION = 512;
-const MAX_BYTES = 2 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+// Shared by every admin/profile image upload (avatars, provider icons, exam
+// badges), matching the server-side 2 MB JPEG/PNG/WebP checks.
+export const MAX_IMAGE_UPLOAD_BYTES = 2 * 1024 * 1024;
+export const IMAGE_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export class AvatarValidationError extends Error {}
 
 export async function prepareAvatarUpload(file: File): Promise<Blob> {
-  if (!ALLOWED_TYPES.has(file.type)) {
+  if (!IMAGE_UPLOAD_TYPES.has(file.type)) {
     throw new AvatarValidationError("Please choose a JPEG, PNG, or WebP image.");
   }
 
@@ -36,7 +38,7 @@ export async function prepareAvatarUpload(file: File): Promise<Blob> {
   const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outputType, 0.85));
   if (!blob) throw new AvatarValidationError("Could not process this image.");
-  if (blob.size > MAX_BYTES) {
+  if (blob.size > MAX_IMAGE_UPLOAD_BYTES) {
     throw new AvatarValidationError("This image is too large even after compression — please choose a smaller file.");
   }
   return blob;

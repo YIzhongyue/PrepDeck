@@ -67,16 +67,25 @@ export function toExam(row: ExamRow): ExamWithQuestionCount {
 }
 
 export const EXAM_SELECT = `SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS question_count,
-  COALESCE((SELECT json_group_array(json_object('id', p.id, 'name', p.name, 'shortName', p.short_name, 'websiteUrl', p.website_url, 'iconUrl', p.icon_url, 'createdAt', p.created_at)) FROM providers p JOIN provider_exams pe ON pe.provider_id = p.id WHERE pe.exam_id = e.id), '[]') AS providers_json FROM exams e`;
+  COALESCE((SELECT json_group_array(json_object('id', p.id, 'name', p.name, 'shortName', p.short_name, 'websiteUrl', p.website_url, 'iconUrl', p.icon_url, 'createdAt', p.created_at, 'archivedAt', p.archived_at)) FROM providers p JOIN provider_exams pe ON pe.provider_id = p.id WHERE pe.exam_id = e.id), '[]') AS providers_json FROM exams e`;
 
 // `limit`/`offset` are optional so the Admin UI's REST route (routes/exams.ts)
 // can keep its unbounded contract, while Admin MCP's admin_list_exams tool
 // (implementation) always passes them for a bounded, paginated result. `e.id` is
 // a secondary sort key so pagination is stable across rows sharing a
 // `created_at` timestamp.
+// `includeArchivedProviders` is separate from `includeArchived`: archived
+// provider links are an admin-only view, while archived exams are a listing
+// scope. Normal selectors keep the exam but stop grouping it under an
+// archived provider.
+function withProviders(exam: ExamWithQuestionCount, includeArchivedProviders: boolean): ExamWithQuestionCount {
+  if (!includeArchivedProviders) exam.providers = exam.providers.filter((provider) => !provider.archivedAt);
+  return exam;
+}
+
 export async function listExams(
   db: D1Database,
-  opts: { includeArchived?: boolean; limit?: number; offset?: number } = {},
+  opts: { includeArchived?: boolean; includeArchivedProviders?: boolean; limit?: number; offset?: number } = {},
 ): Promise<ExamWithQuestionCount[]> {
   const where = opts.includeArchived ? "" : "WHERE e.archived_at IS NULL";
   const pagination = opts.limit !== undefined ? " LIMIT ? OFFSET ?" : "";
@@ -85,12 +94,16 @@ export async function listExams(
     .prepare(`${EXAM_SELECT} ${where} ORDER BY e.created_at DESC, e.id${pagination}`)
     .bind(...params)
     .all<ExamRow>();
-  return (results ?? []).map(toExam);
+  return (results ?? []).map((row) => withProviders(toExam(row), opts.includeArchivedProviders ?? false));
 }
 
-export async function getExam(db: D1Database, id: string): Promise<ExamWithQuestionCount | null> {
+export async function getExam(
+  db: D1Database,
+  id: string,
+  opts: { includeArchivedProviders?: boolean } = {},
+): Promise<ExamWithQuestionCount | null> {
   const row = await db.prepare(`${EXAM_SELECT} WHERE e.id = ?`).bind(id).first<ExamRow>();
-  return row ? toExam(row) : null;
+  return row ? withProviders(toExam(row), opts.includeArchivedProviders ?? false) : null;
 }
 
 export async function examExists(db: D1Database, id: string): Promise<boolean> {

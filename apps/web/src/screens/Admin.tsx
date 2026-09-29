@@ -11,11 +11,12 @@ import type {
   User,
   UserStatus
 } from "@prepdeck/shared";
-import ModalLayer from "../components/ModalLayer";
+import { AdminIcon, AdminModal } from "../components/AdminModal";
+import ProviderManager from "../components/ProviderManager";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import { apiFetch, ApiError } from "../lib/api";
-import { questionBankChanged } from "../lib/questionAuthoring";
+import { examListChanged, questionBankChanged } from "../lib/questionAuthoring";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
 
@@ -79,51 +80,9 @@ function StatusPill({ health }: { health: OverviewHealth }) {
   );
 }
 
-function AdminIcon({ name }: { name: "overview" | "users" | "exams" | "shield" | "arrow" | "back" | "plus" | "search" | "key" }) {
-  const paths = {
-    overview: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
-    exams: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></>,
-    shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></>,
-    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
-    back: <><path d="M19 12H5M11 18l-6-6 6-6"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    key: <><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></>
-  };
-  return <svg className="admin-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
-}
-
 function initials(source: string): string {
   const cleaned = source.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("");
   return (cleaned || source.slice(0, 2)).toUpperCase();
-}
-
-function AdminModal({
-  icon, title, subtitle, onClose, children
-}: {
-  icon: "users" | "exams" | "shield";
-  title: string;
-  subtitle: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const titleId = useId();
-  return (
-    <ModalLayer labelledBy={titleId} onClose={onClose}>
-      <div className="admin-modal">
-        <div className="admin-modal-head">
-          <span className="admin-modal-icon"><AdminIcon name={icon} /></span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 id={titleId}>{title}</h3>
-            <p>{subtitle}</p>
-          </div>
-          <button type="button" className="admin-modal-close" onClick={onClose}>✕</button>
-        </div>
-        {children}
-      </div>
-    </ModalLayer>
-  );
 }
 
 // docs/requirements/question-bank-management.md — the `/admin` console. Navigation here is this app's
@@ -540,7 +499,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState<string>("all");
-  const [modal, setModal] = useState<"exam" | "provider" | null>(null);
+  const [modal, setModal] = useState<"exam" | "provider" | "providers" | null>(null);
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -549,12 +508,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   const [badgeIcon, setBadgeIcon] = useState<File | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [providerName, setProviderName] = useState("");
-  const [providerShortName, setProviderShortName] = useState("");
-  const [providerWebsite, setProviderWebsite] = useState("");
-  const [providerIcon, setProviderIcon] = useState<File | null>(null);
-  const [providerBusy, setProviderBusy] = useState(false);
-  const [providerError, setProviderError] = useState<string | null>(null);
+  const [providerLoadError, setProviderLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadExams = () => apiFetch<{ exams: ExamRow[] }>("/api/exams?includeArchived=true")
@@ -567,36 +521,35 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   }, []);
 
   useEffect(() => {
-    apiFetch<{ providers: Provider[] }>("/api/providers").then(({ providers }) => setProviders(providers));
+    apiFetch<{ providers: Provider[] }>("/api/providers?includeArchived=true")
+      .then(({ providers }) => setProviders(providers))
+      .catch(() => setProviderLoadError("Could not load providers. Reopen Content to retry."));
   }, []);
 
   useEffect(() => { onCount(exams.length); }, [exams.length, onCount]);
 
-  const createProvider = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setProviderBusy(true);
-    setProviderError(null);
-    try {
-      const { provider } = await apiFetch<{ provider: Provider }>("/api/providers", { method: "POST", body: JSON.stringify({ name: providerName, shortName: providerShortName, websiteUrl: providerWebsite || undefined }) });
-      let created = provider;
-      if (providerIcon) {
-        const { iconUrl } = await apiFetch<{ iconUrl: string }>(`/api/providers/${provider.id}/icon`, { method: "POST", headers: { "Content-Type": providerIcon.type }, body: providerIcon });
-        created = { ...created, iconUrl };
-      }
-      setProviders((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setProviderName(""); setProviderShortName(""); setProviderWebsite(""); setProviderIcon(null);
-      e.currentTarget.reset();
-      setModal(null);
-    } catch (err) {
-      setProviderError(err instanceof ApiError ? err.message : "Could not create provider.");
-    } finally {
-      setProviderBusy(false);
-    }
+  const updateProvider = (provider: Provider) => {
+    setProviders((current) => [...current.filter((p) => p.id !== provider.id), provider].sort((a, b) => a.name.localeCompare(b.name)));
+    setExams((current) => current.map((exam) => ({ ...exam, providers: exam.providers.map((p) => p.id === provider.id ? provider : p) })));
+    if (provider.archivedAt) setProviderFilter((current) => current === provider.id ? "all" : current);
+    examListChanged();
   };
+  const deleteProvider = (id: string) => {
+    setProviders((current) => current.filter((p) => p.id !== id));
+    setProviderFilter((current) => current === id ? "all" : current);
+    examListChanged();
+  };
+  const providerDialog = (modal === "provider" || modal === "providers") && (
+    <ProviderManager mode={modal === "provider" ? "new" : "manage"} providers={providers}
+      onChange={updateProvider} onDelete={deleteProvider} onClose={() => setModal(null)} />
+  );
 
   const setProviderExam = async (provider: Provider, exam: ExamRow, assigned: boolean) => {
-    await apiFetch(`/api/providers/${provider.id}/exams/${exam.id}`, { method: assigned ? "PUT" : "DELETE" });
-    setExams((current) => current.map((item) => item.id !== exam.id ? item : { ...item, providers: assigned ? [...item.providers, provider] : item.providers.filter((p) => p.id !== provider.id) }));
+    try {
+      await apiFetch(`/api/providers/${provider.id}/exams/${exam.id}`, { method: assigned ? "PUT" : "DELETE" });
+      setExams((current) => current.map((item) => item.id !== exam.id ? item : { ...item, providers: assigned ? [...item.providers, provider] : item.providers.filter((p) => p.id !== provider.id) }));
+      examListChanged();
+    } catch (err) { window.alert(err instanceof ApiError ? err.message : "Could not update provider assignment."); }
   };
 
   const uploadBadge = async (examId: string, file: File) => {
@@ -660,22 +613,30 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 
   if (selected) {
     return (
+      <>
+      {providerLoadError && <p role="alert" style={{ color: DANGER }}>{providerLoadError}</p>}
       <ExamDetail
         exam={selected}
         providers={providers}
         onBack={() => setSelectedExamId(null)}
         onToggleProvider={setProviderExam}
         onNewProvider={() => setModal("provider")}
+        onManageProviders={() => setModal("providers")}
         onToggleArchive={toggleArchive}
         onReplaceBadge={replaceBadge}
         onFormatSaved={(officialFormat) => setExams((prev) => prev.map((x) => x.id === selected.id ? { ...x, officialFormat } : x))}
       />
+      {providerDialog}
+      </>
     );
   }
 
-  const groupKey = (ex: ExamRow) => ex.providers[0]?.id ?? "__other__";
-  const groupLabel = (ex: ExamRow) => ex.providers[0]?.name ?? "Other";
-  const hasOther = exams.some((ex) => ex.providers.length === 0);
+  // Group by the first active provider: archived providers have no filter
+  // pill, so an exam linked only to archived providers belongs under "Other".
+  const primaryProvider = (ex: ExamRow) => ex.providers.find((p) => !p.archivedAt);
+  const groupKey = (ex: ExamRow) => primaryProvider(ex)?.id ?? "__other__";
+  const groupLabel = (ex: ExamRow) => primaryProvider(ex)?.name ?? "Other";
+  const hasOther = exams.some((ex) => !primaryProvider(ex));
   const q = search.trim().toLowerCase();
 
   const filtered = exams.filter((ex) => {
@@ -703,17 +664,19 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         </label>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" className={providerFilter === "all" ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter("all")}>All providers</button>
-          {providers.map((p) => (
+          {providers.filter((p) => !p.archivedAt).map((p) => (
             <button key={p.id} type="button" className={providerFilter === p.id ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter(p.id)}>{p.shortName || p.name}</button>
           ))}
           {hasOther && <button type="button" className={providerFilter === "__other__" ? "admin-provider-pill is-active" : "admin-provider-pill"} onClick={() => setProviderFilter("__other__")}>Other</button>}
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setModal("providers")}>Manage providers</button>
           <button type="button" className="btn btn-secondary" onClick={() => setModal("provider")}>New provider</button>
           <button type="button" className="btn btn-primary" onClick={() => setModal("exam")}><AdminIcon name="plus" /> New exam</button>
         </div>
       </div>
 
+      {providerLoadError && <p role="alert" style={{ color: DANGER }}>{providerLoadError}</p>}
       {loadError && <p style={{ fontSize: 13, color: DANGER }}>{loadError}</p>}
       {loading && !loadError && <p style={{ fontSize: 13, opacity: 0.7 }}>Loading…</p>}
 
@@ -731,7 +694,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
                   <button key={ex.id} type="button" className={ex.archivedAt ? "admin-exam-card is-archived" : "admin-exam-card"} onClick={() => setSelectedExamId(ex.id)}>
                     <span style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                       <span className="admin-exam-badge">
-                        {ex.badgeIconUrl ? <img src={ex.badgeIconUrl} alt="" /> : (ex.providers[0]?.shortName ?? ex.slug.slice(0, 3).toUpperCase())}
+                        {ex.badgeIconUrl ? <img src={ex.badgeIconUrl} alt="" /> : (primaryProvider(ex)?.shortName ?? ex.slug.slice(0, 3).toUpperCase())}
                       </span>
                       <span style={{ minWidth: 0, flex: 1 }}>
                         <span className="admin-exam-name">{ex.name}</span>
@@ -755,30 +718,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         </>
       )}
 
-      {modal === "provider" && (
-        <AdminModal icon="shield" title="New provider" subtitle="Providers group exams in menus and selectors." onClose={() => setModal(null)}>
-          <form onSubmit={createProvider} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="admin-modal-fields">
-              <div className="field" style={{ flex: "1 1 100%" }}><label>Name</label><input className="input" placeholder="Amazon Web Services" value={providerName} onChange={(e) => setProviderName(e.target.value)} required /></div>
-              <div className="field" style={{ flex: "1 1 140px" }}><label>Short name</label><input className="input" placeholder="AWS" value={providerShortName} onChange={(e) => setProviderShortName(e.target.value)} required /></div>
-              <div className="field" style={{ flex: "1 1 220px" }}><label>Official URL</label><input className="input" type="url" placeholder="https://…" value={providerWebsite} onChange={(e) => setProviderWebsite(e.target.value)} /></div>
-              <div className="field" style={{ flex: "1 1 100%" }}>
-                <label>Icon</label>
-                <div className="admin-modal-file">
-                  <span>square PNG / SVG</span>
-                  <label>{providerIcon ? providerIcon.name : "Browse"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={(e) => setProviderIcon(e.target.files?.[0] ?? null)} /></label>
-                </div>
-              </div>
-            </div>
-            {providerError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{providerError}</p>}
-            <div className="admin-modal-foot">
-              <p>Assign exams from any exam’s detail page.</p>
-              <button type="button" className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={providerBusy || !providerName.trim() || !providerShortName.trim()}>{providerBusy ? "Adding…" : "Add provider"}</button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
+      {providerDialog}
 
       {modal === "exam" && (
         <AdminModal icon="exams" title="New exam" subtitle="The slug is used in imports and URLs — keep it stable." onClose={() => setModal(null)}>
@@ -810,13 +750,14 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 }
 
 function ExamDetail({
-  exam, providers, onBack, onToggleProvider, onNewProvider, onToggleArchive, onReplaceBadge, onFormatSaved
+  exam, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onFormatSaved
 }: {
   exam: ExamRow;
   providers: Provider[];
   onBack: () => void;
   onToggleProvider: (provider: Provider, exam: ExamRow, assigned: boolean) => void;
   onNewProvider: () => void;
+  onManageProviders: () => void;
   onToggleArchive: (exam: ExamRow) => void;
   onReplaceBadge: (exam: ExamRow, file: File) => void;
   onFormatSaved: (format: OfficialMockFormat | null) => void;
@@ -858,14 +799,17 @@ function ExamDetail({
             <span className="admin-panel-kicker">Providers</span>
             <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--color-text-muted)" }}>Tap to assign or unassign this exam.</p>
           </div>
-          <button type="button" className="btn btn-ghost" style={{ flex: "none" }} onClick={onNewProvider}>New provider</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-ghost" onClick={onManageProviders}>Manage providers</button>
+            <button type="button" className="btn btn-ghost" onClick={onNewProvider}>New provider</button>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {providers.map((p) => {
+          {providers.filter((p) => !p.archivedAt || exam.providers.some((assigned) => assigned.id === p.id)).map((p) => {
             const on = exam.providers.some((x) => x.id === p.id);
             return (
               <button key={p.id} type="button" className={on ? "admin-provider-toggle is-on" : "admin-provider-toggle"} onClick={() => onToggleProvider(p, exam, !on)}>
-                <span className="tick">✓</span>{p.name}
+                <span className="tick">✓</span>{p.name}{p.archivedAt ? " (archived)" : ""}
               </button>
             );
           })}
