@@ -104,7 +104,15 @@ async function checkLongBody(page, label, viewport) {
   await page.mouse.move(bodyBox.x + bodyBox.width / 2, bodyBox.y + bodyBox.height / 2);
   // Stop at the end of the body: past it Practice deliberately hands the wheel on to the page.
   const atEnd = () => body.evaluate(el => el.scrollTop + el.clientHeight >= el.scrollHeight - 1);
-  for (let i = 0; i < 80 && !(await atEnd()); i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(50); }
+  for (let i = 0; i < 80 && !(await atEnd()); i++) {
+    const { top, remaining } = await body.evaluate(el => ({ top: el.scrollTop, remaining: el.scrollHeight - el.clientHeight - el.scrollTop }));
+    // Do not send a wheel past the end: Practice intentionally chains that
+    // remainder to the page. Wait for each asynchronous scroll (WebKit can
+    // take more than 50ms) before calculating the next delta.
+    const delta = Math.min(200, remaining - 1);
+    await page.mouse.wheel(0, delta);
+    await page.waitForFunction(target => document.querySelector('.st-q-body').scrollTop >= target - 1, top + delta);
+  }
   assert.ok(await atEnd(), `${label}: wheel never reached the end of the body`);
   assert.deepEqual({ head: await rect(page, ".st-q-head"), foot: await rect(page, ".st-q-foot"), y: await page.evaluate(() => window.scrollY) }, before, `${label}: header, footer or page moved while scrolling the body`);
   const lastOption = await rect(page, ".st-opt:last-child");
