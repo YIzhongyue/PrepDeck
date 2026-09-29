@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { Provider } from "@prepdeck/shared";
-import ModalLayer from "./ModalLayer";
+import { AdminModal } from "./AdminModal";
 import { apiFetch, ApiError } from "../lib/api";
+import { IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "../lib/avatar";
 
 type Props = {
   mode: "new" | "manage";
@@ -38,49 +39,41 @@ export default function ProviderManager({ mode, providers, onChange, onDelete, o
   };
 
   return (
-    <ModalLayer label={title} onClose={close}>
-      <div className="admin-modal">
-        <div className="admin-modal-head">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3>{title}</h3>
-            <p>{editing ? "Providers group exams in menus and selectors." : "Archive providers to hide them from selectors while keeping their exams and questions."}</p>
+    <AdminModal icon="shield" title={title} onClose={close} closeDisabled={busy}
+      subtitle={editing ? "Providers group exams in menus and selectors." : "Archive providers to hide them from selectors while keeping their exams and questions."}>
+      {editing ? (
+        <ProviderEditor key={selected?.id ?? "new"} provider={selected} onBusy={setBusy} onChange={onChange}
+          onClose={() => { if (mode === "new") onClose(); else setEditing(false); }} />
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived providers</label>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(null)}>New provider</button>
           </div>
-          <button type="button" className="admin-modal-close" aria-label="Close" disabled={busy} onClick={close}>✕</button>
-        </div>
-        {editing ? (
-          <ProviderEditor key={selected?.id ?? "new"} provider={selected} onBusy={setBusy} onChange={onChange}
-            onClose={() => { if (mode === "new") onClose(); else setEditing(false); }} />
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived providers</label>
-              <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(null)}>New provider</button>
-            </div>
-            {error && <p role="alert" style={{ color: "var(--color-danger)", overflowWrap: "anywhere" }}>{error}</p>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {providers.filter((p) => showArchived || !p.archivedAt).map((provider) => (
-                <section key={provider.id} aria-label={provider.name} className="admin-panel-card" style={{ margin: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span className="admin-exam-badge">{provider.iconUrl ? <img src={provider.iconUrl} alt="" /> : provider.shortName.slice(0, 4)}</span>
-                    <div style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>
-                      <strong>{provider.name}</strong>
-                      <div style={{ fontSize: 13 }}>{provider.shortName}</div>
-                    </div>
-                    <span className={`tag ${provider.archivedAt ? "tag-neutral" : "tag-accent-2"}`}>{provider.archivedAt ? "archived" : "active"}</span>
+          {error && <p role="alert" style={{ color: "var(--color-danger)", overflowWrap: "anywhere" }}>{error}</p>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {providers.filter((p) => showArchived || !p.archivedAt).map((provider) => (
+              <section key={provider.id} aria-label={provider.name} className="admin-panel-card" style={{ margin: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span className="admin-exam-badge">{provider.iconUrl ? <img src={provider.iconUrl} alt="" /> : provider.shortName.slice(0, 4)}</span>
+                  <div style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>
+                    <strong>{provider.name}</strong>
+                    <div style={{ fontSize: 13 }}>{provider.shortName}</div>
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                    <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(provider)}>Edit</button>
-                    <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(provider, provider.archivedAt ? "unarchive" : "archive")}>{provider.archivedAt ? "Restore" : "Archive"}</button>
-                    <button type="button" className="btn btn-secondary" style={{ color: "var(--color-danger)" }} disabled={busy} onClick={() => void act(provider, "delete")}>Delete</button>
-                  </div>
-                </section>
-              ))}
-              {!providers.some((p) => showArchived || !p.archivedAt) && <p>No {showArchived ? "" : "active "}providers.</p>}
-            </div>
-          </>
-        )}
-      </div>
-    </ModalLayer>
+                  <span className={`tag ${provider.archivedAt ? "tag-neutral" : "tag-accent-2"}`}>{provider.archivedAt ? "archived" : "active"}</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(provider)}>Edit</button>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(provider, provider.archivedAt ? "unarchive" : "archive")}>{provider.archivedAt ? "Restore" : "Archive"}</button>
+                  <button type="button" className="btn btn-secondary" style={{ color: "var(--color-danger)" }} disabled={busy} onClick={() => void act(provider, "delete")}>Delete</button>
+                </div>
+              </section>
+            ))}
+            {!providers.some((p) => showArchived || !p.archivedAt) && <p>No {showArchived ? "" : "active "}providers.</p>}
+          </div>
+        </>
+      )}
+    </AdminModal>
   );
 }
 
@@ -104,17 +97,19 @@ function ProviderEditor({ provider, onBusy, onChange, onClose }: {
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); onBusy(true); setError(null);
-    let metadataSaved = false;
+    // Set once the metadata is saved, so a failed icon step still reports it.
+    let savedMetadata: Provider | null = null;
     try {
-      if (icon && (!["image/jpeg", "image/png", "image/webp"].includes(icon.type) || icon.size > 2 * 1024 * 1024)) {
+      if (icon && (!IMAGE_UPLOAD_TYPES.has(icon.type) || icon.size > MAX_IMAGE_UPLOAD_BYTES)) {
         setError("Choose a JPEG, PNG, or WebP icon no larger than 2 MB.");
         return;
       }
       const result = await apiFetch<{ provider: Provider }>(saved ? `/api/providers/${saved.id}` : "/api/providers", {
         method: saved ? "PATCH" : "POST", body: JSON.stringify({ name, shortName, websiteUrl: websiteUrl.trim() || null }),
       });
-      let updated = result.provider;
-      setSaved(updated); onChange(updated); metadataSaved = true;
+      savedMetadata = result.provider;
+      setSaved(savedMetadata);
+      let updated = savedMetadata;
       if (icon) {
         const { iconUrl } = await apiFetch<{ iconUrl: string }>(`/api/providers/${updated.id}/icon`, { method: "POST", headers: { "Content-Type": icon.type }, body: icon });
         updated = { ...updated, iconUrl };
@@ -122,10 +117,14 @@ function ProviderEditor({ provider, onBusy, onChange, onClose }: {
         await apiFetch(`/api/providers/${updated.id}/icon`, { method: "DELETE" });
         updated = { ...updated, iconUrl: null };
       }
+      // Notify the parent once per save, after the icon step, so one save
+      // triggers one refresh.
       setSaved(updated); onChange(updated); onClose();
     } catch (err) {
+      // The metadata did save, so the parent still has to reflect it.
+      if (savedMetadata) onChange(savedMetadata);
       const message = err instanceof ApiError ? err.message : "Please retry.";
-      setError(`${metadataSaved ? "Provider saved, but its icon could not be updated." : "Could not save provider."} ${message}`);
+      setError(`${savedMetadata ? "Provider saved, but its icon could not be updated." : "Could not save provider."} ${message}`);
     } finally { setBusy(false); onBusy(false); }
   };
 

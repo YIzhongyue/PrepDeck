@@ -22,3 +22,6 @@ export function allowAuthoringNavigation() {
   return window.dispatchEvent(new Event("prepdeck:before-navigate", { cancelable: true }));
 }
 export function questionBankChanged() { window.dispatchEvent(new Event("prepdeck:question-bank-changed")); }
+// Provider edits change exam grouping and labels, never questions: refresh
+// only the exam list instead of reloading the open exam's catalog.
+export function examListChanged() { window.dispatchEvent(new Event("prepdeck:exam-list-changed")); }

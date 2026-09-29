@@ -74,9 +74,18 @@ export const EXAM_SELECT = `SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE 
 // (implementation) always passes them for a bounded, paginated result. `e.id` is
 // a secondary sort key so pagination is stable across rows sharing a
 // `created_at` timestamp.
+// `includeArchivedProviders` is separate from `includeArchived`: archived
+// provider links are an admin-only view, while archived exams are a listing
+// scope. Normal selectors keep the exam but stop grouping it under an
+// archived provider.
+function withProviders(exam: ExamWithQuestionCount, includeArchivedProviders: boolean): ExamWithQuestionCount {
+  if (!includeArchivedProviders) exam.providers = exam.providers.filter((provider) => !provider.archivedAt);
+  return exam;
+}
+
 export async function listExams(
   db: D1Database,
-  opts: { includeArchived?: boolean; limit?: number; offset?: number } = {},
+  opts: { includeArchived?: boolean; includeArchivedProviders?: boolean; limit?: number; offset?: number } = {},
 ): Promise<ExamWithQuestionCount[]> {
   const where = opts.includeArchived ? "" : "WHERE e.archived_at IS NULL";
   const pagination = opts.limit !== undefined ? " LIMIT ? OFFSET ?" : "";
@@ -85,18 +94,16 @@ export async function listExams(
     .prepare(`${EXAM_SELECT} ${where} ORDER BY e.created_at DESC, e.id${pagination}`)
     .bind(...params)
     .all<ExamRow>();
-  return (results ?? []).map((row) => {
-    const exam = toExam(row);
-    // Normal selectors retain the exams, but no longer group them under an
-    // archived provider. Admin listings and direct reads retain every link.
-    if (!opts.includeArchived) exam.providers = exam.providers.filter((provider) => !provider.archivedAt);
-    return exam;
-  });
+  return (results ?? []).map((row) => withProviders(toExam(row), opts.includeArchivedProviders ?? false));
 }
 
-export async function getExam(db: D1Database, id: string): Promise<ExamWithQuestionCount | null> {
+export async function getExam(
+  db: D1Database,
+  id: string,
+  opts: { includeArchivedProviders?: boolean } = {},
+): Promise<ExamWithQuestionCount | null> {
   const row = await db.prepare(`${EXAM_SELECT} WHERE e.id = ?`).bind(id).first<ExamRow>();
-  return row ? toExam(row) : null;
+  return row ? withProviders(toExam(row), opts.includeArchivedProviders ?? false) : null;
 }
 
 export async function examExists(db: D1Database, id: string): Promise<boolean> {

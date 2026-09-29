@@ -34,7 +34,8 @@ function fixture(t) {
       return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } };
     },
   }; } };
-  const BUCKET = { async put(key, value) { objects.set(key, value); }, async delete(key) { objects.delete(key); } };
+  let failBucketDelete = false;
+  const BUCKET = { async put(key, value) { objects.set(key, value); }, async delete(key) { if (failBucketDelete) throw new Error("R2 unavailable"); objects.delete(key); } };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: "u", role: c.req.header("x-role") ?? "admin" }); await next(); });
   app.route("/providers", providersRouter);
@@ -46,7 +47,7 @@ function fixture(t) {
     }, { DB, BUCKET });
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
-  return { db, request, objects, raceDelete: (fn) => { beforeDelete = fn; } };
+  return { db, request, objects, raceDelete: (fn) => { beforeDelete = fn; }, failBucketDelete: () => { failBucketDelete = true; } };
 }
 
 test("create and partial edit validate and normalize metadata without overwriting omitted fields", async t => {
@@ -98,7 +99,12 @@ test("archive hides providers from normal lists while retaining exams, questions
     assert.deepEqual(exam.providers, []);
   }
   assert.equal((await request("/exams?includeArchived=true")).body.exams.find(e => e.id === "e").providers[0].id, "p");
-  assert.equal((await request("/exams/e")).body.exam.providers[0].archivedAt, archived.body.provider.archivedAt);
+  assert.equal((await request("/exams/e?includeArchived=true")).body.exam.providers[0].archivedAt, archived.body.provider.archivedAt);
+  // A direct read follows the same rule as the list: archived provider links
+  // are an admin-only view, so users (and plain reads) do not see them.
+  for (const [path, role] of [["/exams/e", "admin"], ["/exams/e", "user"], ["/exams/e?includeArchived=true", "user"]]) {
+    assert.deepEqual((await request(path, "GET", undefined, role)).body.exam.providers, [], `${role} ${path}`);
+  }
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM provider_exams").get().n, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM questions WHERE id='q'").get().n, 1);
   assert.equal((await request("/providers/p/exams/e", "PUT")).status, 409);
@@ -106,6 +112,27 @@ test("archive hides providers from normal lists while retaining exams, questions
   assert.equal((await request("/providers")).body.providers.length, 1);
   assert.equal((await request("/exams")).body.exams.find(e => e.id === "e").providers[0].id, "p");
   for (const action of ["archive", "unarchive"]) assert.equal((await request(`/providers/missing/${action}`, "POST")).status, 404);
+});
+
+test("assignment is idempotent and reports why nothing was linked", async t => {
+  const { request, db } = fixture(t);
+  assert.equal((await request("/providers/p/exams/e", "PUT")).status, 204);
+  assert.equal((await request("/providers/p/exams/e", "PUT")).status, 204);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM provider_exams").get().n, 1);
+  db.exec("DELETE FROM provider_exams");
+  db.exec("UPDATE providers SET archived_at='now' WHERE id='p'");
+  assert.equal((await request("/providers/p/exams/e", "PUT")).status, 409);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM provider_exams").get().n, 0);
+});
+
+test("a failed icon cleanup does not turn a completed delete into an error", async t => {
+  const { request, db, objects, failBucketDelete } = fixture(t);
+  objects.set("provider-icons/p", png);
+  failBucketDelete();
+  const warn = t.mock.method(console, "warn", () => {});
+  assert.equal((await request("/providers/p", "DELETE")).status, 204);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM providers").get().n, 0);
+  assert.equal(warn.mock.callCount(), 1);
 });
 
 test("delete refuses active and archived exam references, including a reference added at deletion time", async t => {

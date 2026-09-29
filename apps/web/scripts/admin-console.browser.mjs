@@ -23,12 +23,14 @@ const exams = [
 const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null, archivedAt: null }];
 let providerCreates = 0, providerDeletes = 0, failNextIcon = false;
 const errors = [];
+const apiRequests = [];
 // The overview drives the header's status pill (issue #49): it can succeed,
 // fail or answer slowly, and report any exam total.
 let overviewMode = "ok", overviewExams = exams.length;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
+  if (url.pathname.startsWith("/api/")) apiRequests.push(url.pathname);
   if (!url.pathname.startsWith("/api/")) {
     if (url.pathname === "/fixture.js" || url.pathname === "/fixture.css") {
       res.setHeader("Content-Type", url.pathname.endsWith("css") ? "text/css" : "text/javascript");
@@ -226,10 +228,17 @@ try {
   row = page.getByRole("region", { name: "Amazon Cloud", exact: true });
   await row.waitFor();
   assert.equal(providers[0].websiteUrl, "https://example.test");
+  const catalogLoads = () => apiRequests.filter(path => path.endsWith("/practice-catalog")).length;
+  const catalogLoadsBeforeArchive = catalogLoads();
   await row.getByRole("button", { name: "Archive", exact: true }).click();
   await row.waitFor({ state: "detached" });
   await page.waitForFunction(() => window.store.state.exams.find(e => e.id === "exam").providers.length === 0);
   assert.equal(await page.locator(".admin-provider-pill").filter({ hasText: "AC" }).count(), 0);
+  // With its only provider archived, the exam moves to "Other", which a pill
+  // can still select, instead of an archived group no pill reaches.
+  const otherGroup = page.locator(".admin-provider-group").filter({ has: page.locator(".admin-provider-group-head", { hasText: /^Other/ }) });
+  assert.equal(await otherGroup.getByText("Solutions Architect Professional", { exact: true }).count(), 1, "an exam whose provider is archived must be listed under Other");
+  assert.equal(catalogLoads(), catalogLoadsBeforeArchive, "a provider change must refresh the exam list, not reload the question catalog");
   await page.getByLabel("Show archived providers").check();
   await row.getByText("archived", { exact: true }).waitFor();
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/providers-phone.png` });

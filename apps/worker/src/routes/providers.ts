@@ -45,9 +45,7 @@ providersRouter.patch("/:id", requireAdmin, async (c) => {
   for (const [key, column] of [["name", "name"], ["shortName", "short_name"], ["websiteUrl", "website_url"]] as const) {
     if (body[key] !== undefined) { fields.push(`${column} = ?`); values.push(body[key]); }
   }
-  if (!fields.length) return c.json({ error: "No fields to update" }, 400);
-  await c.env.DB.prepare(`UPDATE providers SET ${fields.join(", ")} WHERE id = ?`).bind(...values, c.req.param("id")).run();
-  const row = await c.env.DB.prepare("SELECT * FROM providers WHERE id = ?").bind(c.req.param("id")).first<ProviderRow>();
+  const row = await c.env.DB.prepare(`UPDATE providers SET ${fields.join(", ")} WHERE id = ? RETURNING *`).bind(...values, c.req.param("id")).first<ProviderRow>();
   if (!row) return c.json({ error: "Provider not found" }, 404);
   return c.json({ provider: toProvider(row) });
 });
@@ -57,8 +55,7 @@ for (const action of ["archive", "unarchive"] as const) {
     const id = c.req.param("id");
     const archivedAt = action === "archive" ? new Date().toISOString() : null;
     // Preserve the original archive timestamp on repeated requests.
-    await c.env.DB.prepare(`UPDATE providers SET archived_at = ${action === "archive" ? "COALESCE(archived_at, ?)" : "?"} WHERE id = ?`).bind(archivedAt, id).run();
-    const row = await c.env.DB.prepare("SELECT * FROM providers WHERE id = ?").bind(id).first<ProviderRow>();
+    const row = await c.env.DB.prepare(`UPDATE providers SET archived_at = ${action === "archive" ? "COALESCE(archived_at, ?)" : "?"} WHERE id = ? RETURNING *`).bind(archivedAt, id).first<ProviderRow>();
     if (!row) return c.json({ error: "Provider not found" }, 404);
     return c.json({ provider: toProvider(row) });
   });
@@ -73,17 +70,27 @@ providersRouter.delete("/:id", requireAdmin, async (c) => {
     const exists = await c.env.DB.prepare("SELECT id FROM providers WHERE id = ?").bind(id).first();
     return c.json({ error: exists ? "Provider is still assigned to exams. Archive it instead, or reassign its exams before deleting." : "Provider not found" }, exists ? 409 : 404);
   }
-  await c.env.BUCKET.delete(`provider-icons/${id}`);
+  // The provider is already gone; an orphaned icon object is harmless, so a
+  // failed cleanup must not turn a completed delete into an error.
+  try { await c.env.BUCKET.delete(`provider-icons/${id}`); } catch (err) {
+    console.warn("providers.delete.icon_cleanup_failed", { id, error: String(err) });
+  }
   return c.body(null, 204);
 });
 
 providersRouter.put("/:id/exams/:examId", requireAdmin, async (c) => {
   const id = c.req.param("id"); const examId = c.req.param("examId");
-  const provider = await c.env.DB.prepare("SELECT * FROM providers WHERE id = ?").bind(id).first<ProviderRow>();
-  if (!provider) return c.json({ error: "Provider not found" }, 404);
-  if (provider.archived_at) return c.json({ error: "Restore this provider before assigning exams" }, 409);
-  if (!await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first()) return c.json({ error: "Exam not found" }, 404);
-  await c.env.DB.prepare("INSERT OR IGNORE INTO provider_exams (provider_id, exam_id) SELECT id, ? FROM providers WHERE id = ? AND archived_at IS NULL").bind(examId, id).run();
+  // Guard in the INSERT itself so a concurrent archive/delete cannot slip in
+  // between a check and the write; diagnose only when nothing was inserted.
+  const result = await c.env.DB.prepare(`INSERT OR IGNORE INTO provider_exams (provider_id, exam_id)
+    SELECT p.id, e.id FROM providers p, exams e WHERE p.id = ? AND e.id = ? AND p.archived_at IS NULL`).bind(id, examId).run();
+  if (result.meta.changes === 0) {
+    const provider = await c.env.DB.prepare("SELECT archived_at FROM providers WHERE id = ?").bind(id).first<Pick<ProviderRow, "archived_at">>();
+    if (!provider) return c.json({ error: "Provider not found" }, 404);
+    if (provider.archived_at) return c.json({ error: "Restore this provider before assigning exams" }, 409);
+    if (!await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first()) return c.json({ error: "Exam not found" }, 404);
+    // Otherwise the link already existed: assignment is idempotent.
+  }
   return c.body(null, 204);
 });
 providersRouter.delete("/:id/exams/:examId", requireAdmin, async (c) => {

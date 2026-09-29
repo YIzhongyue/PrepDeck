@@ -860,6 +860,8 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     async listExams(input: { includeArchived: boolean; limit: number; offset: number }) {
       const rows = await listExamRecords(db, {
         includeArchived: input.includeArchived,
+        // Admins always see archived provider links, whichever exams are listed.
+        includeArchivedProviders: true,
         limit: input.limit + 1,
         offset: input.offset,
       });
@@ -868,13 +870,13 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     },
 
     async getExam(input: { id: string }) {
-      const exam = await getExamRecord(db, input.id);
+      const exam = await getExamRecord(db, input.id, { includeArchivedProviders: true });
       if (!exam) throw new McpApplicationError("not_found");
       return { exam };
     },
 
     async getExamStatistics(input: { examId: string }) {
-      const exam = await getExamRecord(db, input.examId);
+      const exam = await getExamRecord(db, input.examId, { includeArchivedProviders: true });
       if (!exam) throw new McpApplicationError("not_found");
       const questions = await loadExamQuestions(input.examId);
       const attempts = await getExamAttemptCounts(db, input.examId);
@@ -1482,7 +1484,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
         });
         throw new McpApplicationError("conflict");
       }
-      return { exam: (await getExamRecord(db, id))! };
+      return { exam: (await getExamRecord(db, id, { includeArchivedProviders: true }))! };
     },
 
     async updateExam(input: { id: string } & ExamMutableFields) {
@@ -1510,7 +1512,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
         throw new McpApplicationError("conflict");
       }
       if (!changed) throw new McpApplicationError("not_found");
-      return { exam: (await getExamRecord(db, id))! };
+      return { exam: (await getExamRecord(db, id, { includeArchivedProviders: true }))! };
     },
 
     async archiveExam(input: { id: string }) {

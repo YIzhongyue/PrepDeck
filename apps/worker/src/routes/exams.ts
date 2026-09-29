@@ -19,11 +19,13 @@ export const examsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 examsRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
-  return c.json({ exams: await listExams(c.env.DB, { includeArchived }) });
+  // The admin console's includeArchived view also shows archived provider links.
+  return c.json({ exams: await listExams(c.env.DB, { includeArchived, includeArchivedProviders: includeArchived }) });
 });
 
 examsRouter.get("/:id", async (c) => {
-  const exam = await getExam(c.env.DB, c.req.param("id"));
+  const includeArchivedProviders = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
+  const exam = await getExam(c.env.DB, c.req.param("id"), { includeArchivedProviders });
   if (!exam) return c.json({ error: "Exam not found" }, 404);
   return c.json({ exam });
 });
@@ -91,7 +93,7 @@ examsRouter.patch("/:id", requireAdmin, async (c) => {
     return c.json({ error: "An exam with this slug already exists" }, 409);
   }
 
-  return c.json({ exam: await getExam(c.env.DB, id) });
+  return c.json({ exam: await getExam(c.env.DB, id, { includeArchivedProviders: true }) });
 });
 
 examsRouter.post("/:id/archive", requireAdmin, async (c) => {

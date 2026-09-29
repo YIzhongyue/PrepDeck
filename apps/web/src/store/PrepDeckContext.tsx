@@ -452,6 +452,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("prepdeck:question-bank-changed", changed);
     return () => window.removeEventListener("prepdeck:question-bank-changed", changed);
   }, [setState]);
+  const [examListRevision, setExamListRevision] = useState(0);
+  useEffect(() => {
+    const changed = () => setExamListRevision(n => n + 1);
+    window.addEventListener("prepdeck:exam-list-changed", changed);
+    return () => window.removeEventListener("prepdeck:exam-list-changed", changed);
+  }, []);
 
   const switchExamRef = useRef<(id: string | null) => Promise<boolean>>(async () => false);
   // Resolve identity before restoring selection: browser storage is per user.
@@ -491,7 +497,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         }
       });
     return () => { cancelled = true; };
-  }, [setState, requests, bankRevision]);
+  }, [setState, requests, bankRevision, examListRevision]);
 
   // implementation: this user's display aliases for the 3 mark types, loaded
   // once. initialState already holds sensible defaults, so a slow/failed

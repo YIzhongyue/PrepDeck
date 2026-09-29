@@ -51,15 +51,21 @@ another provider.
 All provider mutations require an admin. `PATCH /api/providers/:id` validates
 nonempty name/short name and optional HTTP(S) website URL; null or an empty URL
 clears it. `POST /api/providers/:id/archive` and `/unarchive` preserve exam links
-and questions. Normal provider and exam lists omit archived providers; admin
-requests with `includeArchived=true` and direct exam reads retain historical
-links. Archived providers cannot receive new exam assignments.
+and questions. Normal provider and exam lists, direct exam reads
+(`GET /api/exams/:id`) and User MCP omit archived providers; admin requests with
+`includeArchived=true` and every Admin MCP exam read retain historical links. In
+the admin exam list, an exam whose providers are all archived is grouped under
+**Other**. Archived providers cannot receive new exam assignments; the check is
+part of the assignment statement, so a concurrent archive cannot be reported as
+a successful assignment. Provider changes refresh the exam list only, not the
+open exam's question catalog.
 
 `DELETE /api/providers/:id` returns 409 if any exam still references the provider,
 including archived exams. The reference check is part of the deletion statement
 so concurrent assignment cannot be cascaded away. Prefer archival for historical
 providers; intentional reassignment/unassignment permits later deletion. Safe
-deletion also removes the stored icon. Migration `0041_provider_archiving.sql`
+deletion also removes the stored icon; if that cleanup fails, the delete still
+succeeds and the orphaned icon is logged. Migration `0041_provider_archiving.sql`
 adds the nullable archive timestamp and must be applied before the updated Worker.
 
 <a id="fr-13-1"></a>
