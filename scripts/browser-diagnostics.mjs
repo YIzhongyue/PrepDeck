@@ -1,9 +1,10 @@
 // Preloaded into every browser regression by scripts/browser-regressions.mjs
 // (`node --import`), so a failing script leaves more behind than one stack
 // trace (issue #83). It hooks Playwright's chromium.launch and, when a context
-// or the browser is closed, which each script does in its `finally`, saves
-// every page still open: a screenshot, its DOM, and a log of its console,
-// uncaught errors and requests. The runner keeps that folder only for a
+// or the browser is closed, which each script does in its `finally`, or when
+// the runner stops a script that ran out of time, saves every page still
+// open: a screenshot, its DOM, and a log of its console, uncaught errors and
+// requests. The runner keeps that folder only for a
 // script that failed. Without BROWSER_DIAGNOSTICS_DIR this module does nothing,
 // and it never fails a test itself: every capture is best effort.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -79,12 +80,22 @@ function hook(chromium) {
     return browser;
   };
 
-  // The runner's per-script timeout sends SIGTERM; a hung script is exactly
-  // the one whose pages are worth seeing.
-  process.once("SIGTERM", async () => {
-    await Promise.race([capture([...browsers].flatMap(browser => pagesOf(browser.contexts()))), new Promise(resolve => setTimeout(resolve, 15_000))]);
-    process.exit(143);
-  });
+  // A hung script is exactly the one whose pages are worth seeing, so the
+  // runner's timeout asks over IPC rather than with a signal: SIGTERM never
+  // reaches a handler on Windows, where it terminates the process outright,
+  // and elsewhere Playwright's own SIGTERM handler closes Chromium while the
+  // capture is still running. Pages are saved first, then the browsers are
+  // closed, then the process exits; the runner kills it if that stalls. The
+  // channel is unref'd so that it never keeps a finished script alive.
+  if (process.send) {
+    process.on("message", async message => {
+      if (message?.type !== "capture-and-exit") return;
+      await capture([...browsers].flatMap(browser => pagesOf(browser.contexts())));
+      await Promise.allSettled([...browsers].map(browser => browser.close()));
+      process.exit(1);
+    });
+    process.channel?.unref();
+  }
 }
 
 const isApi = url => { try { return new URL(url).pathname.startsWith("/api/"); } catch { return false; } };

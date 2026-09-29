@@ -90,6 +90,12 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      # The runner's own failure paths: a failing or timed-out script must
+      # leave its page behind. One shard is enough; they do not depend on it.
+      - name: Test the browser regression runner
+        if: matrix.shard == 1
+        run: npm run test:browser:runner
+
       - name: Run browser regressions
         run: npm run test:browser -- --shard ${{ matrix.shard }}/3
         env:

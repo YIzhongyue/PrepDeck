@@ -73,20 +73,24 @@ function select({ names, shard }) {
   return scripts;
 }
 
-function run(script, { diagnostics, timeout }) {
+// A script that runs out of time is asked over IPC to save its pages and
+// exit (see scripts/browser-diagnostics.mjs), and killed if it has not
+// within `grace`: a signal would either skip the capture (Windows) or race
+// Playwright's own handler closing Chromium under it (everywhere else).
+export function run(script, { diagnostics, timeout, grace = 30_000, log = console.log }) {
   const name = nameOf(script);
   const started = Date.now();
   const tail = [];
   return new Promise(done => {
-    const child = spawn(process.execPath, ["--import", pathToFileURL(join(root, "scripts/browser-diagnostics.mjs")).href, join(root, script)], {
-      cwd: root, env: { ...process.env, BROWSER_DIAGNOSTICS_DIR: diagnostics }, stdio: ["ignore", "pipe", "pipe"],
+    const child = spawn(process.execPath, ["--import", pathToFileURL(join(root, "scripts/browser-diagnostics.mjs")).href, resolve(root, script)], {
+      cwd: root, env: { ...process.env, BROWSER_DIAGNOSTICS_DIR: diagnostics }, stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
     let timedOut = false, killer;
     const timer = setTimeout(() => {
       timedOut = true;
-      console.log(`[${name}] still running after ${timeout / 1000} s; stopping it`);
-      child.kill("SIGTERM");
-      killer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+      log(`[${name}] still running after ${timeout / 1000} s; saving its pages and stopping it`);
+      killer = setTimeout(() => child.kill("SIGKILL"), grace);
+      try { child.send({ type: "capture-and-exit" }); } catch { child.kill("SIGKILL"); }
     }, timeout);
     for (const stream of [child.stdout, child.stderr]) {
       let partial = "";
@@ -99,7 +103,7 @@ function run(script, { diagnostics, timeout }) {
       stream.on("end", () => { if (partial) emit(partial); });
     }
     function emit(line) {
-      console.log(`[${name}] ${line}`);
+      log(`[${name}] ${line}`);
       tail.push(line);
       if (tail.length > 40) tail.shift();
     }

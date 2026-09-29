@@ -132,7 +132,12 @@ For a failing script the runner keeps what
 saved when its pages were closed: a screenshot, the DOM and a log of console
 messages, uncaught errors and `/api/` requests for each open page, under
 `BROWSER_DIAGNOSTICS_ROOT` (the system temp folder by default; CI uploads it as
-`browser-diagnostics-N`). Fixture servers read request bodies with
+`browser-diagnostics-N`). A script that runs out of time is not sent a signal,
+which on Windows ends it before anything is saved and elsewhere races
+Playwright closing Chromium; the runner asks it over IPC to save its pages and
+exit, and kills it only if that has not happened 30 s later.
+`npm run test:browser:runner` checks those paths against a real Chromium.
+Fixture servers read request bodies with
 [`readBody`](../../apps/web/scripts/browser-fixture.mjs), which parses them by
 their `Content-Type`, and wait on multi-step state with `waitUntil`, which on a
 timeout says what it last saw instead of only that 30 s passed.
