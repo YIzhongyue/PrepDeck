@@ -170,6 +170,7 @@ const USER_TOOL_NAMES = [
   "user_get_identity",
   "user_get_import_schemas",
   "user_get_learning_overview", "user_get_exam_progress", "user_get_learning_stats",
+  "user_start_practice", "user_submit_practice_answer", "user_complete_practice", "user_set_learning_progress",
   "user_list_attempts", "user_get_attempt", "user_get_recent_attempts",
   "user_get_wrong_questions", "user_get_bookmarked_questions", "user_get_unattempted_questions",
   "user_search_questions", "user_get_question", "user_present_question", "user_list_exams", "user_get_exam", "user_list_question_tags",
@@ -203,6 +204,10 @@ const ADMIN_TOOL_NAMES = [
 const READ_ANNOTATIONS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const MUTATION_ANNOTATIONS = {
   // [destructive, idempotent]; all operate inside the PrepDeck instance.
+  user_start_practice: [true, false],
+  user_submit_practice_answer: [false, true],
+  user_complete_practice: [false, true],
+  user_set_learning_progress: [true, true],
   user_create_knowledge_point: [false, false],
   user_update_knowledge_point: [true, true],
   user_delete_knowledge_point: [true, true],

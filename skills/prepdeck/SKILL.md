@@ -1,6 +1,6 @@
 ---
 name: prepdeck
-description: Review PrepDeck learning progress, discover study questions, and manage your personal Knowledge Points through the configured User MCP connection. Use for PrepDeck study and personal notes; use prepdeck-admin for question-bank administration.
+description: Review PrepDeck learning progress, discover study questions, record requested practice results and Learning Mode resume positions, and manage personal Knowledge Points through User MCP. Use prepdeck-admin for question-bank administration.
 ---
 
 # PrepDeck
@@ -25,8 +25,13 @@ responds. Formatting a conversation does not authorize question-bank edits.
 
 Read [workflows](references/workflows.md) for study, history, question discovery
 and Knowledge Point tasks. Reads do not record an attempt, mark a question studied,
-or change progress/bookmarks. Use only explicit personal-note mutation tools for
-the user's requested edits. Never pass an effective `userId` or owner override.
+or change progress/bookmarks. When the user wants study persisted, use the explicit
+practice lifecycle tools; the server grades and records their actual answers.
+Learning Mode resume position is a separate write and does not record practice.
+If discovery lacks the needed mutations, clearly say the session cannot be saved
+through this connection. Never imply that reading or conversational grading has
+updated PrepDeck. Use personal-note mutations for requested note edits.
+Never pass an effective `userId` or owner override.
 Delete notes, groups, tags or attachments only with clear intent for those exact
 targets; resolve ambiguity before the destructive call.
 

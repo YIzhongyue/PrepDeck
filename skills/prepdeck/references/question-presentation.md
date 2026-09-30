@@ -23,6 +23,11 @@ is a selection preview, not proof that the full question has been retrieved.
    reveal the answer. Do not add correct-answer emphasis or an annotated answer
    image before the response. If the stored material itself contains a visible
    answer marking, flag it for review instead of presenting it as a blind quiz.
+5. If the user wants this practice persisted, follow
+   [Persisting study activity](workflows.md#persisting-study-activity): submit
+   their actual answer through the practice mutation and use its server grade.
+   Merely fetching the answer key does not record an attempt or move Learning
+   Mode's resume position. Report unavailable persistence tools explicitly.
 
 ## Preserve the source structure
 

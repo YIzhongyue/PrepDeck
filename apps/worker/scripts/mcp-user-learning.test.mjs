@@ -17,6 +17,7 @@ import { build } from "esbuild";
 const [{ text }] = (await build({
   stdin: {
     contents: `export { default as worker } from './src/index.ts';
+      export { issueSessionToken } from './src/lib/session.ts';
       export * from './src/mcp/credentials.ts';`,
     resolveDir: fileURLToPath(new URL("..", import.meta.url)),
   },
@@ -27,7 +28,7 @@ const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-user-learning-test-"
 after(() => rm(buildDir, { recursive: true, force: true }));
 const bundlePath = join(buildDir, "worker.mjs");
 await writeFile(bundlePath, text);
-const { worker, issueMcpCredential } = await import(pathToFileURL(bundlePath).href);
+const { worker, issueMcpCredential, issueSessionToken } = await import(pathToFileURL(bundlePath).href);
 
 // Every migration except 0002, which (unlike the rest) seeds real exam/
 // question content rather than defining schema — including it would pollute
@@ -86,6 +87,7 @@ async function fixture(t) {
   const kvStore = new Map();
   const env = {
     DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie",
+    SESSION_SECRET: "synthetic-study-mutation-test-key",
     KV: {
       get: async (key, type) => { const v = kvStore.get(key); return v === undefined ? null : (type === "json" ? JSON.parse(v) : v); },
       put: async (key, value) => { kvStore.set(key, value); },
@@ -218,6 +220,322 @@ function insertAnnotation(f, { id, userId, questionId, style = "hl1", createdAt 
 function dumpTables(f) {
   return Object.fromEntries(NO_SIDE_EFFECT_TABLES.map((t) => [t, f.sqlite.prepare(`SELECT * FROM ${t}`).all()]));
 }
+
+// Use the full Worker with real browser-session authentication for MCP-to-web
+// assertions: no injected principal or test-only replacement for REST queries.
+async function webCall(f, userId, path, method = "GET", body) {
+  const token = await issueSessionToken(f.env, userId);
+  const response = await worker.fetch(new Request(`${f.env.APP_BASE_URL}/api${path}`, {
+    method,
+    headers: { Cookie: `pd_session=${encodeURIComponent(token)}`, Origin: f.env.APP_BASE_URL, "Content-Type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }), f.env);
+  const data = await response.json();
+  assert.ok(response.ok, `${method} ${path}: ${response.status} ${JSON.stringify(data)}`);
+  return data;
+}
+
+function seedPractice(f) {
+  insertExam(f, { id: "exam1", slug: "exam-1", name: "Study mutations" });
+  insertExam(f, { id: "exam2", slug: "exam-2", name: "Other exam" });
+  for (const [id, examId] of [["q1", "exam1"], ["q2", "exam1"], ["q3", "exam1"], ["other", "exam2"]]) {
+    insertQuestion(f, { id, examId, stem: id, options: [{ id: "a", text: "A" }, { id: "b", text: "B" }] });
+  }
+}
+
+test("issue #89: MCP practice persists in browser history, fresh cached stats and the wrong-question workflow", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const initial = await webCall(f, "alice", "/exams/exam1/stats");
+  assert.equal(initial.totalAnswers, 0);
+  const statsKeys = () => [...f.kvStore.keys()].filter(key => key.startsWith("stats:"));
+  assert.equal(statsKeys().length, 1);
+
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1", "q2", "q3"] });
+  insertWrong(f, { userId: "alice", questionId: "q1", wrongCount: 2, mastered: 1, lastWrongAt: "2026-01-01" });
+  const wrong = await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["b"], timeSpentSeconds: 42 });
+  assert.equal(wrong.isCorrect, false);
+  assert.deepEqual(wrong.correctAnswers, ["a"]);
+  assert.equal(wrong.answerRevision, 1);
+  const saved = f.sqlite.prepare("SELECT * FROM attempt_answers WHERE attempt_id = ?").get(attemptId);
+  assert.equal(saved.time_spent_seconds, 42);
+  assert.equal(saved.graded_answers_json, '["a"]');
+  assert.equal(saved.answer_revision, 1);
+
+  // Cross-transport retry cannot revise the locked grade or count a second wrong.
+  const replay = await webCall(f, "alice", `/attempts/${attemptId}/answers`, "POST", { questionId: "q1", selectedAnswer: ["a"] });
+  assert.deepEqual(replay, wrong);
+  const wrongRow = f.sqlite.prepare("SELECT * FROM wrong_question_book WHERE user_id = 'alice' AND question_id = 'q1'").get();
+  assert.equal(wrongRow.wrong_count, 3);
+  assert.equal(wrongRow.mastered, 0);
+  // The web action recognizes the same wrong-book row.
+  await webCall(f, "alice", "/questions/q1/wrong-book/mastered", "PUT");
+  assert.equal((await callUserTool(f, f.alice.token, "user_get_wrong_questions")).items.length, 0);
+
+  const correct = await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId: "q2", selectedAnswer: ["a"] });
+  assert.equal(correct.isCorrect, true);
+  const live = await webCall(f, "alice", "/exams/exam1/stats");
+  assert.deepEqual([live.totalAnswers, live.totalAttempted, live.totalCorrect, live.overallAccuracyPct], [2, 2, 1, 50]);
+  assert.equal((await webCall(f, "bob", "/exams/exam1/stats")).totalAnswers, 0);
+  const history = await webCall(f, "alice", "/questions/q1/learning-detail");
+  assert.equal(history.history[0].attemptId, attemptId);
+  assert.deepEqual(history.history[0].selectedAnswer, ["b"]);
+  assert.equal(history.history[0].isCorrect, false);
+  assert.equal((await webCall(f, "bob", "/questions/q1/learning-detail")).history.length, 0);
+
+  const completed = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.deepEqual([completed.mode, completed.score, completed.totalQuestions, completed.correctCount], ["practice", 50, 2, 1]);
+  assert.equal(statsKeys().some(key => key.includes(":alice:")), false, "same eager cache invalidation as REST completion");
+  assert.deepEqual(await webCall(f, "alice", `/attempts/${attemptId}/complete`, "POST"), completed);
+  assert.deepEqual(await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId }), completed);
+  assert.equal((await callUserTool(f, f.alice.token, "user_list_attempts", { completedOnly: true })).items[0].id, attemptId);
+  assert.equal((await webCall(f, "alice", "/exams/exam1/learning/progress")).progress.lastSequenceNumber, null);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM attempt_answers").get().n, 2, "ending early does not synthesize unanswered rows");
+});
+
+test("issue #89: MCP uses REST grading snapshots and rejects writes to completed, foreign and mock attempts", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await webCall(f, "alice", "/exams/exam1/attempts", "POST", { mode: "practice", questionIds: ["q1"] });
+  const input = { attemptId, questionId: "q1", selectedAnswer: ["b"] };
+  const first = await callUserTool(f, f.alice.token, "user_submit_practice_answer", input);
+  f.sqlite.prepare("UPDATE questions SET correct_answers_json = ?, answer_revision = 2, revision = 2 WHERE id = 'q1'").run('["b"]');
+  assert.deepEqual(await callUserTool(f, f.alice.token, "user_submit_practice_answer", input), first);
+  const result = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.equal(result.score, 0);
+  assert.deepEqual(result.breakdown[0].gradedAnswers, ["a"]);
+  assert.deepEqual(result.breakdown[0].correctAnswers, ["b"]);
+  assert.equal(result.breakdown[0].answerRevision, 1);
+  assert.equal(result.breakdown[0].currentAnswerRevision, 2);
+  const detail = await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId });
+  assert.deepEqual(detail.breakdown, result.breakdown);
+  const history = (await webCall(f, "alice", "/questions/q1/learning-detail")).history[0];
+  assert.deepEqual(history.gradedAnswers, ["a"]);
+  assert.equal(history.answerRevision, 1);
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", input)).code, "conflict");
+  for (const id of [attemptId, "nonexistent"]) {
+    assert.equal((await callUserToolExpectingError(f, f.bob.token, "user_submit_practice_answer", { ...input, attemptId: id })).code, "not_found");
+    assert.equal((await callUserToolExpectingError(f, f.bob.token, "user_complete_practice", { attemptId: id })).code, "not_found");
+  }
+  const mock = await webCall(f, "alice", "/exams/exam1/attempts", "POST", { mode: "mock", questionIds: ["q2"] });
+  const before = dumpTables(f);
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId: mock.attemptId })).code, "invalid_input");
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { ...input, attemptId: mock.attemptId, questionId: "q2" })).code, "invalid_input");
+  assert.deepEqual(dumpTables(f), before);
+});
+
+test("issue #89: strict schemas and canonical validation reject invalid study writes without side effects", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  const cases = [
+    ["user_start_practice", { examId: "missing", questionIds: ["q1"] }, "not_found"],
+    ["user_start_practice", { examId: "exam1", questionIds: ["other"] }],
+    ["user_start_practice", { examId: "exam1", questionIds: [] }],
+    ["user_start_practice", { examId: "exam1", questionIds: ["q1"], userId: "bob" }],
+    ["user_start_practice", { examId: "exam1", questionIds: ["q1"], mode: "mock" }],
+    ...[
+      { selectedAnswer: ["unknown"] }, { selectedAnswer: ["a", "b"] }, { selectedAnswer: [123] },
+      { selectedAnswer: ["x".repeat(1001)] }, { selectedAnswer: Array(51).fill("a") },
+      { timeSpentSeconds: -1 }, { timeSpentSeconds: 1.5 }, { timeSpentSeconds: 86401 },
+      { questionId: "q2" }, { questionId: "other" }, { userId: "bob" }, { isCorrect: true }, { score: 100 },
+    ].map(extra => ["user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["b"], ...extra }]),
+    ["user_complete_practice", { attemptId, userId: "bob" }],
+    ["user_set_learning_progress", { examId: "exam1", sequenceNumber: 1, userId: "bob" }],
+  ];
+  const before = dumpTables(f);
+  for (const [name, args, code = "invalid_input"] of cases) {
+    assert.equal((await callUserToolExpectingError(f, f.alice.token, name, args)).code, code, JSON.stringify(args));
+    assert.deepEqual(dumpTables(f), before);
+  }
+  const empty = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: [] });
+  assert.equal(empty.reason, "empty_answer");
+  assert.deepEqual(dumpTables(f), before, "an unanswered question must not lock a grade or change any count");
+});
+
+test("PR #91: blank answers neither lock questions nor count as incorrect practice", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  insertQuestion(f, { id: "blank", examId: "exam1", type: "fill_blank", stem: "Fill in", correctAnswers: ["answer"] });
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1", "q2", "blank"] });
+  const before = dumpTables(f);
+  for (const [questionId, selectedAnswer] of [["q1", []], ["q2", []], ["blank", []], ["blank", [""]], ["blank", [" \t\n "]]]) {
+    const error = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer });
+    assert.equal(error.code, "invalid_input");
+    assert.equal(error.reason, "empty_answer");
+    assert.deepEqual(dumpTables(f), before);
+  }
+  assert.equal((await webCall(f, "alice", "/exams/exam1/stats")).totalAnswers, 0);
+  assert.deepEqual((await webCall(f, "alice", "/questions/blank/learning-detail")).history, []);
+  for (const [questionId, selectedAnswer] of [["q1", ["a"]], ["blank", ["answer"]]]) {
+    assert.equal((await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer })).isCorrect, true);
+  }
+  const completed = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.equal(completed.totalQuestions, 2, "the skipped q2 is not part of the denominator");
+  assert.equal(completed.score, 100);
+  const stats = await webCall(f, "alice", "/exams/exam1/stats");
+  assert.deepEqual([stats.totalAnswers, stats.overallAccuracyPct], [2, 100]);
+});
+
+test("PR #91: study errors provide safe recovery reasons without echoing input or inviting closed-attempt retries", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  const input = { attemptId, questionId: "q1", selectedAnswer: ["a"] };
+  const sentinel = "private-caller-content";
+  for (const [extra, reason] of [
+    [{ questionId: "q2" }, "question_not_in_attempt"],
+    [{ selectedAnswer: ["A"] }, "invalid_answer"],
+    [{ selectedAnswer: [sentinel] }, "invalid_answer"],
+  ]) {
+    const error = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { ...input, ...extra });
+    assert.equal(error.code, "invalid_input");
+    assert.equal(error.reason, reason);
+    assert.doesNotMatch(JSON.stringify(error), new RegExp(sentinel));
+  }
+  const mock = await webCall(f, "alice", "/exams/exam1/attempts", "POST", { mode: "mock", questionIds: ["q1"] });
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId: mock.attemptId })).reason, "attempt_not_practice");
+  await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  const closed = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", input);
+  assert.equal(closed.code, "conflict");
+  assert.equal(closed.reason, "attempt_completed");
+  assert.match(closed.message, /user_get_attempt/);
+  assert.match(closed.message, /do not retry/);
+  const foreign = await callUserToolExpectingError(f, f.bob.token, "user_submit_practice_answer", input);
+  const missing = await callUserToolExpectingError(f, f.bob.token, "user_submit_practice_answer", { ...input, attemptId: "missing" });
+  assert.deepEqual(foreign, missing, "business details must not leak another user's attempt state");
+});
+
+test("PR #91: completion and paginated detail share stable sequence/ID ordering", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  f.sqlite.exec("UPDATE questions SET sequence_number = CASE id WHEN 'q1' THEN 2 ELSE 1 END WHERE exam_id = 'exam1'");
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q3", "q1", "q2"] });
+  for (const questionId of ["q1", "q3", "q2"]) {
+    await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer: ["a"] });
+  }
+  const result = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.deepEqual(result.breakdown.map(row => row.questionId), ["q2", "q3", "q1"]);
+  const first = await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId, breakdownLimit: 2 });
+  const second = await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId, breakdownLimit: 2, breakdownOffset: first.breakdownNextOffset });
+  assert.deepEqual([...first.breakdown, ...second.breakdown], result.breakdown);
+  assert.deepEqual((await webCall(f, "alice", `/attempts/${attemptId}/complete`, "POST")).breakdown, result.breakdown);
+  assert.deepEqual(first.attempt.questionIds, ["q3", "q1", "q2"], "original session order is separate from breakdown order");
+});
+
+test("PR #91: start advertises and scopes idle cleanup, while history exposes selection for recovery", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const old = new Date(Date.now() - 2 * 3600_000).toISOString();
+  const now = new Date().toISOString();
+  for (const [id, userId, examId, mode, startedAt] of [
+    ["stale", "alice", "exam1", "practice", old], ["active", "alice", "exam1", "practice", now],
+    ["other-user", "bob", "exam1", "practice", old], ["other-exam", "alice", "exam2", "practice", old],
+    ["mock", "alice", "exam1", "mock", old],
+  ]) insertAttempt(f, { id, userId, examId, mode, startedAt, questionIds: [examId === "exam1" ? "q1" : "other"] });
+  const selected = ["q3", "q2"];
+  const created = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: selected });
+  assert.ok(f.sqlite.prepare("SELECT completed_at FROM attempts WHERE id = 'stale'").get().completed_at);
+  for (const id of ["active", "other-user", "other-exam", "mock"]) assert.equal(f.sqlite.prepare("SELECT completed_at FROM attempts WHERE id = ?").get(id).completed_at, null);
+  for (const name of ["user_list_attempts", "user_get_recent_attempts"]) {
+    const history = await callUserTool(f, f.alice.token, name, { examId: "exam1" });
+    const rows = name === "user_list_attempts" ? history.items : history.attempts;
+    const matches = rows.filter(row => JSON.stringify(row.questionIds) === JSON.stringify(selected));
+    assert.deepEqual(matches.map(row => row.id), [created.attemptId]);
+    assert.ok(rows.every(row => row.userId === "alice"));
+  }
+  // Question sets are evidence, not an idempotency guarantee: identical
+  // concurrent sessions remain distinguishable records and must not be guessed.
+  await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: selected });
+  const history = await callUserTool(f, f.alice.token, "user_list_attempts", { examId: "exam1" });
+  assert.equal(history.items.filter(row => JSON.stringify(row.questionIds) === JSON.stringify(selected)).length, 2);
+  const catalog = (await payload(await rpc(f.env, f.alice.token, "tools/list", {}))).result.tools;
+  const start = catalog.find(tool => tool.name === "user_start_practice");
+  assert.equal(start.annotations.destructiveHint, true);
+  assert.match(start.description, /over one hour/);
+  assert.match(start.description, /including web sessions/);
+  assert.match(start.description, /report ambiguity/);
+});
+
+test("PR #91: every study mutation fails closed at its own shared per-user write gate", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  insertAttempt(f, { id: "stale-before-denial", userId: "alice", examId: "exam1", questionIds: ["q2"], startedAt: "2026-01-01T00:00:00.000Z" });
+  const baseGet = f.env.RATE_LIMITER.get;
+  let gate = "denied";
+  f.env.RATE_LIMITER.get = key => key === "mcp:user:alice:study-write" ? { fetch: async (_url, request) => {
+    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 30 });
+    if (gate === "outage") throw new Error("private limiter failure");
+    return Response.json({ allowed: false, retryAfter: 17 });
+  } } : baseGet(key);
+  for (gate of ["denied", "outage"]) {
+    const before = dumpTables(f);
+    for (const [name, args] of [
+      ["user_start_practice", { examId: "exam1", questionIds: ["q1"] }],
+      ["user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["a"] }],
+      ["user_complete_practice", { attemptId }],
+      ["user_set_learning_progress", { examId: "exam1", sequenceNumber: 2 }],
+    ]) {
+      const error = await callUserToolExpectingError(f, f.alice.token, name, args);
+      assert.equal(error.code, gate === "denied" ? "rate_limited" : "unavailable");
+      assert.equal(error.retryAfter, gate === "denied" ? 17 : 30);
+      assert.doesNotMatch(JSON.stringify(error), /private limiter failure/);
+      assert.deepEqual(dumpTables(f), before);
+    }
+    assert.equal((await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId })).attempt.id, attemptId);
+  }
+  await callUserTool(f, f.bob.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber: 3 });
+});
+
+test("PR #91: configurable study quota counts writes together across token rotation but excludes reads", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  f.env.MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "2";
+  const counts = new Map();
+  const baseGet = f.env.RATE_LIMITER.get;
+  f.env.RATE_LIMITER.get = key => key.endsWith(":study-write") ? { fetch: async (_url, request) => {
+    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 2 });
+    const count = (counts.get(key) ?? 0) + 1;
+    counts.set(key, count);
+    return Response.json({ allowed: count <= 2, retryAfter: 60 });
+  } } : baseGet(key);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  await callUserTool(f, f.alice.token, "user_list_attempts");
+  const rotated = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
+  await callUserTool(f, rotated.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["a"] });
+  const before = dumpTables(f);
+  const error = await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.equal(error.code, "rate_limited");
+  assert.equal(error.retryAfter, 60);
+  assert.deepEqual(dumpTables(f), before);
+  await callUserTool(f, f.bob.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber: 1 });
+  assert.equal(counts.get("mcp:user:bob:study-write"), 1);
+});
+
+test("issue #89: Learning Mode resume writes are separate, owner-scoped and shared with REST", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const before = dumpTables(f);
+  for (const sequenceNumber of [0, -1, 1.5, "2"]) {
+    assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber })).code, "invalid_input");
+  }
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_set_learning_progress", { examId: "missing", sequenceNumber: 1 })).code, "not_found");
+  assert.deepEqual(dumpTables(f), before);
+  await webCall(f, "bob", "/exams/exam1/learning/progress", "PUT", { sequenceNumber: 7 });
+  for (const sequenceNumber of [3, 3, 1]) {
+    const saved = await callUserTool(f, f.alice.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber });
+    assert.deepEqual(saved, { progress: { examId: "exam1", lastSequenceNumber: sequenceNumber } });
+    assert.deepEqual(await webCall(f, "alice", "/exams/exam1/learning/progress"), saved);
+  }
+  assert.equal((await webCall(f, "bob", "/exams/exam1/learning/progress")).progress.lastSequenceNumber, 7);
+  await webCall(f, "alice", "/exams/exam1/learning/progress", "PUT", { sequenceNumber: 2 });
+  const progress = await callUserTool(f, f.alice.token, "user_get_exam_progress", { examId: "exam1" });
+  assert.equal(progress.lastSequenceNumber, 2);
+  const after = dumpTables(f);
+  for (const table of NO_SIDE_EFFECT_TABLES.filter(name => name !== "learning_progress")) assert.deepEqual(after[table], before[table]);
+  assert.equal((await webCall(f, "alice", "/exams/exam1/stats")).totalAnswers, 0);
+});
 
 // --- Cross-user isolation ----------------------------------------------------
 

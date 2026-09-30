@@ -19,6 +19,8 @@ import type {
 } from "@prepdeck/shared";
 
 import { questionSelectColumns, toQuestion, type QuestionRow } from "../lib/questionManagement";
+import { setLearningProgress } from "../lib/learningProgressMutation";
+import { studyMutationStatus } from "../lib/studyMutationResult";
 
 // Mounted at /api/questions/:questionId/learning-detail — FR-14.3/FR-14.4.
 export const learningDetailRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -85,23 +87,7 @@ learningProgressRouter.put("/", async (c) => {
   const examId = c.req.param("examId")!;
   const userId = c.get("user").id;
 
-  const exam = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first();
-  if (!exam) return c.json({ error: "Exam not found" }, 404);
-
   const body = await c.req.json<SetLearningProgressRequest>().catch(() => null);
-  if (!body || !Number.isInteger(body.sequenceNumber) || body.sequenceNumber < 1) {
-    return c.json({ error: "sequenceNumber must be a positive integer" }, 400);
-  }
-
-  const now = new Date().toISOString();
-  await c.env.DB.prepare(
-    `INSERT INTO learning_progress (user_id, exam_id, last_sequence_number, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(user_id, exam_id) DO UPDATE SET last_sequence_number = excluded.last_sequence_number, updated_at = excluded.updated_at`
-  )
-    .bind(userId, examId, body.sequenceNumber, now)
-    .run();
-
-  const response: LearningProgressResponse = { examId, lastSequenceNumber: body.sequenceNumber };
-  return c.json({ progress: response });
+  const result = await setLearningProgress(c.env.DB, userId, examId, body);
+  return result.ok ? c.json(result.data) : c.json(result.error, studyMutationStatus(result.reason));
 });

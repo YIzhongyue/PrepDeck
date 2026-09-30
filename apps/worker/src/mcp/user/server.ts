@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH } from "@prepdeck/shared";
+import { getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH, MAX_ATTEMPT_QUESTIONS, MAX_ANSWER_VALUES, MAX_ANSWER_TEXT_LENGTH, MAX_TIME_SPENT_SECONDS } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -79,11 +79,45 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
       (input) => services.getLearningStats(input),
     ),
 
+    // --- Explicit study writes -----------------------------------------------
+    defineMcpTool(
+      "user_start_practice",
+      { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      "Start a persisted practice session for the authenticated user when they want their study recorded. All questionIds must belong to examId. Starting also finalizes your other open practice sessions in this exam idle for over one hour, including web sessions; they will no longer accept answers. Save the returned attemptId, submit answers with user_submit_practice_answer, then end with user_complete_practice. This call creates a new session each time; after an uncertain result inspect user_list_attempts and compare examId, startedAt and the ordered questionIds. If several attempts match, report ambiguity; do not guess or start another session. Does not move Learning Mode's resume position.",
+      z.strictObject({ examId: examIdSchema, questionIds: z.array(questionIdSchema).min(1).max(MAX_ATTEMPT_QUESTIONS) }),
+      (input) => services.startPractice(input),
+    ),
+    defineMcpTool(
+      "user_submit_practice_answer",
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      "Record and lock the learner's actual answer in their own open practice session. The server validates and grades against PrepDeck's answer key, saves the grading revision, and updates wrong-question state and statistics. Use original option IDs/answer values; never send a caller-computed score or correctness. Repeating a question in an open attempt returns its original grade without revising it. After completion inspect user_get_attempt instead. Omit timeSpentSeconds if unknown. Empty or blank fill-in answers are rejected; skip unanswered questions without submitting them.",
+      z.strictObject({
+        attemptId: attemptIdSchema, questionId: questionIdSchema,
+        selectedAnswer: z.array(z.string().max(MAX_ANSWER_TEXT_LENGTH)).max(MAX_ANSWER_VALUES),
+        timeSpentSeconds: z.number().int().min(0).max(MAX_TIME_SPENT_SECONDS).optional(),
+      }),
+      (input) => services.submitPracticeAnswer(input),
+    ),
+    defineMcpTool(
+      "user_complete_practice",
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      "End your persisted practice session, finalize timing and answered counts, and invalidate its statistics cache. May end early; unanswered questions are not recorded as wrong. Safe to repeat without regrading. Only practice sessions are supported, not mock exams. Does not move Learning Mode's resume position.",
+      z.strictObject({ attemptId: attemptIdSchema }),
+      (input) => services.completePractice(input),
+    ),
+    defineMcpTool(
+      "user_set_learning_progress",
+      { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      "Set your Learning Mode resume position for an exam to the requested positive sequenceNumber (not a question ID or an answered count). Replaces the previous position, including moving backward. Only updates the resume position; does not create attempts, grade answers, or change accuracy/wrong-question statistics. Use the practice tools to persist quiz results.",
+      z.strictObject({ examId: examIdSchema, sequenceNumber: z.number().int().min(1) }),
+      (input) => services.setLearningProgress(input),
+    ),
+
     // --- Attempts and review sets --------------------------------------------
     defineMcpTool(
       "user_list_attempts",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "List your own practice/mock attempts, optionally filtered by exam, mode, or completed-only.",
+      "List your own practice/mock attempts, optionally filtered by exam, mode, or completed-only. Includes ordered questionIds to help identify a session after an uncertain start; multiple matching sessions remain ambiguous.",
       z.strictObject({
         examId: examIdSchema.optional(), mode: attemptModeSchema.optional(),
         completedOnly: z.boolean().optional(), ...paginationSchema.shape,
@@ -93,7 +127,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_get_attempt",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Fetch one of your own attempts by id, including its per-question breakdown (paginated via breakdownLimit/breakdownOffset). `passed` is recomputed live against the exam's current pass mark, not a stored historical snapshot.",
+      "Fetch one of your own attempts by id, including its ordered questionIds and per-question breakdown (paginated via breakdownLimit/breakdownOffset). `passed` is recomputed live against the exam's current pass mark, not a stored historical snapshot.",
       z.strictObject({
         id: attemptIdSchema,
         breakdownLimit: z.number().int().min(1).max(200).default(50),

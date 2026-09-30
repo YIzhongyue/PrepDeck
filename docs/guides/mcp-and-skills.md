@@ -11,8 +11,11 @@ authenticated HTTP POST MCP. They are logically separate servers/catalogs in one
 Worker. [Architecture and lifecycle](../architecture/mcp.md) owns their detailed
 transport, error, revision and quota contracts.
 
-User MCP provides identity, question discovery, learning/history/statistics and
-personal Knowledge Point operations. Admin MCP provides question-bank reads/QC,
+User MCP provides identity, question discovery, learning/history/statistics,
+practice recording, Learning Mode resume updates and personal Knowledge Point
+operations. Practice results and resume position are separate; follow the
+[persisted study workflow](../../skills/prepdeck/references/workflows.md#persisting-study-activity).
+Admin MCP provides question-bank reads/QC,
 question mutations, imports, exam lifecycle and taxonomy. Always discover the
 current `tools/list`; a planned or historical tool need not exist in a particular
 deployment. Source registrations are [User](../../apps/worker/src/mcp/user/server.ts)

@@ -1,3 +1,18 @@
+import type { StudyMutationDetail } from "../lib/studyMutationResult";
+
+// All guidance is curated. Never forward a service's error string or input.
+const STUDY_ERROR_MESSAGES: Record<StudyMutationDetail, string> = {
+  attempt_not_practice: "This attempt is not a practice session. Use a practice attempt ID; these tools cannot submit mock exams.",
+  attempt_completed: "This attempt is already completed. Read user_get_attempt for its saved results; do not retry submitting an answer to it.",
+  question_not_in_attempt: "This question is not part of the attempt. Read user_get_attempt and use one of its questionIds.",
+  invalid_answer: "The answer is not valid for this question. Fetch user_get_question, check its interaction and use its exact case-sensitive option IDs or answer values.",
+  empty_answer: "No answer was supplied. Skip the question without submitting it; submit only after the learner provides an answer.",
+  questions_not_in_exam: "One or more question IDs do not belong to the exam. Fetch the exam's questions and correct the selection before starting.",
+  attempt_too_large: "Too many questions were selected. Reduce the selection to the tool's questionIds limit.",
+  invalid_time_spent: "timeSpentSeconds must be a whole number within the tool's bounds. Omit it if the duration is unknown.",
+  invalid_sequence_number: "sequenceNumber must be a positive integer identifying the Learning Mode resume position.",
+};
+
 export const MCP_ERRORS = {
   unauthenticated: { status: 401, message: "A valid credential for this MCP server is required." },
   unauthorized: { status: 403, message: "This operation is not authorized." },
@@ -29,19 +44,25 @@ export type McpErrorCode = keyof typeof MCP_ERRORS;
 export class McpApplicationError extends Error {
   readonly code: McpErrorCode;
   readonly retryAfter?: number;
-  constructor(code: McpErrorCode, options?: { retryAfter?: number }) {
+  readonly studyReason?: StudyMutationDetail;
+  constructor(code: McpErrorCode, options?: { retryAfter?: number; studyReason?: StudyMutationDetail }) {
     super(MCP_ERRORS[code].message);
     this.code = code;
     if (options?.retryAfter !== undefined) this.retryAfter = Math.max(1, Math.ceil(options.retryAfter));
+    if (options?.studyReason && Object.hasOwn(STUDY_ERROR_MESSAGES, options.studyReason)) this.studyReason = options.studyReason;
   }
 }
 
 export function errorEnvelope(error: unknown) {
   const code = error instanceof McpApplicationError ? error.code : "internal";
   const retryAfter = error instanceof McpApplicationError ? error.retryAfter : undefined;
+  const reason = error instanceof McpApplicationError ? error.studyReason : undefined;
   return {
     ok: false as const,
-    error: { code, message: MCP_ERRORS[code].message, ...(retryAfter !== undefined ? { retryAfter } : {}) },
+    error: {
+      code, message: reason ? STUDY_ERROR_MESSAGES[reason] : MCP_ERRORS[code].message,
+      ...(reason ? { reason } : {}), ...(retryAfter !== undefined ? { retryAfter } : {}),
+    },
   };
 }
 

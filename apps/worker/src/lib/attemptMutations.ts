@@ -1,0 +1,400 @@
+// Canonical attempt lifecycle shared by REST and identity-bound User MCP.
+// Validation, grading snapshots, locking, wrong-book writes and cache invalidation
+// live here so a client's transport cannot change the recorded study result.
+import type { Env } from "../bindings";
+import { invalidateExamStats } from "./statsCache";
+import { examExists, loadExamPassRule } from "./examManagement";
+import { closeStalePracticeAttempts, PRACTICE_IDLE_ON_START_SECONDS } from "./practiceSessions";
+import { toAttemptBreakdown, loadAttemptBreakdown, type AttemptRow } from "./attemptRecords";
+import { success, failure, type StudyMutationResult } from "./studyMutationResult";
+import {
+  answerProblem, answerSizeProblem, attemptDeadlineMs, hasAnswer, isAnswerCorrect, isMockPassed,
+  isStringArray, isValidTimeSpent, MAX_TIME_SPENT_SECONDS, MAX_ATTEMPT_QUESTIONS,
+  MOCK_SUBMIT_GRACE_SECONDS, requiredCorrectFor,
+  type AnswerableQuestion, type AttemptMode, type CompleteAttemptResponse,
+  type StartAttemptRequest, type StartAttemptResponse, type SubmitPracticeAnswerRequest,
+  type SubmitPracticeAnswerResponse, type Interaction,
+} from "@prepdeck/shared";
+
+// What answer validation reads from a question row (issue #39). Only the
+// interaction is extracted from content_json: stored content can approach a
+// megabyte of figures, and a mock draft is saved on every selection.
+export const ANSWERABLE_COLUMNS = "type, options_json, CASE WHEN json_valid(content_json) THEN json_extract(content_json, '$.interaction') END AS interaction_json";
+
+export interface AnswerableRow {
+  type: string;
+  options_json: string | null;
+  interaction_json: string | null;
+}
+
+export function answerable(row: AnswerableRow): AnswerableQuestion {
+  const parse = <T,>(json: string | null): T | null => {
+    if (!json) return null;
+    try { return JSON.parse(json) as T; } catch { return null; }
+  };
+  return { type: row.type, options: parse<{ id: string }[]>(row.options_json), interaction: parse<Interaction>(row.interaction_json) };
+}
+
+export const invalidAnswer = (problem: string) => ({ error: `selectedAnswer is not a possible answer to this question: ${problem}` });
+
+function wrongBookUpsert(db: D1Database, userId: string, questionId: string, now: string, answerId: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO wrong_question_book (user_id, question_id, wrong_count, last_wrong_at, mastered)
+       SELECT ?, ?, 1, ?, 0 WHERE EXISTS (SELECT 1 FROM attempt_answers WHERE id = ?)
+       ON CONFLICT(user_id, question_id) DO UPDATE SET wrong_count = wrong_count + 1, last_wrong_at = excluded.last_wrong_at, mastered = 0`
+    )
+    .bind(userId, questionId, now, answerId);
+}
+
+// A practice answer is graded and locked the moment it is written (FR-3.2:
+// immediate feedback, no revising a graded question), so a repeat POST for the
+// same question is either a client retrying after a response it never received
+// or an attempt to revise a locked answer. Both deserve the same reply: the
+// grading that was actually recorded. Replaying it makes the endpoint
+// idempotent — a retry after a dropped response recovers the feedback instead
+// of stranding the client on a question the server has already graded — while
+// still refusing to let the stored answer be revised.
+//
+// Answers are replayed from `graded_answers_json`, the answer key this attempt
+// was graded against, NOT the question's current key: a replay has to stay
+// internally consistent with its own `isCorrect` even if the key has since
+// moved. (Both graded columns are nullable — migrations/0015 added them — so
+// rows written before then fall back to the question's current values.)
+async function storedPracticeAnswer(
+  db: D1Database, attemptId: string, questionId: string,
+): Promise<SubmitPracticeAnswerResponse | null> {
+  const row = await db
+    .prepare(
+      `SELECT aa.is_correct, aa.graded_answers_json, aa.answer_revision, q.correct_answers_json, q.explanation,
+              q.answer_revision AS current_answer_revision, q.answer_revised_at
+       FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
+       WHERE aa.attempt_id = ? AND aa.question_id = ?`
+    )
+    .bind(attemptId, questionId)
+    .first<{
+      is_correct: number; graded_answers_json: string | null; answer_revision: number | null;
+      correct_answers_json: string; explanation: string | null; current_answer_revision: number; answer_revised_at: string | null;
+    }>();
+  if (!row) return null;
+  return {
+    isCorrect: row.is_correct === 1,
+    correctAnswers: JSON.parse(row.graded_answers_json ?? row.correct_answers_json) as string[],
+    explanation: row.explanation,
+    answerRevision: row.answer_revision ?? row.current_answer_revision,
+    answerRevisedAt: row.answer_revised_at,
+  };
+}
+
+// FR-4.3: past the deadline plus its grace window, this attempt's answers are
+// settled — a late write must not change what gets graded.
+//
+// This fast check avoids issuing a write that is already late. The UPDATE also
+// checks D1's clock: time can pass while a request waits for the database even
+// though the columns defining its deadline never change.
+export function isPastDeadline(attempt: AttemptRow, nowMs: number): boolean {
+  const deadline = attemptDeadlineMs(attempt.started_at, attempt.time_limit_seconds);
+  return deadline !== null && nowMs > deadline + MOCK_SUBMIT_GRACE_SECONDS * 1000;
+}
+
+export function readMockDraft(attempt: AttemptRow): Record<string, string[]> {
+  let stored: unknown;
+  try { stored = JSON.parse(attempt.draft_answers_json ?? "{}"); }
+  catch { return {}; }
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+  const entries = stored as Record<string, unknown>;
+  const questionIds: string[] = JSON.parse(attempt.question_ids_json);
+  // Recovery and grading must agree. An invalid old selection can fill every
+  // multiple-choice slot and prevent the learner from choosing a valid option.
+  // Drop only that entry and retain valid answers to the other questions.
+  return Object.fromEntries(questionIds.flatMap(id => {
+    const selected = entries[id];
+    return isStringArray(selected) ? [[id, selected]] : [];
+  }));
+}
+
+export async function loadOwnAttempt(db: D1Database, attemptId: string, userId: string): Promise<AttemptRow | null> {
+  const attempt = await db.prepare("SELECT * FROM attempts WHERE id = ?").bind(attemptId).first<AttemptRow>();
+  if (!attempt || attempt.user_id !== userId) return null;
+  return attempt;
+}
+
+export async function startAttempt(env: Env, userId: string, examId: string, body: StartAttemptRequest | null): Promise<StudyMutationResult<StartAttemptResponse>> {
+
+  if (!(await examExists(env.DB, examId))) return failure({ error: "Exam not found" }, "not_found");
+
+  if (
+    !body ||
+    (body.mode !== "practice" && body.mode !== "mock") ||
+    !Array.isArray(body.questionIds) ||
+    body.questionIds.length === 0 || body.questionIds.some((id) => typeof id !== "string" || !id)
+  ) {
+    return failure({ error: "mode and a non-empty questionIds array are required" }, "invalid_input");
+  }
+  // The limit is stored on the attempt and enforced against it for the rest of
+  // its life (isPastDeadline), so a non-numeric or negative value here would
+  // become a permanently broken deadline rather than a rejected request.
+  if (body.timeLimitSeconds != null
+    && (typeof body.timeLimitSeconds !== "number" || !Number.isFinite(body.timeLimitSeconds) || body.timeLimitSeconds <= 0)) {
+    return failure({ error: "timeLimitSeconds must be a positive number of seconds" }, "invalid_input");
+  }
+
+  const uniqueIds = Array.from(new Set(body.questionIds));
+  // POST /:id/complete grades the whole attempt in one unchunkable D1 batch, so
+  // the attempt's size is what bounds that batch — see MAX_ATTEMPT_QUESTIONS in
+  // @prepdeck/shared. Enforced here, before the ownership lookup and while the
+  // user has answered nothing, rather than discovered at submission.
+  if (uniqueIds.length > MAX_ATTEMPT_QUESTIONS) {
+    return failure({ error: `An attempt may contain at most ${MAX_ATTEMPT_QUESTIONS} questions` }, "invalid_input", "attempt_too_large");
+  }
+  const owned = await env.DB.prepare("SELECT COUNT(*) AS n FROM questions WHERE exam_id = ? AND id IN (SELECT value FROM json_each(?))")
+    .bind(examId, JSON.stringify(uniqueIds))
+    .first<{ n: number }>();
+  if (!owned || owned.n !== uniqueIds.length) {
+    return failure({ error: "One or more questionIds do not belong to this exam" }, "invalid_input", "questions_not_in_exam");
+  }
+
+  // Starting practice means an earlier session for this exam that has sat idle
+  // was abandoned (a reload, a closed tab): close it as a session now rather
+  // than leave it open forever (issue #40). Idle ones only, so a session still
+  // in use in another tab is left alone.
+  if (body.mode === "practice") {
+    await closeStalePracticeAttempts(env.DB, { idleSeconds: PRACTICE_IDLE_ON_START_SECONDS, userId, examId });
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const timeLimitSeconds = body.mode === "mock" ? body.timeLimitSeconds ?? null : null;
+
+  // Only mock exams get the single-active-attempt lock: mock has a resume flow
+  // that depends on there being at most one open attempt to resume. Practice
+  // has no resume concept, so an old open attempt (e.g. from a session the
+  // user just navigated away from) must never block starting a new one.
+  //
+  // The lock lives in the INSERT's own WHERE rather than a preceding SELECT:
+  // a read-then-write pair loses the race that two concurrent starts are
+  // exactly what this exists to prevent, and the SELECT below is only reached
+  // to name the winning attempt in the error, never to decide the outcome.
+  const inserted = await env.DB.prepare(
+    `INSERT INTO attempts (id, user_id, exam_id, mode, started_at, total_questions, question_ids_json, time_limit_seconds)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ? != 'mock' OR NOT EXISTS (
+       SELECT 1 FROM attempts WHERE user_id = ? AND exam_id = ? AND mode = 'mock' AND completed_at IS NULL
+     )`
+  )
+    .bind(id, userId, examId, body.mode, now, uniqueIds.length, JSON.stringify(uniqueIds), timeLimitSeconds, body.mode, userId, examId)
+    .run();
+  if (!inserted.meta.changes) {
+    const active = await env.DB.prepare("SELECT id FROM attempts WHERE user_id = ? AND exam_id = ? AND mode = 'mock' AND completed_at IS NULL")
+      .bind(userId, examId).first<{ id: string }>();
+    return failure({ error: "An in-progress mock attempt already exists for this exam", attemptId: active?.id }, "conflict");
+  }
+
+  const response: StartAttemptResponse = { attemptId: id, mode: body.mode, startedAt: now, timeLimitSeconds };
+  return success(response);
+}
+
+export async function submitPracticeAnswer(env: Env, userId: string, id: string, body: SubmitPracticeAnswerRequest | null, options: { requireAnswer?: boolean } = {}): Promise<StudyMutationResult<SubmitPracticeAnswerResponse>> {
+  const attempt = await loadOwnAttempt(env.DB, id, userId);
+  if (!attempt) return failure({ error: "Attempt not found" }, "not_found");
+  if (attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input", "attempt_not_practice");
+  if (attempt.completed_at) return failure({ error: "Attempt already completed" }, "conflict", "attempt_completed");
+
+  if (!body || typeof body.questionId !== "string") {
+    return failure({ error: "questionId and selectedAnswer are required" }, "invalid_input");
+  }
+  // Array.isArray alone let [123] / [null] / [{}] through to the grader, which
+  // calls .trim() on fill-in answers — an unhandled TypeError, i.e. a 500 on a
+  // malformed request. Rejected here, before anything is written.
+  if (!isStringArray(body.selectedAnswer)) {
+    return failure({ error: "selectedAnswer must be an array of strings" }, "invalid_input");
+  }
+  const tooLarge = answerSizeProblem(body.selectedAnswer);
+  if (tooLarge) return failure(invalidAnswer(tooLarge), "invalid_input", "invalid_answer");
+  // Bound straight into an INTEGER column, which SQLite does not enforce: text,
+  // reals and negatives used to be stored as they arrived.
+  if (!isValidTimeSpent(body.timeSpentSeconds)) {
+    return failure({ error: `timeSpentSeconds must be a whole number of seconds from 0 to ${MAX_TIME_SPENT_SECONDS}` }, "invalid_input", "invalid_time_spent");
+  }
+
+  const questionIds: string[] = JSON.parse(attempt.question_ids_json);
+  if (!questionIds.includes(body.questionId)) {
+    return failure({ error: "Question is not part of this attempt" }, "invalid_input", "question_not_in_attempt");
+  }
+
+  // A replay comes before the question-specific checks: it writes nothing, and
+  // a retry after a lost response must recover its feedback even if the
+  // question has been edited since it was answered.
+  const replay = await storedPracticeAnswer(env.DB, id, body.questionId);
+  if (replay) return success(replay);
+
+  const question = await env.DB.prepare(`SELECT ${ANSWERABLE_COLUMNS}, correct_answers_json, explanation, answer_revision, answer_revised_at FROM questions WHERE id = ?`)
+    .bind(body.questionId)
+    .first<AnswerableRow & { correct_answers_json: string; explanation: string | null; answer_revision: number; answer_revised_at: string | null }>();
+  if (!question) return failure({ error: "Question not found" }, "not_found");
+  const problem = answerProblem(answerable(question), body.selectedAnswer);
+  if (problem) return failure(invalidAnswer(problem), "invalid_input", "invalid_answer");
+
+  // The web client skips unanswered practice questions. MCP enforces the same
+  // rule here before persistence; legacy REST callers retain their contract.
+  if (options.requireAnswer && !hasAnswer(question.type, body.selectedAnswer)) {
+    return failure({ error: "An answer is required; skip unanswered questions instead of submitting them" }, "invalid_input", "empty_answer");
+  }
+
+  const correctAnswers = JSON.parse(question.correct_answers_json) as string[];
+  const isCorrect = isAnswerCorrect(question.type, body.selectedAnswer, correctAnswers);
+  const now = new Date().toISOString();
+  const answerId = crypto.randomUUID();
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `INSERT INTO attempt_answers (id, attempt_id, question_id, selected_answer_json, is_correct, time_spent_seconds, answered_at, answer_revision, graded_answers_json)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM attempts WHERE id = ? AND completed_at IS NULL)
+       ON CONFLICT(attempt_id, question_id) DO NOTHING`
+    ).bind(
+      answerId,
+      id,
+      body.questionId,
+      JSON.stringify(body.selectedAnswer),
+      isCorrect ? 1 : 0,
+      body.timeSpentSeconds ?? null,
+      now, question.answer_revision, question.correct_answers_json, id
+    ),
+  ];
+  // A question the user did not answer is not a question they got wrong (FR-5.1),
+  // in practice exactly as in mock — this guard used to exist only on the mock
+  // path, so the same empty submission landed in the Wrong Question Book or not
+  // depending on which mode it arrived through.
+  if (!isCorrect && hasAnswer(question.type, body.selectedAnswer)) {
+    statements.push(wrongBookUpsert(env.DB, userId, body.questionId, now, answerId));
+  }
+  const [saved] = await env.DB.batch(statements);
+  if (!saved!.meta.changes) {
+    // Lost the race to a concurrent write of this same answer, or the attempt
+    // was completed underneath us. Only the latter has nothing to report — and
+    // note the wrong-book statement above is guarded on THIS request's own
+    // answer id, so losing the race cannot have double-counted the question.
+    const raced = await storedPracticeAnswer(env.DB, id, body.questionId);
+    return raced ? success(raced) : failure({ error: "Attempt already completed" }, "conflict", "attempt_completed");
+  }
+
+  const response: SubmitPracticeAnswerResponse = { isCorrect, correctAnswers, explanation: question.explanation, answerRevision: question.answer_revision, answerRevisedAt: question.answer_revised_at };
+  return success(response);
+}
+
+export async function completeAttempt(env: Env, userId: string, id: string, options: { practiceOnly?: boolean } = {}): Promise<StudyMutationResult<CompleteAttemptResponse>> {
+  const attempt = await loadOwnAttempt(env.DB, id, userId);
+  if (!attempt) return failure({ error: "Attempt not found" }, "not_found");
+
+  if (options.practiceOnly && attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input", "attempt_not_practice");
+
+  if (!attempt.completed_at) {
+    const questionIds: string[] = JSON.parse(attempt.question_ids_json);
+    const now = new Date().toISOString();
+    const statements: D1PreparedStatement[] = [];
+    let totalQuestions: number;
+
+    if (attempt.mode === "mock") {
+      // Mock never grades until now: score every question in the attempt
+      // against its draft (ungraded) selection, in one shot.
+      const { results: questionRows } = await env.DB.prepare(
+        `SELECT id, ${ANSWERABLE_COLUMNS}, correct_answers_json, answer_revision FROM questions WHERE id IN (SELECT value FROM json_each(?))`
+      )
+        .bind(JSON.stringify(questionIds))
+        .all<AnswerableRow & { id: string; correct_answers_json: string; answer_revision: number }>();
+      const questionsById = new Map((questionRows ?? []).map((q) => [q.id, q]));
+
+      const draft = readMockDraft(attempt);
+      for (const qid of questionIds) {
+        const q = questionsById.get(qid);
+        if (!q) continue;
+        const correctAnswers = JSON.parse(q.correct_answers_json) as string[];
+        // A draft saved before answers were validated (issue #39), or before an
+        // option it names was removed, is not a possible answer: it is graded
+        // as unanswered rather than stored with values the question lacks.
+        const drafted = draft[qid] ?? [];
+        const selected = answerProblem(answerable(q), drafted) ? [] : drafted;
+        const isCorrect = hasAnswer(q.type, selected) && isAnswerCorrect(q.type, selected, correctAnswers);
+        const answerId = crypto.randomUUID();
+        statements.push(
+          env.DB.prepare(
+            `INSERT INTO attempt_answers (id, attempt_id, question_id, selected_answer_json, is_correct, time_spent_seconds, answered_at, answer_revision, graded_answers_json)
+             SELECT ?, ?, ?, ?, ?, NULL, ?, ?, ? WHERE EXISTS (
+               SELECT 1 FROM attempts WHERE id = ? AND completed_at IS NULL AND draft_revision = ?
+             ) ON CONFLICT(attempt_id, question_id) DO NOTHING`
+          ).bind(answerId, id, qid, JSON.stringify(selected), isCorrect ? 1 : 0, now, q.answer_revision, q.correct_answers_json, id, attempt.draft_revision)
+        );
+        if (!isCorrect && hasAnswer(q.type, selected)) statements.push(wrongBookUpsert(env.DB, userId, qid, now, answerId));
+      }
+      totalQuestions = questionIds.length;
+    } else {
+      // Practice questions are already graded and persisted one at a time by
+      // POST /:id/answers (ending a session early just means fewer of them
+      // exist) — completing only finalizes timing and the answered count.
+      const { results: gradedRows } = await env.DB.prepare(
+        "SELECT is_correct FROM attempt_answers WHERE attempt_id = ?"
+      )
+        .bind(id)
+        .all<{ is_correct: number }>();
+      totalQuestions = (gradedRows ?? []).length;
+    }
+
+    const startedMs = new Date(attempt.started_at).getTime();
+    // Clamped to the limit the attempt was given: a timed mock that the user
+    // left open overnight and submitted the next morning used to report the
+    // whole night as time used, in the results screen and in every statistic
+    // built on duration_seconds. Answers past the deadline are already refused,
+    // so the extra wall-clock time bought nothing and should not be reported.
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedMs) / 1000));
+    const durationSeconds = attempt.time_limit_seconds != null
+      ? Math.min(elapsedSeconds, attempt.time_limit_seconds)
+      : elapsedSeconds;
+
+    // Finalize timing, counts and score in the grading transaction. Late
+    // answers cannot sneak in after completion or be omitted from its score.
+    //
+    // draft_revision is 0 and never moves for practice (only mock writes
+    // drafts), so the guard is a no-op there and costs nothing.
+    const countSql = attempt.mode === "mock" ? "?" : "(SELECT COUNT(*) FROM attempt_answers WHERE attempt_id = ?)";
+    const countArg = attempt.mode === "mock" ? totalQuestions : id;
+    statements.push(env.DB.prepare(
+      `UPDATE attempts SET completed_at = ?, duration_seconds = ?, total_questions = ${countSql},
+       score = COALESCE(ROUND(100.0 * (SELECT SUM(is_correct) FROM attempt_answers WHERE attempt_id = ?) / NULLIF(${countSql}, 0)), 0)
+       WHERE id = ? AND completed_at IS NULL AND draft_revision = ?`
+    ).bind(now, durationSeconds, countArg, id, countArg, id, attempt.draft_revision));
+    const results = await env.DB.batch(statements);
+    if (!results[results.length - 1]!.meta.changes) {
+      const current = await loadOwnAttempt(env.DB, id, userId);
+      if (!current?.completed_at) return failure({ error: "Answers changed during submission. Please submit again." }, "conflict");
+    }
+
+    // The Stats dashboard (routes/stats.ts) caches its computed response in
+    // KV; drop it now so the numbers are correct the moment the user gets
+    // there, rather than waiting out the cache's TTL.
+    await invalidateExamStats(env, userId, attempt.exam_id);
+  }
+
+  const [finalAttempt, exam, breakdownRows] = await Promise.all([
+    env.DB.prepare("SELECT * FROM attempts WHERE id = ?").bind(id).first<AttemptRow>(),
+    loadExamPassRule(env.DB, attempt.exam_id),
+    loadAttemptBreakdown(env.DB, id),
+  ]);
+
+  const breakdown = (breakdownRows.results ?? []).map(toAttemptBreakdown);
+
+  const correctCount = breakdown.filter((b) => b.isCorrect).length;
+  const score = finalAttempt?.score ?? 0;
+  const totalQuestions = finalAttempt?.total_questions ?? breakdown.length;
+  const passed = exam ? isMockPassed(exam, { correctCount, totalQuestions, score }) : null;
+
+  const response: CompleteAttemptResponse = {
+    attemptId: id,
+    mode: (finalAttempt?.mode ?? attempt.mode) as AttemptMode,
+    score,
+    passed,
+    requiredCorrect: requiredCorrectFor(exam?.officialFormat ?? null, totalQuestions),
+    totalQuestions,
+    correctCount,
+    durationSeconds: finalAttempt?.duration_seconds ?? 0,
+    breakdown,
+  };
+  return success(response);
+}
