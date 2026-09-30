@@ -62,6 +62,10 @@ import { listTags as listKnowledgePointTagRows, renameTag as renameKnowledgePoin
 import { SELECT_ORDER_REVISION_SQL } from "../lib/knowledgePointOrderScopes";
 import { scopeKeyFor } from "../lib/knowledgePointOrdering";
 import { consumeRateLimit, configuredLimit } from "../middleware/rateLimit";
+import { startAttempt, submitPracticeAnswer, completeAttempt } from "../lib/attemptMutations";
+import { setLearningProgress } from "../lib/learningProgressMutation";
+import type { StudyMutationResult } from "../lib/studyMutationResult";
+import type { SubmitPracticeAnswerRequest } from "@prepdeck/shared";
 
 /** Identity-bound service adapter. Add narrowly named application service
  * operations here as business catalogs are implemented. Those operations
@@ -77,8 +81,8 @@ function identityAdapter(principal: McpPrincipal, audience: McpAudience) {
 }
 
 // implementation — User MCP learning, history, and question discovery tools.
-// Read-only: no operation here may create an attempt, or mutate bookmarks,
-// wrong-book state, learning progress, or anything else. Every operation is
+// Reads remain side-effect free. Explicit study mutations use the canonical
+// attempt and Learning Mode services, just like the REST routes. Every operation is
 // scoped exclusively to `principal.userId` (checked once via identityAdapter
 // above) and never accepts a caller-supplied userId/ownerId. Reuses the same
 // service-layer logic as the REST routes and Admin MCP where it already
@@ -99,6 +103,11 @@ const MAX_TAG_BREAKDOWN = 200;
 const MAX_TAGS_PER_NOTE = 50;
 const MAX_LINKED_QUESTIONS_PER_NOTE = 200;
 const MAX_TAG_FILTER_IDS = 20;
+
+function studyMutationData<T>(result: StudyMutationResult<T>): T {
+  if (!result.ok) throw new McpApplicationError(result.reason);
+  return result.data;
+}
 
 export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
   const identity = identityAdapter(principal, "user");
@@ -179,6 +188,20 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
 
   return Object.freeze({
     ...identity,
+
+    // --- Explicit study writes (identity always comes from the credential) ---
+    async startPractice(input: { examId: string; questionIds: string[] }) {
+      return studyMutationData(await startAttempt(env, userId, input.examId, { mode: "practice", questionIds: input.questionIds }));
+    },
+    async submitPracticeAnswer(input: SubmitPracticeAnswerRequest & { attemptId: string }) {
+      return studyMutationData(await submitPracticeAnswer(env, userId, input.attemptId, input));
+    },
+    async completePractice(input: { attemptId: string }) {
+      return studyMutationData(await completeAttempt(env, userId, input.attemptId, { practiceOnly: true }));
+    },
+    async setLearningProgress(input: { examId: string; sequenceNumber: number }) {
+      return studyMutationData(await setLearningProgress(db, userId, input.examId, input));
+    },
 
     // --- Learning overview and statistics -----------------------------------
     // Three separate per-exam aggregate queries, merged in application code —

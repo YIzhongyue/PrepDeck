@@ -32,6 +32,44 @@ complete. Resolve exam names to IDs rather than guessing them.
 - **Annotations:** read the current user's annotation tools and supported filters.
   No annotation-writing tool is implied merely because annotations can be listed.
 
+## Persisting study activity
+
+Use mutations only when the user wants the session saved. Discover all needed
+tools before starting; on an older deployment without them, explain that quiz
+results cannot be persisted. Reads and a conversational grade save nothing.
+
+1. Resolve the exam and question IDs and call
+   `user_start_practice({examId, questionIds})`. Keep the returned `attemptId`.
+   Start once for the session, not once per answer; a new start creates a new
+   attempt. Each question must belong to that exam.
+2. Present each complete question, collect the user's answer, and check the
+   question revision as in [question presentation](question-presentation.md).
+   Submit the actual option IDs or answer values with
+   `user_submit_practice_answer({attemptId, questionId, selectedAnswer})`.
+   Include `timeSpentSeconds` only when known, never invent a duration. The
+   server validates, grades and locks the answer; use its returned correctness,
+   key and answer revision rather than supplying a score or self-graded result.
+3. End with `user_complete_practice({attemptId})`, including when the learner
+   stops early. Only submitted answers count. Answers appear in statistics and
+   question history immediately; completion finalizes session counts and timing.
+   Wrong answers update the same Wrong Question Book as the web app.
+4. Report the attempt ID and confirmed result. If some calls failed, distinguish
+   saved answers from unsaved ones and an open session from a completed session.
+
+After an uncertain start, inspect recent attempts before creating another; if
+the result is ambiguous, report it instead of guessing and duplicating a session.
+After an uncertain answer, inspect `user_get_attempt`; retrying the same question
+in the same open attempt returns the original grade and cannot revise the answer.
+A completed attempt rejects answer writes; read its breakdown instead.
+Completion may be repeated safely. These tools do not submit mock exams.
+
+**Learning Mode position:** for a requested resume location, use
+`user_set_learning_progress({examId, sequenceNumber})` with the question's sequence
+number, not its ID or the number of answers given. This replaces the exam's saved
+position and may move backward. It creates no attempt or answer, changes no
+accuracy or wrong-book state, and is not automatically updated by practice tools.
+Confirm the returned `progress.lastSequenceNumber` before saying it was saved.
+
 ## Knowledge Points
 
 - **Search Route 53:** use `user_search_knowledge_points`, then fetch only relevant

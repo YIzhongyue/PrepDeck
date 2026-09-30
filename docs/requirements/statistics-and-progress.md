@@ -23,6 +23,13 @@ total answer events (repeated answers can increase the latter). Learning resume
 is separate from attempt statistics. Preserve these definitions across REST and
 User MCP; both use shared learning-statistics services.
 
+User MCP can also persist explicitly requested practice sessions through the same
+attempt lifecycle as the web app ([issue #89](https://github.com/YIzhongyue/PrepDeck/issues/89)).
+The server grades actual submitted answers, preserves grading snapshots and
+updates wrong-question state. Separately setting a Learning Mode resume position
+changes no answer counts or accuracy. Reads alone record neither kind of progress;
+see the [MCP study mutation contract](../architecture/mcp.md#persisting-user-mcp-study-activity-issue-89).
+
 Statistics cache keys include the user, the exam and the payload's schema
 version. Each entry is stored with an activity marker (the count of graded
 answers and the latest session close); a read recomputes when the marker no

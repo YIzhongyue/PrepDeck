@@ -302,7 +302,7 @@ messages and parameters map to `invalid_input`; other SDK failures map to
 
 ## User MCP: learning, history, and question discovery (implementation)
 
-Read-only. Registered in `src/mcp/user/server.ts`, implemented in
+The query tools below are read-only. Registered in `src/mcp/user/server.ts`, implemented in
 `src/mcp/adapter.ts`'s `createUserMcpAdapter`. Every operation is scoped
 exclusively to `principal.userId` (never a caller-supplied id) and reuses
 the same service-layer logic as the REST routes/UI where it already
@@ -324,6 +324,46 @@ where no REST equivalent did:
 - `user_list_annotations`, `user_get_annotations_for_question` — the user's own highlight/underline/bold annotations.
 
 Tests: `apps/worker/scripts/mcp-user-learning.test.mjs`.
+
+### Persisting User MCP study activity (issue #89)
+
+The read tools above remain side-effect free. Four explicit mutation tools let
+clients persist a requested study session using the same business services as
+the browser REST routes:
+
+- `user_start_practice({examId, questionIds})` creates a practice attempt and
+  returns its `attemptId`. Questions must belong to the exam; the shared attempt
+  size limit and idle-session cleanup apply. It is not idempotent: inspect recent
+  attempts after an uncertain start before creating another session.
+- `user_submit_practice_answer({attemptId, questionId, selectedAnswer,
+  timeSpentSeconds?})` validates and grades the authenticated user's own open
+  practice attempt. The server owns correctness, answer revision/key snapshots,
+  answer locking and wrong-book updates. A repeat answer in the same open
+  attempt replays its stored grade. Once completed, read the attempt instead.
+- `user_complete_practice({attemptId})` finalizes timing/counts/score and eagerly
+  invalidates the exam statistics cache. Repeating completion does not regrade.
+  Early completion counts submitted answers only. Mock attempts are rejected.
+- `user_set_learning_progress({examId, sequenceNumber})` replaces only the
+  Learning Mode resume position, including backward movement. It requires a
+  positive integer and an existing exam, matching REST; it does not require a
+  currently populated sequence (gaps can exist). It creates no formal study record.
+
+`lib/attemptMutations.ts` and `lib/learningProgressMutation.ts` are the canonical
+write implementations called by REST and MCP, not HTTP proxies or duplicate
+MCP database logic. Only the verified principal supplies the user ID; strict
+tool schemas reject identity, grade, mode and other unsupported overrides.
+The existing MCP authentication and account request quotas apply to these tools.
+Graded answers refresh cached statistics through the shared activity marker even
+before completion; completion uses the shared `invalidateExamStats` flow.
+Practice never implicitly moves Learning Mode's resume position. Tools advertise
+explicit mutation/idempotency hints; setting a resume position is marked
+destructive because it replaces the previous value.
+
+The [User Skill workflow](../../skills/prepdeck/references/workflows.md#persisting-study-activity)
+requires successful mutations before claiming persistence and reports missing
+tools on older deployments. Integration tests use the real MCP endpoint and
+browser-authenticated REST queries to verify visibility, ownership, retry
+behavior, snapshots, cache freshness and the separation of resume position.
 
 ### Quiz presentation
 
