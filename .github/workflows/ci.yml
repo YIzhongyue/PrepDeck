@@ -96,6 +96,17 @@ jobs:
         if: matrix.shard == 1
         run: npm run test:browser:runner
 
+      - name: Install WebKit for phone reading regressions
+        if: matrix.shard == 1
+        run: npx playwright install --with-deps webkit
+
+      - name: Check phone reading in WebKit
+        if: matrix.shard == 1
+        run: npm run test:browser -- question-card-layout
+        env:
+          PLAYWRIGHT_BROWSER: webkit
+          BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics-webkit
+
       - name: Run browser regressions
         run: npm run test:browser -- --shard ${{ matrix.shard }}/3
         env:
@@ -117,7 +128,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: browser-diagnostics-${{ matrix.shard }}
-          path: ${{ runner.temp }}/browser-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-diagnostics
+            ${{ runner.temp }}/browser-diagnostics-webkit
           if-no-files-found: ignore
           retention-days: 14
 

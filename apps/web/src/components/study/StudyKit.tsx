@@ -142,7 +142,7 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     const head = grid.parentElement?.querySelector(".st-head")?.getBoundingClientRect().bottom ?? 0;
     const hidden = Math.max(topBar, head) - grid.getBoundingClientRect().top;
     if (hidden > 0) window.scrollBy(0, -(hidden + 12));
-  }, [questionId]);
+  }, [questionId, phone]);
   return { gridRef, bodyRef, fitHeight };
 }
 

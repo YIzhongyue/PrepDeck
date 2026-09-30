@@ -299,6 +299,21 @@
 .st-flow .st-q-foot .st-segmented { align-self: stretch; }
 .st-flow .st-jump { width: 88px; }
 
+/* Short landscape phones (#80): the shell gives the session the full screen.
+   Compact bars preserve 44px actions and leave most of the height for reading. */
+.st-landscape .st-head {
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-block: max(4px, env(safe-area-inset-top)) 4px;
+}
+.st-landscape .st-head-titles { min-width: 0; }
+.st-landscape .st-bar, .st-landscape .st-seg { height: 4px; }
+.st-landscape .st-q-head { padding-block: 8px; }
+.st-landscape .st-q-body { padding-block: 12px 16px; }
+.st-landscape .st-q-foot { padding-block: 4px max(4px, env(safe-area-inset-bottom)); }
+.st-landscape .st-seg-btn { min-width: 44px; min-height: 44px; }
+.st-landscape .st-grid * { scroll-margin-block: 72px 64px; }
+
 /* ---- Options ----------------------------------------------------------- */
 
 .st-opts, .st-opt-group { display: flex; flex-direction: column; gap: 10px; }

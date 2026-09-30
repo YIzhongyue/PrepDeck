@@ -45,9 +45,9 @@ const KnowledgePoints = lazy(() => import("./screens/KnowledgePoints"));
 const Settings = lazy(() => import("./screens/Settings"));
 
 export function Shell() {
-  const { state, width, curQ, mockQ, learningQ, retryWorkspace, dismissActionError } = usePrepDeck();
+  const { state, width, height, curQ, mockQ, learningQ, retryWorkspace, dismissActionError } = usePrepDeck();
   useUrlRouting();
-  const bp = breakpointsFor(width);
+  const bp = breakpointsFor(width, height);
   // Measured height includes the bottom safe-area padding and text scaling.
   const [tabBarHeight, setTabBarHeight] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
@@ -67,10 +67,12 @@ export function Shell() {
   const isKnowledgePoints = state.screen === "knowledgePoints";
   const isSettings = state.screen === "settings";
   const isAdmin = state.screen === "admin";
-  // A live Learning or Practice session on a phone scrolls as one page, with
-  // its own session header and actions sticking instead (issue #78). The top
-  // bar scrolls away there, and the page runs down to the tab bar.
-  const studyFlow = bp.phone && (isLive || isLearningLive);
+  // Phone sessions scroll as one page (#78). In short landscape viewports
+  // their compact bars own the screen (#80); exiting restores global navigation.
+  const landscapeStudy = bp.landscapePhone && (isLive || isLearningLive);
+  const studyFlow = (bp.phone || bp.landscapePhone) && (isLive || isLearningLive);
+  const showCompactNavigation = compactNavigation && !landscapeStudy;
+  const inlineInset = landscapeStudy ? "max(16px, env(safe-area-inset-left), env(safe-area-inset-right))" : `${contentInset(bp).inline}px`;
 
   // The loading scene owns the viewport, outside the padded content column
   // and navigation. Keep independent screens available during exam refreshes.
@@ -87,7 +89,7 @@ export function Shell() {
     <div data-pd-theme={theme} style={{ minHeight: "100vh", background: "var(--color-bg)", display: "flex", justifyContent: "center" }}>
       <div style={{ width: "100%", minHeight: "100vh", background: "var(--color-bg)", color: "var(--color-text)", fontFamily: "var(--font-body)", display: "flex", flexDirection: "column" }}>
         <div inert={state.switching} style={{ display: "flex", alignItems: "stretch", flex: 1, minHeight: 0 }}>
-          {!compactNavigation && <Sidebar rail={bp.rail} />}
+          {!compactNavigation && !landscapeStudy && <Sidebar rail={bp.rail} />}
 
           {/* --pd-topbar-height: where a screen's own sticky bar (Settings' section
               chips) sits, so it stays below the top bar rather than under it.
@@ -95,14 +97,14 @@ export function Shell() {
               --pd-content-inline: the side padding such a bar reaches over. */}
           <main style={{
             flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-            "--pd-topbar-height": `${compactNavigation && !studyFlow ? topBarHeight : 0}px`,
-            "--pd-tabbar-height": `${compactNavigation ? tabBarHeight : 0}px`,
-            "--pd-content-inline": `${contentInset(bp).inline}px`
+            "--pd-topbar-height": `${showCompactNavigation && !studyFlow ? topBarHeight : 0}px`,
+            "--pd-tabbar-height": `${showCompactNavigation ? tabBarHeight : 0}px`,
+            "--pd-content-inline": inlineInset
           } as CSSProperties}>
-            {compactNavigation && <TopBar onHeightChange={setTopBarHeight} sticky={!studyFlow} />}
+            {showCompactNavigation && <TopBar onHeightChange={setTopBarHeight} sticky={!studyFlow} />}
 
             {/* data-pd-content: pinned question cards stop above this padding (and so above the tab bar). */}
-            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: contentInset(bp).top, paddingInline: contentInset(bp).inline, paddingBottom: compactNavigation ? tabBarHeight + (studyFlow ? 0 : 20) : 40 }}>
+            <div data-pd-content style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", paddingTop: landscapeStudy ? 0 : contentInset(bp).top, paddingInline: inlineInset, paddingBottom: landscapeStudy ? 0 : compactNavigation ? tabBarHeight + (studyFlow ? 0 : 20) : 40 }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", width: "100%", maxWidth: 1160, margin: "0 auto" }}>
                 {state.workspaceNotice && <p role="status">{state.workspaceNotice}</p>}
                 {state.actionError && <div role="alert" className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -153,7 +155,7 @@ export function Shell() {
         {state.switching && <div role="status" aria-live="polite" className="dialog-backdrop" style={{ zIndex: 200 }}>
           <div className="card" style={{ padding: 24 }}>Saving your work before switching…</div>
         </div>}
-        {compactNavigation && <TabBar onHeightChange={setTabBarHeight} />}
+        {showCompactNavigation && <TabBar onHeightChange={setTabBarHeight} />}
         <MoreSheet />
         <ConfirmDialog />
         <SessionExpiredDialog />
