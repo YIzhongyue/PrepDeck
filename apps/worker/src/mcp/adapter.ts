@@ -105,7 +105,7 @@ const MAX_LINKED_QUESTIONS_PER_NOTE = 200;
 const MAX_TAG_FILTER_IDS = 20;
 
 function studyMutationData<T>(result: StudyMutationResult<T>): T {
-  if (!result.ok) throw new McpApplicationError(result.reason);
+  if (!result.ok) throw new McpApplicationError(result.reason, { studyReason: result.detail });
   return result.data;
 }
 
@@ -116,6 +116,15 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
 
   async function requireExam(examId: string): Promise<void> {
     if (!(await examExists(db, examId))) throw new McpApplicationError("not_found");
+  }
+
+  // Separate from reads and Knowledge Point writes, shared across all tokens
+  // for this account. Consume before service calls (including stale cleanup).
+  async function consumeStudyWriteLimit(): Promise<void> {
+    const max = configuredLimit(env.MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE, 30);
+    const result = await consumeRateLimit(env, `mcp:user:${userId}:study-write`, { windowSeconds: 60, max }).catch(() => null);
+    if (!result) throw new McpApplicationError("unavailable", { retryAfter: 30 });
+    if (!result.allowed) throw new McpApplicationError("rate_limited", { retryAfter: result.retryAfter });
   }
 
   // implementation — a second, KP-mutation-specific write quota, distinct from
@@ -191,15 +200,19 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
 
     // --- Explicit study writes (identity always comes from the credential) ---
     async startPractice(input: { examId: string; questionIds: string[] }) {
+      await consumeStudyWriteLimit();
       return studyMutationData(await startAttempt(env, userId, input.examId, { mode: "practice", questionIds: input.questionIds }));
     },
     async submitPracticeAnswer(input: SubmitPracticeAnswerRequest & { attemptId: string }) {
-      return studyMutationData(await submitPracticeAnswer(env, userId, input.attemptId, input));
+      await consumeStudyWriteLimit();
+      return studyMutationData(await submitPracticeAnswer(env, userId, input.attemptId, input, { requireAnswer: true }));
     },
     async completePractice(input: { attemptId: string }) {
+      await consumeStudyWriteLimit();
       return studyMutationData(await completeAttempt(env, userId, input.attemptId, { practiceOnly: true }));
     },
     async setLearningProgress(input: { examId: string; sequenceNumber: number }) {
+      await consumeStudyWriteLimit();
       return studyMutationData(await setLearningProgress(db, userId, input.examId, input));
     },
 

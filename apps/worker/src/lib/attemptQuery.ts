@@ -6,38 +6,11 @@
 // time). These functions are pure reads — they never write attempts,
 // attempt_answers, or anything else.
 
-import { isMockPassed, type Attempt, type AttemptMode } from "@prepdeck/shared";
+import { isMockPassed, type AttemptMode, type AttemptBreakdownRow } from "@prepdeck/shared";
 import { loadExamPassRule } from "./examManagement";
+import { toAttempt, toAttemptBreakdown, loadAttemptBreakdown, type AttemptRow, type AttemptSummary } from "./attemptRecords";
 
-export interface AttemptRow {
-  id: string;
-  user_id: string;
-  exam_id: string;
-  mode: string;
-  started_at: string;
-  completed_at: string | null;
-  duration_seconds: number | null;
-  score: number | null;
-  total_questions: number | null;
-  question_ids_json: string;
-  time_limit_seconds: number | null;
-  draft_answers_json: string | null;
-  flagged_json: string | null;
-}
-
-export function toAttempt(row: AttemptRow): Attempt {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    examId: row.exam_id,
-    mode: row.mode as AttemptMode,
-    startedAt: row.started_at,
-    completedAt: row.completed_at,
-    durationSeconds: row.duration_seconds,
-    score: row.score,
-    totalQuestions: row.total_questions,
-  };
-}
+export { toAttempt } from "./attemptRecords";
 
 // Secondary sort key `id` (like listExams's `e.id` tiebreak in
 // examManagement.ts) so pagination is stable when two attempts share the
@@ -58,30 +31,8 @@ export async function listAttempts(
   return results ?? [];
 }
 
-export interface AttemptBreakdownRow {
-  questionId: string;
-  selectedAnswer: string[];
-  correctAnswers: string[];
-  isCorrect: boolean;
-  gradedAnswers: string[] | null;
-  answerRevision: number | null;
-  currentAnswerRevision: number;
-  answerRevisedAt: string | null;
-}
-
-interface BreakdownDbRow {
-  question_id: string;
-  selected_answer_json: string;
-  is_correct: number;
-  correct_answers_json: string;
-  graded_answers_json: string | null;
-  answer_revision: number | null;
-  current_answer_revision: number;
-  answer_revised_at: string | null;
-}
-
 export interface AttemptDetail {
-  attempt: Attempt;
+  attempt: AttemptSummary;
   breakdown: AttemptBreakdownRow[];
   breakdownNextOffset: number | null;
   passed: boolean | null;
@@ -89,7 +40,7 @@ export interface AttemptDetail {
 
 // Scoped by `user_id = ?` directly in the WHERE clause (mismatch => null,
 // same not-found-not-forbidden rationale as loadOwnAttempt in
-// routes/attempts.ts) — never throws on a wrong-owner id, callers translate
+// lib/attemptMutations.ts) — never throws on a wrong-owner id, callers translate
 // null to McpApplicationError("not_found") so existence isn't leaked.
 export async function getAttemptDetail(
   db: D1Database,
@@ -106,33 +57,13 @@ export async function getAttemptDetail(
     db.prepare("SELECT COALESCE(SUM(is_correct), 0) AS n FROM attempt_answers WHERE attempt_id = ?").bind(attemptId).first<{ n: number }>(),
   ]);
 
-  // Ordered by the question's own sequence within the exam (not
-  // answered_at), with question_id as a stable tiebreak — a deterministic,
-  // browsable page order independent of answer timing.
-  const { results } = await db.prepare(
-    `SELECT aa.question_id, aa.selected_answer_json, aa.is_correct, q.correct_answers_json,
-            aa.graded_answers_json, aa.answer_revision, q.answer_revision AS current_answer_revision, q.answer_revised_at
-     FROM attempt_answers aa
-     JOIN questions q ON q.id = aa.question_id
-     WHERE aa.attempt_id = ?
-     ORDER BY q.sequence_number ASC, aa.question_id ASC
-     LIMIT ? OFFSET ?`,
-  ).bind(attemptId, page.breakdownLimit + 1, page.breakdownOffset).all<BreakdownDbRow>();
+  const { results } = await loadAttemptBreakdown(db, attemptId, { limit: page.breakdownLimit + 1, offset: page.breakdownOffset });
 
   const rows = results ?? [];
   const hasMore = rows.length > page.breakdownLimit;
   const windowed = rows.slice(0, page.breakdownLimit);
 
-  const breakdown: AttemptBreakdownRow[] = windowed.map((r) => ({
-    questionId: r.question_id,
-    selectedAnswer: JSON.parse(r.selected_answer_json) as string[],
-    correctAnswers: JSON.parse(r.correct_answers_json) as string[],
-    isCorrect: r.is_correct === 1,
-    gradedAnswers: r.graded_answers_json ? (JSON.parse(r.graded_answers_json) as string[]) : null,
-    answerRevision: r.answer_revision,
-    currentAnswerRevision: r.current_answer_revision,
-    answerRevisedAt: r.answer_revised_at,
-  }));
+  const breakdown = windowed.map(toAttemptBreakdown);
 
   // Recomputed live against the exam's CURRENT pass rule (official format, else
   // pass_mark_pct) — not a stored historical snapshot (attempts has no

@@ -123,6 +123,7 @@ MCP_METRICS_ENABLED = "true"
 MCP_USER_RATE_LIMIT_PER_MINUTE = "60"
 MCP_ADMIN_RATE_LIMIT_PER_MINUTE = "30"
 MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE = "30"
+MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "30"
 # Stricter than the blanket Admin account quota above: covers every content
 # mutation tool (question create/update/delete/batch, exam lifecycle, tag
 # tools). Imports use their own native rate limiters instead (see
@@ -208,6 +209,7 @@ EMERGENCY_ADMIN_IPS = ""
 MCP_USER_RATE_LIMIT_PER_MINUTE = "60"
 MCP_ADMIN_RATE_LIMIT_PER_MINUTE = "30"
 MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE = "30"
+MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "30"
 MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
 MCP_METRICS_ENABLED = "true"
 CF_ACCESS_TEAM_DOMAIN = ""

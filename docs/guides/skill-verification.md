@@ -61,7 +61,9 @@ next calls and output against these outcomes:
 | "Save this quiz session" with practice mutations available | Start once, submit the learner's actual answers for server grading, complete and report the confirmed attempt ID |
 | "Save this quiz session" on a read-only deployment | Report that results cannot be persisted; never claim that reads saved progress |
 | "Resume Learning at question sequence 12" | Set only the resume position, never fabricate a practice answer or claim accuracy changed |
-| Practice start times out after dispatch | Inspect recent attempts before another start; disclose ambiguity instead of duplicating a session |
+| Practice start times out after dispatch | Match exam, start time and ordered questionIds in paginated history; disclose ambiguity rather than guessing or duplicating a session |
+| Learner skips a question or leaves a fill-in blank | Do not submit an empty answer or claim it was recorded as a wrong answer |
+| Answer submission reports reason attempt_completed | Read the saved attempt; do not follow a generic conflict retry loop |
 | Search Knowledge Points and delete "old notes" without exact targets | Search own notes, resolve destructive scope before deleting, no owner override |
 | Edit note at revision 4; server reports conflict and revision 5 adds another paragraph | Re-fetch and reconcile, preserve the new paragraph, resolve competing edits |
 | Admin preview returns proposal; user asks for a different answer before commit | Validate changed payload, present new diff, get approval for that proposal |

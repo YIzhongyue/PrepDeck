@@ -60,6 +60,7 @@ export interface Env {
   MCP_USER_RATE_LIMIT_PER_MINUTE?: string;
   MCP_ADMIN_RATE_LIMIT_PER_MINUTE?: string;
   MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE?: string;
+  MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE?: string;
   // implementation — a separate, stricter budget for Admin MCP content mutations
   // (create/update/delete/batch question tools, exam lifecycle, tag tools),
   // on top of the blanket MCP_ADMIN_RATE_LIMIT_PER_MINUTE account quota that

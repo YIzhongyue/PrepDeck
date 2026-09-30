@@ -3,8 +3,9 @@
 // live here so a client's transport cannot change the recorded study result.
 import type { Env } from "../bindings";
 import { invalidateExamStats } from "./statsCache";
-import { loadExamPassRule } from "./examManagement";
+import { examExists, loadExamPassRule } from "./examManagement";
 import { closeStalePracticeAttempts, PRACTICE_IDLE_ON_START_SECONDS } from "./practiceSessions";
+import { toAttemptBreakdown, loadAttemptBreakdown, type AttemptRow } from "./attemptRecords";
 import { success, failure, type StudyMutationResult } from "./studyMutationResult";
 import {
   answerProblem, answerSizeProblem, attemptDeadlineMs, hasAnswer, isAnswerCorrect, isMockPassed,
@@ -14,23 +15,6 @@ import {
   type StartAttemptRequest, type StartAttemptResponse, type SubmitPracticeAnswerRequest,
   type SubmitPracticeAnswerResponse, type Interaction,
 } from "@prepdeck/shared";
-
-export interface AttemptRow {
-  id: string;
-  user_id: string;
-  exam_id: string;
-  mode: string;
-  started_at: string;
-  completed_at: string | null;
-  duration_seconds: number | null;
-  score: number | null;
-  total_questions: number | null;
-  question_ids_json: string;
-  time_limit_seconds: number | null;
-  draft_answers_json: string | null;
-  draft_revision: number;
-  flagged_json: string | null;
-}
 
 // What answer validation reads from a question row (issue #39). Only the
 // interaction is extracted from content_json: stored content can approach a
@@ -135,11 +119,9 @@ export async function loadOwnAttempt(db: D1Database, attemptId: string, userId: 
   return attempt;
 }
 
-
 export async function startAttempt(env: Env, userId: string, examId: string, body: StartAttemptRequest | null): Promise<StudyMutationResult<StartAttemptResponse>> {
 
-  const exam = await env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first();
-  if (!exam) return failure({ error: "Exam not found" }, "not_found");
+  if (!(await examExists(env.DB, examId))) return failure({ error: "Exam not found" }, "not_found");
 
   if (
     !body ||
@@ -163,13 +145,13 @@ export async function startAttempt(env: Env, userId: string, examId: string, bod
   // @prepdeck/shared. Enforced here, before the ownership lookup and while the
   // user has answered nothing, rather than discovered at submission.
   if (uniqueIds.length > MAX_ATTEMPT_QUESTIONS) {
-    return failure({ error: `An attempt may contain at most ${MAX_ATTEMPT_QUESTIONS} questions` }, "invalid_input");
+    return failure({ error: `An attempt may contain at most ${MAX_ATTEMPT_QUESTIONS} questions` }, "invalid_input", "attempt_too_large");
   }
   const owned = await env.DB.prepare("SELECT COUNT(*) AS n FROM questions WHERE exam_id = ? AND id IN (SELECT value FROM json_each(?))")
     .bind(examId, JSON.stringify(uniqueIds))
     .first<{ n: number }>();
   if (!owned || owned.n !== uniqueIds.length) {
-    return failure({ error: "One or more questionIds do not belong to this exam" }, "invalid_input");
+    return failure({ error: "One or more questionIds do not belong to this exam" }, "invalid_input", "questions_not_in_exam");
   }
 
   // Starting practice means an earlier session for this exam that has sat idle
@@ -211,11 +193,11 @@ export async function startAttempt(env: Env, userId: string, examId: string, bod
   return success(response);
 }
 
-export async function submitPracticeAnswer(env: Env, userId: string, id: string, body: SubmitPracticeAnswerRequest | null): Promise<StudyMutationResult<SubmitPracticeAnswerResponse>> {
+export async function submitPracticeAnswer(env: Env, userId: string, id: string, body: SubmitPracticeAnswerRequest | null, options: { requireAnswer?: boolean } = {}): Promise<StudyMutationResult<SubmitPracticeAnswerResponse>> {
   const attempt = await loadOwnAttempt(env.DB, id, userId);
   if (!attempt) return failure({ error: "Attempt not found" }, "not_found");
-  if (attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input");
-  if (attempt.completed_at) return failure({ error: "Attempt already completed" }, "conflict");
+  if (attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input", "attempt_not_practice");
+  if (attempt.completed_at) return failure({ error: "Attempt already completed" }, "conflict", "attempt_completed");
 
   if (!body || typeof body.questionId !== "string") {
     return failure({ error: "questionId and selectedAnswer are required" }, "invalid_input");
@@ -227,16 +209,16 @@ export async function submitPracticeAnswer(env: Env, userId: string, id: string,
     return failure({ error: "selectedAnswer must be an array of strings" }, "invalid_input");
   }
   const tooLarge = answerSizeProblem(body.selectedAnswer);
-  if (tooLarge) return failure(invalidAnswer(tooLarge), "invalid_input");
+  if (tooLarge) return failure(invalidAnswer(tooLarge), "invalid_input", "invalid_answer");
   // Bound straight into an INTEGER column, which SQLite does not enforce: text,
   // reals and negatives used to be stored as they arrived.
   if (!isValidTimeSpent(body.timeSpentSeconds)) {
-    return failure({ error: `timeSpentSeconds must be a whole number of seconds from 0 to ${MAX_TIME_SPENT_SECONDS}` }, "invalid_input");
+    return failure({ error: `timeSpentSeconds must be a whole number of seconds from 0 to ${MAX_TIME_SPENT_SECONDS}` }, "invalid_input", "invalid_time_spent");
   }
 
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(body.questionId)) {
-    return failure({ error: "Question is not part of this attempt" }, "invalid_input");
+    return failure({ error: "Question is not part of this attempt" }, "invalid_input", "question_not_in_attempt");
   }
 
   // A replay comes before the question-specific checks: it writes nothing, and
@@ -250,7 +232,13 @@ export async function submitPracticeAnswer(env: Env, userId: string, id: string,
     .first<AnswerableRow & { correct_answers_json: string; explanation: string | null; answer_revision: number; answer_revised_at: string | null }>();
   if (!question) return failure({ error: "Question not found" }, "not_found");
   const problem = answerProblem(answerable(question), body.selectedAnswer);
-  if (problem) return failure(invalidAnswer(problem), "invalid_input");
+  if (problem) return failure(invalidAnswer(problem), "invalid_input", "invalid_answer");
+
+  // The web client skips unanswered practice questions. MCP enforces the same
+  // rule here before persistence; legacy REST callers retain their contract.
+  if (options.requireAnswer && !hasAnswer(question.type, body.selectedAnswer)) {
+    return failure({ error: "An answer is required; skip unanswered questions instead of submitting them" }, "invalid_input", "empty_answer");
+  }
 
   const correctAnswers = JSON.parse(question.correct_answers_json) as string[];
   const isCorrect = isAnswerCorrect(question.type, body.selectedAnswer, correctAnswers);
@@ -285,7 +273,7 @@ export async function submitPracticeAnswer(env: Env, userId: string, id: string,
     // note the wrong-book statement above is guarded on THIS request's own
     // answer id, so losing the race cannot have double-counted the question.
     const raced = await storedPracticeAnswer(env.DB, id, body.questionId);
-    return raced ? success(raced) : failure({ error: "Attempt already completed" }, "conflict");
+    return raced ? success(raced) : failure({ error: "Attempt already completed" }, "conflict", "attempt_completed");
   }
 
   const response: SubmitPracticeAnswerResponse = { isCorrect, correctAnswers, explanation: question.explanation, answerRevision: question.answer_revision, answerRevisedAt: question.answer_revised_at };
@@ -296,7 +284,7 @@ export async function completeAttempt(env: Env, userId: string, id: string, opti
   const attempt = await loadOwnAttempt(env.DB, id, userId);
   if (!attempt) return failure({ error: "Attempt not found" }, "not_found");
 
-  if (options.practiceOnly && attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input");
+  if (options.practiceOnly && attempt.mode !== "practice") return failure({ error: "This attempt is not in practice mode" }, "invalid_input", "attempt_not_practice");
 
   if (!attempt.completed_at) {
     const questionIds: string[] = JSON.parse(attempt.question_ids_json);
@@ -387,25 +375,10 @@ export async function completeAttempt(env: Env, userId: string, id: string, opti
   const [finalAttempt, exam, breakdownRows] = await Promise.all([
     env.DB.prepare("SELECT * FROM attempts WHERE id = ?").bind(id).first<AttemptRow>(),
     loadExamPassRule(env.DB, attempt.exam_id),
-    env.DB.prepare(
-      `SELECT aa.question_id, aa.selected_answer_json, aa.is_correct, q.correct_answers_json, aa.graded_answers_json, aa.answer_revision, q.answer_revision AS current_answer_revision, q.answer_revised_at
-       FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
-       WHERE aa.attempt_id = ?`
-    )
-      .bind(id)
-      .all<{ question_id: string; selected_answer_json: string; is_correct: number; correct_answers_json: string; graded_answers_json: string | null; answer_revision: number | null; current_answer_revision: number; answer_revised_at: string | null }>(),
+    loadAttemptBreakdown(env.DB, id),
   ]);
 
-  const breakdown = (breakdownRows.results ?? []).map((r) => ({
-    questionId: r.question_id,
-    selectedAnswer: JSON.parse(r.selected_answer_json) as string[],
-    correctAnswers: JSON.parse(r.correct_answers_json) as string[],
-    gradedAnswers: r.graded_answers_json ? JSON.parse(r.graded_answers_json) as string[] : null,
-    answerRevision: r.answer_revision,
-    currentAnswerRevision: r.current_answer_revision,
-    answerRevisedAt: r.answer_revised_at,
-    isCorrect: r.is_correct === 1,
-  }));
+  const breakdown = (breakdownRows.results ?? []).map(toAttemptBreakdown);
 
   const correctCount = breakdown.filter((b) => b.isCorrect).length;
   const score = finalAttempt?.score ?? 0;

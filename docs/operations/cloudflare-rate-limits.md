@@ -61,7 +61,9 @@ MCP paths `/mcp` and `/admin-mcp` are outside `/api/*`; include them in edge rul
 explicitly. All MCP calls are POST, so the shared Worker IP layer classifies them
 as writes (60/min). After bearer authentication, per-account quotas default to
 60/min User and 30/min Admin. User Knowledge Point writes default to 30/min;
-Admin content mutations have a stricter 10/min quota. The four corresponding
+User study writes have a separate 30/min quota shared by all four study mutations
+(`MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE`). Admin content mutations have a stricter
+10/min quota. The five corresponding
 `MCP_*_RATE_LIMIT_PER_MINUTE` variables configure those budgets in Wrangler;
 rotation does not reset an account's quota. Missing/unreachable mutation/account
 limiters fail closed. See [MCP limits](../architecture/mcp.md#request-safety-and-limits-hardened-in-issue-66).

@@ -41,11 +41,15 @@ results cannot be persisted. Reads and a conversational grade save nothing.
 1. Resolve the exam and question IDs and call
    `user_start_practice({examId, questionIds})`. Keep the returned `attemptId`.
    Start once for the session, not once per answer; a new start creates a new
-   attempt. Each question must belong to that exam.
+   attempt. Each question must belong to that exam. Starting also finalizes your
+   other practice sessions in that exam idle for over one hour, including web
+   sessions; those sessions will no longer accept new answers.
 2. Present each complete question, collect the user's answer, and check the
    question revision as in [question presentation](question-presentation.md).
    Submit the actual option IDs or answer values with
    `user_submit_practice_answer({attemptId, questionId, selectedAnswer})`.
+   Skip unanswered questions; do not submit empty selections or blank fill-in
+   answers. They are rejected without recording a grade or locking the question.
    Include `timeSpentSeconds` only when known, never invent a duration. The
    server validates, grades and locks the answer; use its returned correctness,
    key and answer revision rather than supplying a score or self-graded result.
@@ -56,12 +60,24 @@ results cannot be persisted. Reads and a conversational grade save nothing.
 4. Report the attempt ID and confirmed result. If some calls failed, distinguish
    saved answers from unsaved ones and an open session from a completed session.
 
-After an uncertain start, inspect recent attempts before creating another; if
-the result is ambiguous, report it instead of guessing and duplicating a session.
+After an uncertain start, inspect `user_list_attempts` (following pages as needed)
+and compare `examId`, `startedAt` and the ordered `questionIds` with the requested
+session. Question IDs are also exposed by `user_get_attempt` and recent attempts.
+This is not an idempotency key: if several sessions match or recovery remains
+uncertain, report the ambiguity instead of guessing or creating another session.
 After an uncertain answer, inspect `user_get_attempt`; retrying the same question
 in the same open attempt returns the original grade and cannot revise the answer.
 A completed attempt rejects answer writes; read its breakdown instead.
 Completion may be repeated safely. These tools do not submit mock exams.
+
+Study failures include a fixed `error.reason` when applicable. For
+`attempt_completed`, read the saved result; do not retry submitting to that
+attempt. For `question_not_in_attempt`, inspect its `questionIds`. For
+`invalid_answer`, retrieve the question and use its exact case-sensitive IDs and
+interaction format. For `attempt_not_practice`, select a practice session. These
+are business failures even though the MCP HTTP response is 200. A separate
+per-user study-write quota covers all four mutations (default 30/minute);
+follow `retryAfter` on `rate_limited` or `unavailable` instead of looping.
 
 **Learning Mode position:** for a requested resume location, use
 `user_set_learning_progress({examId, sequenceNumber})` with the question's sequence

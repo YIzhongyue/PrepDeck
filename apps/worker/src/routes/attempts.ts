@@ -15,8 +15,9 @@ import type { Variables } from "../context";
 import {
   startAttempt, submitPracticeAnswer, completeAttempt, loadOwnAttempt, readMockDraft,
   isPastDeadline, answerable, invalidAnswer, ANSWERABLE_COLUMNS,
-  type AttemptRow, type AnswerableRow,
+  type AnswerableRow,
 } from "../lib/attemptMutations";
+import type { AttemptRow } from "../lib/attemptRecords";
 import { studyMutationStatus } from "../lib/studyMutationResult";
 import {
   answerProblem, answerSizeProblem, isStringArray, MOCK_SUBMIT_GRACE_SECONDS,

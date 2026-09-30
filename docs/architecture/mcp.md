@@ -333,13 +333,20 @@ the browser REST routes:
 
 - `user_start_practice({examId, questionIds})` creates a practice attempt and
   returns its `attemptId`. Questions must belong to the exam; the shared attempt
-  size limit and idle-session cleanup apply. It is not idempotent: inspect recent
-  attempts after an uncertain start before creating another session.
+  size limit applies. Starting finalizes that user's other practice sessions in
+  the same exam idle for over one hour, including web sessions, and is therefore
+  marked destructive. It is not idempotent: inspect paginated attempt history
+  after an uncertain start, comparing exam, start time and ordered `questionIds`
+  (also returned by detail and recent-attempt reads). If multiple sessions match,
+  report ambiguity instead of guessing or creating another session.
 - `user_submit_practice_answer({attemptId, questionId, selectedAnswer,
   timeSpentSeconds?})` validates and grades the authenticated user's own open
   practice attempt. The server owns correctness, answer revision/key snapshots,
   answer locking and wrong-book updates. A repeat answer in the same open
-  attempt replays its stored grade. Once completed, read the attempt instead.
+  attempt replays its stored grade. Empty selections and blank fill-in answers
+  are rejected using the web client's shared `hasAnswer` predicate before any
+  new grading write. Skip those questions instead. Once completed, read the
+  attempt instead.
 - `user_complete_practice({attemptId})` finalizes timing/counts/score and eagerly
   invalidates the exam statistics cache. Repeating completion does not regrade.
   Early completion counts submitted answers only. Mock attempts are rejected.
@@ -353,11 +360,25 @@ write implementations called by REST and MCP, not HTTP proxies or duplicate
 MCP database logic. Only the verified principal supplies the user ID; strict
 tool schemas reject identity, grade, mode and other unsupported overrides.
 The existing MCP authentication and account request quotas apply to these tools.
+A separate fail-closed per-user study-write quota covers all four mutations
+before service execution (including idle cleanup). It defaults to 30/minute,
+configurable with `MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE`. Token rotation cannot
+reset it; reads and Knowledge Point writes do not consume this separate budget.
 Graded answers refresh cached statistics through the shared activity marker even
 before completion; completion uses the shared `invalidateExamStats` flow.
 Practice never implicitly moves Learning Mode's resume position. Tools advertise
 explicit mutation/idempotency hints; setting a resume position is marked
 destructive because it replaces the previous value.
+
+`lib/attemptRecords.ts` owns the stored attempt row, breakdown query and mapper.
+Completion and history detail order breakdowns by question sequence then ID;
+the summary's `questionIds` retains the attempt's original selection order.
+Study business failures preserve their top-level MCP error code and optionally
+add a fixed `error.reason` such as `attempt_completed`, `attempt_not_practice`,
+`question_not_in_attempt`, `invalid_answer` or `empty_answer`. Curated messages
+give recovery guidance without echoing input or raw exceptions. In particular,
+a completed-attempt conflict instructs the client to read its saved result,
+not retry the answer write. Foreign and missing attempts remain indistinguishable.
 
 The [User Skill workflow](../../skills/prepdeck/references/workflows.md#persisting-study-activity)
 requires successful mutations before claiming persistence and reports missing
@@ -589,7 +610,7 @@ and reject nonempty catalog cursors.
      Admin — configurable via the `MCP_USER_RATE_LIMIT_PER_MINUTE` /
      `MCP_ADMIN_RATE_LIMIT_PER_MINUTE` Wrangler vars (`wrangler.toml`
      `[vars]`), so a quota can be tuned by deploying a config change alone.
-  3. Three narrower, stricter, **operation-level** (dispatched, not
+  3. Four narrower, stricter, **operation-level** (dispatched, not
      pre-dispatch) quotas layered on top of gate 2 for higher-blast-radius
      operations, each its own env var with its own default
      (`configuredLimit()`, `src/middleware/rateLimit.ts`), throwing
@@ -602,6 +623,8 @@ and reject nonempty catalog cursors.
        default 10/min. Admin *reads* stay on gate 2's blanket quota only.
      - User MCP Knowledge Point writes: `MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE`,
        default 30/min.
+     - User MCP study writes: `MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE`, default
+       30/min across start, answer, completion and resume-position mutations.
      - Admin's import tools use their own native Cloudflare Rate Limiting
        bindings instead of `consumeRateLimit()`
        (`IMPORT_VALIDATE_RATE_LIMITER` 20/min, `IMPORT_EXECUTE_RATE_LIMITER`
@@ -659,7 +682,7 @@ typed in `src/bindings.ts`):
 | `BUCKET` | R2 binding | import file archiving (Admin) and Knowledge Point images (User, via REST `/api/kp-images`, not an MCP tool). |
 | `APP_BASE_URL` | var | trusted Origin/URL check (see above) and absolute-URL construction. |
 | `ENVIRONMENT` | var | `"development"` additionally allows the local Worker origins above. |
-| `MCP_USER_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE`, `MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE` | vars | optional; see "Request safety and limits" for defaults if unset/non-numeric. |
+| `MCP_USER_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE`, `MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE`, `MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE` | vars | optional; see "Request safety and limits" for defaults if unset/non-numeric. |
 | `CIRCUIT_MODE`, `EMERGENCY_ADMIN_IPS` | vars | cost-containment circuit breaker (`src/middleware/circuitBreaker.ts`), shared with REST — see `docs/operations/cloudflare-cost-containment.md`. |
 
 The metrics completion of implementation adds no D1 migration. Verify dataset ingestion

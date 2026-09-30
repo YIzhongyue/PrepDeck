@@ -204,7 +204,7 @@ const ADMIN_TOOL_NAMES = [
 const READ_ANNOTATIONS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const MUTATION_ANNOTATIONS = {
   // [destructive, idempotent]; all operate inside the PrepDeck instance.
-  user_start_practice: [false, false],
+  user_start_practice: [true, false],
   user_submit_practice_answer: [false, true],
   user_complete_practice: [false, true],
   user_set_learning_progress: [true, true],

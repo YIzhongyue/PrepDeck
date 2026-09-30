@@ -348,8 +348,169 @@ test("issue #89: strict schemas and canonical validation reject invalid study wr
     assert.equal((await callUserToolExpectingError(f, f.alice.token, name, args)).code, code, JSON.stringify(args));
     assert.deepEqual(dumpTables(f), before);
   }
-  await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: [] });
-  assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM wrong_question_book").get().n, 0, "an unanswered question is not a wrong-book entry");
+  const empty = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: [] });
+  assert.equal(empty.reason, "empty_answer");
+  assert.deepEqual(dumpTables(f), before, "an unanswered question must not lock a grade or change any count");
+});
+
+test("PR #91: blank answers neither lock questions nor count as incorrect practice", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  insertQuestion(f, { id: "blank", examId: "exam1", type: "fill_blank", stem: "Fill in", correctAnswers: ["answer"] });
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1", "q2", "blank"] });
+  const before = dumpTables(f);
+  for (const [questionId, selectedAnswer] of [["q1", []], ["q2", []], ["blank", []], ["blank", [""]], ["blank", [" \t\n "]]]) {
+    const error = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer });
+    assert.equal(error.code, "invalid_input");
+    assert.equal(error.reason, "empty_answer");
+    assert.deepEqual(dumpTables(f), before);
+  }
+  assert.equal((await webCall(f, "alice", "/exams/exam1/stats")).totalAnswers, 0);
+  assert.deepEqual((await webCall(f, "alice", "/questions/blank/learning-detail")).history, []);
+  for (const [questionId, selectedAnswer] of [["q1", ["a"]], ["blank", ["answer"]]]) {
+    assert.equal((await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer })).isCorrect, true);
+  }
+  const completed = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.equal(completed.totalQuestions, 2, "the skipped q2 is not part of the denominator");
+  assert.equal(completed.score, 100);
+  const stats = await webCall(f, "alice", "/exams/exam1/stats");
+  assert.deepEqual([stats.totalAnswers, stats.overallAccuracyPct], [2, 100]);
+});
+
+test("PR #91: study errors provide safe recovery reasons without echoing input or inviting closed-attempt retries", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  const input = { attemptId, questionId: "q1", selectedAnswer: ["a"] };
+  const sentinel = "private-caller-content";
+  for (const [extra, reason] of [
+    [{ questionId: "q2" }, "question_not_in_attempt"],
+    [{ selectedAnswer: ["A"] }, "invalid_answer"],
+    [{ selectedAnswer: [sentinel] }, "invalid_answer"],
+  ]) {
+    const error = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", { ...input, ...extra });
+    assert.equal(error.code, "invalid_input");
+    assert.equal(error.reason, reason);
+    assert.doesNotMatch(JSON.stringify(error), new RegExp(sentinel));
+  }
+  const mock = await webCall(f, "alice", "/exams/exam1/attempts", "POST", { mode: "mock", questionIds: ["q1"] });
+  assert.equal((await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId: mock.attemptId })).reason, "attempt_not_practice");
+  await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  const closed = await callUserToolExpectingError(f, f.alice.token, "user_submit_practice_answer", input);
+  assert.equal(closed.code, "conflict");
+  assert.equal(closed.reason, "attempt_completed");
+  assert.match(closed.message, /user_get_attempt/);
+  assert.match(closed.message, /do not retry/);
+  const foreign = await callUserToolExpectingError(f, f.bob.token, "user_submit_practice_answer", input);
+  const missing = await callUserToolExpectingError(f, f.bob.token, "user_submit_practice_answer", { ...input, attemptId: "missing" });
+  assert.deepEqual(foreign, missing, "business details must not leak another user's attempt state");
+});
+
+test("PR #91: completion and paginated detail share stable sequence/ID ordering", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  f.sqlite.exec("UPDATE questions SET sequence_number = CASE id WHEN 'q1' THEN 2 ELSE 1 END WHERE exam_id = 'exam1'");
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q3", "q1", "q2"] });
+  for (const questionId of ["q1", "q3", "q2"]) {
+    await callUserTool(f, f.alice.token, "user_submit_practice_answer", { attemptId, questionId, selectedAnswer: ["a"] });
+  }
+  const result = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.deepEqual(result.breakdown.map(row => row.questionId), ["q2", "q3", "q1"]);
+  const first = await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId, breakdownLimit: 2 });
+  const second = await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId, breakdownLimit: 2, breakdownOffset: first.breakdownNextOffset });
+  assert.deepEqual([...first.breakdown, ...second.breakdown], result.breakdown);
+  assert.deepEqual((await webCall(f, "alice", `/attempts/${attemptId}/complete`, "POST")).breakdown, result.breakdown);
+  assert.deepEqual(first.attempt.questionIds, ["q3", "q1", "q2"], "original session order is separate from breakdown order");
+});
+
+test("PR #91: start advertises and scopes idle cleanup, while history exposes selection for recovery", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const old = new Date(Date.now() - 2 * 3600_000).toISOString();
+  const now = new Date().toISOString();
+  for (const [id, userId, examId, mode, startedAt] of [
+    ["stale", "alice", "exam1", "practice", old], ["active", "alice", "exam1", "practice", now],
+    ["other-user", "bob", "exam1", "practice", old], ["other-exam", "alice", "exam2", "practice", old],
+    ["mock", "alice", "exam1", "mock", old],
+  ]) insertAttempt(f, { id, userId, examId, mode, startedAt, questionIds: [examId === "exam1" ? "q1" : "other"] });
+  const selected = ["q3", "q2"];
+  const created = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: selected });
+  assert.ok(f.sqlite.prepare("SELECT completed_at FROM attempts WHERE id = 'stale'").get().completed_at);
+  for (const id of ["active", "other-user", "other-exam", "mock"]) assert.equal(f.sqlite.prepare("SELECT completed_at FROM attempts WHERE id = ?").get(id).completed_at, null);
+  for (const name of ["user_list_attempts", "user_get_recent_attempts"]) {
+    const history = await callUserTool(f, f.alice.token, name, { examId: "exam1" });
+    const rows = name === "user_list_attempts" ? history.items : history.attempts;
+    const matches = rows.filter(row => JSON.stringify(row.questionIds) === JSON.stringify(selected));
+    assert.deepEqual(matches.map(row => row.id), [created.attemptId]);
+    assert.ok(rows.every(row => row.userId === "alice"));
+  }
+  // Question sets are evidence, not an idempotency guarantee: identical
+  // concurrent sessions remain distinguishable records and must not be guessed.
+  await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: selected });
+  const history = await callUserTool(f, f.alice.token, "user_list_attempts", { examId: "exam1" });
+  assert.equal(history.items.filter(row => JSON.stringify(row.questionIds) === JSON.stringify(selected)).length, 2);
+  const catalog = (await payload(await rpc(f.env, f.alice.token, "tools/list", {}))).result.tools;
+  const start = catalog.find(tool => tool.name === "user_start_practice");
+  assert.equal(start.annotations.destructiveHint, true);
+  assert.match(start.description, /over one hour/);
+  assert.match(start.description, /including web sessions/);
+  assert.match(start.description, /report ambiguity/);
+});
+
+test("PR #91: every study mutation fails closed at its own shared per-user write gate", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  insertAttempt(f, { id: "stale-before-denial", userId: "alice", examId: "exam1", questionIds: ["q2"], startedAt: "2026-01-01T00:00:00.000Z" });
+  const baseGet = f.env.RATE_LIMITER.get;
+  let gate = "denied";
+  f.env.RATE_LIMITER.get = key => key === "mcp:user:alice:study-write" ? { fetch: async (_url, request) => {
+    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 30 });
+    if (gate === "outage") throw new Error("private limiter failure");
+    return Response.json({ allowed: false, retryAfter: 17 });
+  } } : baseGet(key);
+  for (gate of ["denied", "outage"]) {
+    const before = dumpTables(f);
+    for (const [name, args] of [
+      ["user_start_practice", { examId: "exam1", questionIds: ["q1"] }],
+      ["user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["a"] }],
+      ["user_complete_practice", { attemptId }],
+      ["user_set_learning_progress", { examId: "exam1", sequenceNumber: 2 }],
+    ]) {
+      const error = await callUserToolExpectingError(f, f.alice.token, name, args);
+      assert.equal(error.code, gate === "denied" ? "rate_limited" : "unavailable");
+      assert.equal(error.retryAfter, gate === "denied" ? 17 : 30);
+      assert.doesNotMatch(JSON.stringify(error), /private limiter failure/);
+      assert.deepEqual(dumpTables(f), before);
+    }
+    assert.equal((await callUserTool(f, f.alice.token, "user_get_attempt", { id: attemptId })).attempt.id, attemptId);
+  }
+  await callUserTool(f, f.bob.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber: 3 });
+});
+
+test("PR #91: configurable study quota counts writes together across token rotation but excludes reads", async t => {
+  const f = await fixture(t);
+  seedPractice(f);
+  f.env.MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "2";
+  const counts = new Map();
+  const baseGet = f.env.RATE_LIMITER.get;
+  f.env.RATE_LIMITER.get = key => key.endsWith(":study-write") ? { fetch: async (_url, request) => {
+    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 2 });
+    const count = (counts.get(key) ?? 0) + 1;
+    counts.set(key, count);
+    return Response.json({ allowed: count <= 2, retryAfter: 60 });
+  } } : baseGet(key);
+  const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
+  await callUserTool(f, f.alice.token, "user_list_attempts");
+  const rotated = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
+  await callUserTool(f, rotated.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["a"] });
+  const before = dumpTables(f);
+  const error = await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId });
+  assert.equal(error.code, "rate_limited");
+  assert.equal(error.retryAfter, 60);
+  assert.deepEqual(dumpTables(f), before);
+  await callUserTool(f, f.bob.token, "user_set_learning_progress", { examId: "exam1", sequenceNumber: 1 });
+  assert.equal(counts.get("mcp:user:bob:study-write"), 1);
 });
 
 test("issue #89: Learning Mode resume writes are separate, owner-scoped and shared with REST", async t => {

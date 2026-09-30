@@ -17,8 +17,12 @@ Fetch user_get_question only for grading/explanation and check the question
 revision. Formatting a conversation does not authorize question-bank edits.
 Reads do not persist study activity. When the user wants practice recorded, use
 user_start_practice, user_submit_practice_answer with the learner's actual answer,
-and user_complete_practice. The server's returned grade is authoritative. Keep
-the attemptId; do not blindly repeat a start after a timeout. Use
+and user_complete_practice. Skip unanswered questions instead of submitting empty
+or blank answers. The server's returned grade is authoritative. Starting also
+closes your practice sessions in that exam idle for over one hour, including web
+sessions. Keep the attemptId; after a timeout compare examId, startedAt and
+questionIds in user_list_attempts, and report ambiguity if multiple sessions
+match instead of guessing or starting another. Use
 user_set_learning_progress only for a requested Learning Mode resume position;
 it does not record answers or change accuracy. Report persistence only after a
 successful mutation, and disclose if the deployed catalog lacks these tools.
