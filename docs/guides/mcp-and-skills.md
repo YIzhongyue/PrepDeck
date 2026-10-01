@@ -35,8 +35,50 @@ layout; formatting alone does not repair the bank. See the
 ## Configure a connection
 
 Skill installation and MCP access are separate. Install the optional packages
-below, configure the connection, securely enter a credential, verify access,
-then discover the runtime tools. A Skill cannot grant membership or a role.
+below, configure the connection, authorize it, verify access, then discover the
+runtime tools. A Skill cannot grant membership or a role.
+
+There are two ways to authorize a client, on the same endpoints:
+
+| | OAuth with Google sign-in | Personal access token (PAT) |
+| --- | --- | --- |
+| For | Clients that support MCP OAuth authorization | Any client that can send an `Authorization` header; scripts |
+| Setup | Add the endpoint URL only. The client opens PrepDeck in the browser; sign in with Google and approve the access shown | Create a token in PrepDeck and enter it in the client |
+| Manage | **Connected apps** (Settings → MCP access; Admin → MCP tokens for Admin MCP): see and disconnect | Token list: rotate, revoke |
+| Lifetime | Renews itself while in use; reconnect after 30 idle days, a disconnect, or if PrepDeck detects a reused refresh token | Until its expiry or revocation |
+| Browser sign-out | Not affected | Not affected |
+
+Google sign-in here is only how you prove who you are to PrepDeck; the client
+receives a PrepDeck MCP credential, never your Google account access. OAuth
+works only when the deployment enables it (`MCP_OAUTH_ENABLED`, see
+[architecture](../architecture/mcp.md#oauth-authorization-issue-102)); PATs
+always work.
+
+### Connect an OAuth-capable client
+
+1. Add `<PREPDECK_ORIGIN>/mcp` (or `/admin-mcp`) as a remote HTTP MCP server
+   with no credential. The client finds PrepDeck's sign-in from the server's
+   response.
+2. When the client opens the browser, sign in with Google if asked, then check
+   the consent screen: the app's name is reported by the app itself and marked
+   unverified, so check it is the app you just connected and that the page
+   returns where you expect. It lists the server (Admin MCP is labelled
+   administrative access) and what the app will be able to do. Allow or
+   Cancel. Only an active administrator can approve Admin MCP.
+3. Back in the client, list tools and run the identity check as in step 5
+   below. A read-only approval lists only read tools; a client that later needs
+   a write tool asks you to approve the wider access.
+4. If the browser says the request expired or was already answered, start the
+   connection again from the client. If it says the app is unknown or cannot
+   be returned to, the client's registration is not usable; reconnect, or use a
+   PAT. If the client reports `invalid_grant` later, the connection was
+   disconnected, idle too long, or its refresh token was reused: reconnect.
+
+Tested clients and limitations are recorded in the
+[interoperability table](../architecture/mcp.md#client-interoperability);
+other clients may work but are not verified.
+
+### Connect with a personal access token
 
 1. In the app, create a named User token in **Settings → MCP access**. An admin
    creates an independent Admin token in **Admin → MCP tokens**. Record the
@@ -52,9 +94,9 @@ then discover the runtime tools. A Skill cannot grant membership or a role.
    local clients are `PREPDECK_USER_MCP_TOKEN` and `PREPDECK_ADMIN_MCP_TOKEN`.
    Reference the variable name in configuration; do not ask the model to print,
    read or paste its value. Keep tokens out of chat, URLs and versioned files.
-4. Hosted clients cannot be assumed to read your computer's environment. This
-   server does not implement OAuth authorization/discovery, so an OAuth-only
-   client is not supported by the current bearer-only setup. A local host may
+4. Hosted clients cannot be assumed to read your computer's environment; use
+   their OAuth connection where they offer one (above). Whether a client can
+   use a PAT depends on whether it lets you configure a header. A local host may
    require restart/reload to inherit a newly set environment variable. Maintained
    [client examples](../../skills/prepdeck/references/credentials.md) cover Codex
    CLI, Claude Code and VS Code editor MCP. They follow those clients' documented

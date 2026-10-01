@@ -4,14 +4,15 @@ compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Serve the built SPA (apps/web) from the same Worker/origin as the API.
-# /api/* and the dedicated /mcp and /admin-mcp endpoints invoke this Worker's
+# /api/* and the dedicated /mcp and /admin-mcp endpoints (plus the MCP OAuth
+# discovery documents under /.well-known, issue #102) invoke this Worker's
 # fetch handler (src/index.ts); other requests use static assets, with unmatched paths
 # falling back to index.html for client-side routing.
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/admin-mcp", "/admin-mcp/*"]
+run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/admin-mcp", "/admin-mcp/*", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
 
 [[d1_databases]]
 binding = "DB"
@@ -129,6 +130,14 @@ MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "30"
 # tools). Imports use their own native rate limiters instead (see
 # IMPORT_VALIDATE_RATE_LIMITER/IMPORT_EXECUTE_RATE_LIMITER below).
 MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
+# Issue #102 — OAuth-capable MCP clients may connect by signing in with Google
+# and approving access (docs/architecture/mcp.md#oauth-authorization). PATs
+# keep working either way. "false" turns OAuth off: discovery and
+# /api/oauth/* answer 404 and outstanding OAuth tokens are refused until it is
+# turned back on. Requires APP_BASE_URL to be the public origin MCP clients use
+# (it is the OAuth issuer and the base of both resource URLs) and AUTH_MODE
+# sign-in to work for the consent screen. No new Google redirect URI is needed.
+MCP_OAUTH_ENABLED = "true"
 
 # implementation — daily review email. PLACEHOLDER VALUES: replace with the real
 # deployment domain and an address on a domain that has been onboarded via
@@ -212,6 +221,7 @@ MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE = "30"
 MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "30"
 MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE = "10"
 MCP_METRICS_ENABLED = "true"
+MCP_OAUTH_ENABLED = "true"
 CF_ACCESS_TEAM_DOMAIN = ""
 CF_ACCESS_AUD = ""
 GOOGLE_CLIENT_ID = ""

@@ -14,6 +14,10 @@ actions to both tables (rebuilding them and the view, preserving every row);
 apply it before the Worker that archives questions. A repeated archive or
 restore is recorded as a success, and Admin MCP's row says whether it `changed`
 anything.
+`0044_mcp_oauth.sql` (issue #102) lets an Admin MCP row name the OAuth grant
+behind a call: `credential_id` is the PAT, `oauth_grant_id` the OAuth grant,
+and exactly one of the two is set. The table and the view are rebuilt with the
+new column, every existing row kept as a PAT row.
 
 A successful row mutation and its audit entry commit in the same D1 batch.
 Stale writes record failure; rolled-back batches record failure after rollback.

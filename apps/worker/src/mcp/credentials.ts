@@ -1,12 +1,27 @@
 import type { McpObservation } from "./observability";
-import type { McpCredentialSummary } from "@prepdeck/shared";
+import type { McpCredentialSummary, McpOAuthScope } from "@prepdeck/shared";
+import type { Env } from "../bindings";
 import { McpApplicationError } from "./errors";
+import { isMcpOAuthEnabled, parseStoredScopes, type McpAudience } from "./oauth/config";
+import { findAccessToken, OAUTH_ACCESS_TOKEN } from "./oauth/grants";
 
-export type McpAudience = "user" | "admin";
+export type { McpAudience };
+export type McpCredentialType = "pat" | "oauth";
+
+/**
+ * The authenticated caller of one MCP request, whichever credential it used.
+ * Tools and services see only this: the same account status, role, ownership
+ * and quota checks apply to a PAT and an OAuth access token alike.
+ */
 export interface McpPrincipal {
   readonly userId: string;
-  readonly credentialId: string;
   readonly audience: McpAudience;
+  /** "pat": an mcp_credentials row. "oauth": an mcp_oauth_grants row. */
+  readonly credentialType: McpCredentialType;
+  /** The PAT id or the OAuth grant id — for last-use tracking and audit attribution. */
+  readonly credentialId: string;
+  /** An OAuth grant's approved scopes; null for a PAT, which only its account role bounds. */
+  readonly scopes: readonly McpOAuthScope[] | null;
 }
 
 interface McpCredentialRow {
@@ -128,19 +143,30 @@ export async function touchMcpCredentialLastUsed(db: D1Database, credentialId: s
   await db.prepare("UPDATE mcp_credentials SET last_used_at = ? WHERE id = ?").bind(Date.now(), credentialId).run();
 }
 
+// Each bearer format has exactly one verifier. A value that fails the one its
+// format names is refused outright — never retried against another verifier,
+// and never matched by anything but the Authorization header. A Google access
+// or ID token, a browser session, an Access JWT or anything else matches no
+// format and is refused as malformed.
+const PAT_BEARER = /^Bearer (pd_mcp_(user|admin)_[a-f0-9]{64})$/i;
+const OAUTH_BEARER = /^Bearer (pd_oat_(user|admin)_[a-f0-9]{64})$/;
+
 export async function authenticateMcp(
-  request: Request, db: D1Database, audience: McpAudience,
+  request: Request, env: Pick<Env, "DB" | "MCP_OAUTH_ENABLED">, audience: McpAudience,
   observation?: McpObservation,
 ): Promise<McpPrincipal> {
   // No cookie, Access JWT, URL parameter, body, or client identity fallback.
   const header = request.headers.get("Authorization");
-  const match = /^Bearer (pd_mcp_(user|admin)_[a-f0-9]{64})$/i.exec(header ?? "");
+  const oauth = OAUTH_BEARER.exec(header ?? "");
+  if (oauth) return authenticateOAuth(oauth[1]!, oauth[2] as McpAudience, env, audience, observation);
+  const match = PAT_BEARER.exec(header ?? "");
+  if (observation) observation.credential = match ? "pat" : "none";
   if (!match || match[2] !== audience) {
     if (observation) observation.auth = !header ? "missing" : !match ? "malformed" : "wrong_audience";
     throw new McpApplicationError("unauthenticated");
   }
   if (observation) observation.auth = "internal";
-  const row = await db.prepare(`
+  const row = await env.DB.prepare(`
     SELECT c.id AS credential_id, c.user_id, u.role, u.status
     FROM mcp_credentials c JOIN users u ON u.id = c.user_id
     WHERE c.token_hash = ? AND c.server = ? AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > ?)
@@ -157,8 +183,41 @@ export async function authenticateMcp(
     throw new McpApplicationError("unauthorized");
   }
   if (observation) observation.auth = "success";
-  return Object.freeze({ userId: row.user_id, credentialId: row.credential_id, audience });
+  return Object.freeze({ userId: row.user_id, audience, credentialType: "pat", credentialId: row.credential_id, scopes: null });
 }
 
-export const authenticateUserMcp = (request: Request, db: D1Database, observation?: McpObservation) => authenticateMcp(request, db, "user", observation);
-export const authenticateAdminMcp = (request: Request, db: D1Database, observation?: McpObservation) => authenticateMcp(request, db, "admin", observation);
+// Issue #102. An access token issued by PrepDeck's own authorization server
+// for this resource. Its grant must be unrevoked and for this audience, and —
+// as for a PAT — the account's *current* status and role decide, so revoking
+// the account or demoting an admin takes effect on the next request rather
+// than when the token expires. While OAuth is switched off, outstanding OAuth
+// tokens are refused (they resume, if unexpired, when it is switched back on).
+async function authenticateOAuth(
+  token: string, tokenAudience: McpAudience, env: Pick<Env, "DB" | "MCP_OAUTH_ENABLED">, audience: McpAudience,
+  observation?: McpObservation,
+): Promise<McpPrincipal> {
+  if (observation) observation.credential = "oauth";
+  if (!isMcpOAuthEnabled(env)) {
+    if (observation) observation.auth = "oauth_disabled";
+    throw new McpApplicationError("unauthenticated");
+  }
+  if (tokenAudience !== audience || !OAUTH_ACCESS_TOKEN.test(token)) {
+    if (observation) observation.auth = "wrong_audience";
+    throw new McpApplicationError("unauthenticated");
+  }
+  if (observation) observation.auth = "internal";
+  const row = await findAccessToken(env.DB, token, audience);
+  if (!row) {
+    if (observation) observation.auth = "invalid_or_expired_or_revoked";
+    throw new McpApplicationError("unauthenticated");
+  }
+  if (row.status !== "active" || (audience === "admin" && row.role !== "admin")) {
+    if (observation) observation.auth = "account_not_authorized";
+    throw new McpApplicationError("unauthorized");
+  }
+  if (observation) observation.auth = "success";
+  return Object.freeze({ userId: row.user_id, audience, credentialType: "oauth", credentialId: row.grant_id, scopes: Object.freeze(parseStoredScopes(row.scopes)) });
+}
+
+export const authenticateUserMcp = (request: Request, env: Pick<Env, "DB" | "MCP_OAUTH_ENABLED">, observation?: McpObservation) => authenticateMcp(request, env, "user", observation);
+export const authenticateAdminMcp = (request: Request, env: Pick<Env, "DB" | "MCP_OAUTH_ENABLED">, observation?: McpObservation) => authenticateMcp(request, env, "admin", observation);

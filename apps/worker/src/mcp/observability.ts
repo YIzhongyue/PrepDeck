@@ -6,7 +6,10 @@ import type { McpAudience } from "./credentials";
 import { MCP_ERRORS, type McpErrorCode } from "./errors";
 
 export type McpAuthOutcome = "not_attempted" | "success" | "missing" | "malformed"
-  | "wrong_audience" | "invalid_or_expired_or_revoked" | "account_not_authorized" | "internal";
+  | "wrong_audience" | "invalid_or_expired_or_revoked" | "account_not_authorized" | "oauth_disabled" | "internal";
+// Which verifier a request's bearer value was routed to (issue #102): a PAT,
+// an OAuth access token, or neither (missing/malformed).
+export type McpCredentialKind = "none" | "pat" | "oauth";
 type Stage = "circuit" | "ip_limit" | "routing" | "origin" | "auth" | "method" | "account_limit" | "protocol";
 type Outcome = "success" | "error" | "partial" | "failed" | "skipped" | "replayed";
 type ErrorCode = McpErrorCode | "none" | "method_not_allowed";
@@ -44,6 +47,7 @@ function duration(start: number) {
 export class McpObservation {
   stage: Stage = "circuit";
   auth: McpAuthOutcome = "not_attempted";
+  credential: McpCredentialKind = "none";
   private method: Method = "not_dispatched";
   private outcome: Outcome = "success";
   private error: ErrorCode = "none";
@@ -75,6 +79,11 @@ export class McpObservation {
     this.transport = transport;
     const error = record(record(message).error);
     if (Object.keys(error).length) this.failure(errorCode(record(error.data).code));
+  }
+
+  /** A pre-dispatch rejection whose code its HTTP status alone cannot tell apart (403 is shared). */
+  rejected(code: McpErrorCode) {
+    this.failure(code);
   }
 
   private failure(code: ErrorCode) {
@@ -139,7 +148,7 @@ export class McpObservation {
       this.sink.writeDataPoint({
         indexes: [this.audience],
         blobs: ["mcp.v1", event, this.audience, this.method, tool, outcome, error, this.auth,
-          event === "tool" ? "tool" : this.stage, kind, this.mode, event === "tool" ? "none" : this.transport],
+          event === "tool" ? "tool" : this.stage, kind, this.mode, event === "tool" ? "none" : this.transport, this.credential],
         doubles: [1, elapsed, status, elapsed >= 1000 ? 1 : 0, ...counts, event === "request" ? this.omittedTools : 0],
       });
     } catch {

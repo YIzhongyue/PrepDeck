@@ -32,11 +32,12 @@ if field order or meaning changes. `index1` is `user` or `admin` (never an ident
 | `blob5` | Matched, code-owned tool name; `unknown` for a rejected tool lookup; `none` on request points. |
 | `blob6` | Outcome: `success`, `error`, `partial`, `failed`, `skipped`, or `replayed`. |
 | `blob7` | Fixed MCP error code, `method_not_allowed`, or `none`. |
-| `blob8` | Auth: `not_attempted`, `success`, `missing`, `malformed`, `wrong_audience`, `invalid_or_expired_or_revoked`, `account_not_authorized`, or `internal`. |
+| `blob8` | Auth: `not_attempted`, `success`, `missing`, `malformed`, `wrong_audience`, `invalid_or_expired_or_revoked`, `account_not_authorized`, `oauth_disabled`, or `internal`. |
 | `blob9` | Last stage reached: `circuit`, `ip_limit`, `routing`, `origin`, `auth`, `method`, `account_limit`, `protocol`; tool points use `tool`. |
 | `blob10` | `admin_mutation` for content mutation tools, `other` for other tool calls, `none` for requests. Validation/preview tools are not content mutations. |
 | `blob11` | Configured effective circuit mode: `normal`, `degraded`, `emergency` (also the fail-closed value for invalid configuration). |
 | `blob12` | Request response transport: `json`, `sse`, or `none`; tool points use `none`. |
+| `blob13` | Credential type the bearer value was routed to (issue #102): `pat`, `oauth`, or `none` (missing or malformed). Appended to the schema, so earlier positional queries are unchanged; points written before it read as empty. |
 | `double1` | Count, always 1. |
 | `double2` | Elapsed milliseconds, clamped to 0–3,600,000. Request duration covers middleware through response construction; tool duration covers dispatch/validation/service execution. |
 | `double3` | HTTP status on request points; 0 on tool points. |
@@ -54,7 +55,9 @@ JSON-RPC IDs, argument keys/values and client metadata are never metric labels.
 
 Unknown, expired and revoked tokens intentionally share one auth bucket, matching
 the existing filtered lookup. Inactive accounts/demoted admins share
-`account_not_authorized`; database failures become `internal`. Earlier origin,
+`account_not_authorized`; database failures become `internal`. Both credential
+types use the same buckets; split them with `blob13`. An OAuth access token
+presented while `MCP_OAUTH_ENABLED` is off is `oauth_disabled`. Earlier origin,
 circuit or IP rejection has `not_attempted`, not an authentication failure.
 
 Admin batch/import outcomes describe returned results, **not exact committed

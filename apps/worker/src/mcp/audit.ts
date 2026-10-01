@@ -10,6 +10,12 @@ export type AdminMutationAction =
   | "tag_create" | "tag_update" | "tag_merge";
 export type AdminMutationOutcome = "success" | "partial" | "failure" | "skipped";
 
+// Issue #102 — every row names the credential behind the mutation: a PAT in
+// credential_id, or an OAuth grant in oauth_grant_id (exactly one is set).
+function credentialColumns(principal: McpPrincipal): [string | null, string | null] {
+  return principal.credentialType === "oauth" ? [null, principal.credentialId] : [principal.credentialId, null];
+}
+
 export interface AdminMutationAuditEntry {
   tool: string;
   action: AdminMutationAction;
@@ -31,10 +37,10 @@ export function buildAdminMutationAuditStatement(
 ): D1PreparedStatement {
   return db.prepare(`
     INSERT INTO admin_mcp_audit_log
-      (id, occurred_at, admin_user_id, credential_id, tool, action, exam_id, target_ids_json, outcome, detail_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, occurred_at, admin_user_id, credential_id, oauth_grant_id, tool, action, exam_id, target_ids_json, outcome, detail_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
-    crypto.randomUUID(), Date.now(), principal.userId, principal.credentialId,
+    crypto.randomUUID(), Date.now(), principal.userId, ...credentialColumns(principal),
     entry.tool, entry.action, entry.examId, JSON.stringify(entry.targetIds),
     entry.outcome, entry.detail !== undefined ? JSON.stringify(entry.detail) : null,
   );
@@ -82,12 +88,12 @@ export function buildConditionalAdminMutationAuditStatement(
 ): D1PreparedStatement {
   return db.prepare(`
     INSERT INTO admin_mcp_audit_log
-      (id, occurred_at, admin_user_id, credential_id, tool, action, exam_id, target_ids_json, outcome, detail_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+      (id, occurred_at, admin_user_id, credential_id, oauth_grant_id, tool, action, exam_id, target_ids_json, outcome, detail_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
       CASE WHEN changes() > 0 THEN 'success' ELSE 'failure' END,
       CASE WHEN changes() > 0 THEN ? ELSE ? END)
   `).bind(
-    crypto.randomUUID(), Date.now(), principal.userId, principal.credentialId,
+    crypto.randomUUID(), Date.now(), principal.userId, ...credentialColumns(principal),
     entry.tool, entry.action, entry.examId, JSON.stringify(entry.targetIds),
     entry.successDetail !== undefined ? JSON.stringify(entry.successDetail) : null,
     entry.failureDetail !== undefined ? JSON.stringify(entry.failureDetail) : null,

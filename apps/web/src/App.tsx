@@ -28,6 +28,7 @@ import ListScreen from "./screens/ListScreen";
 import Notes from "./screens/Notes";
 import Admin from "./screens/Admin";
 import PrivacyPolicy from "./screens/PrivacyPolicy";
+import McpConnect, { McpConnectError } from "./screens/McpConnect";
 import TermsOfService from "./screens/TermsOfService";
 import { DEFAULT_THEME } from "./lib/themeStorage";
 import { useUrlRouting } from "./store/urlRouting";
@@ -211,7 +212,9 @@ function readAuthParam(): { kind: "denied"; email: string | null; conflict?: boo
   return null;
 }
 
-function AuthenticatedApp() {
+// `connectRequest`: the MCP OAuth consent screen (issue #102) takes the app's
+// place once signed in; the login gate in front of it is the ordinary one.
+function AuthenticatedApp({ connectRequest }: { connectRequest?: string }) {
   const [gate, setGate] = useState<Gate>({ kind: "loading" });
   // readAuthParam() strips the `?auth=` param as a side effect — it must run,
   // and be acted on, at most once. Without this guard, React.StrictMode's
@@ -256,6 +259,8 @@ function AuthenticatedApp() {
   if (gate.kind === "denied") return <Login deniedEmail={gate.email} conflict={gate.conflict} />;
   if (gate.kind === "signin") return <Login signedOut={gate.signedOut} error={gate.error} verification={gate.verification} />;
 
+  if (connectRequest) return <McpConnect requestId={connectRequest} />;
+
   return (
     <PrepDeckProvider>
       <Shell />
@@ -270,6 +275,13 @@ export default function App() {
   }
   if (publicPath === "/terms") {
     return <TermsOfService />;
+  }
+  if (publicPath === "/connect") {
+    // An authorization request the Worker refused is explained without signing in.
+    const params = new URLSearchParams(window.location.search);
+    const request = params.get("request");
+    if (!request) return <McpConnectError reason={params.get("error") ?? "invalid_request"} />;
+    return <AuthenticatedApp connectRequest={request} />;
   }
 
   return <AuthenticatedApp />;

@@ -232,6 +232,12 @@ the [private configuration workflow](public-private-sync.md#private-deployment-b
    `ENVIRONMENT=production` and `ENABLE_DEV_PASSWORD_LOGIN=false`.
    To require human verification on sign-in and MCP token creation, also
    follow [human verification](#human-verification-cloudflare-turnstile).
+   `APP_BASE_URL` is also the MCP OAuth issuer and the base of both MCP
+   resource URLs, so it must be exactly the origin MCP clients use.
+   `MCP_OAUTH_ENABLED = "true"` (checked in) lets OAuth-capable MCP clients
+   connect through Google sign-in and approval in addition to PATs; set it to
+   `"false"` to offer PATs only. It needs no new Google redirect URI or secret.
+   See [MCP OAuth authorization](../architecture/mcp.md#oauth-authorization-issue-102).
 6. If Cloudflare Access was previously put in front of this Worker (an
    earlier setup of this project used it), remove or disable that Access
    Application in the Zero Trust dashboard — otherwise Access's own hosted
@@ -246,6 +252,10 @@ the [private configuration workflow](public-private-sync.md#private-deployment-b
    `dev:seed` only writes to local D1.
 8. Run `npm run deploy` from the repository root, then verify health, Google
    sign-in, admin access, data writes and scheduled jobs on the deployed origin.
+   With MCP OAuth on, also check that
+   `https://<your-domain>/.well-known/oauth-authorization-server` returns JSON
+   (not the app's HTML) and that an unauthenticated `POST /mcp` answers 401
+   with a `resource_metadata` challenge.
    A successful `wrangler deploy --dry-run` checks packaging only; it does not
    validate remote resources, account permissions, OAuth or real email delivery.
 

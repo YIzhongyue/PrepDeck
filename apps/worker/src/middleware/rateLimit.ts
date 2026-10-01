@@ -40,6 +40,10 @@ export function classifyRequest(method: string, path: string): RateLimitClass {
   }
   // implementation — public, unauthenticated endpoint hit from an email link.
   if (path === "/api/email/unsubscribe") return "auth";
+  // Issue #102 — unauthenticated MCP OAuth endpoints that create rows: a new
+  // authorization request, or a new dynamically registered client. The token
+  // endpoint keeps the ordinary write budget, since clients refresh routinely.
+  if (path === "/api/oauth/authorize" || path === "/api/oauth/register") return "auth";
   if (path === "/api/ai/generate") return "ai";
   if (method === "PUT" && (DRAFT_SAVE_PATH.test(path) || KP_AUTOSAVE_PATH.test(path))) return "draft";
   return method === "GET" || method === "HEAD" ? "read" : "write";

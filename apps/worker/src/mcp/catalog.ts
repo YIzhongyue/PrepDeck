@@ -45,7 +45,17 @@ export function defineMcpTool<S extends z.ZodRawShape, R>(
   };
 }
 
-export function createCatalogServer(name: string, tools: readonly McpTool[], observation?: McpObservation, instructions?: string) {
+/** Which tools a credential may see and call. Absent for a PAT (its account
+ * role already bounds it); an OAuth grant's scopes supply one (mcp/oauth/scopes.ts). */
+export interface McpToolPolicy {
+  allows(definition: Tool): boolean;
+}
+
+export function createCatalogServer(name: string, catalog: readonly McpTool[], observation?: McpObservation, instructions?: string, policy?: McpToolPolicy) {
+  // A tool outside the policy is neither listed nor callable. The route
+  // already answers such a call with HTTP 403 insufficient_scope before
+  // dispatch (mcp/routes.ts); this is the second, independent check.
+  const tools = policy ? catalog.filter((tool) => policy.allows(tool.definition)) : catalog;
   const server = new Server({ name, version: "0.1.0" }, { capabilities: { tools: {} }, instructions });
   server.setRequestHandler("tools/list", async (request) => {
     if (request.params?.cursor) throw new ProtocolError(-32602, "Invalid request input.");
@@ -54,9 +64,10 @@ export function createCatalogServer(name: string, tools: readonly McpTool[], obs
   server.setRequestHandler("tools/call", async (request) => {
     const start = performance.now();
     const tool = tools.find((candidate) => candidate.definition.name === request.params.name);
+    const withheld = !tool && catalog.some((candidate) => candidate.definition.name === request.params.name);
     try {
       const result = tool ? await tool.invoke(request.params.arguments)
-        : toolResult(errorEnvelope(new McpApplicationError("not_found")), true);
+        : toolResult(errorEnvelope(new McpApplicationError(withheld ? "insufficient_scope" : "not_found")), true);
       observation?.tool(tool?.definition.name, result, start);
       return result;
     } catch (error) {

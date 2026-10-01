@@ -29,6 +29,11 @@ export default defineConfig({
       "^/(mcp|admin-mcp)(/|\\?|$)": {
         target: "http://localhost:8787",
         changeOrigin: true
+      },
+      // MCP OAuth discovery documents (issue #102).
+      "^/\\.well-known/oauth-": {
+        target: "http://localhost:8787",
+        changeOrigin: true
       }
     }
   },

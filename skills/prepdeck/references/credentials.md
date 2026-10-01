@@ -79,13 +79,27 @@ actual execution host. See [VS Code MCP configuration](https://code.visualstudio
 }
 ```
 
+## OAuth-capable clients
+
+A host that supports MCP OAuth authorization can connect with only the endpoint
+URL when the deployment has OAuth enabled: the host discovers PrepDeck's
+authorization server from the server's 401 response, opens a browser where the
+user signs in with Google and approves the requested access, and stores the
+resulting tokens itself. No token is created or entered. The host, not the
+model, runs this flow; never ask for, print or relay authorization codes or
+OAuth tokens. Admin MCP approval requires an active administrator and is
+separate from a User MCP connection. Users see and disconnect OAuth connections
+in PrepDeck under Settings → MCP access → Connected apps (Admin → MCP tokens
+for Admin MCP); signing out of PrepDeck does not disconnect them. If the host
+reports that OAuth is unavailable on this server, or the host only supports
+manual headers, use a personal access token as described above.
+
 ## Hosted clients and unsupported environments
 
 A hosted chatbot cannot read an environment variable on the user's laptop.
-Use that platform's supported remote MCP credential mechanism only if it can
-send a Bearer header with this transport. PrepDeck currently provides no OAuth
-discovery/authorization; OAuth-only clients cannot connect yet. OAuth remains a
-future host-managed option, not a flow to invent in this setup.
+Use that platform's supported remote MCP credential mechanism: its OAuth
+connection flow, or a Bearer header with this transport. Do not invent an
+authorization flow the host does not provide.
 
 Other clients, including IDE extensions and cloud agents, require checking their
 current HTTP/credential capabilities before supplying configuration syntax.
@@ -95,5 +109,6 @@ that ordinary conversation can change every chatbot's settings. Do not bypass
 the limitation by asking the model to construct authenticated raw HTTP requests.
 
 Expired/revoked tokens must be replaced through PrepDeck's token-management UI,
-then securely updated in the host. Stop on wrong audience or membership errors;
+then securely updated in the host. An OAuth connection that was disconnected,
+replayed or left idle for 30 days is repaired by reconnecting from the host. Stop on wrong audience or membership errors;
 retrying with a more privileged token is not a repair.

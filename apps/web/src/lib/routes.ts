@@ -12,6 +12,7 @@
 //   /exams/:slug/bookmarks | /wrong | /annotations
 //   /knowledge-points[/:id]              Knowledge Points list, or one note
 //   /settings, /admin
+//   /connect?request=…                    MCP OAuth consent (issue #102; App.tsx, outside the store)
 //
 // Exam screens carry the exam's slug, so Back across an exam switch switches
 // back. Knowledge Points, Settings and Admin belong to the account.
@@ -53,7 +54,7 @@ const ACCOUNT_SCREEN_PATHS: Partial<Record<ScreenId, string>> = {
 };
 
 /** First path segments the SPA owns. None may be served by the Worker first (wrangler.toml). */
-export const SPA_ROUTE_PREFIXES = ["exams", "knowledge-points", "settings", "admin", "learning", "privacy", "terms"] as const;
+export const SPA_ROUTE_PREFIXES = ["exams", "knowledge-points", "settings", "admin", "learning", "privacy", "terms", "connect"] as const;
 
 const KNOWN_SCREENS: readonly ScreenId[] = ["dash", "practice", "mock", "learning", "wrong", "bookmarks", "notes", "knowledgePoints", "settings", "admin"];
 const KNOWN_SOURCES: readonly PracticeSource[] = ["all", "new", "wrong", "bm", "focus"];

@@ -6,6 +6,7 @@ import { ApiError, isSessionExpired } from "../lib/api";
 import { AvatarValidationError, prepareAvatarUpload } from "../lib/avatar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import McpTokensCard from "../components/McpTokensCard";
+import McpConnectionsCard from "../components/McpConnectionsCard";
 import { contentInset, type Breakpoints } from "../lib/responsive";
 import { DEFAULT_THEME } from "../lib/themeStorage";
 // implementation — shared Untitled UI primitives. docs/guides/ui-components.md
@@ -340,6 +341,12 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                 onActiveCountChange={setActiveTokens}
               />
             </div>
+
+            <McpConnectionsCard
+              title="Connected apps"
+              description="AI clients you connected by signing in with Google and approving access, instead of a token. Each acts as you with the access you approved, until you disconnect it."
+              apiBase="/api/mcp-connections"
+            />
           </section>
         </div>
       </div>

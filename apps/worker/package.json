@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260918.1",
+    "@modelcontextprotocol/client": "^2.1.0",
     "@types/nunjucks": "^3.2.6",
     "esbuild": "^0.28.2",
     "marked": "^18.0.14",

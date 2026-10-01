@@ -12,6 +12,11 @@ Production does not support password sign-in. The local password endpoint requir
 both `ENVIRONMENT=development` and `ENABLE_DEV_PASSWORD_LOGIN=true`; merely running
 Wrangler's development environment does not enable it. MCP credentials and browser
 sessions have separate lifecycles; see [MCP setup](../guides/mcp-and-skills.md).
+Three things are easy to confuse and are kept distinct: **Google login** proves who
+a person is to PrepDeck and creates a browser session (FR-1.1); **MCP OAuth
+authorization** lets an MCP client obtain a PrepDeck MCP credential after that
+person approves it (FR-1.12); a **personal access token** is an MCP credential
+the person creates and pastes into a client themselves.
 
 Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
@@ -69,7 +74,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   immediate where the request lands and follows elsewhere within about a minute,
   the time a KV deletion of the cached user row takes to propagate. Tokens issued
   before the version existed are refused, so every user signs in once after the
-  upgrade. MCP tokens are separate credentials; sign-out does not revoke them.
+  upgrade. MCP tokens and MCP OAuth grants (FR-1.12) are separate credentials; sign-out does not revoke them.
 
 <a id="fr-1-7"></a>
 
@@ -99,6 +104,17 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   The browser only obtains a token, from a widget in Cloudflare's Managed mode ([`TurnstileWidget.tsx`](../../apps/web/src/components/TurnstileWidget.tsx)); the Worker decides. [`lib/turnstile.ts`](../../apps/worker/src/lib/turnstile.ts) redeems the token with Cloudflare Siteverify and requires success, the surface's action, and a hostname the deployment accepts (the hostname of `APP_BASE_URL`, or `TURNSTILE_HOSTNAMES`). It fails closed: no token, a refused, expired or already-spent token, a missing or rejected secret and an unreachable Siteverify all refuse the request, and the refusal says which kind it was so that only the visitor's own failure asks them to verify again. A refused sign-in returns to the page it was started from with a notice: `?auth=verification` asks for the check again (and, once it passes, says so), `?auth=verification-unavailable` asks to try again in a few minutes, and `?auth=verification-misconfigured` (a missing or rejected secret, or test keys outside development) asks to contact an admin. A refused JSON request answers 403 for the visitor's token, or 503 for the other two, with `code: "human_verification_failed"`. Tokens are single-use, so every attempt gets a fresh widget, and an expired one refreshes itself. When the browser cannot learn whether verification is on, it says so and offers a retry rather than going ahead without a token; a request the Worker refuses for want of verification the browser thought was off makes it look again. Rotating an MCP token with verification on happens only on the row's own **Rotate token** button, which the passed check enables. The secret stays in the Worker, and neither it nor a token is logged. Cloudflare's test keys are accepted only when `ENVIRONMENT=development`.
 
   Sign-in's token is redeemed before the OAuth state cookie is issued, so the callback, which does the Google and D1 work, cannot complete without it. That cookie is HMAC-signed with `SESSION_SECRET` under its own purpose prefix and carries a signed ten-minute expiry, so it cannot be written by hand to reach the callback without passing the check; an unsigned, altered or expired one ends the sign-in before the token exchange. With Turnstile on, a `GET` of the start endpoint (an old tab, a bookmark) goes back to the page it names instead of to Google. Deliberately not gated: the callback (reachable only with that state cookie), sign-out, revoking an MCP token (it only removes access), and the password login, which exists only in development, answers 404 elsewhere and is driven by the loopback sign-in helper. There is no registration or password reset to protect: accounts are invited (FR-1.2) and passwords belong to Google. Setup is in [development and deployment](../guides/development-and-deployment.md#human-verification-cloudflare-turnstile).
+
+<a id="fr-1-12"></a>
+
+- **FR-1.12 (S):** OAuth-capable MCP clients can connect by signing in with Google and approving access, alongside personal access tokens on the same `/mcp` and `/admin-mcp` endpoints ([issue #102](https://github.com/YIzhongyue/PrepDeck/issues/102)). PrepDeck is the authorization server; Google only authenticates the person, and Google tokens are never MCP credentials. The deployment switch is `MCP_OAUTH_ENABLED`; turning it off leaves PATs working. Detail: [MCP architecture](../architecture/mcp.md#oauth-authorization-issue-102).
+
+  - Discovery is standards-based (RFC 9728 protected-resource metadata per endpoint, RFC 8414 authorization-server metadata) and starts from the MCP endpoint's `401` challenge; the MCP transport never answers with login HTML or a login redirect.
+  - Authorization is the code flow with PKCE `S256` for public clients, bound to the client, its registered redirect URI, the RFC 8707 resource, the user and the approved scopes. Clients onboard through Client ID Metadata Documents or Dynamic Client Registration.
+  - Signing in is the ordinary login (FR-1.1, FR-1.3, FR-1.11 Turnstile): an invitation is still required, and a session never skips the consent screen. The consent screen shows the client (as unverified), where it returns, the MCP server and the permissions; it approves or denies once. The transaction is bound to the browser that started it; the website's `returnTo` rules are unchanged, and only a same-origin `/connect` path is carried through sign-in. Admin MCP can only be approved by an active administrator.
+  - Scopes `mcp:user:read`/`write` and `mcp:admin:read`/`write` map to the tools' read-only annotation and are enforced on every call (`403 insufficient_scope` with a step-up challenge). Account status, current role, ownership, mutation limits, audit and the per-account quota apply exactly as for a PAT, and the quota is shared between them.
+  - Access tokens last an hour; refresh tokens 30 days and rotate on every use. A spent refresh token presented again more than 10 seconds later revokes the grant (replay); a reused authorization code does too. Account revocation and admin demotion take effect on the next request.
+  - Users list and disconnect their connections (Settings → MCP access → Connected apps; Admin → MCP tokens → Connected admin apps) separately from their PATs; no secret is shown. Connections survive browser sign-out and remain until disconnected, revoked by replay, idle for 30 days, or refused by account changes.
 
 ## User profiles
 

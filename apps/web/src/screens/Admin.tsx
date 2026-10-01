@@ -15,6 +15,7 @@ import { AdminIcon, AdminModal } from "../components/AdminModal";
 import ProviderManager from "../components/ProviderManager";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
+import McpConnectionsCard from "../components/McpConnectionsCard";
 import { apiFetch, ApiError } from "../lib/api";
 import { examListChanged, questionBankChanged } from "../lib/questionAuthoring";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -219,12 +220,20 @@ function OverviewPanel({ data, health, onRetry, onNavigate }: {
 // admin-only /api/admin/mcp-tokens namespace.
 function McpTokensPanel() {
   return (
-    <McpTokensCard
-      title="Admin MCP tokens"
-      description="Privileged tokens for admin-side AI clients (e.g. local-codex, chatgpt-admin) that need question-bank management access. These are separate from, and cannot be used as, User MCP tokens."
-      apiBase="/api/admin/mcp-tokens"
-      namePlaceholder="e.g. local-codex"
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <McpTokensCard
+        title="Admin MCP tokens"
+        description="Privileged tokens for admin-side AI clients (e.g. local-codex, chatgpt-admin) that need question-bank management access. These are separate from, and cannot be used as, User MCP tokens."
+        apiBase="/api/admin/mcp-tokens"
+        namePlaceholder="e.g. local-codex"
+      />
+      {/* Issue #102 — Admin MCP connections approved through Google sign-in. */}
+      <McpConnectionsCard
+        title="Connected admin apps"
+        description="Clients you connected to Admin MCP by signing in and approving administrative access. They lose access at once if you disconnect them or stop being an administrator."
+        apiBase="/api/admin/mcp-connections"
+      />
+    </div>
   );
 }
 

@@ -67,6 +67,13 @@ export interface Env {
   // also covers reads. Imports have their own native rate limiters instead
   // (IMPORT_VALIDATE_RATE_LIMITER/IMPORT_EXECUTE_RATE_LIMITER above).
   MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE?: string;
+  // Issue #102 — "true" lets OAuth-capable MCP clients connect through
+  // PrepDeck's authorization server (Google sign-in + consent) in addition to
+  // PATs. Anything else switches OAuth off: discovery and the /api/oauth/*
+  // protocol endpoints answer 404 and OAuth access tokens are refused, while
+  // PATs keep working unchanged. Issuer and resource URLs derive from
+  // APP_BASE_URL, which must be the public origin clients use.
+  MCP_OAUTH_ENABLED?: "true" | "false";
   // implementation — daily review email. The scheduled job that sends these runs
   // outside any request context, so absolute links (CTA, unsubscribe, logo)
   // can't be derived from a request origin the way routes/auth.ts derives
