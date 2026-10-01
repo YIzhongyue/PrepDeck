@@ -108,7 +108,10 @@ try {
     let transparent = 0, opaque = 0, pale = 0;
     for (let i = 0; i < pixels.length; i += 4) {
       if (pixels[i + 3] === 0) transparent++;
-      if (pixels[i + 3] === 255) {
+      // The cutout tool emits near-opaque subject pixels (mostly 253–254),
+      // not exclusively 255. Require >=98% opacity while retaining the alpha
+      // channel as delivered; exact 255 would reject intact white clothing.
+      if (pixels[i + 3] >= 250) {
         opaque++;
         if (pixels[i] > 220 && pixels[i + 1] > 220 && pixels[i + 2] > 220) pale++;
       }
