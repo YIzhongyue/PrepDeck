@@ -194,7 +194,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                   saved AI key can go with it on a shared browser. */}
               <Row
                 id="settings-signout" anchor="session" title="Sign out everywhere"
-                desc="Ends your session on every device and browser. MCP tokens are separate; revoke them below."
+                desc="Ends your session on every device and browser. MCP tokens and connected apps are separate; revoke them below."
               >
                 <div className="settings-row-stack">
                   {state.hasStoredKey && (

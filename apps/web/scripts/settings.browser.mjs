@@ -162,6 +162,11 @@ const server = createServer(async (req, res) => {
     }
     if (path === "/api/me/avatar") return json(avatarStatus, avatarStatus === 200 ? { avatarUrl: "/avatars/me.webp" } : { error: "Avatar must be 2 MB or smaller" });
     if (path === "/api/mcp-tokens") return json(200, { credentials: [] });
+    // Issue #102 — one OAuth-connected app beside the (empty) PAT list.
+    if (path === "/api/mcp-connections") return json(200, { enabled: true, grants: [{
+      id: "grant", clientId: "pdc_0123456789abcdef0123456789abcdef", clientName: "Claude Desktop", clientKind: "dynamic",
+      audience: "user", scopes: ["mcp:user:read", "mcp:user:write"], createdAt: Date.now() - 86_400_000, lastUsedAt: Date.now(), status: "active",
+    }] });
     return json(200, {});
   } catch (err) { res.writeHead(500); res.end(String(err)); }
 });
@@ -253,6 +258,10 @@ try {
   await page.getByRole("textbox", { name: "First mark" }).waitFor();
   await page.getByRole("switch", { name: /shared notes/ }).waitFor();
   await page.getByRole("button", { name: "Sign out", exact: true }).waitFor();
+  // Connected OAuth apps sit beside, and apart from, the token card (issue #102).
+  await page.getByRole("heading", { name: "Connected apps", exact: true }).waitFor();
+  await page.getByText(/Read and write · Connected/).waitFor();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).waitFor();
 
   // --- One focus indicator on a text field -----------------------------------
   // The field's ring marks focus; the app-wide :focus-visible outline would
