@@ -84,8 +84,9 @@ CREATE TABLE mcp_oauth_codes (
 -- holds that successor pair encrypted (AES-GCM) under a key derived from the
 -- spent refresh token itself, so a client's concurrent duplicate refresh
 -- within a few seconds gets the same pair back instead of a new one; presented
--- later, the spent token revokes the whole grant (token family). The daily
--- prune clears rotation_result once the window has passed.
+-- later, the spent token revokes the whole grant (token family). After the
+-- window the sealed value is never read again; it becomes eligible for cleanup
+-- a minute after the rotation and is cleared by the next daily prune.
 CREATE TABLE mcp_oauth_tokens (
   id TEXT PRIMARY KEY,
   grant_id TEXT NOT NULL REFERENCES mcp_oauth_grants(id) ON DELETE CASCADE,

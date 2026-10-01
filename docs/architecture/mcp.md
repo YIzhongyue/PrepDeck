@@ -475,7 +475,9 @@ succeeded. Presenting a spent refresh token never creates another pair:
   rotation stores its result encrypted with AES-GCM under a key derived from
   the spent refresh token (`rotation_result`); only a holder of that token can
   read it back, the database holds just the token's SHA-256 under a different
-  label, and the daily prune clears the column. Someone replaying a stolen
+  label. After the window the sealed copy is never read again; it becomes
+  eligible for cleanup a minute after the rotation and the next daily prune
+  clears it, so it can remain, sealed and unused, for up to about a day. Someone replaying a stolen
   token inside the window therefore shares the one existing branch rather than
   getting a second one; whichever party rotates it next turns the other's next
   use into a replay.

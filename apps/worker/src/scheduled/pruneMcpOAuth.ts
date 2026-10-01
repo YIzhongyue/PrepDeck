@@ -31,7 +31,10 @@ const SWEEPS: ReadonlyArray<{ sql: string; cutoff: (now: number) => number }> = 
 ];
 
 // A sealed rotation result is only ever read back within seconds of the
-// rotation (see grants.ts refreshAccessToken); keep it no longer than needed.
+// rotation (see grants.ts refreshAccessToken), and after that window it is
+// never decrypted again whatever this job does. Rows become eligible here a
+// minute after the rotation and are cleared by the next daily run, so a value
+// can stay sealed in D1 for up to about a day.
 const ROTATION_RESULT_KEEP_MS = 60 * 1000;
 
 export async function runMcpOAuthPrune(env: Env, now: () => number = Date.now): Promise<{ deleted: number }> {
