@@ -220,6 +220,8 @@
 .st-badges-row > .st-badge { flex-shrink: 0; }
 .st-badges-row > .st-q-id { display: block; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-badges-row .st-copy { flex-shrink: 0; margin-left: auto; }
+.st-copy[data-status="copied"] { color: var(--st-ok-fg); }
+.st-copy[data-status="error"] { color: var(--st-bad-fg); }
 .st-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .st-tags > .st-badge { overflow-wrap: anywhere; }
 .st-badge {

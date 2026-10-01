@@ -85,14 +85,16 @@ export function BookmarkButton({ on, onClick }: { on: boolean; onClick: () => vo
   );
 }
 
-/* `compact` (phones) shows only the icon until a copy reports back, which
-   leaves the question ID room to show in full beside it. */
+/* `compact` (phones) stays icon-only in every state, so the header row it
+   shares with the ID, the type and the "Under review" badge never has to make
+   room for a label: the icon turns into a coloured check or cross, and the
+   live region below announces the outcome. Wider layouts spell it out. */
 export function CopyPromptButton({ status, onClick, compact = false }: { status: "idle" | "copied" | "error"; onClick: () => void; compact?: boolean }) {
   return (
     <>
-      <button type="button" className="st-btn st-btn--sm st-copy" onClick={onClick} aria-label="Copy question and answers as a Markdown prompt">
-        <Icon d={status === "copied" ? IC.check : IC.copy} style={status === "copied" ? { animation: "st-pop .35s cubic-bezier(.3,1.5,.5,1) both" } : undefined} />
-        {status === "copied" ? "Copied" : status === "error" ? "Copy failed" : !compact && "Copy as prompt"}
+      <button type="button" className="st-btn st-btn--sm st-copy" data-status={status} onClick={onClick} aria-label="Copy question and answers as a Markdown prompt">
+        <Icon d={status === "copied" ? IC.check : status === "error" && compact ? IC.circleX : IC.copy} style={status === "copied" ? { animation: "st-pop .35s cubic-bezier(.3,1.5,.5,1) both" } : undefined} />
+        {!compact && (status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy as prompt")}
       </button>
       <span className="sr-only" aria-live="polite">
         {status === "copied" ? "Markdown prompt copied to clipboard." : status === "error" ? "Could not copy the Markdown prompt." : ""}

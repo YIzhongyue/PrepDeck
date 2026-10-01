@@ -159,17 +159,32 @@ try {
   await badge.waitFor();
   await capture("learning-live");
   // On a phone the badge shares the header row with the id, the type and Copy
-  // as prompt; the id gives way, and nothing pushes the page sideways.
+  // as prompt; the id gives way, and nothing pushes the page sideways — not
+  // even once a copy reports back, which used to spell out "Copied" or
+  // "Copy failed" in a row with no room left for it (PR #97 review).
   await page.setViewportSize({ width: 375, height: 800 });
-  await page.getByRole("button", { name: "Copy question and answers as a Markdown prompt" }).waitFor();
-  // Polled: the phone layout settles a frame or two after the resize.
-  await waitUntil("the phone header to fit", () => page.evaluate(() => {
+  const copy = page.getByRole("button", { name: "Copy question and answers as a Markdown prompt" });
+  await copy.waitFor();
+  const headerFits = label => waitUntil(`the phone header to fit (${label})`, () => page.evaluate(() => {
     const row = document.querySelector(".st-q-head .st-badges-row");
     const box = row.getBoundingClientRect();
     const inside = [...row.children].every(child => { const r = child.getBoundingClientRect(); return r.left >= box.left - 1 && r.right <= box.right + 1; });
     return { inside, pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   }), { until: fit => fit.inside && fit.pageOverflow === 0 });
-  await capture("learning-phone");
+  // Polled: the phone layout settles a frame or two after the resize.
+  await headerFits("idle");
+  const stubClipboard = succeed => page.evaluate(succeed => Object.defineProperty(navigator, "clipboard", {
+    configurable: true, value: { writeText: () => succeed ? Promise.resolve() : Promise.reject(new Error("denied")) },
+  }), succeed);
+  for (const [succeed, status, announced] of [[true, "copied", "Markdown prompt copied to clipboard."], [false, "error", "Could not copy the Markdown prompt."]]) {
+    await stubClipboard(succeed);
+    await copy.click();
+    await page.locator(`.st-q-head .st-copy[data-status="${status}"]`).waitFor();
+    await page.getByText(announced).waitFor();
+    assert.equal((await copy.textContent()).trim(), "", `the compact button stays icon-only once ${status}`);
+    await headerFits(status);
+    await capture(`learning-phone-${status}`);
+  }
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // --- Mock -----------------------------------------------------------------
