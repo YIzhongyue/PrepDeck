@@ -68,8 +68,15 @@ export function MascotProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
     const onFocus = () => { void refresh(); };
+    const onRestore = (event: PageTransitionEvent) => { if (event.persisted) void refresh(); };
     window.addEventListener("focus", onFocus);
-    return () => { ++generation.current; read.current?.abort(); window.removeEventListener("focus", onFocus); };
+    window.addEventListener("pageshow", onRestore);
+    return () => {
+      generation.current += 1;
+      read.current?.abort();
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onRestore);
+    };
   }, [refresh]);
 
   return <MascotContext.Provider value={{ style, status, refresh, save }}>{children}</MascotContext.Provider>;
