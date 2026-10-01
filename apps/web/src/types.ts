@@ -24,6 +24,10 @@ export interface Question {
   revision?: number;
   content?: QuestionContentModel;
   options: QuestionOption[] | null;
+  // Archived by an admin (issues #92/#93) while still part of one of this
+  // user's unfinished attempts: resolvable by id so that attempt can finish,
+  // but never part of `catalog` or offered for a new session.
+  archived?: boolean;
 }
 
 export interface GradedAnswer {

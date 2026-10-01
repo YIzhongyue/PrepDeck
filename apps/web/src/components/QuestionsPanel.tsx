@@ -25,9 +25,11 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   const [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  // `needsReview` is "" (no filter), "true" or "false" — the same spelling the
-  // API parses, so it goes straight into the query string below.
-  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "", classifications: "" });
+  // `needsReview` and `archived` are "" (no filter), "true" or "false" — the
+  // same spelling the API parses, so they go straight into the query string.
+  // Archived questions are listed by default, marked, so archiving a row
+  // leaves it in place with its Restore button rather than making it vanish.
+  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "", archived: "", classifications: "" });
   const [offset, setOffset] = useState(0), [refresh, setRefresh] = useState(0);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
@@ -66,8 +68,17 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
       const link = document.createElement("a"); link.href = url; link.download = `${exam.id}-questions-${shownOffset + 1}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not export questions"); }
   };
+  // Issues #92/#93: the reversible alternative to Delete, and the only one
+  // for a question learners have already answered.
+  const setArchived = async (q: Question, archived: boolean) => {
+    if (archived && !window.confirm(`Archive question #${q.sequenceNumber}? Learners will no longer get it in practice, mock exams, Learning Mode or review lists. Its answers, notes and other history are kept, and you can restore it at any time.`)) return;
+    try {
+      await apiFetch(`/api/exams/${exam.id}/questions/${q.id}/${archived ? "archive" : "unarchive"}`, { method: "POST" });
+      mutated(`${archived ? "Archived" : "Restored"} question #${q.sequenceNumber}.`);
+    } catch (err) { setError(err instanceof Error ? err.message : `Could not ${archived ? "archive" : "restore"} question.`); }
+  };
   const remove = async (q: Question) => {
-    if (!window.confirm("Delete this question permanently? Questions with attempts, bookmarks, notes or other learning records cannot be deleted.")) return;
+    if (!window.confirm("Delete this question permanently? Questions with attempts, bookmarks, notes or other learning records cannot be deleted; archive them instead.")) return;
     try { await apiFetch(`/api/exams/${exam.id}/questions/${q.id}`, { method: "DELETE" }); mutated(`Deleted question #${q.sequenceNumber}.`); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not delete question."); }
   };
@@ -82,6 +93,7 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
       <select className="input" aria-label="Filter by difficulty" value={filters.difficulty} onChange={e => { setOffset(0); setFilters(f => ({ ...f, difficulty: e.target.value })); }}><option value="">All difficulties</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
       <input className="input" aria-label="Filter by exact tag" placeholder="Exact tag" value={filters.tag} onChange={e => { setOffset(0); setFilters(f => ({ ...f, tag: e.target.value })); }} />
       <select className="input" aria-label="Filter by review state" value={filters.needsReview} onChange={e => { setOffset(0); setFilters(f => ({ ...f, needsReview: e.target.value })); }}><option value="">Any review state</option><option value="true">Needs review</option><option value="false">Reviewed</option></select>
+      <select className="input" aria-label="Filter by archived state" value={filters.archived} onChange={e => { setOffset(0); setFilters(f => ({ ...f, archived: e.target.value })); }}><option value="">Any status</option><option value="false">Active only</option><option value="true">Archived only</option></select>
       <QuestionClassificationFilters examId={exam.id} revision={catalogRevision} selected={JSON.parse(filters.classifications || "{}")} onChange={selected => { setOffset(0); setFilters(f => ({ ...f, classifications: JSON.stringify(selected) })); }} />
       <button className="btn btn-secondary" type="submit">Search</button>
     </form>
@@ -89,10 +101,10 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
     {error && <p role="alert" className="authoring-errors authoring-feedback">{error} <button type="button" className="btn btn-secondary" onClick={() => setRefresh(n => n + 1)}>Retry</button></p>}
     {loading ? <p className="authoring-feedback">Loading…</p> : <>
       {questions.length === 0 && <p className="authoring-feedback">No questions found. Add a question to start authoring, or adjust the filters.</p>}
-      {questions.map(q => <div key={q.id} className="admin-question-row"><span className="admin-question-id">#{q.sequenceNumber}</span>
-        <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar"><span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.needsReview && <span className="tag tag-accent-2">Needs review</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
+      {questions.map(q => <div key={q.id} className={q.archivedAt ? "admin-question-row is-archived" : "admin-question-row"}><span className="admin-question-id">#{q.sequenceNumber}</span>
+        <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar">{q.archivedAt && <span className="tag tag-warning" title={`Archived ${new Date(q.archivedAt).toLocaleString()}`}>Archived</span>}<span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.needsReview && <span className="tag tag-accent-2">Needs review</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
           <p className="authoring-identifier">ID: {q.id}{q.externalId && ` · External ID: ${q.externalId}`}</p><span className="admin-question-stem">{q.stem}</span></div>
-        <div className="authoring-toolbar"><button type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
+        <div className="authoring-toolbar"><button type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-secondary" onClick={() => setArchived(q, !q.archivedAt)}>{q.archivedAt ? "Restore" : "Archive"}</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
       </div>)}
     </>}
     <QuestionPageNavigation offset={shownOffset} total={total} limit={limit} loading={loading} onRequest={requestPage} />

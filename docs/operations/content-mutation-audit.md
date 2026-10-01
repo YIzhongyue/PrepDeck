@@ -2,13 +2,18 @@
 
 [Documentation index](../README.md)
 
-Question creation, editing and deletion from the Admin browser/API write
-`question_mutation_audit_log` with `entry_point = 'admin_api'`. JSON import
+Question creation, editing, deletion, archiving and restoring from the Admin
+browser/API write `question_mutation_audit_log` with `entry_point = 'admin_api'`. JSON import
 execution uses `import_api`; Admin MCP retains its credential-aware
 `admin_mcp_audit_log`. The `content_mutation_audit` view combines both sources
 with actor, timestamp, entry point, credential/tool where applicable, action,
 exam, stable target IDs and outcome. Apply migration
 `0029_question_mutation_audit.sql` before deploying the updated routes.
+`0043_question_archive_audit_actions.sql` adds the `archive` and `unarchive`
+actions to both tables (rebuilding them and the view, preserving every row);
+apply it before the Worker that archives questions. A repeated archive or
+restore is recorded as a success, and Admin MCP's row says whether it `changed`
+anything.
 
 A successful row mutation and its audit entry commit in the same D1 batch.
 Stale writes record failure; rolled-back batches record failure after rollback.

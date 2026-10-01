@@ -269,6 +269,8 @@ header .exam-selector--compact .exam-selector__menu {
 .admin-question-list-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--color-divider); }
 .admin-question-row { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 16px 20px; }
 .admin-question-row + .admin-question-row { border-top: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent); }
+/* Archived questions stay listed for admins, muted but with their actions at full strength. */
+.admin-question-row.is-archived .admin-question-id, .admin-question-row.is-archived .admin-question-stem { opacity: .6; }
 .admin-question-id { flex: none; width: 74px; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--color-text-muted); }
 .admin-question-stem { display: block; font-size: 13px; line-height: 1.5; color: color-mix(in srgb, var(--color-text) 85%, transparent); }
 

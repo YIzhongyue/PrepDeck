@@ -6,7 +6,7 @@ import { getExam as getExamRecord } from "../lib/examManagement";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody } from "../lib/importSecurity";
-import { createStatement, getQuestion, searchQuestions, toQuestion, updateStatement, validatePayload } from "../lib/questionManagement";
+import { archiveQuestionStatement, createStatement, getQuestion, searchQuestions, toQuestion, updateStatement, validatePayload } from "../lib/questionManagement";
 import { buildTagLinkStatements, fetchTagIdsForQuestion, resolveOrCreateTags } from "../lib/questionBankTags";
 import { questionMutationAuditStatement, type QuestionMutationContext } from "../lib/questionMutationAudit";
 import { questionClassificationCatalog, QuestionClassificationError } from "../lib/questionClassifications";
@@ -121,3 +121,28 @@ questionsRouter.delete("/:id", async (c) => {
   await invalidatePracticeQuestions(c.env, examId);
   return c.body(null, 204);
 });
+
+// Issues #92/#93 — the reversible alternative to DELETE above, and the only
+// option for a question learners have already answered. Shares
+// archiveQuestionStatement with admin_archive_question/admin_unarchive_question,
+// so both entry points apply the same idempotent transition.
+for (const action of ["archive", "unarchive"] as const) {
+  questionsRouter.post(`/:id/${action}`, async (c) => {
+    const examId = c.req.param("examId")!;
+    const id = c.req.param("id");
+    const audit: QuestionMutationContext = { userId: c.get("user").id, entryPoint: "admin_api", action, examId, questionId: id };
+    try {
+      const [result] = await c.env.DB.batch([
+        archiveQuestionStatement(c.env.DB, examId, id, action === "archive", new Date().toISOString()),
+        questionMutationAuditStatement(c.env.DB, audit, "conditional"),
+      ]);
+      if (result!.meta.changes === 0) return c.json({ error: "Question not found" }, 404);
+    } catch (error) {
+      await auditRejection(c.env.DB, audit, "write_failed");
+      throw error;
+    }
+    await invalidatePracticeQuestions(c.env, examId);
+    const row = await getQuestion(c.env.DB, examId, id);
+    return row ? c.json({ question: toQuestion(row) }) : c.json({ error: "Question not found" }, 404);
+  });
+}

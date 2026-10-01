@@ -18,6 +18,7 @@ export async function listUnattemptedQuestions(
   const { results } = await db.prepare(
     `SELECT ${questionSelectColumns("q")} FROM questions q
      WHERE q.exam_id = ?
+       AND q.archived_at IS NULL
        AND q.id NOT IN (
          SELECT DISTINCT aa.question_id FROM attempt_answers aa
          JOIN attempts a ON a.id = aa.attempt_id

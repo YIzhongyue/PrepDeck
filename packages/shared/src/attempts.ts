@@ -42,7 +42,13 @@ export interface WrongBookEntry {
 }
 
 export interface PracticeCatalogResponse {
+  // Active questions only: the pool every new Practice, Mock and Learning
+  // session is chosen from.
   questions: PracticeCatalogQuestion[];
+  // Archived questions (issues #92/#93) that are still part of one of this
+  // user's unfinished attempts, so a resumed mock can show and answer them.
+  // Never offered for a new session. Absent from older servers.
+  archivedQuestions?: PracticeCatalogQuestion[];
   bookmarkedIds: string[];
   wrongEntries: WrongBookEntry[];
   attemptedIds: string[];

@@ -490,7 +490,9 @@ test("0033 migrates legacy needs_review tag state onto the column and retires th
   }
 
   db.exec(readFileSync(new URL(migration, directory), "utf8"));
-  db.exec(readFileSync(new URL("0034_question_components.sql", directory), "utf8"));
+  // The rest of the history, so the current application code below reads the
+  // schema it was written for.
+  for (const name of names.filter(n => n > migration)) db.exec(readFileSync(new URL(name, directory), "utf8"));
 
   // node:sqlite hands back null-prototype rows; compare plain objects.
   const rows = (sql) => db.prepare(sql).all().map(row => ({ ...row }));
@@ -555,4 +557,66 @@ test("points must be greater than 0 and at most 100, and a single choice needs t
   const preview = await request("/exams/exam/import/validate", "POST", file([{ ...choice, points: -5 }, { ...choice, options: [{ id: "A", text: "2" }] }]));
   assert.equal(preview.data.valid, false);
   assert.deepEqual(preview.data.issues.map(issue => issue.path).sort(), ["$.questions[0].points", "$.questions[1].options"]);
+});
+
+test("archiving keeps a referenced question and its history, blocks new attempts, and is reversible (issues #92/#93)", async t => {
+  const { db, request, create, update, invalidations } = setup(t);
+  const kept = await create({ externalId: "keep", tags: ["dup"] });
+  const duplicate = await create({ externalId: "dup", tags: ["dup"], explanation: "why" });
+  // A question learners have answered can never be deleted, only archived.
+  const open = (await request("/exams/exam/attempts", "POST", { mode: "practice", questionIds: [duplicate.id] })).data.attemptId;
+  assert.equal((await request(`/attempts/${open}/answers`, "POST", { questionId: duplicate.id, selectedAnswer: ["B"] })).status, 200);
+  assert.equal((await request(`/exams/exam/questions/${duplicate.id}`, "DELETE")).status, 409);
+
+  const before = invalidations.length;
+  const archived = await request(`/exams/exam/questions/${duplicate.id}/archive`, "POST");
+  assert.equal(archived.status, 200);
+  const { archivedAt } = archived.data.question;
+  assert.ok(archivedAt);
+  // Lifecycle, not content: revision, timestamps, tags and answers are untouched.
+  for (const field of ["revision", "updatedAt", "tags", "explanation", "correctAnswers", "externalId"]) {
+    assert.deepEqual(archived.data.question[field], duplicate[field], field);
+  }
+  assert.ok(invalidations.length > before, "the practice catalog cache is invalidated");
+  // Repeating it is a no-op that keeps the first timestamp.
+  const again = await request(`/exams/exam/questions/${duplicate.id}/archive`, "POST");
+  assert.equal(again.status, 200);
+  assert.equal(again.data.question.archivedAt, archivedAt);
+
+  // Admins still see it, clearly marked, and can filter on it.
+  assert.equal((await request(`/exams/exam/questions/${duplicate.id}`)).data.question.archivedAt, archivedAt);
+  assert.deepEqual((await request("/exams/exam/questions")).data.questions.map(q => [q.externalId, q.archivedAt !== null]), [["keep", false], ["dup", true]]);
+  assert.deepEqual((await request("/exams/exam/questions?archived=true")).data.questions.map(q => q.externalId), ["dup"]);
+  assert.deepEqual((await request("/exams/exam/questions?archived=false")).data.questions.map(q => q.externalId), ["keep"]);
+  assert.equal((await request("/exams/exam/questions?archived=")).data.total, 2);
+
+  // No new attempt may include it; the attempt already holding it can finish.
+  const refused = await request("/exams/exam/attempts", "POST", { mode: "practice", questionIds: [kept.id, duplicate.id] });
+  assert.equal(refused.status, 400);
+  assert.match(refused.data.error, /archived/);
+  assert.equal((await request(`/attempts/${open}/complete`, "POST")).status, 200);
+  // Its learning history is still readable, and an admin can still correct it.
+  assert.equal((await request(`/questions/${duplicate.id}/learning-detail`)).data.history.length, 1);
+  const edited = await update(archived.data.question, { explanation: "fixed while archived" });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.data.question.archivedAt, archivedAt, "an edit does not restore the question");
+
+  const restored = await request(`/exams/exam/questions/${duplicate.id}/unarchive`, "POST");
+  assert.equal(restored.status, 200);
+  assert.equal(restored.data.question.archivedAt, null);
+  assert.equal((await request("/exams/exam/attempts", "POST", { mode: "practice", questionIds: [duplicate.id] })).status, 201);
+
+  assert.equal((await request("/exams/exam/questions/missing/archive", "POST")).status, 404);
+  assert.equal((await request(`/exams/other/questions/${kept.id}/archive`, "POST")).status, 404, "scoped to the exam in the path");
+  for (const action of ["archive", "unarchive"]) {
+    assert.equal((await request(`/exams/exam/questions/${kept.id}/${action}`, "POST", undefined, "user")).status, 403);
+  }
+  assert.equal(db.prepare("SELECT archived_at FROM questions WHERE id = ?").get(kept.id).archived_at, null);
+
+  const audit = db.prepare("SELECT action, outcome, target_ids_json FROM question_mutation_audit_log WHERE action IN ('archive','unarchive') ORDER BY rowid").all()
+    .map(row => [row.action, row.outcome, JSON.parse(row.target_ids_json)[0]]);
+  assert.deepEqual(audit, [
+    ["archive", "success", duplicate.id], ["archive", "success", duplicate.id], ["unarchive", "success", duplicate.id],
+    ["archive", "failure", "missing"], ["archive", "failure", kept.id],
+  ]);
 });

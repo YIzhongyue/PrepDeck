@@ -1,7 +1,7 @@
 export interface QuestionMutationContext {
   userId: string;
   entryPoint: "admin_api" | "import_api";
-  action: "create" | "update" | "delete";
+  action: "create" | "update" | "delete" | "archive" | "unarchive";
   examId: string;
   questionId?: string;
 }

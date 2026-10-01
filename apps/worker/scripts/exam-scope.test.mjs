@@ -151,3 +151,33 @@ test("annotation filters and note visibility keep explicit exam and user scope",
   assert.equal((await request('/annotations?examId=missing')).body.annotations.length, 0);
   assert.equal((await request('/notes?examId=missing')).body.notes.length, 0);
 });
+
+test("archived questions leave every learner list but still resolve inside an unfinished attempt (issues #92/#93)", async t => {
+  const { db, cache, request } = setup(); t.after(() => db.close());
+  // u1 has a mock in progress on A1 and A3, and once answered A2 in a finished practice.
+  assert.equal((await request('/exams/A/attempts', 'u1', 'POST', { mode: 'mock', questionIds: ['A1', 'A3'] })).status, 201);
+  db.exec(`INSERT INTO attempts(id,user_id,exam_id,mode,started_at,completed_at,question_ids_json) VALUES ('done','u1','A','practice','now','now','["A2"]');
+    INSERT INTO attempt_answers(id,attempt_id,question_id,selected_answer_json,is_correct) VALUES ('answer','done','A2','["no"]',0)`);
+  assert.deepEqual((await request('/exams/A/practice-catalog')).body.attemptedIds, ['A2']);
+
+  db.exec("UPDATE questions SET archived_at = '2026-10-01T00:00:00.000Z' WHERE id IN ('A1', 'A2')");
+  cache.clear(); // what the archive endpoint's invalidatePracticeQuestions does
+
+  const mine = (await request('/exams/A/practice-catalog')).body;
+  assert.deepEqual(mine.questions.map(q => q.id), ['A3']);
+  assert.deepEqual([mine.bookmarkedIds, mine.wrongEntries, mine.attemptedIds], [[], [], []]);
+  // Only the archived question the unfinished mock still holds comes back,
+  // separately, and without an answer key.
+  assert.deepEqual(mine.archivedQuestions.map(q => q.id), ['A1']);
+  assert.ok(mine.archivedQuestions.every(q => !Object.hasOwn(q, 'correctAnswers') && !Object.hasOwn(q, 'explanation')));
+  assert.equal((await request('/exams/A/practice-catalog/A1')).status, 200, "the mock can still open it");
+
+  const theirs = (await request('/exams/A/practice-catalog', 'u2')).body;
+  assert.deepEqual(theirs.questions.map(q => q.id), ['A3']);
+  assert.deepEqual(theirs.bookmarkedIds, ['A3']);
+  assert.deepEqual(theirs.archivedQuestions, []);
+  assert.deepEqual(JSON.parse(cache.get('practice-questions:v2:A')).map(q => q.id), ['A3'], "only the shared active list is cached");
+
+  assert.equal((await request('/exams/A/attempts', 'u2', 'POST', { mode: 'practice', questionIds: ['A1'] })).status, 400);
+  assert.equal((await request('/exams/A/attempts', 'u2', 'POST', { mode: 'practice', questionIds: ['A3'] })).status, 201);
+});

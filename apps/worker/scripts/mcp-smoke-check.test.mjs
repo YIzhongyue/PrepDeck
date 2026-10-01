@@ -186,8 +186,9 @@ test("end-to-end against a real bundled Worker: every check passes for a healthy
     "0017_mcp_credentials.sql", "0018_mcp_credential_names.sql", "0019_admin_mcp_audit_log.sql",
     "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
     "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql", "0025_kp_order_scopes.sql",
-    "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
-    "0041_provider_archiving.sql",
+    "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0029_question_mutation_audit.sql",
+    "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
+    "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql",
   ];
   const schema = (await Promise.all(schemaFiles.map((name) =>
     readFile(new URL(`../../../migrations/${name}`, import.meta.url), "utf8")))).join("\n");

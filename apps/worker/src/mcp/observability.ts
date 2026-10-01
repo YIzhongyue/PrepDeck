@@ -17,6 +17,7 @@ type Method = typeof METHODS[number] | "unknown" | "not_dispatched";
 // are deliberately excluded: these outcomes describe content mutation calls.
 const ADMIN_MUTATIONS = new Set([
   "admin_create_question", "admin_update_question", "admin_delete_question",
+  "admin_archive_question", "admin_unarchive_question",
   "admin_batch_create_questions", "admin_batch_update_questions",
   "admin_create_exam", "admin_update_exam", "admin_archive_exam", "admin_execute_import",
   "admin_create_tag", "admin_update_tag", "admin_merge_tags",

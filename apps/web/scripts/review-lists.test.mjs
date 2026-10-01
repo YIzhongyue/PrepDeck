@@ -18,3 +18,9 @@ test('clearing catalog during a switch hides old counts and prevents stale pract
 test('a newly incorrect answer becomes visible when mastery is cleared', () => {
   assert.deepEqual(reviewIds({ ...state, mastered: { A2: false } }, 'wrong'), ['A1', 'A2']);
 });
+test('archived questions an unfinished attempt still holds resolve by id but are never offered again (issues #92/#93)', () => {
+  const withArchived = { ...state, catalogBy: { ...state.catalogBy, A3: { archived: true } }, bookmarks: { ...state.bookmarks, A3: true }, wrong: { ...state.wrong, A3: {} } };
+  assert.deepEqual(reviewIds(withArchived, 'bm'), ['A1']);
+  assert.deepEqual(reviewIds(withArchived, 'wrong'), ['A1']);
+  assert.deepEqual(catalogQuestionIds(['A3', 'A1'], withArchived.catalogBy), ['A1']);
+});

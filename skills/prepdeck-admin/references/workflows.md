@@ -12,6 +12,23 @@ report truncation. Duplicate stem matches are candidates for review, not proof
 that either question should be deleted. Show selected IDs and the concrete
 proposed changes before any high-impact edit.
 
+## Archive duplicate or obsolete questions
+
+1. Call `admin_find_duplicate_questions` (or another QC read) and fetch each
+   candidate with `admin_get_question`. Compare stem, options, answers,
+   explanation, tags and history; matching stems alone do not prove a duplicate.
+2. Propose which question to keep and which exact IDs to archive, with the
+   reason for each, and obtain explicit approval.
+3. Call `admin_archive_question` once per approved ID. Archiving is reversible
+   and never deletes: the question keeps its history and stays visible to
+   admins, but learners no longer receive it in any listing, selection or new
+   session. Report each result's `archived`, `archivedAt` and `changed`.
+   `changed: false` means it was already archived, so retrying after an
+   uncertain response is safe.
+4. Re-run the QC read: archived questions are excluded, so a resolved duplicate
+   group no longer appears. `admin_search_questions` with `archived: true` lists
+   what has been archived. `admin_unarchive_question` restores one.
+
 ## Create or edit questions
 
 1. Fetch existing questions for edits. Preserve fields outside the request and
@@ -79,4 +96,5 @@ check is the `needsReview` field on the question itself, filterable through
 
 Question deletion uses `expectedRevision` and can be blocked by attempts,
 bookmarks, notes or annotations. Report dependencies on conflict; never delete
-those references or bypass safeguards to force deletion.
+those references or bypass safeguards to force deletion. To retire such a
+question, propose `admin_archive_question` instead.

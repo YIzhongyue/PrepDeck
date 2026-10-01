@@ -64,10 +64,11 @@ try {
   await page.getByLabel("Filter by difficulty").selectOption("hard");
   await page.getByLabel("Filter by exact tag").fill("focus");
   await page.getByLabel("Filter by review state").selectOption("true");
+  await page.getByLabel("Filter by archived state").selectOption("false");
   await page.getByText("1–1 of 1", { exact: true }).waitFor();
   assert.deepEqual(await exportedIds(), ["b-54"]);
   const params = requests.at(-1).params;
-  assert.deepEqual(params, { q: "Selected", type: "single_choice", difficulty: "hard", tag: "focus", needsReview: "true", classifications: '{"subject":"b"}', limit: "50", offset: "0" });
+  assert.deepEqual(params, { q: "Selected", type: "single_choice", difficulty: "hard", tag: "focus", needsReview: "true", archived: "false", classifications: '{"subject":"b"}', limit: "50", offset: "0" });
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-classifications-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

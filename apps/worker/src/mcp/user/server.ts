@@ -83,7 +83,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_start_practice",
       { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-      "Start a persisted practice session for the authenticated user when they want their study recorded. All questionIds must belong to examId. Starting also finalizes your other open practice sessions in this exam idle for over one hour, including web sessions; they will no longer accept answers. Save the returned attemptId, submit answers with user_submit_practice_answer, then end with user_complete_practice. This call creates a new session each time; after an uncertain result inspect user_list_attempts and compare examId, startedAt and the ordered questionIds. If several attempts match, report ambiguity; do not guess or start another session. Does not move Learning Mode's resume position.",
+      "Start a persisted practice session for the authenticated user when they want their study recorded. All questionIds must belong to examId and must not be archived. Starting also finalizes your other open practice sessions in this exam idle for over one hour, including web sessions; they will no longer accept answers. Save the returned attemptId, submit answers with user_submit_practice_answer, then end with user_complete_practice. This call creates a new session each time; after an uncertain result inspect user_list_attempts and compare examId, startedAt and the ordered questionIds. If several attempts match, report ambiguity; do not guess or start another session. Does not move Learning Mode's resume position.",
       z.strictObject({ examId: examIdSchema, questionIds: z.array(questionIdSchema).min(1).max(MAX_ATTEMPT_QUESTIONS) }),
       (input) => services.startPractice(input),
     ),
@@ -170,7 +170,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_search_questions",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Search questions within one exam by text, id, type, difficulty, or tag. Returns the full question record, including the correct answer(s) and explanation.",
+      "Search questions within one exam by text, id, type, difficulty, or tag. Returns the full question record, including the correct answer(s) and explanation. Archived questions are never returned.",
       z.strictObject({
         examId: examIdSchema, q: z.string().min(1).max(200).optional(),
         type: questionTypeSchema.optional(), difficulty: difficultySchema.optional(),
@@ -181,7 +181,7 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
     defineMcpTool(
       "user_get_question",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Fetch one question by exam and question id, including the correct answer(s) and explanation. For a quiz use user_present_question first; fetch this record after the learner responds and check its revision before grading.",
+      "Fetch one question by exam and question id, including the correct answer(s) and explanation. For a quiz use user_present_question first; fetch this record after the learner responds and check its revision before grading. A question an admin has archived still resolves here (archivedAt is set) so past attempts can be reviewed, but it cannot be practiced again.",
       z.strictObject({ examId: examIdSchema, id: questionIdSchema }),
       (input) => services.getQuestion(input),
     ),

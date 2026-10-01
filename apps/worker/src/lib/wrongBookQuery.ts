@@ -27,7 +27,9 @@ export async function listWrongQuestions(
   userId: string,
   opts: { examId?: string; includeMastered?: boolean; limit: number; offset: number },
 ): Promise<WrongQuestionEntry[]> {
-  const conditions = ["w.user_id = ?"];
+  // An archived question leaves the browsable list; its entry is kept and
+  // reappears if the question is restored.
+  const conditions = ["w.user_id = ?", "q.archived_at IS NULL"];
   const params: unknown[] = [userId];
   if (!opts.includeMastered) conditions.push("w.mastered = 0");
   if (opts.examId) { conditions.push("q.exam_id = ?"); params.push(opts.examId); }

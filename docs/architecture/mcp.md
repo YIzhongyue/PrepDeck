@@ -461,18 +461,23 @@ independently unit-tested quality-control checks).
 
 Question-bank reads:
 
-- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, needsReview?, limit?, offset? }`,
+- `admin_search_questions` — `{ examId, q?, type?, difficulty?, tag?, needsReview?, archived?, limit?, offset? }`,
   the same exam-scoped search used by Admin's question list. `needsReview` is an
   Admin-only filter over the review-workflow column (omitted = both states); the
-  User MCP's `user_search_questions` has no equivalent.
+  User MCP's `user_search_questions` has no equivalent. `archived` works the same
+  way over `archivedAt`; `user_search_questions` always excludes archived
+  questions.
 - `admin_get_question` — `{ examId, id }`, the full stored `Question`.
 - `admin_list_exams` — `{ includeArchived? }`.
 - `admin_get_exam` — `{ id }`, including providers and question count.
 - `admin_get_exam_statistics` — `{ examId }`: counts by type/difficulty, the
-  quality-control counts below, and `{ total, completed }` attempt counts.
+  quality-control counts below, and `{ total, completed }` attempt counts, all
+  over active questions, plus `archivedQuestionCount`.
 
 Quality-control and maintenance reads (all `{ examId, limit?, offset? }`
-unless noted, all deterministic and explainable rather than AI-judged):
+unless noted, all deterministic and explainable rather than AI-judged). The
+`find_*` and statistics tools scan active questions only, so archiving the
+questions a check reports resolves them instead of reporting them forever:
 
 - `admin_find_duplicate_questions` — groups questions whose stem is
   identical after trimming/case/whitespace normalization.
@@ -535,6 +540,7 @@ never a silent reapply of stale content:
 - `admin_create_question` — commits a previewed create; a retry with the same `proposalId` replays the original result instead of duplicating (standalone idempotency ledger, `migrations/0020_admin_mcp_create_idempotency.sql`, independent of the `questions` table so a replay after deletion is still recognized).
 - `admin_update_question` — commits a previewed edit; requires `expectedRevision` to match (optimistic concurrency) and preserves implementation's answer-revision semantics.
 - `admin_delete_question` — requires `expectedRevision`; blocked (409) by a dependent attempt rather than cascading.
+- `admin_archive_question`, `admin_unarchive_question` — `{ examId, id }` (issues #92/#93): the reversible way to retire a question, including one learners have answered. Both call `archiveQuestionStatement`, the operation behind the Admin UI's `POST …/questions/:id/archive|unarchive`, and commit an `archive`/`unarchive` audit row in the same batch. No `expectedRevision`: the transition changes neither content nor `revision`. Repeats are successful no-ops (a repeated archive keeps the first `archivedAt`), so the result reports `{ archived, archivedAt, changed, question }` rather than a conflict. Archived questions remain fully readable and editable here, but leave every learner-facing listing, search, selection, count and new attempt (`user_start_practice` fails with reason `questions_archived`); reads by ID keep resolving them for history. The intended workflow is `admin_find_duplicate_questions` → review with `admin_get_question` → `admin_archive_question` for each redundant copy → re-run the find, which no longer reports the group.
 - `admin_batch_create_questions`, `admin_batch_update_questions` — up to `MAX_BATCH_MUTATION_ITEMS` (50) previewed items per call; per-item outcomes correlated to input order via `inputIndex`, so a partial batch failure is fully attributable.
 
 Every successful/failed mutation writes a row to `admin_mcp_audit_log`

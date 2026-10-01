@@ -66,7 +66,9 @@ export function toExam(row: ExamRow): ExamWithQuestionCount {
   };
 }
 
-export const EXAM_SELECT = `SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS question_count,
+// question_count is the active bank: archived questions (issues #92/#93) are
+// not offered to learners, so neither the selectors nor mock sizing count them.
+export const EXAM_SELECT = `SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.archived_at IS NULL) AS question_count,
   COALESCE((SELECT json_group_array(json_object('id', p.id, 'name', p.name, 'shortName', p.short_name, 'websiteUrl', p.website_url, 'iconUrl', p.icon_url, 'createdAt', p.created_at, 'archivedAt', p.archived_at)) FROM providers p JOIN provider_exams pe ON pe.provider_id = p.id WHERE pe.exam_id = e.id), '[]') AS providers_json FROM exams e`;
 
 // `limit`/`offset` are optional so the Admin UI's REST route (routes/exams.ts)

@@ -8,6 +8,7 @@ const STUDY_ERROR_MESSAGES: Record<StudyMutationDetail, string> = {
   invalid_answer: "The answer is not valid for this question. Fetch user_get_question, check its interaction and use its exact case-sensitive option IDs or answer values.",
   empty_answer: "No answer was supplied. Skip the question without submitting it; submit only after the learner provides an answer.",
   questions_not_in_exam: "One or more question IDs do not belong to the exam. Fetch the exam's questions and correct the selection before starting.",
+  questions_archived: "One or more selected questions have been archived and cannot be practiced. Choose questions again with the selection tools, which never return archived questions.",
   attempt_too_large: "Too many questions were selected. Reduce the selection to the tool's questionIds limit.",
   invalid_time_spent: "timeSpentSeconds must be a whole number within the tool's bounds. Omit it if the duration is unknown.",
   invalid_sequence_number: "sequenceNumber must be a positive integer identifying the Learning Mode resume position.",

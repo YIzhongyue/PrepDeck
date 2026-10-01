@@ -4,7 +4,7 @@ export type StudyMutationReason = "invalid_input" | "not_found" | "conflict";
 // use it to give actionable guidance without disclosing SQL or private data.
 export type StudyMutationDetail =
   | "attempt_not_practice" | "attempt_completed" | "question_not_in_attempt"
-  | "invalid_answer" | "empty_answer" | "questions_not_in_exam"
+  | "invalid_answer" | "empty_answer" | "questions_not_in_exam" | "questions_archived"
   | "attempt_too_large" | "invalid_time_spent" | "invalid_sequence_number";
 export type StudyMutationResult<T> =
   | { ok: true; data: T }

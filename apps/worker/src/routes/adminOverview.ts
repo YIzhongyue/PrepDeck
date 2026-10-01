@@ -20,7 +20,7 @@ adminOverviewRouter.get("/", async (c) => {
     ).first<{ total: number; archived: number | null }>(),
     c.env.DB.prepare(
       `SELECT e.id AS examId, e.name AS examName, COUNT(q.id) AS questionCount
-       FROM exams e LEFT JOIN questions q ON q.exam_id = e.id
+       FROM exams e LEFT JOIN questions q ON q.exam_id = e.id AND q.archived_at IS NULL
        GROUP BY e.id ORDER BY e.created_at ASC`
     ).all<{ examId: string; examName: string; questionCount: number }>(),
     c.env.DB.prepare("SELECT COUNT(*) AS n FROM attempts").first<{ n: number }>(),
