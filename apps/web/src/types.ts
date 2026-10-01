@@ -158,6 +158,9 @@ export interface MdInlineRange {
 }
 
 export interface ParsedMarkdown {
+  // The annotation coordinate of each plainText character: its source offset for
+  // question content, or its pre-link-parsing display offset for AI text that
+  // contains links (see parseMarkdown). Absent when the two coincide.
   sourceOffsets?: number[];
   plainText: string;
   blocks: MdBlock[];
