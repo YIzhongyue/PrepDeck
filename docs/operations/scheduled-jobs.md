@@ -107,5 +107,6 @@ The same daily trigger runs
 their expiry, authorization codes and authorization requests expired for more
 than a day, and dynamically registered clients that have had no grant for 30
 days. A spent refresh token is kept until it expires so a later replay is still
-recognized. Grants are never deleted (audit rows refer to them); a missed run is
+recognized; its sealed rotation result, needed only for a few seconds after the
+rotation, is cleared once a minute has passed. Grants are never deleted (audit rows refer to them); a missed run is
 picked up the next day.

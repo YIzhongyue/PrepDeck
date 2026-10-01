@@ -80,7 +80,12 @@ CREATE TABLE mcp_oauth_codes (
 );
 
 -- Access and refresh tokens. A refresh token is single-use: redeeming it sets
--- used_at, and presenting it again revokes the whole grant (token family).
+-- used_at in the same batch that creates its successor pair. `rotation_result`
+-- holds that successor pair encrypted (AES-GCM) under a key derived from the
+-- spent refresh token itself, so a client's concurrent duplicate refresh
+-- within a few seconds gets the same pair back instead of a new one; presented
+-- later, the spent token revokes the whole grant (token family). The daily
+-- prune clears rotation_result once the window has passed.
 CREATE TABLE mcp_oauth_tokens (
   id TEXT PRIMARY KEY,
   grant_id TEXT NOT NULL REFERENCES mcp_oauth_grants(id) ON DELETE CASCADE,
@@ -88,7 +93,8 @@ CREATE TABLE mcp_oauth_tokens (
   token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
-  used_at INTEGER
+  used_at INTEGER,
+  rotation_result TEXT
 );
 
 CREATE INDEX idx_mcp_oauth_tokens_grant ON mcp_oauth_tokens(grant_id, kind);

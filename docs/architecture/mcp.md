@@ -352,7 +352,10 @@ unauthenticated request gets a `401` whose challenge carries
 `resource_metadata="<origin>/.well-known/oauth-protected-resource/<path>"` and
 the audience's scopes, plus `error="invalid_token"` when a credential was sent.
 The `/api/oauth/authorize` and `/api/oauth/register` endpoints share the
-`auth` IP rate-limit class; `/api/oauth/token` uses the ordinary write class.
+`auth` IP rate-limit class (10 per minute per IP); registration also has a
+deployment-wide budget of 60 per minute (fail-closed, 429/503 with
+`Retry-After`), and registrations that never got a grant are deleted after 30
+days. `/api/oauth/token` uses the ordinary write class.
 
 ### Design decisions
 
@@ -384,11 +387,28 @@ The `/api/oauth/authorize` and `/api/oauth/register` endpoints share the
 - **Client onboarding.** Both Client ID Metadata Documents (an `https` URL
   client_id whose JSON document PrepDeck fetches — no redirects, 5 KB, 5 s,
   must name itself, cached for an hour and used stale for up to a day if the
-  host is down) and Dynamic Client Registration (most clients released before
+  host is down; see *Metadata document fetches* below) and Dynamic Client Registration (most clients released before
   the 2025-11-25 specification only support this). Pre-registration is not
   offered. Every client is public: no secrets, PKCE `S256` required. Client
   names are self-asserted either way and the consent screen marks them
   "unverified".
+- **Metadata document fetches.** Fetching `client_id` is an outbound request
+  chosen by the caller, so it is narrowed before and during the fetch. The URL
+  must be canonical `https` on the default port, with a path and no
+  credentials, query or fragment, and its host must be a public-looking DNS
+  name: IP literals (including numeric spellings the URL parser normalizes,
+  such as `https://2130706433/`), `localhost`, trailing-dot hosts, single-label
+  names and `.internal`/`.local`/`.lan`/`.home`/`.corp`/`.intranet`/`.private`
+  suffixes are refused. The fetch follows no redirects, is bounded to 5 KB and
+  5 seconds, and only a JSON document naming itself as `client_id` with valid
+  redirect URIs is accepted; nothing from a failed fetch is returned to the
+  caller. DNS is resolved by Cloudflare's network for the Worker, which has no
+  route to the deployment's own private network: a hostname that resolves to a
+  private or link-local address (including through DNS rebinding) reaches no
+  internal service of PrepDeck, and Cloudflare refuses Worker subrequests to
+  its own internal addresses. Name-based checks are therefore defense in depth,
+  not the boundary. A deployment that adds Workers VPC or service bindings to
+  private networks must not route this fetch through them.
 - **Redirect URIs.** `https`; `http` only on a loopback host (any port, per
   RFC 8252 §7.3); or a private-use scheme for desktop clients. Never a
   fragment, credentials, or `javascript:`/`data:`/`file:`-style schemes.
@@ -440,17 +460,31 @@ exchange checks expiry, client, redirect URI, the PKCE verifier and, if sent,
 the `resource`; it re-checks the account.
 
 Refresh validates the request before spending the refresh token (so a client
-that gets a parameter wrong keeps it), then rotates it. A spent refresh token
-presented again **within 10 seconds, by the same client** is a concurrent
-refresh — parallel requests that all saw the access token expire; the official
-MCP TypeScript SDK does this with its background GET stream and a tool call —
-and gets its own new pair. Presented later, by anyone, it is a replay: the
-whole grant (the token family) is revoked, so the thief and the client both
-lose it, and the user recovers by reconnecting the client. The window is
-`REFRESH_TOKEN_REUSE_GRACE_MS`; it is the deliberate trade-off between strict
-reuse detection and not disconnecting real clients, the same one many
-authorization servers make. Scope narrowing on refresh is not supported:
-tokens always carry the grant's scopes.
+that gets a parameter wrong keeps it), then rotates it. **A refresh token is
+strictly single-use**: exactly one request spends it (a compare-and-swap on
+`used_at`), and that same D1 batch creates its one successor pair; the
+successor rows are only written if this request's claim is the one that
+succeeded. Presenting a spent refresh token never creates another pair:
+
+- Within `REFRESH_TOKEN_REUSE_GRACE_MS` (10 seconds) of the rotation, by the
+  client it was issued to, the request gets back the **same** successor pair.
+  That keeps a client's own concurrent refreshes idempotent: when an access
+  token expires, parallel requests all get a 401 and refresh with the token
+  they hold (the official MCP TypeScript SDK does this with its background GET
+  stream and a tool call). To answer them without storing a usable secret, the
+  rotation stores its result encrypted with AES-GCM under a key derived from
+  the spent refresh token (`rotation_result`); only a holder of that token can
+  read it back, the database holds just the token's SHA-256 under a different
+  label, and the daily prune clears the column. Someone replaying a stolen
+  token inside the window therefore shares the one existing branch rather than
+  getting a second one; whichever party rotates it next turns the other's next
+  use into a replay.
+- Later, by anyone, it is a replay: the whole grant (the token family) is
+  revoked, so the thief and the client both lose it, and the user recovers by
+  reconnecting the client.
+
+Scope narrowing on refresh is not supported: tokens always carry the grant's
+scopes.
 
 Each MCP request with an OAuth access token checks: the token is unexpired,
 its grant unrevoked and for this endpoint's audience, and — as for a PAT —
@@ -1046,7 +1080,8 @@ adapter (applying the actual migrations, not a hand-rolled schema):
   discovery and challenges, routing, the feature switch, authorization request
   validation, redirect URI rules, DCR and metadata documents, browser binding
   and consent, PKCE/client/redirect/expiry/replay/concurrent code exchange,
-  refresh rotation, grace and replay, account revocation and demotion,
+  refresh rotation, idempotent duplicates and replay, the registration budget,
+  metadata-document host rules, account revocation and demotion,
   audience isolation, scope enforcement, shared quotas with PATs, Google
   token and browser session rejection, connection management, sign-out,
   RFC 7009 revocation, audit attribution, log safety and the prune job.

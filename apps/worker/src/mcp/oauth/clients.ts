@@ -184,9 +184,16 @@ export function isMetadataDocumentClientId(value: string): boolean {
   let url: URL;
   try { url = new URL(value); } catch { return false; }
   if (url.href !== value || url.username || url.password || url.search || url.hash || url.port) return false;
-  if (url.pathname === "/" || url.hostname === "localhost" || url.hostname.endsWith(".localhost")) return false;
-  if (/^\d+(\.\d+){3}$/.test(url.hostname) || url.hostname.startsWith("[")) return false;
-  return url.hostname.includes(".");
+  // The Worker fetches this URL, so it must name a public DNS host: no IP
+  // literal (the WHATWG parser already turns numeric forms such as
+  // "https://2130706433/" into dotted IPv4, which the href check above then
+  // refuses as non-canonical), no localhost or single-label/internal names,
+  // and no trailing-dot spelling that would dodge these checks.
+  const host = url.hostname;
+  if (url.pathname === "/" || host.endsWith(".") || host === "localhost" || host.endsWith(".localhost")) return false;
+  if (/^\d+(\.\d+){3}$/.test(host) || host.startsWith("[")) return false;
+  if (/\.(internal|local|lan|home|corp|intranet|private)$/.test(host)) return false;
+  return host.includes(".");
 }
 
 async function readBounded(response: Response): Promise<string | null> {

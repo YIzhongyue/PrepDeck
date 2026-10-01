@@ -25,7 +25,7 @@ import { MCP_OAUTH_SCOPES, type McpAuthorizationDecisionResponse, type McpAuthor
 import type { Env } from "../../bindings";
 import type { Variables } from "../../context";
 import { requireAccessUser } from "../../middleware/access";
-import { authenticatedRateLimit } from "../../middleware/rateLimit";
+import { authenticatedRateLimit, consumeRateLimit } from "../../middleware/rateLimit";
 import {
   RESOURCE_NAMES, audienceForResource, audienceFromScopes, audienceScopes, isMcpOAuthEnabled, oauthIssuer,
   requestedScopes, resourceUrl, type McpAudience,
@@ -225,8 +225,18 @@ oauthRouter.post("/token", smallBody(16 * 1024), async (c) => {
 });
 
 oauthRouter.options("/register", preflight);
+// Registration is unauthenticated and writes a row, so besides the per-IP
+// `auth` budget (middleware/rateLimit.ts) it has a deployment-wide one; unused
+// registrations are deleted after 30 days (scheduled/pruneMcpOAuth.ts).
+const REGISTRATIONS_PER_MINUTE = 60;
+
 oauthRouter.post("/register", smallBody(8 * 1024), async (c) => {
   if (!isMcpOAuthEnabled(c.env)) return notEnabled(c);
+  const budget = await consumeRateLimit(c.env, "oauth:register:global", { windowSeconds: 60, max: REGISTRATIONS_PER_MINUTE }).catch(() => null);
+  if (!budget?.allowed) {
+    return c.json({ error: "temporarily_unavailable", error_description: "Too many client registrations. Try again shortly." }, budget ? 429 : 503,
+      { ...CORS_HEADERS, "Cache-Control": "no-store", "Retry-After": String(budget ? Math.max(1, Math.ceil(budget.retryAfter)) : 30) });
+  }
   const metadata = await c.req.json().catch(() => null);
   const result = await registerDynamicClient(c.env.DB, metadata);
   const headers = { ...CORS_HEADERS, "Cache-Control": "no-store" };

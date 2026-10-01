@@ -326,7 +326,9 @@ test("redirect URIs: https, loopback http on any port, private-use schemes; neve
   assert.ok(!redirectUriAllowed(["http://127.0.0.1/callback"], "http://127.0.0.1:51234/other"));
   assert.ok(!redirectUriAllowed(["https://client.example/cb"], "https://client.example:8443/cb"));
   assert.ok(isMetadataDocumentClientId("https://client.example/oauth/metadata.json"));
-  for (const id of ["https://client.example/", "http://client.example/m.json", "https://127.0.0.1/m.json", "https://localhost/m.json", "https://client.example/m.json?x=1", "pdc_abc"]) {
+  for (const id of ["https://client.example/", "http://client.example/m.json", "https://127.0.0.1/m.json", "https://localhost/m.json", "https://client.example/m.json?x=1", "pdc_abc",
+    "https://localhost./m.json", "https://client.example./m.json", "https://2130706433/m.json", "https://0x7f.1/m.json", "https://[::1]/m.json",
+    "https://10.0.0.1/m.json", "https://metadata.internal/m.json", "https://printer.local/m.json", "https://intranet/m.json", "https://client.example:8443/m.json"]) {
     assert.ok(!isMetadataDocumentClientId(id), id);
   }
 });
@@ -477,12 +479,13 @@ test("code exchange enforces PKCE, client, redirect URI, expiry and single use",
   assert.equal((await rpc(f, "user", ok.body.access_token)).status, 401);
 });
 
-test("refresh rotates the token; a replay after the grace window revokes the family, a concurrent refresh does not", async (t) => {
+test("a refresh token is single-use: duplicates within seconds get the same pair, later replay revokes the family", async (t) => {
   const f = setup(t);
   const { client, tokens } = await connect(f);
   const refresh = (refreshToken, extra = {}, clientId = client.client_id) => token(f, { grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId, ...extra });
   const tokenHash = async (value) => Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))).toString("hex");
   const spentAgo = async (value, ms) => f.db.prepare("UPDATE mcp_oauth_tokens SET used_at = ? WHERE token_hash = ?").run(Date.now() - ms, await tokenHash(value));
+  const refreshRows = () => f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_tokens WHERE kind = 'refresh'").get().n;
 
   // A malformed request keeps the refresh token usable.
   assert.equal((await refresh(tokens.refresh_token, { resource: `${BASE}/admin-mcp` })).body.error, "invalid_target");
@@ -493,37 +496,67 @@ test("refresh rotates the token; a replay after the grace window revokes the fam
   const first = await refresh(tokens.refresh_token, { resource: `${BASE}/mcp` });
   assert.equal(first.response.status, 200);
   assert.notEqual(first.body.refresh_token, tokens.refresh_token);
-  assert.equal(first.body.expires_in, 3600);
+  assert.ok(first.body.expires_in > 3590 && first.body.expires_in <= 3600);
   assert.equal((await rpc(f, "user", first.body.access_token)).status, 200);
+  const rows = refreshRows();
 
-  // Concurrent refresh with one token (parallel requests that all saw the
-  // access token expire) does not disconnect the client: within the grace
-  // window, each presentation gets a working pair.
+  // Presenting the spent token again right away (a client's own concurrent
+  // refresh, or a thief racing it) never creates another branch: it gets the
+  // very same successor pair, and no token row is added.
+  const again = await refresh(tokens.refresh_token);
+  assert.equal(again.response.status, 200);
+  assert.equal(again.body.refresh_token, first.body.refresh_token);
+  assert.equal(again.body.access_token, first.body.access_token);
+  assert.equal(refreshRows(), rows);
+  // ... and only for the client it was issued to.
+  assert.equal((await refresh(tokens.refresh_token, {}, "pdc_other")).body.error, "invalid_grant");
+
+  // Truly concurrent redemption of one unspent token: exactly one rotation,
+  // every request answered with its result.
   const race = await Promise.all([refresh(first.body.refresh_token), refresh(first.body.refresh_token), refresh(first.body.refresh_token)]);
   assert.deepEqual(race.map((r) => r.response.status), [200, 200, 200]);
-  for (const { body } of race) assert.equal((await rpc(f, "user", body.access_token)).status, 200);
+  assert.equal(new Set(race.map((r) => r.body.refresh_token)).size, 1, "one successor, not one per request");
+  assert.equal(new Set(race.map((r) => r.body.access_token)).size, 1);
+  assert.equal(refreshRows(), rows + 1);
+  const [{ body: current }] = race;
+  assert.equal((await rpc(f, "user", current.access_token)).status, 200);
   assert.equal(f.db.prepare("SELECT revoked_at FROM mcp_oauth_grants").get().revoked_at, null);
-  // ... but only for the client it was issued to.
-  assert.equal((await refresh(first.body.refresh_token, {}, "pdc_other")).body.error, "invalid_grant");
+
+  // The stored copy is sealed: the database alone does not reveal the pair.
+  const stored = JSON.stringify(f.db.prepare("SELECT rotation_result FROM mcp_oauth_tokens").all());
+  assert.ok(!stored.includes(current.refresh_token) && !stored.includes(current.access_token));
 
   // Presenting a spent token after the window is a replay: the whole grant is
   // revoked, every token issued under it included, by whoever presents it.
-  await spentAgo(tokens.refresh_token, 11_000);
-  const replay = await refresh(tokens.refresh_token, {}, "pdc_attacker");
+  await spentAgo(first.body.refresh_token, 11_000);
+  const replay = await refresh(first.body.refresh_token, {}, "pdc_attacker");
   assert.equal(replay.body.error, "invalid_grant");
   assert.match(replay.body.error_description, /authorization again/);
   const grant = f.db.prepare("SELECT revoked_at, revoke_reason FROM mcp_oauth_grants").get();
   assert.equal(grant.revoke_reason, "refresh_replay");
-  for (const { body } of [first, ...race]) {
-    assert.equal((await rpc(f, "user", body.access_token)).status, 401);
-    assert.equal((await refresh(body.refresh_token)).body.error, "invalid_grant");
-  }
+  assert.equal((await rpc(f, "user", current.access_token)).status, 401);
+  assert.equal((await refresh(current.refresh_token)).body.error, "invalid_grant");
 
   // An expired refresh token is refused without touching the grant.
   const other = await connect(f);
   f.db.prepare("UPDATE mcp_oauth_tokens SET expires_at = ? WHERE token_hash = ?").run(Date.now() - 1, await tokenHash(other.tokens.refresh_token));
   assert.equal((await token(f, { grant_type: "refresh_token", refresh_token: other.tokens.refresh_token, client_id: other.client.client_id })).body.error, "invalid_grant");
   assert.equal(f.db.prepare("SELECT revoked_at FROM mcp_oauth_grants WHERE client_id = ?").get(other.client.client_id).revoked_at, null);
+});
+
+test("dynamic registration has a deployment-wide budget on top of the per-IP one", async (t) => {
+  const f = setup(t);
+  const limited = new Set(["oauth:register:global"]);
+  const original = f.env.RATE_LIMITER;
+  f.env.RATE_LIMITER = { idFromName: (key) => key, get: (key) => ({ fetch: async () => Response.json({ allowed: !limited.has(key), retryAfter: 42 }) }) };
+  const refused = await register(f);
+  assert.equal(refused.response.status, 429);
+  assert.equal(refused.response.headers.get("Retry-After"), "42");
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_clients").get().n, 0);
+  f.env.RATE_LIMITER = { idFromName: (key) => key, get: () => ({ fetch: async () => { throw new Error("down"); } }) };
+  assert.equal((await register(f)).response.status, 503, "fails closed when the limiter is unavailable");
+  f.env.RATE_LIMITER = original;
+  assert.equal((await register(f)).response.status, 201);
 });
 
 test("refresh and MCP calls follow the account's current status and role", async (t) => {
@@ -724,4 +757,15 @@ test("the daily prune drops expired tokens, codes and requests but keeps grants"
   assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_grants").get().n, 1);
   assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_clients WHERE id = ?").get(unused.client_id).n, 0, "an unused registration goes");
   assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_clients").get().n, 1, "a client with a grant stays");
+});
+
+test("the daily prune clears sealed rotation results once their window has passed", async (t) => {
+  const f = setup(t);
+  const { client, tokens } = await connect(f);
+  await token(f, { grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: client.client_id });
+  const sealed = () => f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_tokens WHERE rotation_result IS NOT NULL").get().n;
+  assert.equal(sealed(), 1);
+  await runMcpOAuthPrune(f.env, () => Date.now() + 2 * 60 * 1000);
+  assert.equal(sealed(), 0);
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_tokens").get().n, 4, "unexpired tokens stay");
 });

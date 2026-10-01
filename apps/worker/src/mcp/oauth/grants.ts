@@ -258,21 +258,69 @@ export async function exchangeAuthorizationCode(env: Pick<Env, "DB" | "APP_BASE_
   return checkResource(env, grant, input.resource) ?? issueTokens(db, grant);
 }
 
+// The successor pair of a rotation, encrypted under a key derived from the
+// refresh token it replaced. Only a holder of that refresh token can read it
+// back, and the database only ever holds the token's SHA-256 under another
+// label, so a database read alone yields nothing usable.
+const ROTATION_KEY_LABEL = "pd-oauth-rotation.v1:";
+
+async function rotationKey(refreshToken: string): Promise<CryptoKey> {
+  const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${ROTATION_KEY_LABEL}${refreshToken}`));
+  return crypto.subtle.importKey("raw", material, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+const toB64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const fromB64 = (text: string) => Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
+
+interface RotationResult { access_token: string; refresh_token: string; access_expires_at: number; scope: string }
+
+async function sealRotation(refreshToken: string, result: RotationResult): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await rotationKey(refreshToken), new TextEncoder().encode(JSON.stringify(result)));
+  return `${toB64(iv)}.${toB64(new Uint8Array(sealed))}`;
+}
+
+async function openRotation(refreshToken: string, sealed: string): Promise<RotationResult | null> {
+  const [iv, data] = sealed.split(".");
+  if (!iv || !data) return null;
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(iv) }, await rotationKey(refreshToken), fromB64(data));
+    return JSON.parse(new TextDecoder().decode(plain)) as RotationResult;
+  } catch {
+    return null;
+  }
+}
+
+function rotationBody(result: RotationResult, now: number): TokenResult {
+  return {
+    ok: true,
+    body: {
+      access_token: result.access_token, token_type: "Bearer", expires_in: Math.max(0, Math.floor((result.access_expires_at - now) / 1000)),
+      refresh_token: result.refresh_token, scope: result.scope,
+    },
+  };
+}
+
 /**
  * RFC 6749 §6 with OAuth 2.1 refresh-token rotation for public clients.
  *
- * The request is validated first, so a client that gets a parameter wrong
- * keeps its refresh token; then the token is spent with a compare-and-swap
- * and a new access and refresh token are issued. A spent refresh token
- * presented again is handled by how long ago it was spent:
+ * A refresh token is strictly single-use: exactly one request spends it (a
+ * compare-and-swap on `used_at`) and creates its successor pair, in the same
+ * D1 batch. The request is validated first, so a client that gets a parameter
+ * wrong keeps its token.
  *
- *  - within REFRESH_TOKEN_REUSE_GRACE_MS, by the client it was issued to, it is
- *    a concurrent refresh (parallel requests that all saw the access token
- *    expire) and gets its own new pair, so a legitimate client is not
- *    disconnected by its own concurrency;
- *  - after that, it is a replay: the whole grant (the token family) is
- *    revoked, so a stolen refresh token stops working for the thief and the
- *    client alike, and the user recovers by reconnecting the client.
+ * Presenting a spent refresh token again never creates another token pair:
+ *
+ *  - within REFRESH_TOKEN_REUSE_GRACE_MS of the rotation, the request receives
+ *    the *same* successor pair the rotation issued (read back from the sealed
+ *    copy stored with the spent token). That makes a client's own concurrent
+ *    refreshes — parallel requests that all saw the access token expire, as
+ *    the official MCP SDK does — idempotent instead of disconnecting it. A
+ *    thief who replays in that window gets nothing beyond that one branch:
+ *    whichever party rotates it next turns the other's next use into a replay;
+ *  - after the window, it is a replay: the whole grant (the token family) is
+ *    revoked, so the thief and the client both lose it, and the user recovers
+ *    by reconnecting the client.
  *
  * Requested scope narrowing is not supported: tokens always carry the grant's
  * approved scopes, reported in `scope`.
@@ -287,15 +335,24 @@ export async function refreshAccessToken(env: Pick<Env, "DB" | "APP_BASE_URL">, 
   const db = env.DB;
   const tokenHash = await hashMcpToken(refreshToken);
   const now = Date.now();
-  const token = await db.prepare("SELECT grant_id, expires_at, used_at FROM mcp_oauth_tokens WHERE token_hash = ? AND kind = 'refresh'")
-    .bind(tokenHash).first<{ grant_id: string; expires_at: number; used_at: number | null }>();
+  type TokenRow = { grant_id: string; expires_at: number; used_at: number | null; rotation_result: string | null };
+  const readToken = () => db.prepare("SELECT grant_id, expires_at, used_at, rotation_result FROM mcp_oauth_tokens WHERE token_hash = ? AND kind = 'refresh'")
+    .bind(tokenHash).first<TokenRow>();
+  const token = await readToken();
   if (!token) return invalid;
   const replayed = async () => {
     await revokeGrantById(db, token.grant_id, "refresh_replay");
     return invalid;
   };
+  // The rotation this token already went through, returned unchanged inside
+  // the window; anything else about a spent token is a replay.
+  const repeatRotation = async (row: TokenRow | null) => {
+    if (row?.used_at == null || row.rotation_result === null || Date.now() - row.used_at > REFRESH_TOKEN_REUSE_GRACE_MS) return replayed();
+    const result = await openRotation(refreshToken, row.rotation_result);
+    return result ? rotationBody(result, Date.now()) : replayed();
+  };
   if (token.used_at !== null && now - token.used_at > REFRESH_TOKEN_REUSE_GRACE_MS) return replayed();
-  if (token.expires_at <= now) return invalid;
+  if (token.expires_at <= now && token.used_at === null) return invalid;
   const grant = await loadGrant(db, token.grant_id);
   if (!grant || grant.client_id !== clientId) {
     return { ok: false, error: "invalid_grant", description: "The refresh token was issued to a different client." };
@@ -309,17 +366,31 @@ export async function refreshAccessToken(env: Pick<Env, "DB" | "APP_BASE_URL">, 
   }
   const wrongResource = checkResource(env, grant, input.resource);
   if (wrongResource) return wrongResource;
-  if (token.used_at === null) {
-    const claimed = await db.prepare("UPDATE mcp_oauth_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL")
-      .bind(now, tokenHash).run();
-    if (claimed.meta.changes !== 1) {
-      // Spent by a concurrent request between the read and this write: that
-      // is the concurrent case by definition, but confirm it from the row.
-      const spent = await db.prepare("SELECT used_at FROM mcp_oauth_tokens WHERE token_hash = ?").bind(tokenHash).first<{ used_at: number | null }>();
-      if (spent?.used_at == null || Date.now() - spent.used_at > REFRESH_TOKEN_REUSE_GRACE_MS) return replayed();
-    }
+  if (token.used_at !== null) return repeatRotation(token);
+
+  // Spend the token and create its successor atomically: the successor rows
+  // exist only if this request's own claim (identified by its sealed result,
+  // unique per attempt) is the one that set used_at.
+  const result: RotationResult = {
+    access_token: `pd_oat_${grant.audience}_${randomHex(32)}`, refresh_token: `pd_ort_${grant.audience}_${randomHex(32)}`,
+    access_expires_at: now + ACCESS_TOKEN_TTL_MS, scope: grant.scopes,
+  };
+  const sealed = await sealRotation(refreshToken, result);
+  const insert = `INSERT INTO mcp_oauth_tokens (id, grant_id, kind, token_hash, created_at, expires_at)
+    SELECT ?, id, ?, ?, ?, ? FROM mcp_oauth_grants WHERE id = ? AND revoked_at IS NULL
+      AND EXISTS (SELECT 1 FROM mcp_oauth_tokens WHERE token_hash = ? AND rotation_result = ?)`;
+  const [claimed, access, refresh] = await db.batch([
+    db.prepare("UPDATE mcp_oauth_tokens SET used_at = ?, rotation_result = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?")
+      .bind(now, sealed, tokenHash, now),
+    db.prepare(insert).bind(crypto.randomUUID(), "access", await hashMcpToken(result.access_token), now, result.access_expires_at, grant.id, tokenHash, sealed),
+    db.prepare(insert).bind(crypto.randomUUID(), "refresh", await hashMcpToken(result.refresh_token), now, now + REFRESH_TOKEN_TTL_MS, grant.id, tokenHash, sealed),
+  ]);
+  // Lost the race to a concurrent request: answer with the winner's pair.
+  if (claimed!.meta.changes !== 1) return repeatRotation(await readToken());
+  if (access!.meta.changes !== 1 || refresh!.meta.changes !== 1) {
+    return { ok: false, error: "invalid_grant", description: "This authorization has been revoked. Reconnect the client." };
   }
-  return issueTokens(db, grant);
+  return rotationBody(result, now);
 }
 
 /**

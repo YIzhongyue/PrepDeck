@@ -30,8 +30,14 @@ const SWEEPS: ReadonlyArray<{ sql: string; cutoff: (now: number) => number }> = 
   },
 ];
 
+// A sealed rotation result is only ever read back within seconds of the
+// rotation (see grants.ts refreshAccessToken); keep it no longer than needed.
+const ROTATION_RESULT_KEEP_MS = 60 * 1000;
+
 export async function runMcpOAuthPrune(env: Env, now: () => number = Date.now): Promise<{ deleted: number }> {
   const at = now();
+  await env.DB.prepare("UPDATE mcp_oauth_tokens SET rotation_result = NULL WHERE rotation_result IS NOT NULL AND used_at < ?")
+    .bind(at - ROTATION_RESULT_KEEP_MS).run();
   let deleted = 0;
   for (const sweep of SWEEPS) {
     for (let page = 0; page < MAX_PAGES; page++) {

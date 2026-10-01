@@ -22,12 +22,12 @@ export type McpAudience = "user" | "admin";
 // while an idle one does after REFRESH_TOKEN_TTL_MS.
 export const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-// A spent refresh token presented again within this window, by the same
-// client, is a concurrent refresh rather than a replay: when an access token
-// expires, a client's parallel requests (the official MCP SDK's background
-// GET stream and a tool call, for one) each get a 401 and each refresh with
-// the token they hold. Within the window the duplicate gets its own new token
-// pair; after it, presenting a spent token revokes the grant.
+// A spent refresh token presented again within this window, by the client it
+// was issued to, gets back the same successor pair its rotation issued — never
+// a new one. When an access token expires, a client's parallel requests (the
+// official MCP SDK's background GET stream and a tool call, for one) each get a
+// 401 and each refresh with the token they hold; this keeps that idempotent.
+// After the window, presenting a spent token revokes the grant.
 export const REFRESH_TOKEN_REUSE_GRACE_MS = 10 * 1000;
 export const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000;
 export const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000;
