@@ -68,3 +68,18 @@ test("AI Markdown retains its existing display coordinate system", () => {
   const parsed = parseMarkdown("**bold**\nnext");
   assert.equal(parsed.plainText, "boldnext"); assert.equal(parsed.sourceOffsets, undefined);
 });
+test("Markdown links render as safe anchors while keeping raw source coordinates", () => {
+  const src = "Reference: [File-size **tuning**](https://docs.databricks.com/aws/en/tables/tune-file-size)\n参见 https://example.com/a_b_c(1)。 [x](javascript:alert(1))";
+  const parsed = parseMarkdown(src, true);
+  assert.ok(parsed.sourceOffsets.every((off, i) => src[off] === parsed.plainText[i]));
+  const links = parsed.inline.filter(r => r.kind === "link").map(r => [parsed.plainText.slice(r.start, r.end), r.href]);
+  assert.deepEqual(links, [
+    ["File-size tuning", "https://docs.databricks.com/aws/en/tables/tune-file-size"],
+    ["https://example.com/a_b_c(1)", "https://example.com/a_b_c(1)"],
+  ]);
+  assert.ok(parsed.inline.some(r => r.kind === "bold" && parsed.plainText.slice(r.start, r.end) === "tuning"));
+  assert.ok(parsed.plainText.includes("[x](javascript:alert(1))"));
+  const segs = mdSegsFor(parsed, [], "q", "stem", false).flatMap(b => b.segs);
+  assert.ok(segs.some(s => s.text === "tuning" && s.href === "https://docs.databricks.com/aws/en/tables/tune-file-size" && s.weight === "700"));
+  assert.equal(parseMarkdown("see (https://a.com/x).").inline[0].href, "https://a.com/x");
+});

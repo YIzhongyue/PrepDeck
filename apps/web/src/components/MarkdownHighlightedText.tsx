@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import HighlightedText from "./HighlightedText";
 import { mdSegsFor } from "../lib/annotations";
 import { parseMarkdown } from "../lib/markdown";
@@ -11,7 +11,7 @@ import type { Annotation, AnnotationTarget } from "../types";
 // lib/markdown.ts — they only ever look at `data-off` attributes, which
 // HighlightedText still renders on every leaf span, same as always).
 export default function MarkdownHighlightedText({
-  src, annotations, qid, target, show, onMouseUp, onRemoveMark, sourceCoordinates = false, reflowProse = false
+  src, annotations, qid, target, show, onMouseUp, onRemoveMark, sourceCoordinates = false, reflowProse = false, style
 }: {
   src: string;
   sourceCoordinates?: boolean;
@@ -22,6 +22,7 @@ export default function MarkdownHighlightedText({
   show: boolean;
   onMouseUp?: () => void;
   onRemoveMark?: (id: string) => void;
+  style?: CSSProperties;
 }) {
   const parsed = parseMarkdown(src, sourceCoordinates, reflowProse);
   const blockSegs = mdSegsFor(parsed, annotations, qid, target, show);
@@ -76,7 +77,7 @@ export default function MarkdownHighlightedText({
   }
 
   return (
-    <div onMouseUp={onMouseUp} style={{ fontSize: 13.5, lineHeight: 1.65 }}>
+    <div onMouseUp={onMouseUp} style={{ fontSize: 13.5, lineHeight: 1.65, ...style }}>
       {elements}
     </div>
   );

@@ -22,7 +22,7 @@ export default function HighlightedText({ segs, onRemoveMark }: { segs: TextSegm
           textUnderlineOffset: "3px"
         };
         const annotationIds = s.annotationIds ?? [];
-        return (
+        const span = (
           <span
             key={s.key} data-off={s.off} title={s.title} style={style}
             onMouseEnter={() => setHoveredMarks(annotationIds)}
@@ -58,6 +58,11 @@ export default function HighlightedText({ segs, onRemoveMark }: { segs: TextSegm
             })}
           </span>
         );
+        // Markdown links: the anchor wraps the offset-bearing span so selection
+        // capture (which walks up to the nearest data-off) is unaffected.
+        return s.href
+          ? <a key={s.key} href={s.href} target="_blank" rel="noreferrer noopener">{span}</a>
+          : span;
       })}
     </>
   );

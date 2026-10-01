@@ -133,6 +133,7 @@ export interface TextSegment {
   // plain-text targets (stem/options) never set these.
   italic?: boolean;
   code?: boolean;
+  href?: string;
 }
 
 // docs/requirements/ai-explanations.md AI explanations render as (a constrained subset of) Markdown —
@@ -147,12 +148,13 @@ export interface MdBlock {
   end: number;
 }
 
-export type MdInlineKind = "bold" | "italic" | "code";
+export type MdInlineKind = "bold" | "italic" | "code" | "link";
 
 export interface MdInlineRange {
   start: number; // offset into ParsedMarkdown.plainText
   end: number;
   kind: MdInlineKind;
+  href?: string; // set only for kind "link"
 }
 
 export interface ParsedMarkdown {

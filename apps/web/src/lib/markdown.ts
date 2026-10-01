@@ -2,8 +2,9 @@ import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../typ
 import { isProseLine, proseLineSeparator } from "./prose";
 
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
-// italic, inline code, fenced code blocks, unordered/ordered lists, and
-// horizontal rules — into a flat plain-text string plus block/inline range
+// italic, inline code, links ([text](url) and bare http(s) URLs), fenced code
+// blocks, unordered/ordered lists, and horizontal rules — into a flat
+// plain-text string plus block/inline range
 // metadata. Not a full CommonMark implementation: this only needs to cover
 // what Claude/GPT actually produce for docs/requirements/ai-explanations.md's AI explanations (see
 // prompts/explanation.njk), and every one of those constructs showed up in
@@ -115,7 +116,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
   return { plainText, blocks, inline, ...(sourceCoordinates ? { sourceOffsets } : {}) };
 }
 
-// Strips **bold**/__bold__, *italic*/_italic_ and `code` markers from
+// Strips **bold**/__bold__, *italic*/_italic_, `code` and [link](url) markers from
 // `text`, recording format ranges (offsets into the final plainText, via
 // `base` + how far into `text` each match starts) and returning the
 // marker-free string. Single-pass and greedy — not spec-correct for
@@ -163,9 +164,50 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         continue;
       }
     }
+    if (one === "[") {
+      const link = /^\[([^\]\n]+)\]\(<?([^\s()<>]+)>?\)/.exec(text.slice(i));
+      if (link && SAFE_HREF.test(link[2]!)) {
+        const start = base + out.length;
+        const innerOffsets = Array.from(link[1]!, (_, n) => sourceAt(i + 1 + n));
+        out += parseInline(link[1]!, start, inline, offsets, 0, innerOffsets);
+        inline.push({ start, end: base + out.length, kind: "link", href: link[2]! });
+        i += link[0].length;
+        continue;
+      }
+    }
+    if ((one === "h" || one === "H") && !/[A-Za-z0-9]/.test(text[i - 1] ?? "")) {
+      const url = bareUrl(text.slice(i));
+      if (url) {
+        const start = base + out.length;
+        out += url;
+        if (offsets) for (let n = 0; n < url.length; n++) offsets.push(sourceAt(i + n));
+        inline.push({ start, end: start + url.length, kind: "link", href: url });
+        i += url.length;
+        continue;
+      }
+    }
     out += one;
     offsets?.push(sourceAt(i));
     i++;
   }
   return out;
+}
+
+// Only web and mail links become anchors; anything else (javascript:, data:,
+// relative paths) stays literal text.
+const SAFE_HREF = /^(https?:\/\/|mailto:)/i;
+
+// A bare http(s) URL, limited to ASCII URL characters so trailing CJK prose
+// (e.g. "…/tune-file-size。") isn't swallowed, minus trailing sentence
+// punctuation and any closing paren that has no opener inside the URL.
+function bareUrl(text: string): string | null {
+  let url = /^https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i.exec(text)?.[0];
+  if (!url) return null;
+  for (;;) {
+    const last = url.at(-1)!;
+    if (/[.,;:!?'"*_]/.test(last)) url = url.slice(0, -1);
+    else if (last === ")" && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) url = url.slice(0, -1);
+    else break;
+  }
+  return /^https?:\/\/./i.test(url) ? url : null;
 }

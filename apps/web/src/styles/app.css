@@ -3,6 +3,10 @@ body { margin: 0; -webkit-font-smoothing: antialiased; }
 a { color: var(--color-accent-700); }
 a:hover { color: var(--color-accent-800); }
 
+/* Markdown note bodies: drop the trailing block margin (set inline by
+   MarkdownHighlightedText) so the card's padding stays even. */
+.note-body > div > :last-child { margin-bottom: 0 !important; }
+
 /* Keep scroll controls quiet until they are needed, while retaining a clear,
    comfortably sized thumb for mouse and touchpad users. Firefox uses the
    standard properties; Chromium and Safari use the WebKit pseudo-elements. */
