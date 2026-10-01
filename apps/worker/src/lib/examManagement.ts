@@ -156,12 +156,36 @@ export function createExamStatement(db: D1Database, id: string, fields: ExamCrea
 export interface ExamMutableFields {
   slug?: string;
   name?: string;
-  description?: string;
-  subject?: string;
-  language?: string;
+  description?: string | null;
+  subject?: string | null;
+  language?: string | null;
   passMarkPct?: number | null;
   /** Written as its three columns together; null clears all three. */
   officialFormat?: OfficialMockFormat | null;
+}
+
+// The REST counterpart of Admin MCP's examMutableFieldsSchema (mcp/admin/
+// server.ts): same limits, so the Admin UI's metadata form and an MCP client
+// are refused for the same inputs. Text fields other than slug and name may be
+// null, which clears them. Returns the first problem, or null.
+const EXAM_TEXT_LIMITS = { name: 200, subject: 200, description: 2000, language: 50 } as const;
+
+export function examFieldsError(fields: Record<string, unknown>): string | null {
+  if (fields.slug !== undefined && (typeof fields.slug !== "string" || !EXAM_SLUG_PATTERN.test(fields.slug))) {
+    return "slug must be lowercase alphanumeric segments separated by hyphens";
+  }
+  for (const [key, max] of Object.entries(EXAM_TEXT_LIMITS)) {
+    const value = fields[key];
+    if (value === undefined || (value === null && key !== "name")) continue;
+    if (typeof value !== "string") return `${key} must be a string`;
+    if (key === "name" && !value.trim()) return "name cannot be empty";
+    if (value.length > max) return `${key} must be at most ${max} characters`;
+  }
+  const pct = fields.passMarkPct;
+  if (pct !== undefined && pct !== null && (typeof pct !== "number" || !Number.isFinite(pct) || pct < 0 || pct > 100)) {
+    return "passMarkPct must be a number from 0 to 100, or null";
+  }
+  return null;
 }
 
 const EDITABLE_EXAM_COLUMNS: Record<Exclude<keyof ExamMutableFields, "officialFormat">, string> = {

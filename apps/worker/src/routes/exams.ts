@@ -8,12 +8,10 @@ import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { officialFormatError } from "@prepdeck/shared";
 import {
-  getExam, listExams, EXAM_SLUG_PATTERN,
+  getExam, listExams, examFieldsError,
   createExamStatement, updateExamStatement, archiveExamStatement, unarchiveExamStatement,
   type ExamMutableFields,
 } from "../lib/examManagement";
-
-const SLUG_RE = EXAM_SLUG_PATTERN;
 
 export const examsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -35,9 +33,8 @@ examsRouter.post("/", requireAdmin, async (c) => {
   if (!body || !body.slug || !body.name) {
     return c.json({ error: "slug and name are required" }, 400);
   }
-  if (!SLUG_RE.test(body.slug)) {
-    return c.json({ error: "slug must be lowercase alphanumeric segments separated by hyphens" }, 400);
-  }
+  const fieldsError = examFieldsError(body as Record<string, unknown>);
+  if (fieldsError) return c.json({ error: fieldsError }, 400);
   const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
   if (formatError) return c.json({ error: formatError }, 400);
 
@@ -74,10 +71,9 @@ examsRouter.post("/", requireAdmin, async (c) => {
 examsRouter.patch("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<ExamMutableFields>().catch(() => null);
-  if (!body) return c.json({ error: "Invalid JSON body" }, 400);
-  if (body.slug !== undefined && !SLUG_RE.test(body.slug)) {
-    return c.json({ error: "slug must be lowercase alphanumeric segments separated by hyphens" }, 400);
-  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
+  const fieldsError = examFieldsError(body as Record<string, unknown>);
+  if (fieldsError) return c.json({ error: fieldsError }, 400);
   const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
   if (formatError) return c.json({ error: formatError }, 400);
 
