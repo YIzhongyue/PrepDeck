@@ -22,6 +22,7 @@ const exams = [
 ];
 const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null, archivedAt: null }];
 let providerCreates = 0, providerDeletes = 0, failNextIcon = false;
+const examPatches = [];
 const errors = [];
 const apiRequests = [];
 // The overview drives the header's status pill (issue #49): it can succeed,
@@ -44,6 +45,15 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/exams") return json({ exams: exams.map(exam => ({ ...exam,
     providers: exam.providers.map(p => providers.find(provider => provider.id === p.id)).filter(p => p && (url.searchParams.get("includeArchived") === "true" || !p.archivedAt)),
   })) });
+  if (url.pathname.startsWith("/api/exams/") && req.method === "PATCH") {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const patch = JSON.parse(Buffer.concat(chunks).toString());
+    examPatches.push(patch);
+    const exam = exams.find(e => e.id === url.pathname.split("/")[3]);
+    if (exams.some(e => e !== exam && e.slug === patch.slug)) return json({ error: "An exam with this slug already exists" }, 409);
+    Object.assign(exam, patch);
+    return json({ exam: { ...exam, providers: exam.providers.map(p => providers.find(provider => provider.id === p.id)).filter(Boolean) } });
+  }
   if (url.pathname === "/api/providers" && req.method === "GET") return json({ providers: providers.filter(p => url.searchParams.get("includeArchived") === "true" || !p.archivedAt) });
   if (url.pathname.startsWith("/api/providers") && req.method !== "GET") {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -281,6 +291,59 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".admin-provider-toggle").filter({ hasText: "Temporary provider" }).count(), 0);
   console.log("PASS exam-detail provider creation, icon retry without duplication, icon removal and safe deletion");
+
+  // Issue #95: an exam's details are edited after creation through the same
+  // PATCH the format card uses, sending only what changed, and a slug change
+  // has to be confirmed because links and imports outside the app use it.
+  const details = page.locator(".admin-modal");
+  const save = details.getByRole("button", { name: "Save details", exact: true });
+  await page.getByRole("button", { name: "Edit details", exact: true }).click();
+  assert.equal(await details.getByLabel("Name", { exact: true }).inputValue(), "Solutions Architect Professional");
+  assert.equal(await details.getByLabel("Slug", { exact: true }).inputValue(), "sap-c02");
+  assert.equal(await save.isDisabled(), true, "an unchanged form must not be savable");
+  await details.getByLabel("Name", { exact: true }).fill("Solutions Architect Pro");
+  await details.getByLabel("Subject", { exact: true }).fill("Architecture");
+  await details.getByLabel("Description", { exact: true }).fill("Design for complex organisations.");
+  await details.getByLabel("Pass mark (%)", { exact: true }).fill("72");
+  await details.getByLabel("Slug", { exact: true }).fill("Bad Slug");
+  await details.getByRole("alert").filter({ hasText: "hyphen-separated" }).waitFor();
+  assert.equal(await save.isDisabled(), true, "an invalid slug must not be savable");
+  await details.getByLabel("Slug", { exact: true }).fill("clf-c02");
+  const confirmSlug = details.getByRole("checkbox", { name: /Change the slug to/ });
+  await details.getByText("Links that use sap-c02 stop working", { exact: false }).waitFor();
+  assert.equal(await save.isDisabled(), true, "a slug change must be confirmed first");
+  await confirmSlug.check();
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/exam-details-phone.png` });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  await save.click();
+  await details.getByRole("alert").filter({ hasText: "An exam with this slug already exists" }).waitFor();
+  await details.getByLabel("Slug", { exact: true }).fill("aws-sap-c02");
+  assert.equal(await confirmSlug.isChecked(), false, "editing the slug again must ask for a fresh confirmation");
+  await confirmSlug.check();
+  await save.click();
+  await layer.waitFor({ state: "detached" });
+  assert.deepEqual(examPatches.at(-1), {
+    name: "Solutions Architect Pro", slug: "aws-sap-c02", subject: "Architecture",
+    description: "Design for complex organisations.", passMarkPct: 72
+  });
+  await page.getByRole("heading", { name: "Solutions Architect Pro", exact: true }).waitFor();
+  const meta = page.locator(".admin-detail-meta");
+  for (const text of ["aws-sap-c02", "Subject · Architecture", "Pass mark · 72%"]) await meta.getByText(text, { exact: true }).waitFor();
+  await page.getByText("Design for complex organisations.", { exact: true }).waitFor();
+  await page.waitForFunction(() => window.store.state.exams.find(e => e.id === "exam")?.slug === "aws-sap-c02");
+
+  // Blank optional fields clear their value, and nothing else is resent.
+  await page.getByRole("button", { name: "Edit details", exact: true }).click();
+  await details.getByLabel("Subject", { exact: true }).fill("");
+  await details.getByLabel("Pass mark (%)", { exact: true }).fill("");
+  await save.click();
+  await layer.waitFor({ state: "detached" });
+  assert.deepEqual(examPatches.at(-1), { subject: null, passMarkPct: null });
+  await meta.getByText("Subject · —", { exact: true }).waitFor();
+  assert.equal(await meta.getByText(/^Pass mark/).count(), 0);
+  await page.getByRole("button", { name: "All exams" }).click();
+  await page.getByRole("button", { name: /Solutions Architect Pro.*aws-sap-c02/ }).waitFor();
+  console.log("PASS exam details: prefilled edit, slug validation and confirmation, conflict error, changed-fields PATCH, clearing, live refresh");
 
   assert.deepEqual(errors, []);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

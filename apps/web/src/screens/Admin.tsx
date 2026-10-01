@@ -625,6 +625,11 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         onToggleArchive={toggleArchive}
         onReplaceBadge={replaceBadge}
         onFormatSaved={(officialFormat) => setExams((prev) => prev.map((x) => x.id === selected.id ? { ...x, officialFormat } : x))}
+        onMetadataSaved={(updated) => {
+          setExams((prev) => prev.map((x) => x.id === updated.id ? { ...x, ...updated } : x));
+          // The sidebar's exam picker and exam URLs carry the name and slug.
+          examListChanged();
+        }}
       />
       {providerDialog}
       </>
@@ -750,7 +755,7 @@ function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 }
 
 function ExamDetail({
-  exam, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onFormatSaved
+  exam, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onFormatSaved, onMetadataSaved
 }: {
   exam: ExamRow;
   providers: Provider[];
@@ -761,7 +766,9 @@ function ExamDetail({
   onToggleArchive: (exam: ExamRow) => void;
   onReplaceBadge: (exam: ExamRow, file: File) => void;
   onFormatSaved: (format: OfficialMockFormat | null) => void;
+  onMetadataSaved: (exam: ExamRow) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   return (
     <div style={{ marginTop: 6 }}>
       <button type="button" className="admin-back-link" onClick={onBack}><AdminIcon name="back" /> All exams</button>
@@ -778,9 +785,12 @@ function ExamDetail({
             <span>{countOf(exam.questionCount, "question")}</span>
             <span>Subject · {exam.subject || "—"}</span>
             <span>Language · {exam.language || "—"}</span>
+            {exam.passMarkPct != null && <span>Pass mark · {exam.passMarkPct}%</span>}
           </div>
+          {exam.description && <p className="admin-detail-description">{exam.description}</p>}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}>Edit details</button>
           <label className="btn btn-secondary" style={{ cursor: "pointer" }}>
             {exam.badgeIconUrl ? "Replace badge" : "Add badge"}
             <input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => {
@@ -820,7 +830,129 @@ function ExamDetail({
       <OfficialFormatCard key={exam.id} exam={exam} onSaved={onFormatSaved} />
 
       <QuestionsPanel exam={exam} />
+
+      {editing && (
+        <ExamMetadataModal exam={exam} onClose={() => setEditing(false)}
+          onSaved={(updated) => { onMetadataSaved(updated); setEditing(false); }} />
+      )}
     </div>
+  );
+}
+
+// Mirrors the worker's EXAM_SLUG_PATTERN (apps/worker/src/lib/examManagement.ts),
+// which PATCH /api/exams/:id enforces whatever this form lets through.
+const EXAM_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+type ExamMetadataPatch = Partial<Pick<Exam, "name" | "slug" | "subject" | "language" | "description" | "passMarkPct">>;
+
+// Name, slug, subject, language, description and pass mark after creation
+// (issue #95), through the same PATCH /api/exams/:id the format card uses. Only
+// changed fields are sent, so this never overwrites the official format, and a
+// blank optional field is sent as null, which clears it.
+function ExamMetadataModal({ exam, onSaved, onClose }: { exam: ExamRow; onSaved: (exam: ExamRow) => void; onClose: () => void }) {
+  const [name, setName] = useState(exam.name);
+  const [slug, setSlug] = useState(exam.slug);
+  const [subject, setSubject] = useState(exam.subject ?? "");
+  const [language, setLanguage] = useState(exam.language ?? "");
+  const [description, setDescription] = useState(exam.description ?? "");
+  const [passMark, setPassMark] = useState(exam.passMarkPct == null ? "" : String(exam.passMarkPct));
+  const [slugConfirmed, setSlugConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+
+  const text = (value: string | null) => value?.trim() || null;
+  const pct = passMark.trim() === "" ? null : Number(passMark);
+  const patch: ExamMetadataPatch = {};
+  if (name.trim() !== exam.name) patch.name = name.trim();
+  if (slug.trim() !== exam.slug) patch.slug = slug.trim();
+  if (text(subject) !== text(exam.subject)) patch.subject = text(subject);
+  if (text(language) !== text(exam.language)) patch.language = text(language);
+  if (text(description) !== text(exam.description)) patch.description = text(description);
+  if (pct !== (exam.passMarkPct ?? null)) patch.passMarkPct = pct;
+  const slugChanged = patch.slug !== undefined;
+
+  const problem = !name.trim() ? "Name is required."
+    : !EXAM_SLUG_PATTERN.test(slug.trim()) ? "Slug: lowercase letters and digits in hyphen-separated groups, e.g. aws-sap-c02."
+    : pct != null && !(pct >= 0 && pct <= 100) ? "Pass mark is a percentage from 0 to 100."
+    : null;
+  const dirty = Object.keys(patch).length > 0;
+
+  const edit = (set: (value: string) => void) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    set(e.target.value);
+    setError(null);
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (problem || !dirty || (slugChanged && !slugConfirmed)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { exam: updated } = await apiFetch<{ exam: ExamRow }>(`/api/exams/${exam.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      onSaved(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save these details.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AdminModal icon="exams" title="Edit exam details" subtitle="Badge, providers, official format and archiving are edited separately." closeDisabled={busy} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="admin-modal-fields">
+          <div className="field" style={{ flex: "1 1 100%" }}>
+            <label htmlFor={`${id}-name`}>Name</label>
+            <input id={`${id}-name`} className="input" value={name} onChange={edit(setName)} maxLength={200} required />
+          </div>
+          <div className="field" style={{ flex: "1 1 180px" }}>
+            <label htmlFor={`${id}-slug`}>Slug</label>
+            <input id={`${id}-slug`} className="input" value={slug} onChange={(e) => { edit(setSlug)(e); setSlugConfirmed(false); }} autoCapitalize="off" spellCheck={false} required />
+          </div>
+          <div className="field" style={{ flex: "1 1 160px" }}>
+            <label htmlFor={`${id}-subject`}>Subject</label>
+            <input id={`${id}-subject`} className="input" value={subject} onChange={edit(setSubject)} maxLength={200} />
+          </div>
+          <div className="field" style={{ flex: "0 1 110px" }}>
+            <label htmlFor={`${id}-language`}>Language</label>
+            <input id={`${id}-language`} className="input" value={language} onChange={edit(setLanguage)} maxLength={50} />
+          </div>
+          <div className="field" style={{ flex: "1 1 100%" }}>
+            <label htmlFor={`${id}-description`}>Description</label>
+            <textarea id={`${id}-description`} className="input" rows={3} value={description} onChange={edit(setDescription)} maxLength={2000} />
+          </div>
+          <div className="field" style={{ flex: "1 1 100%" }}>
+            <label htmlFor={`${id}-pass`}>Pass mark (%)</label>
+            <input id={`${id}-pass`} className="input" type="number" min={0} max={100} step="any" inputMode="decimal" value={passMark} onChange={edit(setPassMark)} style={{ maxWidth: 140 }} />
+            <p className="admin-modal-hint">
+              {exam.officialFormat
+                ? "Not used while the official exam format is set: mocks pass at that format's share of correct answers."
+                : "Mock exams pass at this share of correct answers. Leave blank for no pass mark."}
+            </p>
+          </div>
+        </div>
+
+        {slugChanged && !problem && (
+          <div className="admin-modal-warning">
+            <p>
+              The slug is part of this exam's URLs and of the links in daily review emails already sent, and import files
+              and integrations may refer to it. Links that use <span className="mono">{exam.slug}</span> stop working once it changes.
+            </p>
+            <label>
+              <input type="checkbox" checked={slugConfirmed} onChange={(e) => setSlugConfirmed(e.target.checked)} />
+              <span>Change the slug to <span className="mono">{slug.trim()}</span></span>
+            </label>
+          </div>
+        )}
+
+        {(error || problem) && <p role="alert" style={{ margin: 0, fontSize: 12, color: DANGER }}>{error ?? problem}</p>}
+        <div className="admin-modal-foot">
+          <p>{dirty ? "Only the fields you changed are saved." : "No changes yet."}</p>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !dirty || !!problem || (slugChanged && !slugConfirmed)}>{busy ? "Saving…" : "Save details"}</button>
+        </div>
+      </form>
+    </AdminModal>
   );
 }
 
