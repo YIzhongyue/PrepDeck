@@ -593,7 +593,7 @@ header .exam-selector--compact .exam-selector__menu {
 }
 .mascot-option.is-selected { border-color: var(--color-accent); }
 .mascot-option:focus-within { outline: 2px solid var(--color-accent); outline-offset: 3px; }
-.mascot-preview { display: block; width: 100%; max-width: 240px; height: auto; background: #fff; }
+.mascot-preview { display: block; width: 100%; max-width: 240px; height: auto; }
 .mascot-option input { accent-color: var(--color-accent); }
 .mascot-option small { color: var(--color-text-muted); text-align: center; }
 .mascot-settings fieldset:disabled .mascot-option { cursor: default; opacity: .7; }

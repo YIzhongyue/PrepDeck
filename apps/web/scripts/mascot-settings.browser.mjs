@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { readBody, waitUntil } from "./browser-fixture.mjs";
@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/mascot/")) {
     imageRequests.push(url.pathname);
     if (failImages === "all" || (failImages === "2D" && url.pathname.includes("2D-Anime"))) { res.writeHead(404); return res.end(); }
-    if (!/^\/mascot\/(3D-Chibi|2D-Anime)\/[a-z-]+\.png$/.test(url.pathname)) { res.writeHead(404); return res.end(); }
+    if (!/^\/mascot\/(3D-Chibi|2D-Anime\/transparent)\/[a-z-]+\.png$/.test(url.pathname)) { res.writeHead(404); return res.end(); }
     res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
     return res.end(readFileSync(new URL(`../public${url.pathname}`, import.meta.url)));
   }
@@ -95,16 +95,58 @@ try {
   failSave = false;
   await save.click();
   await current("2D Anime").waitFor();
-  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/normal.png");
+  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/transparent/normal.png");
   await visitor.goto(`${base}/login`);
-  await expectImage(visitor, ".login-mascot", "/2D-Anime/normal.png");
+  await expectImage(visitor, ".login-mascot", "/2D-Anime/transparent/normal.png");
+  const cutouts = readdirSync(new URL("../public/mascot/2D-Anime/transparent/", import.meta.url)).filter(name => name.endsWith(".png"));
+  assert.equal(cutouts.length, 8);
+  const alphaStats = await visitor.evaluate(async names => Promise.all(names.map(async name => {
+    const image = new Image(); image.src = `/mascot/2D-Anime/transparent/${name}`; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let transparent = 0, opaque = 0, pale = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] === 0) transparent++;
+      if (pixels[i + 3] === 255) {
+        opaque++;
+        if (pixels[i] > 220 && pixels[i + 1] > 220 && pixels[i + 2] > 220) pale++;
+      }
+    }
+    return { name, transparent, opaque, pale, total: canvas.width * canvas.height, corner: pixels[3] };
+  })), cutouts);
+  for (const asset of alphaStats) {
+    assert.equal(asset.corner, 0, `${asset.name}: transparent canvas corner`);
+    assert.ok(asset.transparent / asset.total > .2, `${asset.name}: real alpha, not a white or checkerboard background`);
+    assert.ok(asset.opaque / asset.total > .2, `${asset.name}: preserve the opaque character`);
+    assert.ok(asset.pale > 10000, `${asset.name}: preserve white clothing and pale props`);
+  }
+  assert.equal(await admin.locator(".mascot-preview").first().evaluate(image => getComputedStyle(image).backgroundColor), "rgba(0, 0, 0, 0)");
+  if (process.env.SCREENSHOT_DIR) {
+    const gallery = await publicContext.newPage();
+    await gallery.setViewportSize({ width: 1080, height: 1100 });
+    await gallery.goto(`${base}/loading`);
+    await gallery.evaluate(async names => {
+      const sheet = document.createElement("div"); sheet.id = "cutout-review";
+      sheet.style.cssText = "position:relative;z-index:100;background:#eee;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px";
+      document.body.prepend(sheet);
+      for (const background of ["#1e293b", "#f5e5ce"]) for (const name of names) {
+        const cell = document.createElement("div"); cell.style.cssText = `background:${background};color:${background === '#1e293b' ? '#fff' : '#222'};padding:8px;text-align:center`;
+        const image = new Image(); image.src = `/mascot/2D-Anime/transparent/${name}`; image.style.cssText = "width:100%;height:210px;object-fit:contain;display:block";
+        cell.append(image, document.createTextNode(name)); sheet.append(cell); await image.decode();
+      }
+    }, cutouts);
+    await gallery.locator("#cutout-review").screenshot({ path: `${process.env.SCREENSHOT_DIR}/mascot-cutouts-dark-and-light.png` });
+    await gallery.close();
+  }
+  console.log("PASS all eight 2D assets have real alpha while preserving opaque subjects and white details");
   await visitor.setViewportSize({ width: 390, height: 844 });
   assert.ok(await visitor.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   if (process.env.SCREENSHOT_DIR) await visitor.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mascot-signin-2d-phone.png`, fullPage: true });
   await visitor.goto(`${base}/denied`);
-  await expectImage(visitor, ".login-mascot", "/2D-Anime/unauthorized.png");
+  await expectImage(visitor, ".login-mascot", "/2D-Anime/transparent/unauthorized.png");
   await visitor.goto(`${base}/loading`);
-  await expectImage(visitor, 'img', "/2D-Anime/normal.png");
+  await expectImage(visitor, 'img', "/2D-Anime/transparent/normal.png");
   console.log("PASS explicit save, failure/retry, current-page update, independent public session and scene preservation");
 
   await admin.setViewportSize({ width: 390, height: 844 });
@@ -126,7 +168,7 @@ try {
   await admin.evaluate(() => window.mascot.save("2D-Anime"));
   releaseRead(); releaseRead = undefined;
   await current("2D Anime").waitFor();
-  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/normal.png");
+  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/transparent/normal.png");
 
   style = "3D-Chibi";
   await admin.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
@@ -139,7 +181,7 @@ try {
   await admin.evaluate(() => window.mascot.refresh());
   await admin.getByRole("button", { name: "Retry loading" }).waitFor();
   assert.equal(await save.isDisabled(), true);
-  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/normal.png");
+  await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/transparent/normal.png");
   await visitor.goto(`${base}/login`);
   await expectImage(visitor, ".login-mascot", "/3D-Chibi/normal.png");
   await visitor.getByRole("button", { name: "Sign in with Google", exact: true }).click({ trial: true });

@@ -28,8 +28,12 @@ not wait for this optional configuration. Failed writes keep the draft for retry
 `MascotImage` maps all eight existing scenes through the shared appearance
 module. A failed 2D image falls back to the 3D image of the same scene; if that
 also fails, a hidden placeholder preserves space without a broken-image icon.
-Image boxes use contain sizing to preserve both sets' proportions. The original
-asset backgrounds are retained.
+Image boxes use contain sizing to preserve both sets' proportions. The 2D set
+uses RGBA cutouts in `apps/web/public/mascot/2D-Anime/transparent/`; the original
+white-background sources are retained in the parent directory. Preview images
+have no CSS background fill. The separate asset URLs also avoid reusing cached
+white-background images. Cutout provenance and prompts are recorded in
+`docs/guides/mascot-cutout-prompts.md`.
 
 Coverage includes SQLite-backed route permissions, validation and persistence,
 the shared scene-to-asset mapping, and a browser regression registered in the

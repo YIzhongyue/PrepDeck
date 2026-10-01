@@ -13,5 +13,6 @@ export function isMascotStyle(value: unknown): value is MascotStyle {
 }
 
 export function mascotImagePath(style: MascotStyle, scene: MascotScene): string {
-  return `/mascot/${style}/${scene}.png`;
+  const directory = style === "2D-Anime" ? "2D-Anime/transparent" : style;
+  return `/mascot/${directory}/${scene}.png`;
 }

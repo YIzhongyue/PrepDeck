@@ -10,7 +10,7 @@ test("every supported style preserves all eight scenes and resolves to a shipped
     assert.ok(isMascotStyle(style));
     for (const scene of MASCOT_SCENES) {
       const path = mascotImagePath(style, scene);
-      assert.equal(path, `/mascot/${style}/${scene}.png`);
+      assert.equal(path, `/mascot/${style}/${style === "2D-Anime" ? "transparent/" : ""}${scene}.png`);
       assert.ok(existsSync(new URL(`../../../apps/web/public${path}`, import.meta.url)), path);
     }
   }
