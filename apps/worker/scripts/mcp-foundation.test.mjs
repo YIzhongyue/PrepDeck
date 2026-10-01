@@ -45,9 +45,9 @@ const schemaFiles = [
   "0017_mcp_credentials.sql", "0018_mcp_credential_names.sql", "0019_admin_mcp_audit_log.sql",
   "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
   "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql",
-  "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql",
+  "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0029_question_mutation_audit.sql",
   "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
-  "0041_provider_archiving.sql",
+  "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql",
 ];
 // implementation's import tools write import_logs (0002 predates schemaFiles'
 // question-authoring cut, but import_logs itself is defined in 0001).
@@ -192,6 +192,7 @@ const ADMIN_TOOL_NAMES = [
   "admin_find_questions_with_invalid_answer_references", "admin_find_questions_missing_metadata",
   "admin_get_question_bank_statistics", "admin_get_recent_content_changes", "admin_list_tags",
   "admin_preview_component_question", "admin_validate_question_payload", "admin_create_question", "admin_update_question", "admin_delete_question",
+  "admin_archive_question", "admin_unarchive_question",
   "admin_batch_create_questions", "admin_batch_update_questions",
   // implementation
   "admin_create_exam", "admin_update_exam", "admin_archive_exam",
@@ -224,6 +225,8 @@ const MUTATION_ANNOTATIONS = {
   admin_create_question: [false, true],
   admin_update_question: [true, true],
   admin_delete_question: [true, true],
+  admin_archive_question: [true, true],
+  admin_unarchive_question: [false, true],
   admin_batch_create_questions: [false, true],
   admin_batch_update_questions: [true, true],
   admin_create_exam: [false, true],
@@ -2529,4 +2532,71 @@ test("taxonomy hints account for same-name updates and repeated merges advancing
     assert.equal(hints[tool].idempotentHint, false);
     assert.equal(hints[tool].destructiveHint, true);
   }
+});
+
+test("issues #92/#93: a duplicate found by admin_find_duplicate_questions is archived reversibly and leaves every learner flow", async (t) => {
+  const f = await questionBankFixture(t);
+  const callUser = async (name, args) => (await payload(await rpc(f.env, "user", f.alice.token, "tools/call", { name, arguments: args }))).result;
+
+  const [group] = (await callAdminTool(f, "admin_find_duplicate_questions", { examId: "examA" })).items;
+  assert.deepEqual(group.questions.map((question) => question.id).sort(), ["q1", "q2"]);
+  const contentBefore = { ...f.sqlite.prepare("SELECT revision, updated_at, stem FROM questions WHERE id = 'q2'").get() };
+
+  const archived = await callAdminTool(f, "admin_archive_question", { examId: "examA", id: "q2" });
+  assert.equal(archived.archived, true);
+  assert.equal(archived.changed, true);
+  assert.ok(archived.archivedAt);
+  assert.deepEqual([archived.question.id, archived.question.revision, archived.question.archivedAt], ["q2", 1, archived.archivedAt]);
+  assert.deepEqual({ ...f.sqlite.prepare("SELECT revision, updated_at, stem FROM questions WHERE id = 'q2'").get() }, contentBefore,
+    "archiving is lifecycle state, not a content edit");
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions").get().c, f.questionRowCount, "nothing is deleted");
+  assert.ok(f.kvInvalidations.includes("practice-questions:v2:examA"));
+
+  // The duplicate group is resolved, so the review loop terminates.
+  assert.equal((await callAdminTool(f, "admin_find_duplicate_questions", { examId: "examA" })).items.length, 0);
+  // Retrying is safe and keeps the first archive time.
+  const again = await callAdminTool(f, "admin_archive_question", { examId: "examA", id: "q2" });
+  assert.deepEqual([again.archived, again.changed, again.archivedAt], [true, false, archived.archivedAt]);
+
+  // Admins keep full access, with the state visible.
+  assert.equal((await callAdminTool(f, "admin_get_question", { examId: "examA", id: "q2" })).question.archivedAt, archived.archivedAt);
+  assert.deepEqual((await callAdminTool(f, "admin_search_questions", { examId: "examA", archived: true })).questions.map((q) => q.id), ["q2"]);
+  assert.equal((await callAdminTool(f, "admin_search_questions", { examId: "examA", archived: false })).total, 3);
+  assert.equal((await callAdminTool(f, "admin_search_questions", { examId: "examA" })).total, 4);
+  const stats = await callAdminTool(f, "admin_get_exam_statistics", { examId: "examA" });
+  assert.deepEqual([stats.exam.questionCount, stats.statistics.scannedCount, stats.archivedQuestionCount], [3, 3, 1]);
+
+  // Learners no longer find, get recommended, or start practice on it...
+  assert.deepEqual((await callUser("user_search_questions", { examId: "examA", q: "2+2" })).structuredContent.data.questions.map((q) => q.id), ["q1"]);
+  const candidates = (await callUser("user_get_practice_candidates", { examId: "examA", limit: 100 })).structuredContent.data.questions;
+  assert.deepEqual(candidates.map((q) => q.id).sort(), ["q1", "q3", "q4"]);
+  assert.equal((await callUser("user_get_exam", { id: "examA" })).structuredContent.data.exam.questionCount, 3);
+  const refused = await callUser("user_start_practice", { examId: "examA", questionIds: ["q1", "q2"] });
+  assert.equal(refused.isError, true);
+  assert.deepEqual([refused.structuredContent.error.code, refused.structuredContent.error.reason], ["invalid_input", "questions_archived"]);
+  // ...but history that already names it still resolves by id.
+  assert.equal((await callUser("user_get_question", { examId: "examA", id: "q2" })).structuredContent.data.question.archivedAt, archived.archivedAt);
+
+  const restored = await callAdminTool(f, "admin_unarchive_question", { examId: "examA", id: "q2" });
+  assert.deepEqual([restored.archived, restored.changed, restored.archivedAt], [false, true, null]);
+  assert.equal((await callAdminTool(f, "admin_unarchive_question", { examId: "examA", id: "q2" })).changed, false);
+  assert.equal((await callAdminTool(f, "admin_find_duplicate_questions", { examId: "examA" })).items.length, 1);
+  assert.equal((await callUser("user_start_practice", { examId: "examA", questionIds: ["q2"] })).isError, undefined);
+
+  for (const name of ["admin_archive_question", "admin_unarchive_question"]) {
+    assert.equal((await callAdminToolExpectingError(f, name, { examId: "examA", id: "missing" })).code, "not_found");
+    assert.equal((await callAdminToolExpectingError(f, name, { examId: "examB", id: "q1" })).code, "not_found", "scoped to examId");
+    const asUser = await callUser(name, { examId: "examA", id: "q1" });
+    assert.equal(asUser.structuredContent.error.code, "not_found", `${name} must not exist on the User MCP catalog`);
+  }
+  assert.equal(f.sqlite.prepare("SELECT archived_at FROM questions WHERE id = 'q1'").get().archived_at, null);
+
+  const audit = f.sqlite.prepare("SELECT tool, action, outcome, target_ids_json, detail_json FROM admin_mcp_audit_log ORDER BY rowid").all()
+    .map((row) => [row.tool, row.action, row.outcome, JSON.parse(row.target_ids_json), JSON.parse(row.detail_json)]);
+  assert.deepEqual(audit, [
+    ["admin_archive_question", "archive", "success", ["q2"], { changed: true }],
+    ["admin_archive_question", "archive", "success", ["q2"], { changed: false }],
+    ["admin_unarchive_question", "unarchive", "success", ["q2"], { changed: true }],
+    ["admin_unarchive_question", "unarchive", "success", ["q2"], { changed: false }],
+  ]);
 });

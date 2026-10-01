@@ -75,6 +75,9 @@ export interface Question {
   // human has not signed off on yet (issue #15, replacing the former
   // `needs_review` question-bank tag). Tags stay descriptive.
   needsReview: boolean;
+  // Set while the question is archived (issues #92/#93): kept with its
+  // history, but out of every learner-facing listing, search and selection.
+  archivedAt: string | null;
   points: number;
   createdAt: string;
   updatedAt: string;

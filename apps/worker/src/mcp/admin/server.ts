@@ -102,7 +102,7 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool(
       "admin_search_questions",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Search questions within one exam by text, id, type, difficulty, tag, or pending-review state.",
+      "Search questions within one exam by text, id, type, difficulty, tag, pending-review state, or archived state. Archived questions are included unless archived is set; each result carries archivedAt.",
       z.strictObject({
         examId: examIdSchema,
         q: z.string().min(1).max(200).optional(),
@@ -112,6 +112,9 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
         // Omitted = both; true = only questions still awaiting manual review,
         // false = only questions already signed off (issue #15).
         needsReview: z.boolean().optional(),
+        // Omitted = both; true = only archived questions, false = only the
+        // active ones learners can still be given (issues #92/#93).
+        archived: z.boolean().optional(),
         ...paginationSchema.shape,
       }),
       (input) => services.searchQuestions(input),
@@ -140,7 +143,7 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool(
       "admin_get_exam_statistics",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Summarize one exam's question bank: counts by type/difficulty, content-quality counts, and attempt counts.",
+      "Summarize one exam's active question bank: counts by type/difficulty, content-quality counts, and attempt counts, plus how many questions are archived.",
       z.strictObject({ examId: examIdSchema }),
       (input) => services.getExamStatistics(input),
     ),
@@ -149,35 +152,35 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool(
       "admin_find_duplicate_questions",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find groups of questions in one exam whose stem text is effectively identical.",
+      "Find groups of active questions in one exam whose stem text is effectively identical. Archived questions are never reported, so archiving the redundant copies with admin_archive_question resolves a group. Review each group with admin_get_question before archiving.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findDuplicateQuestions(input),
     ),
     defineMcpTool(
       "admin_find_questions_missing_explanations",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find questions in one exam with no (or blank) official explanation.",
+      "Find active questions in one exam with no (or blank) official explanation.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findQuestionsMissingExplanations(input),
     ),
     defineMcpTool(
       "admin_find_questions_with_invalid_answer_references",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find questions in one exam whose correctAnswers reference an option id that does not exist, true_false questions missing a true/false option pair, single_choice questions with fewer than two options, or matching questions with fewer than two right-hand items.",
+      "Find active questions in one exam whose correctAnswers reference an option id that does not exist, true_false questions missing a true/false option pair, single_choice questions with fewer than two options, or matching questions with fewer than two right-hand items.",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findQuestionsWithInvalidAnswerReferences(input),
     ),
     defineMcpTool(
       "admin_find_questions_missing_metadata",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Find questions in one exam with no difficulty set, no tags, or points outside the accepted range (greater than 0, at most 100).",
+      "Find active questions in one exam with no difficulty set, no tags, or points outside the accepted range (greater than 0, at most 100).",
       z.strictObject({ examId: examIdSchema, ...paginationSchema.shape }),
       (input) => services.findQuestionsMissingMetadata(input),
     ),
     defineMcpTool(
       "admin_get_question_bank_statistics",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Summarize content-quality counts across the entire question bank (all exams), bounded to a large but finite scan.",
+      "Summarize content-quality counts across the entire active question bank (all exams, archived questions excluded), bounded to a large but finite scan.",
       z.strictObject({}),
       () => services.getQuestionBankStatistics(),
     ),
@@ -239,9 +242,24 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
     defineMcpTool(
       "admin_delete_question",
       { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-      "Delete a question, guarded by expectedRevision so the caller must already know its current state. Blocked with a conflict if the question is referenced by an attempt, bookmark, note, or annotation; no cascading deletion.",
+      "Permanently delete a question, guarded by expectedRevision so the caller must already know its current state. Blocked with a conflict if the question is referenced by an attempt, bookmark, note, or annotation; no cascading deletion. To retire a duplicate, obsolete or incorrect question, prefer admin_archive_question, which is reversible and works for referenced questions.",
       z.strictObject({ examId: examIdSchema, id: questionIdSchema, expectedRevision: revisionSchema }),
       (input) => services.deleteQuestion(input),
+    ),
+    // Issues #92/#93 — reversible retirement, sharing the Admin UI's archival path.
+    defineMcpTool(
+      "admin_archive_question",
+      { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      "Archive one question by exam and question id, typically the redundant copy in a group from admin_find_duplicate_questions. The question is kept with its tags, history and references and stays visible to admins (admin_get_question, admin_search_questions), but is removed from every learner-facing listing, search, recommendation and new practice or mock session. Never deletes anything. Idempotent: archiving an already-archived question succeeds with changed: false and keeps its original archivedAt. Returns the resulting archived state. Undo with admin_unarchive_question.",
+      z.strictObject({ examId: examIdSchema, id: questionIdSchema }),
+      (input) => services.archiveQuestion(input),
+    ),
+    defineMcpTool(
+      "admin_unarchive_question",
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      "Restore an archived question by exam and question id, making it available to learners again. Idempotent: restoring an active question succeeds with changed: false. Returns the resulting archived state.",
+      z.strictObject({ examId: examIdSchema, id: questionIdSchema }),
+      (input) => services.unarchiveQuestion(input),
     ),
     defineMcpTool(
       "admin_batch_create_questions",

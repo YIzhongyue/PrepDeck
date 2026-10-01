@@ -83,7 +83,7 @@ async function selectWrong(db: D1Database, userId: string, limit: number, exclud
       `SELECT ${SELECT_COLUMNS} FROM wrong_question_book w
        JOIN questions q ON q.id = w.question_id
        JOIN exams e ON e.id = q.exam_id
-       WHERE w.user_id = ? AND w.mastered = 0`
+       WHERE w.user_id = ? AND w.mastered = 0 AND q.archived_at IS NULL`
     ).bind(userId),
     limit,
     exclude
@@ -96,7 +96,7 @@ async function selectBookmarks(db: D1Database, userId: string, limit: number, ex
       `SELECT ${SELECT_COLUMNS} FROM bookmarks b
        JOIN questions q ON q.id = b.question_id
        JOIN exams e ON e.id = q.exam_id
-       WHERE b.user_id = ?`
+       WHERE b.user_id = ? AND q.archived_at IS NULL`
     ).bind(userId),
     limit,
     exclude
@@ -108,7 +108,7 @@ async function selectUnattempted(db: D1Database, userId: string, limit: number, 
     db.prepare(
       `SELECT ${SELECT_COLUMNS} FROM questions q
        JOIN exams e ON e.id = q.exam_id
-       WHERE q.id NOT IN (
+       WHERE q.archived_at IS NULL AND q.id NOT IN (
          SELECT DISTINCT aa.question_id FROM attempt_answers aa
          JOIN attempts a ON a.id = aa.attempt_id
          WHERE a.user_id = ?

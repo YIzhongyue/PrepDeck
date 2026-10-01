@@ -22,7 +22,9 @@ export async function listBookmarkedQuestions(
   userId: string,
   opts: { examId?: string; limit: number; offset: number },
 ): Promise<BookmarkedQuestionEntry[]> {
-  const conditions = ["b.user_id = ?"];
+  // An archived question leaves the browsable list; the bookmark is kept and
+  // reappears if the question is restored.
+  const conditions = ["b.user_id = ?", "q.archived_at IS NULL"];
   const params: unknown[] = [userId];
   if (opts.examId) { conditions.push("q.exam_id = ?"); params.push(opts.examId); }
   const { results } = await db.prepare(

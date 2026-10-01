@@ -47,7 +47,9 @@ export interface CandidateFilters {
 }
 
 function baseConditions(userId: string, filters: CandidateFilters): { conditions: string[]; params: unknown[] } {
-  const conditions: string[] = [];
+  // Archived questions (issues #92/#93) are never a study candidate, whatever
+  // list — wrong book, bookmarks — still names them.
+  const conditions: string[] = ["q.archived_at IS NULL"];
   const params: unknown[] = [];
   if (filters.examId) { conditions.push("q.exam_id = ?"); params.push(filters.examId); }
   if (filters.type) { conditions.push("q.type = ?"); params.push(filters.type); }

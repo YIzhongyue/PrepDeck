@@ -17,6 +17,8 @@ export interface QuestionRow {
   // 0 / 1 — the dedicated review-workflow flag that replaced the legacy
   // `needs_review` question-bank tag (issue #15).
   needs_review: number;
+  // Lifecycle, not content (issues #92/#93): see archiveQuestionStatement.
+  archived_at: string | null;
   points: number; created_at: string; updated_at: string;
   revision: number; answer_revision: number; answer_revised_at: string | null; import_baseline_json: string | null;
   // Sorted catalog tag ids linked to this question when import_baseline_json
@@ -42,7 +44,7 @@ export function tagsJsonExpr(tableRef: string): string {
 }
 const QUESTION_COLUMNS = [
   "id", "exam_id", "external_id", "sequence_number", "type", "stem", "options_json", "correct_answers_json",
-  "explanation", "difficulty", "needs_review", "points", "created_at", "updated_at", "revision", "answer_revision",
+  "explanation", "difficulty", "needs_review", "archived_at", "points", "created_at", "updated_at", "revision", "answer_revision",
   "answer_revised_at", "import_baseline_json", "import_baseline_tag_ids_json", "content_json",
 ];
 export function questionSelectColumns(tableRef = "questions"): string {
@@ -55,7 +57,7 @@ export function toQuestion(row: QuestionRow): Question {
     ...(row.content_json ? { content: JSON.parse(row.content_json) } : {}),
     type: row.type, stem: row.stem, options: row.options_json ? JSON.parse(row.options_json) : null,
     correctAnswers: JSON.parse(row.correct_answers_json), explanation: row.explanation, difficulty: row.difficulty,
-    tags: row.tags_json ? JSON.parse(row.tags_json) : [], needsReview: row.needs_review !== 0, points: row.points, createdAt: row.created_at,
+    tags: row.tags_json ? JSON.parse(row.tags_json) : [], needsReview: row.needs_review !== 0, archivedAt: row.archived_at, points: row.points, createdAt: row.created_at,
     updatedAt: row.updated_at, revision: row.revision, answerRevision: row.answer_revision, answerRevisedAt: row.answer_revised_at };
 }
 
@@ -146,13 +148,16 @@ export interface SearchQuestionsQuery {
   // input. Anything else (including an empty select in the admin filter bar)
   // means "no review-state filter", not "needsReview = false".
   needsReview?: string | number | boolean;
+  // Same spelling as needsReview: omitted/empty = active and archived alike.
+  // Learner-facing callers always pass false.
+  archived?: string | number | boolean;
   q?: string;
 }
 
 // Shared by the REST filter and admin_search_questions so both spell the
 // filter the same way — and so `?needsReview=` (what the admin filter bar's
 // "Any review state" option sends) never narrows the result set.
-export function parseNeedsReviewFilter(value: SearchQuestionsQuery["needsReview"]): 0 | 1 | null {
+export function parseBooleanFilter(value: string | number | boolean | undefined): 0 | 1 | null {
   if (value === undefined || value === null || value === "") return null;
   if (typeof value === "boolean") return value ? 1 : 0;
   const text = String(value).trim().toLowerCase();
@@ -170,8 +175,10 @@ export async function searchQuestions(db: D1Database, examId: string, query: Sea
   const classifications = await questionClassificationConditions(db, examId, query.classifications);
   conditions.push(...classifications.conditions); params.push(...classifications.params);
   for (const field of ["difficulty", "type"] as const) if (query[field]) { conditions.push(`${field} = ?`); params.push(query[field]); }
-  const needsReview = parseNeedsReviewFilter(query.needsReview);
+  const needsReview = parseBooleanFilter(query.needsReview);
   if (needsReview !== null) { conditions.push("needs_review = ?"); params.push(needsReview); }
+  const archived = parseBooleanFilter(query.archived);
+  if (archived !== null) conditions.push(archived ? "archived_at IS NOT NULL" : "archived_at IS NULL");
   // Matches by normalized identity (case-insensitive, trimmed — the same
   // key the catalog itself is keyed on), not a raw string compare against
   // whatever casing/whitespace a question happens to be tagged with — issue
@@ -206,8 +213,12 @@ export const MAX_BATCH_MUTATION_ITEMS = 50;
 // integrity) rather than a single page. Bounded by `limit` so a very large
 // exam or bank-wide scan cannot exhaust Worker memory; callers report the
 // bound via buildQuestionSetStatistics's `truncated` flag.
+//
+// Active questions only: archiving is how a maintainer resolves a duplicate
+// or broken question these checks report, so an archived one must stop being
+// reported (and counted) rather than send the next scan around in a loop.
 export async function listQuestions(db: D1Database, opts: { examId?: string; limit: number }): Promise<QuestionRow[]> {
-  const where = opts.examId ? "WHERE exam_id = ?" : "";
+  const where = opts.examId ? "WHERE exam_id = ? AND archived_at IS NULL" : "WHERE archived_at IS NULL";
   const params = opts.examId ? [opts.examId] : [];
   const { results } = await db.prepare(`SELECT ${questionSelectColumns()} FROM questions ${where} ORDER BY sequence_number, id LIMIT ?`)
     .bind(...params, opts.limit).all<QuestionRow>();
@@ -240,11 +251,14 @@ export interface QuestionTagCount {
 // scope. A catalog tag with zero current links never appears here (that's
 // exactly the "registered but unused" case mcp/adapter.ts's listTags
 // annotates separately via listTagCatalogNames).
+// `activeOnly` is for learner-facing callers; the admin taxonomy view still
+// counts archived questions, which keep their tags.
 export async function listQuestionTags(
   db: D1Database,
-  opts: { examId?: string; limit: number; offset: number },
+  opts: { examId?: string; activeOnly?: boolean; limit: number; offset: number },
 ): Promise<QuestionTagCount[]> {
-  const where = opts.examId ? "WHERE q.exam_id = ?" : "";
+  const conditions = [...(opts.examId ? ["q.exam_id = ?"] : []), ...(opts.activeOnly ? ["q.archived_at IS NULL"] : [])];
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const params = opts.examId ? [opts.examId] : [];
   const { results } = await db.prepare(
     `SELECT t.name AS tag, COUNT(DISTINCT l.question_id) AS questionCount
@@ -256,4 +270,22 @@ export async function listQuestionTags(
      ORDER BY t.name LIMIT ? OFFSET ?`,
   ).bind(...params, opts.limit + 1, opts.offset).all<QuestionTagCount>();
   return results ?? [];
+}
+
+// Issues #92/#93 — the one archival mechanism behind both the Admin UI
+// (routes/questions.ts) and Admin MCP (admin_archive_question /
+// admin_unarchive_question). A plain statement builder like
+// createStatement/updateStatement, so each caller batches it with its own
+// conditional audit row.
+//
+// Idempotent by construction: archiving keeps the FIRST archive timestamp, and
+// either direction matches every existing row, so changes() > 0 means exactly
+// "the question exists" and a repeat request is a successful no-op rather than
+// a conflict. Neither revision nor updated_at moves (see
+// migrations/0042_question_archiving.sql): an editor holding the current
+// revision can still save, and the archived question keeps its content.
+export function archiveQuestionStatement(db: D1Database, examId: string, id: string, archived: boolean, now: string): D1PreparedStatement {
+  return archived
+    ? db.prepare("UPDATE questions SET archived_at = COALESCE(archived_at, ?) WHERE id = ? AND exam_id = ?").bind(now, id, examId)
+    : db.prepare("UPDATE questions SET archived_at = NULL WHERE id = ? AND exam_id = ?").bind(id, examId);
 }

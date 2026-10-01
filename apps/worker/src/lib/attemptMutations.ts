@@ -147,11 +147,18 @@ export async function startAttempt(env: Env, userId: string, examId: string, bod
   if (uniqueIds.length > MAX_ATTEMPT_QUESTIONS) {
     return failure({ error: `An attempt may contain at most ${MAX_ATTEMPT_QUESTIONS} questions` }, "invalid_input", "attempt_too_large");
   }
-  const owned = await env.DB.prepare("SELECT COUNT(*) AS n FROM questions WHERE exam_id = ? AND id IN (SELECT value FROM json_each(?))")
+  const owned = await env.DB.prepare(
+    "SELECT COUNT(*) AS n, COALESCE(SUM(archived_at IS NOT NULL), 0) AS archived FROM questions WHERE exam_id = ? AND id IN (SELECT value FROM json_each(?))"
+  )
     .bind(examId, JSON.stringify(uniqueIds))
-    .first<{ n: number }>();
+    .first<{ n: number; archived: number }>();
   if (!owned || owned.n !== uniqueIds.length) {
     return failure({ error: "One or more questionIds do not belong to this exam" }, "invalid_input", "questions_not_in_exam");
+  }
+  // Archived questions (issues #92/#93) stay answerable inside the attempts
+  // that already contain them, but never start a new one.
+  if (owned.archived > 0) {
+    return failure({ error: "One or more questions have been archived" }, "invalid_input", "questions_archived");
   }
 
   // Starting practice means an earlier session for this exam that has sat idle

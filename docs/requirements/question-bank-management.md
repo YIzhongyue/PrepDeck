@@ -29,6 +29,10 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 - **FR-2.3.1 (M):** Questions have a stable per-exam sequence number. New imported questions follow input order and append after the current maximum; matching re-imports preserve existing positions. Direct authoring also appends; ordinary updates keep the sequence immutable. A sequence number is a stored ordinal, not necessarily a contiguous row index.
 
+<a id="fr-2-3-2"></a>
+
+- **FR-2.3.2 (M):** Admin can archive an individual question from the question list (after a confirmation) or through Admin MCP, and restore it. Archiving never deletes: the question keeps its ID, content, tags, history and references, stays visible and editable for admins with a clear **Archived** state and filter, and leaves every learner-facing listing, selection and new attempt. Attempts already holding it can finish. Both entry points share one idempotent operation and are audited; see the [authoring guide](../guides/question-bank-authoring.md) and the [Admin MCP tools](../architecture/mcp.md#question-mutation-tools-implementation).
+
 <a id="fr-2-4"></a>
 
 - **FR-2.4 (S):** Admin can tag questions with one or more categories/tags to support filtered practice. The question editor searches the global question-bank catalog, accepts new names and shows selected tags as removable chips. Changes follow the normal Save and unsaved-edit behavior; see the [authoring guide](../guides/question-bank-authoring.md) and implementation.

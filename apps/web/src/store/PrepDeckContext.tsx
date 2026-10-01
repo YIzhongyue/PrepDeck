@@ -1,5 +1,5 @@
 import { WorkspaceRequests, storedExam, storeExam, beforeWorkspaceNavigation } from "../lib/examWorkspace";
-import { catalogQuestionIds } from "../lib/reviewLists";
+import { catalogQuestionIds, isActive } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
 import { allowAuthoringNavigation } from "../lib/questionAuthoring";
 import { canCheckAnswer, practiceKeyAction } from "../lib/practiceShortcuts";
@@ -583,16 +583,21 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       apiFetch<NotesListResponse>(`/api/notes?examId=${encodeURIComponent(examId)}`)
     ]).then(([data, { attempt }, { progress }, { annotations }, { notes }]) => {
       if (cancelled) return;
-      const catalog: Question[] = data.questions.map(q => ({
+      const toQuestion = (q: PracticeCatalogResponse["questions"][number]): Question => ({
         id: q.id, externalId: q.externalId, sequenceNumber: q.sequenceNumber, type: q.type,
         chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options,
         hasContent: q.hasContent, revision: q.revision, content: q.content
-      }));
-      const catalogBy = Object.fromEntries(catalog.map(q => [q.id, q]));
+      });
+      // `catalog` is what every new session, count and filter draws from.
+      // Archived questions (issues #92/#93) only join `catalogBy`, so an
+      // unfinished mock that still holds one can be resumed and answered.
+      const catalog: Question[] = data.questions.map(toQuestion);
+      const archived: Question[] = (data.archivedQuestions ?? []).map(q => ({ ...toQuestion(q), archived: true }));
+      const catalogBy = Object.fromEntries([...archived, ...catalog].map(q => [q.id, q]));
       const count = defaultMockCount(catalog.length);
       update(s => ({ catalog, catalogBy, catalogRevision: s.catalogRevision + 1, questionContent: {}, lDetail: {}, workspaceStatus: "ready", workspaceError: null,
-        bookmarks: Object.fromEntries(data.bookmarkedIds.filter(id => catalogBy[id]).map(id => [id, true])),
-        wrong: Object.fromEntries(data.wrongEntries.filter(e => catalogBy[e.questionId]).map(e => [e.questionId, { c: e.wrongCount, at: e.lastWrongAt }])),
+        bookmarks: Object.fromEntries(data.bookmarkedIds.filter(id => isActive(catalogBy, id)).map(id => [id, true])),
+        wrong: Object.fromEntries(data.wrongEntries.filter(e => isActive(catalogBy, e.questionId)).map(e => [e.questionId, { c: e.wrongCount, at: e.lastWrongAt }])),
         mastered: {}, attempted: Object.fromEntries(data.attemptedIds.map(id => [id, true])),
         mockFormat: defaultMockFormat(officialFormatOf(s.exams, s.examId)), mockCount: count, mockMinutes: defaultMockMinutes(count), activeMockAttempt: attempt,
         lResume: progress.lastSequenceNumber, anns: annotations.map(fromSharedAnnotation), notes: notes.map(fromSharedNote)
@@ -1322,7 +1327,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     const pending = state.pendingQuestionJump;
     if (!pending || state.examId !== pending.examId || state.workspaceStatus !== "ready") return;
     const q = state.catalogBy[pending.questionId];
-    if (!q) {
+    if (!q || q.archived) {
       setState({ pendingQuestionJump: null, actionError: "This linked question is no longer available." });
       return;
     }

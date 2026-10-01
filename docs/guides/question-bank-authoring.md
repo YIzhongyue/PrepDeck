@@ -39,6 +39,23 @@ joining through it. Imports can set it; an administrator clears it once the
 question has been checked. Questions still flagged carry a **Needs review** chip
 in the list.
 
+**Archive** retires a duplicate, obsolete or incorrect question without deleting
+it (issues #92/#93). After a confirmation, the row stays in the list, muted and
+marked **Archived**, and its button becomes **Restore**. The **status** filter
+shows active, archived or all questions (the default). An archived question
+keeps its ID, sequence number, tags, revision, answer history, wrong-book and
+bookmark entries, notes, annotations and Knowledge Point links; it can still be
+edited. Learners stop seeing it: it leaves the practice catalog, Practice,
+Mock and Learning Mode selection, review lists, recommendations, the daily
+review email, Knowledge Point question search, every User MCP listing and
+selection, and the question counts and coverage figures shown to learners. No
+new attempt may include it. Reads by ID keep working, so an attempt already in
+progress (including a resumed mock) can be finished and past results, learning
+history and `user_get_question` still resolve. Archiving is the only way to
+retire a question that learners have answered, since **Delete** refuses those.
+Admin MCP's `admin_archive_question`/`admin_unarchive_question` use the same
+operation. See the [archived question in the list](../screenshots/question-archive-desktop.png).
+
 Lists have 50-question pages, type/difficulty/tag filters (matched by
 normalized identity — trimmed, case-insensitive — against the tag catalog,
 not a byte-exact string), a review-state filter and stem search.
@@ -97,6 +114,18 @@ deduplicating historical external IDs to migrate successfully.
 - Deletion fails with HTTP 409 when learning records or cached explanations
   reference the question. This includes ungraded attempts' question lists.
   No learning records are deleted or cascaded.
+- `POST /api/exams/:examId/questions/:id/archive` and `/unarchive`: return
+  `{question}` with its `archivedAt` (null when active). Both are idempotent: a
+  repeated archive keeps the first timestamp, and neither changes the question's
+  content, `revision` or `updatedAt`, so an open editor can still save. 404 when
+  the question is not in that exam. Each request writes an `archive`/`unarchive`
+  row to the content mutation audit and invalidates the exam's practice catalog.
+  `GET /api/exams/:examId/questions` accepts `archived=true|false`; omitted or
+  empty returns both. Import matching by external ID includes archived
+  questions, so a re-import updates an archived question in place and leaves it
+  archived. `0042_question_archiving.sql` adds `questions.archived_at`;
+  `0043_question_archive_audit_actions.sql` widens both audit tables' action
+  constraints. Apply both before deploying the updated Worker.
 
 ## Exam classification filters
 

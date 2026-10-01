@@ -22,7 +22,7 @@ let rows = [], writes = 0, tagFailures = 0, tagRequests = 0;
 // Lets a test hold the question-list response open, so an assertion can run
 // while a page is still in flight instead of racing it.
 let heldQuestions = null, questionPageFailures = 0;
-const questionRequests = [];
+const questionRequests = [], archiveRequests = [];
 const holdQuestions = (offset = null) => (heldQuestions = { offset, gate: Promise.withResolvers(), arrived: Promise.withResolvers() });
 const releaseQuestions = () => { const held = heldQuestions; heldQuestions = null; held.gate.resolve(); };
 const catalog = ["tag-one", "Cloud, data", "Cloud security", "Other exam tag"];
@@ -47,13 +47,22 @@ const server = createServer(async (req, res) => {
       questionRequests.push(Object.fromEntries(url.searchParams));
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
       if (heldQuestions && (heldQuestions.offset === null || String(heldQuestions.offset) === url.searchParams.get("offset"))) { heldQuestions.arrived.resolve(); await heldQuestions.gate.promise; }
-      const review = url.searchParams.get("needsReview");
+      const review = url.searchParams.get("needsReview"), archived = url.searchParams.get("archived");
       const filtered = rows.filter(q => (!url.searchParams.get("q") || q.id === url.searchParams.get("q") || q.externalId === url.searchParams.get("q") || q.stem.includes(url.searchParams.get("q")))
         // Only "true"/"false" narrow; the panel's "Any review state" option
         // sends an empty value, which must not be read as needsReview=false.
-        && (review !== "true" && review !== "false" || Boolean(q.needsReview) === (review === "true")));
+        && (review !== "true" && review !== "false" || Boolean(q.needsReview) === (review === "true"))
+        && (archived !== "true" && archived !== "false" || Boolean(q.archivedAt) === (archived === "true")));
       const offset = Number(url.searchParams.get("offset") || 0);
       return json(200, { questions: filtered.slice(offset, offset + 50), total: filtered.length });
+    }
+    const lifecycle = url.pathname.match(/^\/api\/exams\/exam\/questions\/([^/]+)\/(archive|unarchive)$/);
+    if (req.method === "POST" && lifecycle) {
+      const q = rows.find(row => row.id === lifecycle[1]);
+      if (!q) return json(404, { error: "Question not found" });
+      archiveRequests.push(lifecycle.slice(1));
+      q.archivedAt = lifecycle[2] === "archive" ? (q.archivedAt ?? new Date().toISOString()) : null;
+      return json(200, { question: q });
     }
     const { payload: body } = await readBody(req);
     if (url.pathname === "/api/exams/exam/import/validate") return json(200, { valid: true, questionCount: body.questions.length, issues: [], conflicts: [] });
@@ -589,6 +598,38 @@ try {
   await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).tap(); await structuredDialog.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => window.backgroundClicks), 0);
   console.log("PASS component backdrop cancellation: clean/dirty guards, selection, focus/scroll/filter restoration, pending save, Escape and touch");
+
+  // Issues #92/#93: archive from the list after a confirmation, see the state,
+  // filter on it, and restore it.
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  rows = [0, 1].map(i => ({ id: `archive-${i}`, examId: "exam", externalId: `A-${i}`, sequenceNumber: i + 1, type: "single_choice",
+    stem: `Archive fixture ${i}`, options: [{ id: "A", text: "Yes" }, { id: "B", text: "No" }], correctAnswers: ["A"], explanation: null,
+    difficulty: null, tags: [], needsReview: false, archivedAt: null, points: 1, revision: 1, answerRevision: 1, answerRevisedAt: null }));
+  await page.reload();
+  const archiveRow = () => page.locator(".admin-question-row").filter({ hasText: "ID: archive-0 ·" });
+  await archiveRow().waitFor();
+  page.once("dialog", dialog => { assert.match(dialog.message(), /Archive question #1\?.*restore it/s); dialog.dismiss(); });
+  await archiveRow().getByRole("button", { name: "Archive", exact: true }).click();
+  await archiveRow().getByRole("button", { name: "Archive", exact: true }).waitFor();
+  assert.deepEqual(archiveRequests, [], "declining the confirmation archives nothing");
+  page.once("dialog", dialog => dialog.accept());
+  await archiveRow().getByRole("button", { name: "Archive", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Archived question #1." }).waitFor();
+  await archiveRow().getByText("Archived", { exact: true }).waitFor();
+  assert.match(await archiveRow().getAttribute("class"), /\bis-archived\b/);
+  assert.equal(await page.locator(".admin-question-row").filter({ hasText: "ID: archive-1 ·" }).getByText("Archived", { exact: true }).count(), 0);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/question-archive-desktop.png`, fullPage: true });
+  const archivedFilter = page.getByLabel("Filter by archived state");
+  await archivedFilter.selectOption("true");
+  await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  assert.equal(questionRequests.at(-1).archived, "true");
+  await archiveRow().getByRole("button", { name: "Restore", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Restored question #1." }).waitFor();
+  await page.getByText("No questions found", { exact: false }).waitFor();
+  await archivedFilter.selectOption("");
+  await archiveRow().getByRole("button", { name: "Archive", exact: true }).waitFor();
+  assert.deepEqual(archiveRequests, [["archive-0", "archive"], ["archive-0", "unarchive"]]);
+  console.log("PASS question archiving: confirmation, archived badge and styling, archived filter, restore");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); heldComponentSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

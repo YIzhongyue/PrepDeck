@@ -5,7 +5,7 @@
 import type { McpPrincipal } from "./credentials";
 
 export type AdminMutationAction =
-  | "create" | "update" | "delete" | "batch_create" | "batch_update"
+  | "create" | "update" | "delete" | "batch_create" | "batch_update" | "archive" | "unarchive"
   | "import_execute" | "exam_create" | "exam_update" | "exam_archive"
   | "tag_create" | "tag_update" | "tag_merge";
 export type AdminMutationOutcome = "success" | "partial" | "failure" | "skipped";

@@ -118,19 +118,20 @@ export async function computeExamStats(
       .first<{ attempted_questions: number; total_answers: number; correct_answers: number }>(),
 
     // The coverage denominator, stated explicitly rather than inferred from
-    // whatever the client happens to have cached.
-    db.prepare("SELECT COUNT(*) AS bank_size FROM questions WHERE exam_id = ?")
+    // whatever the client happens to have cached. Archived questions are not
+    // part of the bank a learner can still cover.
+    db.prepare("SELECT COUNT(*) AS bank_size FROM questions WHERE exam_id = ? AND archived_at IS NULL")
       .bind(examId)
       .first<{ bank_size: number }>(),
 
     // Answered questions that STILL exist in the bank. Joining `questions`
-    // drops answers to since-deleted questions, which is what keeps coverage
-    // from exceeding 100% after a bank cleanup.
+    // drops answers to since-deleted (or archived) questions, which is what
+    // keeps coverage from exceeding 100% after a bank cleanup.
     db.prepare(
       `SELECT COUNT(DISTINCT aa.question_id) AS attempted_in_bank
        FROM attempt_answers aa
        JOIN attempts a ON a.id = aa.attempt_id
-       JOIN questions q ON q.id = aa.question_id AND q.exam_id = a.exam_id
+       JOIN questions q ON q.id = aa.question_id AND q.exam_id = a.exam_id AND q.archived_at IS NULL
        WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}`
     )
       .bind(userId, examId)

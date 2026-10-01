@@ -45,7 +45,8 @@ knowledgePointQuestionSearchRouter.get("/", async (c) => {
     if (!kp) return c.json({ error: "Knowledge point not found" }, 404);
   }
 
-  const conditions = ["e.archived_at IS NULL"];
+  // Archived exams and archived questions (issues #92/#93) are not offered for new links.
+  const conditions = ["e.archived_at IS NULL", "q.archived_at IS NULL"];
   const params: unknown[] = [];
   if (examId) {
     conditions.push("q.exam_id = ?");

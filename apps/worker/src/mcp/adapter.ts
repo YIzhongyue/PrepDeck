@@ -11,7 +11,7 @@ import {
 } from "../lib/examManagement";
 import {
   BANK_QUESTION_SCAN_LIMIT, EXAM_QUESTION_SCAN_LIMIT, MAX_BATCH_MUTATION_ITEMS,
-  answerKey, createStatement, getQuestion as getQuestionRow,
+  answerKey, archiveQuestionStatement, createStatement, getQuestion as getQuestionRow,
   listQuestionTags as listQuestionTagRows, listQuestions as listQuestionRows,
   listRecentContentChanges as listRecentContentChangeRows, payloadOf, searchQuestions as searchQuestionsQuery, toQuestion,
   updateStatement, validatePayload, type QuestionRow,
@@ -240,11 +240,11 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
         ).bind(userId).all<{ exam_id: string; attempted_questions: number; total_answers: number; correct_answers: number; last_attempt_at: string | null }>(),
         db.prepare(
           `SELECT q.exam_id AS exam_id, COUNT(*) AS n FROM bookmarks b JOIN questions q ON q.id = b.question_id
-           WHERE b.user_id = ? GROUP BY q.exam_id`,
+           WHERE b.user_id = ? AND q.archived_at IS NULL GROUP BY q.exam_id`,
         ).bind(userId).all<{ exam_id: string; n: number }>(),
         db.prepare(
           `SELECT q.exam_id AS exam_id, COUNT(*) AS n FROM wrong_question_book w JOIN questions q ON q.id = w.question_id
-           WHERE w.user_id = ? AND w.mastered = 0 GROUP BY q.exam_id`,
+           WHERE w.user_id = ? AND w.mastered = 0 AND q.archived_at IS NULL GROUP BY q.exam_id`,
         ).bind(userId).all<{ exam_id: string; n: number }>(),
       ]);
 
@@ -305,14 +305,16 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
       // Summary-only (no trend/tag/mock-history queries) — this tool only
       // ever reads three fields off the stats, so it must not run (or
       // KV-cache) the REST dashboard's full computeExamStats to get them.
+      // Counts match user_get_bookmarked_questions/user_get_wrong_questions,
+      // which leave archived questions out.
       const [progressRow, bookmarkCount, wrongCount, stats] = await Promise.all([
         db.prepare("SELECT last_sequence_number FROM learning_progress WHERE user_id = ? AND exam_id = ?")
           .bind(userId, input.examId).first<{ last_sequence_number: number }>(),
         db.prepare(
-          `SELECT COUNT(*) AS n FROM bookmarks b JOIN questions q ON q.id = b.question_id WHERE b.user_id = ? AND q.exam_id = ?`,
+          `SELECT COUNT(*) AS n FROM bookmarks b JOIN questions q ON q.id = b.question_id WHERE b.user_id = ? AND q.exam_id = ? AND q.archived_at IS NULL`,
         ).bind(userId, input.examId).first<{ n: number }>(),
         db.prepare(
-          `SELECT COUNT(*) AS n FROM wrong_question_book w JOIN questions q ON q.id = w.question_id WHERE w.user_id = ? AND q.exam_id = ? AND w.mastered = 0`,
+          `SELECT COUNT(*) AS n FROM wrong_question_book w JOIN questions q ON q.id = w.question_id WHERE w.user_id = ? AND q.exam_id = ? AND w.mastered = 0 AND q.archived_at IS NULL`,
         ).bind(userId, input.examId).first<{ n: number }>(),
         computeExamStatsSummary(db, userId, input.examId),
       ]);
@@ -401,8 +403,13 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
     // — a deliberate User MCP product decision (confirmed explicitly), not a
     // reflection of an existing REST permission: routes/questions.ts's
     // generic question read is itself requireAdmin-gated.
+    //
+    // Archived questions (issues #92/#93) never appear in a search, listing
+    // or selection. Reads by id (get/present) still resolve them, so an
+    // attempt or note that already references one keeps working; the
+    // returned question then carries its archivedAt.
     async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; limit: number; offset: number }) {
-      return searchQuestionsQuery(db, input.examId, input);
+      return searchQuestionsQuery(db, input.examId, { ...input, archived: false });
     },
 
     async getQuestion(input: { examId: string; id: string }) {
@@ -438,7 +445,7 @@ export function createUserMcpAdapter(principal: McpPrincipal, env: Env) {
 
     async listQuestionTags(input: { examId?: string; limit: number; offset: number }) {
       if (input.examId) await requireExam(input.examId);
-      const rows = await listQuestionTagRows(db, input);
+      const rows = await listQuestionTagRows(db, { ...input, activeOnly: true });
       return page(rows, input);
     },
 
@@ -783,10 +790,51 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
 
   // Full in-scope question set for the quality-control/statistics tools,
   // which need every matching row (not a single page) to compute
-  // deterministic checks. Bounded by EXAM_QUESTION_SCAN_LIMIT.
+  // deterministic checks. Bounded by EXAM_QUESTION_SCAN_LIMIT. Active
+  // questions only (see listQuestions).
   async function loadExamQuestions(examId: string) {
     const rows = await listQuestionRows(db, { examId, limit: EXAM_QUESTION_SCAN_LIMIT });
     return rows.map(toQuestion);
+  }
+
+  // Issues #92/#93 — admin_archive_question/admin_unarchive_question. The same
+  // archiveQuestionStatement as the Admin UI's POST /:id/archive|unarchive, so
+  // there is one archival path. No expectedRevision: the transition never
+  // touches content or revision, and repeating it is a successful no-op
+  // (`changed: false`) rather than a conflict, so an agent can safely retry.
+  // The success audit row commits in the same batch as the write.
+  async function setQuestionArchived(input: { examId: string; id: string }, archived: boolean) {
+    await consumeAdminMutationLimit();
+    const tool = archived ? "admin_archive_question" : "admin_unarchive_question";
+    const action = archived ? "archive" : "unarchive";
+    const before = await requireQuestion(input.examId, input.id);
+    const changed = (before.archived_at !== null) !== archived;
+    let written: number;
+    try {
+      const [result] = await db.batch([
+        archiveQuestionStatement(db, input.examId, input.id, archived, new Date().toISOString()),
+        buildConditionalAdminMutationAuditStatement(db, principal, {
+          tool, action, examId: input.examId, targetIds: [input.id],
+          successDetail: { changed }, failureDetail: { reason: "not_found" },
+        }),
+      ]);
+      written = result!.meta.changes;
+    } catch (error) {
+      await recordAdminMutationAudit(db, principal, {
+        tool, action, examId: input.examId, targetIds: [input.id], outcome: "failure", detail: { reason: "error" },
+      });
+      throw error;
+    }
+    // Deleted between the read above and the write.
+    if (!written) throw new McpApplicationError("not_found");
+    await invalidatePracticeQuestions(env, input.examId).catch(() => {});
+    const question = toQuestion(await requireQuestion(input.examId, input.id));
+    return {
+      archived: question.archivedAt !== null,
+      archivedAt: question.archivedAt,
+      changed,
+      question: { ...summarize(question), revision: question.revision, archivedAt: question.archivedAt },
+    };
   }
 
   // --- Import execution helpers (implementation) ----------------------------------
@@ -883,7 +931,7 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
     // `needsReview` is Admin-only on purpose: it is import/authoring workflow
     // state (issue #15), so it narrows this search but is never a filter the
     // User MCP's own searchQuestions above accepts.
-    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; needsReview?: boolean; limit: number; offset: number }) {
+    async searchQuestions(input: { examId: string; q?: string; type?: string; difficulty?: string; tag?: string; needsReview?: boolean; archived?: boolean; limit: number; offset: number }) {
       return searchQuestionsQuery(db, input.examId, input);
     },
 
@@ -916,7 +964,12 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
       if (!exam) throw new McpApplicationError("not_found");
       const questions = await loadExamQuestions(input.examId);
       const attempts = await getExamAttemptCounts(db, input.examId);
-      return { exam, statistics: buildQuestionSetStatistics(questions, EXAM_QUESTION_SCAN_LIMIT), attempts };
+      const archived = await db.prepare("SELECT COUNT(*) AS n FROM questions WHERE exam_id = ? AND archived_at IS NOT NULL")
+        .bind(input.examId).first<{ n: number }>();
+      return {
+        exam, statistics: buildQuestionSetStatistics(questions, EXAM_QUESTION_SCAN_LIMIT), attempts,
+        archivedQuestionCount: archived?.n ?? 0,
+      };
     },
 
     // --- Quality-control and maintenance reads -------------------------------
@@ -1231,6 +1284,14 @@ export function createAdminMcpAdapter(principal: McpPrincipal, env: Env) {
       if (!changed) throw new McpApplicationError("conflict");
       await invalidatePracticeQuestions(env, input.examId).catch(() => {});
       return { deleted: true };
+    },
+
+    async archiveQuestion(input: { examId: string; id: string }) {
+      return setQuestionArchived(input, true);
+    },
+
+    async unarchiveQuestion(input: { examId: string; id: string }) {
+      return setQuestionArchived(input, false);
     },
 
     async batchCreateQuestions(input: {
