@@ -1,5 +1,6 @@
 import { reviewIds } from "../lib/reviewLists";
 import { filterByTags, pruneTags, tagFacets } from "../lib/tagFilter";
+import { UNDER_REVIEW_NOTICE } from "../lib/underReview";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import TagFilterBar from "../components/TagFilterBar";
 import { useEffect, useState } from "react";
@@ -67,6 +68,7 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
             <div key={id} className="card elev-sm" style={{ padding: "18px 20px", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>{qq.externalId}</span>
+                {qq.needsReview && <span className="tag tag-warning" title={UNDER_REVIEW_NOTICE} style={{ whiteSpace: "nowrap" }}>Under review</span>}
                 {/* Card tags are metadata, not controls: no border, no count, and
                     the ones the filter matched carry the accent ring so a
                     multi-tag result explains itself. */}

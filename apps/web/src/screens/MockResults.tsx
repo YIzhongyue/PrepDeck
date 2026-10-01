@@ -2,7 +2,7 @@ import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import { useEffect, useState } from "react";
 import { formatAnswerText } from "@prepdeck/shared";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
-import { IC, Icon } from "../components/study/StudyKit";
+import { IC, Icon, UnderReviewBadge } from "../components/study/StudyKit";
 import { breakpointsFor } from "../lib/responsive";
 import { usePrepDeck } from "../store/PrepDeckContext";
 
@@ -116,7 +116,7 @@ export default function MockResults() {
                   return (
                     <tr key={row.questionId}>
                       <td className="st-num">{n}</td>
-                      <td className="st-stem"><span title={qq?.stem}>{qq?.stem ?? ""}</span></td>
+                      <td className="st-stem">{qq?.needsReview && <UnderReviewBadge />}<span title={qq?.stem}>{qq?.stem ?? ""}</span></td>
                       <td style={{ whiteSpace: "nowrap" }}>{qq?.tags.join(", ") || "—"}</td>
                       <td className="st-yours">{yours}</td>
                       <td>{format(row.correctAnswers)}<AnswerRevisionNotice revisedAt={row.answerRevisedAt} historical={row.answerRevision == null || row.answerRevision < row.currentAnswerRevision} gradedAnswers={row.gradedAnswers} question={qq} /></td>

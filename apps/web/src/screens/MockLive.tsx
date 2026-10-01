@@ -2,7 +2,7 @@ import StructuredResponse from "../components/StructuredResponse";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
 import PageBreadcrumb from "../components/PageBreadcrumb";
-import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, usePinnedCard } from "../components/study/StudyKit";
+import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, UnderReviewNotice, usePinnedCard } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
@@ -57,9 +57,10 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
       <div ref={gridRef} className="st-grid" style={{ gridTemplateColumns: mockCols, alignItems: "start" }}>
         <section className="st-card st-q st-q--pinned" aria-label="Question" style={{ height: fitHeight ?? undefined }}>
           <div className="st-q-head">
-            <QuestionBadges label={`Question ${state.mIdx + 1}`} typeLabel={questionTypeLabel(mq)} multi={mq.type === "multiple_choice"} />
+            <QuestionBadges label={`Question ${state.mIdx + 1}`} typeLabel={questionTypeLabel(mq)} multi={mq.type === "multiple_choice"} underReview={mq.needsReview} />
           </div>
           <div className="st-q-body" ref={bodyRef}>
+            <UnderReviewNotice question={mq} />
             <QuestionContentGate question={mq}>
               <div className="st-stem"><QuestionContent src={mq.stem} content={mq.content} /></div>
               <div className="st-opts">

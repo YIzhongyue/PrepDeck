@@ -116,7 +116,7 @@ test("all four types can be created in an empty exam with stable IDs and sequent
     await create({ type: "fill_blank", options: undefined, correctAnswers: ["answer", "variant"] })];
   assert.deepEqual(rows.map(q => q.sequenceNumber), [1, 2, 3, 4]); assert.equal(new Set(rows.map(q => q.id)).size, 4);
   assert.ok(rows.every(q => q.revision === 1 && q.answerRevision === 1 && q.answerRevisedAt === null));
-  assert.equal(invalidations.filter(key => key === 'practice-questions:v2:exam').length, 4);
+  assert.equal(invalidations.filter(key => key === 'practice-questions:v3:exam').length, 4);
   assert.equal(invalidations.filter(key => key === 'practice-questions:exam').length, 4);
 });
 test("invalid payloads and non-admin writes cannot persist anything", async t => {

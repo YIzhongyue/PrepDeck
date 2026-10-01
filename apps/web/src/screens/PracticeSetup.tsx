@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { reviewIds } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
+import { underReviewCount } from "../lib/underReview";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
 import {
-  ChoiceCard, DifficultyPicker, DomainPicker, SetupHeader, SetupRow, SummaryRow, domainSummary, setupLayout,
+  ChoiceCard, DifficultyPicker, DomainPicker, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, domainSummary, setupLayout,
   type DifficultyChoice
 } from "../components/study/SetupKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -26,7 +27,7 @@ const FEEDBACK = [
 const MINUTES_PER_QUESTION = 1.5;
 
 export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, pool } = usePrepDeck();
+  const { state, width, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, startPractice, pool } = usePrepDeck();
   const layout = setupLayout(width, bp.phone);
   const attemptedCount = Object.keys(state.attempted).length;
   const sourceCounts: Record<string, number> = {
@@ -41,6 +42,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
     for (const q of state.catalog) if (q.diff) counts[q.diff]++;
     return counts;
   }, [state.catalog]);
+  const reviewCount = useMemo(() => underReviewCount(state.catalog), [state.catalog]);
   const matched = pool().length;
   const sessionSize = Math.min(state.count, matched);
   const source = SOURCES.find((s) => s.id === state.source) ?? SOURCES[0];
@@ -72,6 +74,8 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
             <DifficultyPicker value={state.diff} counts={diffCounts} onChange={setDiff} />
           </SetupRow>
 
+          <UnderReviewRow count={reviewCount} skip={state.skipReview} onChange={setSkipReview} layout={layout} />
+
           <SetupRow title="Answer feedback" desc="Choose when to see answers and explanations." cols={layout.rowCols}>
             <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
               {FEEDBACK.map((f) => (
@@ -100,6 +104,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
             <div className="st-summary-rows">
               <SummaryRow icon={source.icon} label="Source" value={source.label} />
               <SummaryRow icon={IC.tag} label="Domains" value={domainSummary(state.tags)} />
+              {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.skipReview ? "Skipped" : "Included"} />}
               <SummaryRow icon={IC.listOrdered} label="Questions" value={sessionSize} />
               <SummaryRow icon={IC.clock} label="Estimated time" value={`~${Math.round(sessionSize * MINUTES_PER_QUESTION)} min`} />
             </div>

@@ -241,6 +241,7 @@
 .st-badge--ok { border-color: var(--st-ok-line); background: var(--st-ok-soft); color: var(--st-ok-fg); }
 .st-badge--bad { border-color: var(--st-bad-line); background: var(--st-bad-soft); color: var(--st-bad-fg); }
 .st-badge--plain { border-color: transparent; background: var(--st-soft-2); }
+.st-badge--warn { border-color: var(--st-warn-line); background: var(--st-warn-soft); color: var(--st-warn-fg); }
 
 .st-stem { font-size: 17px; line-height: 1.6; color: var(--st-fg); text-wrap: pretty; }
 .st-phone .st-stem { font-size: 16px; }
@@ -405,6 +406,23 @@
 .st-textarea { min-height: 84px; font-size: 14px; line-height: 20px; resize: vertical; }
 
 /* ---- Feedback ---------------------------------------------------------- */
+
+/* Issue #94: a caution above the stem, not an alert — it neither animates nor
+   takes the question's place. */
+.st-review-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--st-warn-line);
+  border-radius: 8px;
+  background: var(--st-warn-soft);
+  color: var(--st-warn-fg);
+  font-size: 13px;
+  line-height: 20px;
+}
+.st-review-note > svg { flex: none; margin-top: 2px; color: var(--st-warn); }
 
 .st-alert {
   display: flex;
@@ -693,6 +711,7 @@
 .st-table td.st-num { font-variant-numeric: tabular-nums; }
 .st-table td.st-stem { max-width: 340px; color: var(--st-fg); }
 .st-table td.st-stem span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-table td.st-stem .st-badge { display: inline-flex; margin-bottom: 4px; }
 .st-table td.st-yours { font-weight: 600; color: var(--st-fg); }
 .st-table td.st-actions { padding-top: 8px; padding-bottom: 8px; text-align: right; white-space: nowrap; }
 .st-icon-btn {

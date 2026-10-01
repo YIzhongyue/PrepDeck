@@ -1,6 +1,7 @@
 import { WorkspaceRequests, storedExam, storeExam, beforeWorkspaceNavigation } from "../lib/examWorkspace";
 import { catalogQuestionIds, isActive } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
+import { sessionEligible } from "../lib/underReview";
 import { allowAuthoringNavigation } from "../lib/questionAuthoring";
 import { canCheckAnswer, practiceKeyAction } from "../lib/practiceShortcuts";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -105,6 +106,9 @@ export interface AppState {
   count: number;
   feedback: FeedbackMode;
   tags: string[];
+  // Issue #94: leave questions still under review out of the session. Each
+  // setup screen keeps its own choice, like its other filters (lib/underReview.ts).
+  skipReview: boolean;
   queue: string[];
   idx: number;
   sel: Record<string, string[]>;
@@ -120,6 +124,7 @@ export interface AppState {
   lStage: PracticeStage;
   lTags: string[];
   lDiff: Difficulty | "all";
+  lSkipReview: boolean;
   lStartInput: number;
   lQueue: string[];
   lIdx: number;
@@ -155,6 +160,7 @@ export interface AppState {
   mockFormat: MockFormatId;
   mockCount: number;
   mockMinutes: number;
+  mockSkipReview: boolean;
   mockResult: CompleteAttemptResponse | null;
   activeMockAttempt: ActiveAttemptResponse | null;
 
@@ -198,13 +204,13 @@ const initialState: AppState = {
   actionError: null, switching: false, workspaceGeneration: 0, activityRevision: 0,
 
   pStage: "setup", source: "all", diff: "all", count: 10, feedback: "immediate",
-  tags: [], queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
+  tags: [], skipReview: false, queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
 
-  lStage: "setup", lTags: [], lDiff: "all", lStartInput: 1, lQueue: [], lIdx: 0, lResume: null, lDetail: {},
+  lStage: "setup", lTags: [], lDiff: "all", lSkipReview: false, lStartInput: 1, lQueue: [], lIdx: 0, lResume: null, lDetail: {},
   pendingQuestionJump: null, pendingLearningSequence: null, kpNoteId: null, pendingSlugQuestionJump: null,
 
   mStage: "setup", mQueue: [], mIdx: 0, mSel: {}, mFlag: {}, mLeft: 0, mockDeadline: null, mConfirm: false,
-  mockAttemptId: null, mockFormat: "custom", mockCount: 10, mockMinutes: 30, mockResult: null, activeMockAttempt: null,
+  mockAttemptId: null, mockFormat: "custom", mockCount: 10, mockMinutes: 30, mockSkipReview: false, mockResult: null, activeMockAttempt: null,
 
   listMode: "wrong",
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
@@ -244,6 +250,7 @@ interface PrepDeckStore {
   toggleTag: (tag: string) => void;
   setPracticeTags: (tags: string[]) => void;
   setCount: (n: number) => void;
+  setSkipReview: (skip: boolean) => void;
   startPractice: () => void;
   openPracticeWithFilters: (filters: PracticeFilters) => void;
 
@@ -264,6 +271,7 @@ interface PrepDeckStore {
   toggleLearningTag: (tag: string) => void;
   clearLearningTags: () => void;
   setLearningDiff: (id: Difficulty | "all") => void;
+  setLearningSkipReview: (skip: boolean) => void;
   beginLearning: (fromSequence?: number) => void;
   learningNext: () => void;
   learningPrev: () => void;
@@ -278,6 +286,7 @@ interface PrepDeckStore {
   setMockFormat: (format: MockFormatId) => void;
   setMockCount: (n: number) => void;
   setMockMinutes: (n: number) => void;
+  setMockSkipReview: (skip: boolean) => void;
   beginMock: () => void;
   mockPick: (q: Question, oid: string | string[]) => void;
   mockPrev: () => void;
@@ -586,7 +595,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       const toQuestion = (q: PracticeCatalogResponse["questions"][number]): Question => ({
         id: q.id, externalId: q.externalId, sequenceNumber: q.sequenceNumber, type: q.type,
         chooseCount: q.chooseCount, tags: q.tags, diff: q.difficulty, stem: q.stem, options: q.options,
-        hasContent: q.hasContent, revision: q.revision, content: q.content
+        hasContent: q.hasContent, revision: q.revision, content: q.content, needsReview: !!q.needsReview
       });
       // `catalog` is what every new session, count and filter draws from.
       // Archived questions (issues #92/#93) only join `catalogBy`, so an
@@ -620,6 +629,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       if (s.source === "focus" && !needsFocusedPractice(q.id, s)) return false;
       if (s.diff !== "all" && q.diff !== s.diff) return false;
       if (s.tags.length && !q.tags.some((t) => s.tags.indexOf(t) >= 0)) return false;
+      if (s.skipReview && q.needsReview) return false;
       return true;
     });
   }, []);
@@ -871,6 +881,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       .filter((q) => {
         if (s.lDiff !== "all" && q.diff !== s.lDiff) return false;
         if (s.lTags.length && !q.tags.some((t) => s.lTags.indexOf(t) >= 0)) return false;
+        if (s.lSkipReview && q.needsReview) return false;
         return true;
       })
       .slice()
@@ -884,6 +895,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   const setLearningStartInput = useCallback((n: number) => setState({ lStartInput: n }), [setState]);
   const setLearningDiff = useCallback((id: Difficulty | "all") => setState({ lDiff: id }), [setState]);
+  const setLearningSkipReview = useCallback((skip: boolean) => setState({ lSkipReview: skip }), [setState]);
   const toggleLearningTag = useCallback((tag: string) => {
     setState((s) => {
       const a = s.lTags.slice();
@@ -991,6 +1003,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const setMockFormat = useCallback((format: MockFormatId) => setState({ mockFormat: format }), [setState]);
   const setMockCount = useCallback((n: number) => setState({ mockCount: n }), [setState]);
   const setMockMinutes = useCallback((n: number) => setState({ mockMinutes: n }), [setState]);
+  const setMockSkipReview = useCallback((skip: boolean) => setState({ mockSkipReview: skip }), [setState]);
 
   const resaveMockDraftRef = useRef<(attemptId: string, qid: string, sel: string[]) => void>(() => {});
   const beginMock = useCallback(() => {
@@ -1013,10 +1026,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       for (const [qid, sel] of restored) resaveMockDraftRef.current(active.attemptId, qid, sel);
       return;
     }
-    if (!s.examId || s.catalog.length === 0) return;
-    const shuffled = s.catalog.map((q) => q.id).sort(() => Math.random() - 0.5);
-    // mockPlan caps the format's length to the bank and to MAX_ATTEMPT_QUESTIONS,
-    // which the API rejects outright.
+    const eligible = sessionEligible(s.catalog, s.mockSkipReview);
+    if (!s.examId || eligible.length === 0) return;
+    const shuffled = eligible.map((q) => q.id).sort(() => Math.random() - 0.5);
+    // mockPlan caps the format's length to the same eligible bank and to
+    // MAX_ATTEMPT_QUESTIONS, which the API rejects outright.
     const plan = mockPlan(s);
     const ids = shuffled.slice(0, plan.questionCount);
     const timeLimitSeconds = plan.timeLimitMinutes * 60;
@@ -1331,7 +1345,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       setState({ pendingQuestionJump: null, actionError: "This linked question is no longer available." });
       return;
     }
-    setState({ pendingQuestionJump: null, lTags: [], lDiff: "all" });
+    setState({ pendingQuestionJump: null, lTags: [], lDiff: "all", lSkipReview: false });
     beginLearning(q.sequenceNumber);
   }, [state.pendingQuestionJump, state.examId, state.catalogBy, state.workspaceStatus, setState, beginLearning]);
 
@@ -1346,7 +1360,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (s.lStage === "live" && s.lQueue.some(id => s.catalogBy[id]?.sequenceNumber === seq)) {
       learningGotoSequence(seq);
     } else if (s.catalog.some(q => q.sequenceNumber === seq)) {
-      setState({ lTags: [], lDiff: "all" });
+      setState({ lTags: [], lDiff: "all", lSkipReview: false });
       beginLearning(seq);
     } else {
       setState({ lStage: "setup", actionError: `This exam has no question ${seq}.` });
@@ -1392,6 +1406,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [setState]);
   const setPracticeTags = useCallback((tags: string[]) => setState({ tags: [...new Set(tags)] }), [setState]);
   const setCount = useCallback((n: number) => setState({ count: n }), [setState]);
+  const setSkipReview = useCallback((skip: boolean) => setState({ skipReview: skip }), [setState]);
   const startPractice = useCallback(() => {
     const p = pool();
     if (!p.length) return;
@@ -1704,12 +1719,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const store: PrepDeckStore = {
     state, width, height, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
-    setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, startPractice, openPracticeWithFilters,
+    setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, showAlternateAi,
-    learningPool, learningQ, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff,
+    learningPool, learningQ, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff, setLearningSkipReview,
     beginLearning, learningNext, learningPrev, learningGotoSequence,
     goToQuestionForReview, openKnowledgePointNote, showKnowledgePoint, navigateTo,
-    setMockFormat, setMockCount, setMockMinutes, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
+    setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
     askSubmit, cancelSubmit, finishMock, practiceWrong,
     setListMode, removeBookmark, markMastered, practiceList,
     setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateTimeZone, updateEmailSettings,

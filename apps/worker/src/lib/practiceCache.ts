@@ -10,9 +10,10 @@ import type { PracticeCatalogQuestion } from "@prepdeck/shared";
 
 const TTL_SECONDS = 3600;
 
-// Old entries contain the full inline snapshots. Never read them into the new
-// lightweight catalog after a deployment, even before their TTL expires.
-const cacheKey = (examId: string) => `practice-questions:v2:${examId}`;
+// Bumped whenever a cached question changes shape, so a deployment never
+// reads an older entry into the new catalog before its TTL expires: v2 dropped
+// the full inline snapshots, v3 added `needsReview` (issue #94).
+const cacheKey = (examId: string) => `practice-questions:v3:${examId}`;
 
 export async function getCachedPracticeQuestions(env: Env, examId: string): Promise<PracticeCatalogQuestion[] | null> {
   return (await env.KV.get(cacheKey(examId), "json")) as PracticeCatalogQuestion[] | null;
@@ -29,7 +30,8 @@ export async function setCachedPracticeQuestions(env: Env, examId: string, quest
 export async function invalidatePracticeQuestions(env: Env, examId: string): Promise<void> {
   await Promise.all([
     env.KV.delete(cacheKey(examId)),
-    // Also invalidate the previous key during rolling deployments.
+    // Also invalidate the older keys during rolling deployments.
+    env.KV.delete(`practice-questions:v2:${examId}`),
     env.KV.delete(`practice-questions:${examId}`),
   ]);
 }

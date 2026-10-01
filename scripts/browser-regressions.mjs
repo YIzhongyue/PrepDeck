@@ -33,6 +33,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/answer-state.browser.mjs", 9],
   ["apps/web/scripts/question-card-layout.browser.mjs", 14],
   ["apps/web/scripts/review-lists.browser.mjs", 5],
+  ["apps/web/scripts/under-review.browser.mjs", 5],
   ["apps/web/scripts/settings.browser.mjs", 10],
   ["apps/web/scripts/statistics.browser.mjs", 18],
   ["apps/web/scripts/admin-console.browser.mjs", 6],

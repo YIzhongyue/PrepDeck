@@ -7,6 +7,7 @@ import NoteCard from "../NoteCard";
 import LengthHint from "../LengthHint";
 import UnlockKeyPrompt from "../UnlockKeyPrompt";
 import AnswerRevisionNotice from "../AnswerRevisionNotice";
+import { UNDER_REVIEW_NOTICE } from "../../lib/underReview";
 import type { LearningHistoryRow, Question } from "../../types";
 import "./study.css";
 
@@ -60,7 +61,8 @@ export const IC = {
   listOrdered: "M10 12h11 M10 18h11 M10 6h11 M4 10h2 M4 6h1v4 M6 18H4c0-1 2-2 2-3s-1-1.5-2-1",
   play: "M6 3.9a1 1 0 0 1 1.5-.86l12 7.1a1 1 0 0 1 0 1.72l-12 7.1A1 1 0 0 1 6 18.1z",
   arrowRight: "M5 12h14 M12 5l7 7-7 7",
-  info: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 16v-4 M12 8h.01"
+  info: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 16v-4 M12 8h.01",
+  alert: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3 M12 9v4 M12 17h.01"
 } as const;
 
 export function Icon({ d, size = 16, strokeWidth = 2, fill = "none", style }: { d: string; size?: number; strokeWidth?: number; fill?: string; style?: React.CSSProperties }) {
@@ -146,14 +148,17 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
   return { gridRef, bodyRef, fitHeight };
 }
 
-/* `compact` (phones) keeps the tags to a single row that scrolls sideways. */
-export function QuestionBadges({ label, typeLabel, multi, tags, compact = false, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; compact?: boolean; children?: ReactNode }) {
+/* `compact` (phones) keeps the tags to a single row that scrolls sideways.
+   `underReview` adds the warning badge beside the type, in the header that
+   stays on screen, never among the tags it could be mistaken for. */
+export function QuestionBadges({ label, typeLabel, multi, tags, compact = false, underReview = false, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; compact?: boolean; underReview?: boolean; children?: ReactNode }) {
   return (
     <div className="st-badges">
       {/* The first row holds only the ID, type and actions, so tags can never push an action onto a new line. */}
       <div className="st-badges-row">
         {label && <span className="st-badge st-q-id" title={label}>{label}</span>}
         <span className="st-badge st-badge--brand"><Icon d={multi ? IC.listChecks : IC.circleDot} size={12} />{typeLabel}</span>
+        {underReview && <UnderReviewBadge />}
         {children}
       </div>
       {!!tags?.length && (
@@ -162,6 +167,22 @@ export function QuestionBadges({ label, typeLabel, multi, tags, compact = false,
           {tags.map((t) => <span key={t} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{t}</span>)}
         </div>
       )}
+    </div>
+  );
+}
+
+/* Issue #94: a question an admin is still reviewing. The badge stays in the
+   pinned header; the notice, above the stem, says what that means. */
+export function UnderReviewBadge() {
+  return <span className="st-badge st-badge--warn" title={UNDER_REVIEW_NOTICE}><Icon d={IC.alert} size={12} />Under review</span>;
+}
+
+export function UnderReviewNotice({ question }: { question: Question }) {
+  if (!question.needsReview) return null;
+  return (
+    <div className="st-review-note" role="note">
+      <Icon d={IC.alert} size={16} />
+      <span>{UNDER_REVIEW_NOTICE}</span>
     </div>
   );
 }
