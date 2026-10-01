@@ -186,6 +186,40 @@ async function checkFlowNext(page, label, viewport) {
   assert.ok(foot.bottom <= viewport.height, `${label}: actions below the viewport`);
 }
 
+// The review tab strip scrolls sideways only (#103): no vertical overflow for a
+// touch or wheel gesture to drag it by, the selected tab's underline whole on
+// the strip's baseline, and on phones a vertical wheel over it scrolls the page.
+async function checkTabs(page, label, phone) {
+  const tabs = page.locator(".st-tabs");
+  await tabs.evaluate(el => el.scrollIntoView({ block: "center" })); await settle(page);
+  const strip = await tabs.evaluate(el => {
+    const s = getComputedStyle(el), box = el.getBoundingClientRect(), on = el.querySelector('[aria-selected="true"]').getBoundingClientRect();
+    return { overflowX: s.overflowX, overflowY: s.overflowY, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+      underline: parseFloat(getComputedStyle(el.querySelector('[aria-selected="true"]')).borderBottomWidth), tabBottom: on.bottom, stripBottom: box.bottom };
+  });
+  assert.equal(strip.overflowX, "auto", `${label}: the tab strip does not scroll sideways: ${JSON.stringify(strip)}`);
+  assert.equal(strip.overflowY, "hidden", `${label}: the tab strip can scroll vertically: ${JSON.stringify(strip)}`);
+  assert.ok(strip.scrollHeight <= strip.clientHeight, `${label}: the tabs overflow the strip vertically: ${JSON.stringify(strip)}`);
+  assert.ok(strip.underline === 2 && Math.abs(strip.tabBottom - strip.stripBottom) <= 0.5, `${label}: the selected underline is not whole on the baseline: ${JSON.stringify(strip)}`);
+  if (phone) {
+    // Scrolled up rather than down in case the review card ends the page.
+    const box = await tabs.evaluate(el => el.getBoundingClientRect().toJSON());
+    const before = await page.evaluate(() => window.scrollY);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -40); await page.waitForTimeout(100);
+    assert.equal(await tabs.evaluate(el => el.scrollTop), 0, `${label}: a vertical wheel moved the tab strip`);
+    assert.ok(before > 0 && await page.evaluate(() => window.scrollY) < before, `${label}: a vertical wheel over the tabs does not scroll the page`);
+  }
+  // Narrowed until the tabs overflow, the strip still scrolls sideways.
+  const sideways = await tabs.evaluate(el => {
+    el.style.width = "160px"; el.scrollLeft = 1000;
+    const result = { scrollLeft: el.scrollLeft, scrollTop: el.scrollTop, overflows: el.scrollWidth > el.clientWidth };
+    el.style.width = ""; el.scrollLeft = 0;
+    return result;
+  });
+  assert.ok(sideways.overflows && sideways.scrollLeft > 0 && sideways.scrollTop === 0, `${label}: overflowing tabs do not scroll sideways: ${JSON.stringify(sideways)}`);
+}
+
 // Real shell: bars must not consume the short viewport or mask the touch targets.
 async function checkLandscape(page, label, viewport) {
   await page.locator('.st-landscape').waitFor();
@@ -293,6 +327,7 @@ try {
     await page.getByRole("button", { name: "Check answer", exact: true }).click();
     await copyButton(page).waitFor();
     await checkHeader(page, label, { tags: true, copy: true });
+    await checkTabs(page, label, phone);
     await page.getByRole("button", { name: "Next question", exact: true }).click();
     await page.waitForFunction(() => window.fixtureApp.state.idx === 1);
     await (phone ? checkFlowNext : checkShortBody)(page, label, viewport);

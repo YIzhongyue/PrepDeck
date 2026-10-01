@@ -485,12 +485,17 @@
 
 /* ---- Tabbed review panel ----------------------------------------------- */
 
+/* Sideways only (#103): overflow-x alone makes overflow-y compute to auto, and
+   iOS then lets a vertical drag move the row. The baseline is an inset shadow,
+   not a border, so the selected underline covers it without the tabs having to
+   hang 1px below the strip (which was the overflow being dragged). */
 .st-tabs {
   display: flex;
   gap: 16px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--st-line);
+  box-shadow: inset 0 -1px 0 var(--st-line);
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
 }
 .st-tabs::-webkit-scrollbar { display: none; }
@@ -498,7 +503,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: -1px;
   padding: 14px 2px 12px;
   border: 0;
   border-bottom: 2px solid transparent;
