@@ -67,8 +67,8 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   const errors = [];
-  const adminContext = await browser.newContext();
-  const publicContext = await browser.newContext();
+  const adminContext = await browser.newContext({ reducedMotion: "reduce" });
+  const publicContext = await browser.newContext({ reducedMotion: "reduce" });
   const admin = await adminContext.newPage(), visitor = await publicContext.newPage();
   for (const page of [admin, visitor]) page.on("pageerror", error => errors.push(error.message));
   const current = name => admin.getByText(`Current mascot: ${name}`, { exact: true });
@@ -98,6 +98,9 @@ try {
   await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/normal.png");
   await visitor.goto(`${base}/login`);
   await expectImage(visitor, ".login-mascot", "/2D-Anime/normal.png");
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await visitor.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  if (process.env.SCREENSHOT_DIR) await visitor.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mascot-signin-2d-phone.png`, fullPage: true });
   await visitor.goto(`${base}/denied`);
   await expectImage(visitor, ".login-mascot", "/2D-Anime/unauthorized.png");
   await visitor.goto(`${base}/loading`);
@@ -124,6 +127,13 @@ try {
   releaseRead(); releaseRead = undefined;
   await current("2D Anime").waitFor();
   await expectImage(admin, '[data-testid="active-mascot"]', "/2D-Anime/normal.png");
+
+  style = "3D-Chibi";
+  await admin.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await current("3D Chibi").waitFor();
+  style = "2D-Anime";
+  await admin.evaluate(() => window.dispatchEvent(new FocusEvent("focus")));
+  await current("2D Anime").waitFor();
 
   failRead = true;
   await admin.evaluate(() => window.mascot.refresh());
