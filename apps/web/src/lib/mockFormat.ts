@@ -1,8 +1,10 @@
 import { MAX_ATTEMPT_QUESTIONS, mockFormatOptions, requiredCorrectFor, type MockFormatId, type OfficialMockFormat } from "@prepdeck/shared";
 import type { ExamSummary } from "../types";
+import { sessionEligible } from "./underReview";
 
 // What "Begin exam" will actually start: the chosen format's length and time
-// limit, or the custom values, capped to the bank and to the API's limit.
+// limit, or the custom values, capped to the bank the exam draws from (less
+// any questions under review it skips) and to the API's limit.
 
 export interface MockPlan {
   format: MockFormatId;
@@ -27,16 +29,18 @@ export function defaultMockFormat(official: OfficialMockFormat | null): MockForm
 export function mockPlan(s: {
   exams: readonly ExamSummary[];
   examId: string | null;
-  catalog: readonly unknown[];
+  catalog: readonly { needsReview?: boolean }[];
   mockFormat: MockFormatId;
   mockCount: number;
   mockMinutes: number;
+  mockSkipReview?: boolean;
 }): MockPlan {
   const official = officialFormatOf(s.exams, s.examId);
   const option = mockFormatOptions(official).find((o) => o.id === s.mockFormat);
   const format: MockFormatId = option ? option.id : "custom";
   const requested = option ? option.questionCount : s.mockCount;
-  const questionCount = Math.max(0, Math.min(requested, s.catalog.length, MAX_ATTEMPT_QUESTIONS));
+  const bankSize = sessionEligible(s.catalog, !!s.mockSkipReview).length;
+  const questionCount = Math.max(0, Math.min(requested, bankSize, MAX_ATTEMPT_QUESTIONS));
   // A fixed format cut short by a small bank keeps its pace rather than its
   // full time limit; custom values are the user's own choice and stay as set.
   const timeLimitMinutes = !option ? s.mockMinutes

@@ -28,9 +28,10 @@ interface QuestionRow {
   difficulty: string | null;
   tags_json: string | null;
   points: number;
+  needs_review: number;
 }
 
-const CATALOG_COLUMNS = `id, external_id, sequence_number, type, stem, content_json IS NOT NULL AS has_content, revision, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points`;
+const CATALOG_COLUMNS = `id, external_id, sequence_number, type, stem, content_json IS NOT NULL AS has_content, revision, options_json, correct_answers_json, difficulty, ${tagsJsonExpr("questions")} AS tags_json, points, needs_review`;
 
 function toCatalogQuestion(row: QuestionRow): PracticeCatalogQuestion {
   const correctAnswers = JSON.parse(row.correct_answers_json) as string[];
@@ -47,6 +48,7 @@ function toCatalogQuestion(row: QuestionRow): PracticeCatalogQuestion {
     tags: row.tags_json ? JSON.parse(row.tags_json) : [],
     difficulty: row.difficulty as PracticeCatalogQuestion["difficulty"],
     points: row.points,
+    needsReview: row.needs_review !== 0,
   };
 }
 

@@ -37,7 +37,9 @@ This is workflow state stored on the question row (`questions.needs_review`), no
 a tag: the tag catalog stays descriptive, and review state is filterable without
 joining through it. Imports can set it; an administrator clears it once the
 question has been checked. Questions still flagged carry a **Needs review** chip
-in the list.
+in the list. Learners see them marked **Under review** and can choose to skip
+them when setting up a session; see
+[questions under review](../requirements/practice-and-learning-modes.md#questions-under-review).
 
 **Archive** retires a duplicate, obsolete or incorrect question without deleting
 it (issues #92/#93). After a confirmation, the row stays in the list, muted and

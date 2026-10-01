@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { MAX_ATTEMPT_QUESTIONS, mockFormatOptions, type MockFormatId } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
-import { ChoiceCard, SetupHeader, SetupRow, SummaryRow, setupLayout } from "../components/study/SetupKit";
+import { ChoiceCard, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, setupLayout } from "../components/study/SetupKit";
 import { MAX_CUSTOM_MINUTES, MIN_CUSTOM_MINUTES, mockPlan, officialFormatOf, wholeNumberInRange } from "../lib/mockFormat";
+import { underReviewCount } from "../lib/underReview";
 import type { Breakpoints } from "../lib/responsive";
 
 const FORMAT_ICON: Record<MockFormatId, string> = { full: IC.fileText, half: IC.hourglass, sprint: IC.zap, custom: IC.sliders };
@@ -16,14 +17,19 @@ const RULES = [
 ];
 
 export default function MockSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, setMockFormat, setMockCount, setMockMinutes, beginMock } = usePrepDeck();
+  const { state, width, setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock } = usePrepDeck();
   const layout = setupLayout(width, bp.phone);
   const exam = state.exams.find((e) => e.id === state.examId);
   const official = officialFormatOf(state.exams, state.examId);
   const options = mockFormatOptions(official);
   const plan = mockPlan(state);
+  const reviewCount = useMemo(() => underReviewCount(state.catalog), [state.catalog]);
+  const skipping = state.mockSkipReview && reviewCount > 0;
   // The API caps an attempt at MAX_ATTEMPT_QUESTIONS, so never offer more
-  // than that even for an exam with a larger bank.
+  // than that even for an exam with a larger bank. Skipping questions under
+  // review does not narrow this field: a length it leaves too few questions
+  // for is cut short by mockPlan and explained beside the summary, as a fixed
+  // format is, rather than turning what was typed into an error.
   const bankMax = Math.min(state.catalog.length, MAX_ATTEMPT_QUESTIONS);
   const questionMax = Math.max(1, bankMax);
   const count = useWholeNumberText(state.mockCount, 1, questionMax, setMockCount);
@@ -93,6 +99,8 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
             )}
           </SetupRow>
 
+          <UnderReviewRow count={reviewCount} skip={state.mockSkipReview} onChange={setMockSkipReview} layout={layout} />
+
           <SetupRow title="How it works" cols={layout.rowCols}>
             <div className="st-rules">
               {RULES.map((r) => (
@@ -117,9 +125,15 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
           <div className="st-summary-rows">
             <SummaryRow icon={IC.clock} label="Pace" value={plan.questionCount && !customInvalid ? `${(plan.timeLimitMinutes / plan.questionCount).toFixed(1)} min / question` : "—"} />
             <SummaryRow icon={IC.target} label="Pass mark" value={passMark} />
+            {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.mockSkipReview ? "Skipped" : "Included"} />}
           </div>
           {plan.questionCount < plan.requested && plan.questionCount > 0 && (
-            <p className="st-summary-warn">This bank has {plan.questionCount} {plan.questionCount === 1 ? "question" : "questions"}, so the exam uses all of them{plan.format === "custom" ? "" : ", at the same pace"}.</p>
+            <p className="st-summary-warn">
+              {skipping ? "Without the questions under review, this bank has" : "This bank has"} {plan.questionCount} {plan.questionCount === 1 ? "question" : "questions"}, so the exam uses all of them{plan.format === "custom" ? "" : ", at the same pace"}.
+            </p>
+          )}
+          {skipping && plan.questionCount === 0 && (
+            <p className="st-summary-warn">Every question in this exam is under review. Include them to begin an exam.</p>
           )}
           <div className="st-summary-foot">
             {active ? (

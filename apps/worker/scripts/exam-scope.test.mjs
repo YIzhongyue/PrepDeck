@@ -90,7 +90,7 @@ test("image-heavy catalogs stay small and cacheable; only opened question conten
   assert.equal(first.body.questions.find(q => q.id === "A1").hasContent, false);
   assert.ok(first.body.questions.every(q => !Object.hasOwn(q, "content") && !Object.hasOwn(q, "correctAnswers") && !Object.hasOwn(q, "explanation")));
   assert.ok(Buffer.byteLength(JSON.stringify(first.body)) < 25000);
-  assert.ok(cache.has("practice-questions:v2:A"));
+  assert.ok(cache.has("practice-questions:v3:A"));
   const catalogReads = () => queries.filter(sql => sql.includes("ORDER BY sequence_number ASC"));
   assert.equal(catalogReads().length, 1);
   assert.match(catalogReads()[0], /content_json IS NOT NULL AS has_content/);
@@ -103,7 +103,7 @@ test("image-heavy catalogs stay small and cacheable; only opened question conten
   assert.equal((await request("/exams/A/practice-catalog/missing")).status, 404);
 });
 
-test("catalog cache measures UTF-8 bytes and invalidates both deployment versions", async () => {
+test("catalog cache measures UTF-8 bytes and invalidates every deployment version", async () => {
   const writes = [], deleted = [];
   const env = { KV: { put: async (...args) => writes.push(args), delete: async key => deleted.push(key) } };
   // The JSON characters fit but its UTF-8 bytes exceed the KV value limit.
@@ -111,9 +111,9 @@ test("catalog cache measures UTF-8 bytes and invalidates both deployment version
   assert.equal(writes.length, 0);
   await setCachedPracticeQuestions(env, "A", [{ stem: "A small question", hasContent: true }]);
   assert.equal(writes.length, 1);
-  assert.equal(writes[0][0], "practice-questions:v2:A");
+  assert.equal(writes[0][0], "practice-questions:v3:A");
   await invalidatePracticeQuestions(env, "A");
-  assert.deepEqual(deleted.sort(), ["practice-questions:A", "practice-questions:v2:A"].sort());
+  assert.deepEqual(deleted.sort(), ["practice-questions:A", "practice-questions:v2:A", "practice-questions:v3:A"].sort());
 });
 
 test("bulk practice accepts scoped bookmarks and rejects mixed-exam input", async t => {
@@ -176,8 +176,25 @@ test("archived questions leave every learner list but still resolve inside an un
   assert.deepEqual(theirs.questions.map(q => q.id), ['A3']);
   assert.deepEqual(theirs.bookmarkedIds, ['A3']);
   assert.deepEqual(theirs.archivedQuestions, []);
-  assert.deepEqual(JSON.parse(cache.get('practice-questions:v2:A')).map(q => q.id), ['A3'], "only the shared active list is cached");
+  assert.deepEqual(JSON.parse(cache.get('practice-questions:v3:A')).map(q => q.id), ['A3'], "only the shared active list is cached");
 
   assert.equal((await request('/exams/A/attempts', 'u2', 'POST', { mode: 'practice', questionIds: ['A1'] })).status, 400);
   assert.equal((await request('/exams/A/attempts', 'u2', 'POST', { mode: 'practice', questionIds: ['A3'] })).status, 201);
+});
+
+test("the catalog marks questions under review, and a pre-#94 cache entry is never read (issue #94)", async t => {
+  const { db, cache, request } = setup(); t.after(() => db.close());
+  db.exec("UPDATE questions SET needs_review = 1 WHERE id IN ('A2', 'A3')");
+  // What the previous deployment cached for this exam: the same rows, without the field.
+  cache.set("practice-questions:v2:A", JSON.stringify(["A1", "A2", "A3"].map(id => ({ id, stem: id, tags: [] }))));
+  const { body } = await request('/exams/A/practice-catalog');
+  assert.deepEqual(body.questions.map(q => [q.id, q.needsReview]), [["A1", false], ["A2", true], ["A3", true]]);
+  assert.deepEqual(JSON.parse(cache.get('practice-questions:v3:A')).map(q => q.needsReview), [false, true, true]);
+  assert.ok(body.questions.every(q => !Object.hasOwn(q, 'needs_review')), "learners get the state, not the column name");
+
+  // An archived question an unfinished attempt still holds keeps its state too.
+  assert.equal((await request('/exams/A/attempts', 'u1', 'POST', { mode: 'mock', questionIds: ['A2'] })).status, 201);
+  db.exec("UPDATE questions SET archived_at = 'now' WHERE id = 'A2'");
+  cache.clear();
+  assert.deepEqual((await request('/exams/A/practice-catalog')).body.archivedQuestions.map(q => [q.id, q.needsReview]), [["A2", true]]);
 });

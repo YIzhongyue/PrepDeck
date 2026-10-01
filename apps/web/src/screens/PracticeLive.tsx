@@ -12,7 +12,7 @@ import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes,
+  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, UnderReviewNotice, usePinnedCard, visibleNotes,
   type OptionState
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -141,12 +141,13 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
           style={{ height: bp.narrow && !flow ? fitHeight ?? undefined : undefined }}
         >
           <div className="st-q-head">
-            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow}>
+            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow} underReview={q.needsReview}>
               {!!graded && !contentPending && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} compact={flow} />}
             </QuestionBadges>
           </div>
           {/* Practice lets the wheel hand off to the page at the top and bottom of the question. */}
           <div className="st-q-body" ref={bodyRef} style={{ overscrollBehavior: "auto" }}>
+            <UnderReviewNotice question={q} />
             <QuestionContentGate question={q}>
               <div className="st-stem" onMouseUp={() => { if (graded) capture(q.id, "stem"); }}>
                 <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={!!graded} onRemoveMark={removeMark} />

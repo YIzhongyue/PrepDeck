@@ -26,6 +26,9 @@ export interface PracticeCatalogQuestion {
   tags: string[];
   difficulty: Difficulty | null;
   points: number;
+  // Issue #94: the question is still under review (questions.needs_review).
+  // Learners see a notice on it and can leave such questions out of a session.
+  needsReview: boolean;
 }
 
 export interface PracticeQuestionContentResponse {

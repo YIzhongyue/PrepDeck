@@ -28,6 +28,9 @@ export interface Question {
   // user's unfinished attempts: resolvable by id so that attempt can finish,
   // but never part of `catalog` or offered for a new session.
   archived?: boolean;
+  // Still under review by an admin (issue #94): marked wherever it is shown,
+  // and left out of a session whose setup chose to skip such questions.
+  needsReview?: boolean;
 }
 
 export interface GradedAnswer {

@@ -72,6 +72,26 @@ export function ChoiceCard({ icon, label, count, desc, on, onSelect }: {
   );
 }
 
+/**
+ * Issue #94: whether questions still under review may appear in the session.
+ * Including them is the default; each one is then marked as under review.
+ * Renders nothing for a bank without any, where the choice would change nothing.
+ */
+export function UnderReviewRow({ count, skip, onChange, layout }: {
+  count: number; skip: boolean; onChange: (skip: boolean) => void; layout: SetupLayout;
+}) {
+  if (!count) return null;
+  const some = count === 1 ? "1 question in this exam is" : `${count} questions in this exam are`;
+  return (
+    <SetupRow title="Questions under review" desc={`${some} still being reviewed and may contain disputed or uncertain content.`} cols={layout.rowCols}>
+      <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
+        <ChoiceCard icon={IC.alert} label="Include" count={count} desc="They can appear, each marked as under review" on={!skip} onSelect={() => onChange(false)} />
+        <ChoiceCard icon={IC.eyeOff} label="Skip" desc="Leave them out of this session" on={skip} onSelect={() => onChange(true)} />
+      </div>
+    </SetupRow>
+  );
+}
+
 export function SummaryRow({ icon, label, value }: { icon: string; label: string; value: ReactNode }) {
   return (
     <div className="st-summary-row">

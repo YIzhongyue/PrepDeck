@@ -20,6 +20,39 @@ past attempts. See [prompt formatter](../../apps/web/src/lib/practicePrompt.ts).
 
 Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
+## Questions under review
+
+<a id="questions-under-review"></a>
+
+Implementation ([issue #94](https://github.com/YIzhongyue/PrepDeck/issues/94)):
+a question an administrator has flagged as still awaiting a human check
+([review state](../guides/question-bank-authoring.md)) reaches learners marked
+as such, and each mode can leave such questions out. Learners never see the
+underlying field name; the screens say **Under review**.
+
+- **Marking.** Wherever Practice, Mock or Learning shows such a question, an
+  **Under review** badge sits beside its type in the question header, and a
+  note above the stem reads: "This question is currently under review and may
+  contain disputed or uncertain content." The Bookmarks and Wrong Question Book
+  cards and the mock results breakdown carry the same badge.
+- **Choice.** The Practice, Mock and Learning setup screens each offer
+  **Questions under review: Include / Skip**, with how many the exam has, and
+  their summaries state the choice. The row is absent from an exam with none.
+- **Default: Include.** Leaving the option alone keeps the whole bank, with
+  every such question marked. Each setup screen keeps its own choice, like its
+  other filters; it lasts for the browser session and carries across exam
+  switches, and is not stored on the server.
+- **Skip** removes them from the question set the session is built from,
+  combined with the other filters: every Practice source, Learning's filtered
+  sequence and the Mock random draw. A Mock length the remaining bank cannot
+  fill uses every remaining question and says so, as a smaller bank does under
+  FR-4.1.
+- **Explicit selections are not filtered.** A linked question (a Knowledge
+  Point, a daily email or a Learning URL) opens in Learning with filters reset,
+  so it is shown, marked, even when Learning was set to skip. **Practice these**
+  and **Review** on the Bookmarks and Wrong Question Book screens practise
+  exactly the listed questions.
+
 ## Practice
 
 <a id="fr-3-1"></a>

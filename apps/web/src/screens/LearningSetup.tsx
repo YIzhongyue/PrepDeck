@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { underReviewCount } from "../lib/underReview";
 import { IC, Icon } from "../components/study/StudyKit";
 import {
-  DifficultyPicker, DomainPicker, SetupHeader, SetupRow, SummaryRow, domainSummary, setupLayout,
+  DifficultyPicker, DomainPicker, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, domainSummary, setupLayout,
   type DifficultyChoice
 } from "../components/study/SetupKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -13,7 +14,7 @@ const DIFF_LABEL: Record<DifficultyChoice, string> = { all: "Any", easy: "Easy",
 // (optionally resuming last position), and optional tag/difficulty filters,
 // then walk the exam's questions in order with the answer already revealed.
 export default function LearningSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, learningPool, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff, beginLearning } = usePrepDeck();
+  const { state, width, learningPool, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff, setLearningSkipReview, beginLearning } = usePrepDeck();
   const layout = setupLayout(width, bp.phone);
   const [startText, setStartText] = useState(String(state.lStartInput));
   const pool = learningPool();
@@ -23,6 +24,7 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
     for (const q of state.catalog) if (q.diff) counts[q.diff]++;
     return counts;
   }, [state.catalog]);
+  const reviewCount = useMemo(() => underReviewCount(state.catalog), [state.catalog]);
   // Mirrors beginLearning: the first match at or after the chosen number, or
   // the last match when the number is past the end.
   const first = pool.find((q) => q.sequenceNumber >= state.lStartInput) ?? pool[pool.length - 1];
@@ -73,6 +75,8 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
           <SetupRow title="Difficulty" desc="Filter by question difficulty." cols={layout.rowCols}>
             <DifficultyPicker value={state.lDiff} counts={diffCounts} onChange={setLearningDiff} />
           </SetupRow>
+
+          <UnderReviewRow count={reviewCount} skip={state.lSkipReview} onChange={setLearningSkipReview} layout={layout} />
         </div>
 
         <aside style={{ position: layout.stickySummary ? "sticky" : "static", top: 0 }}>
@@ -84,6 +88,7 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
             <div className="st-summary-rows">
               <SummaryRow icon={IC.tag} label="Domains" value={domainSummary(state.lTags)} />
               <SummaryRow icon={IC.sliders} label="Difficulty" value={DIFF_LABEL[state.lDiff]} />
+              {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.lSkipReview ? "Skipped" : "Included"} />}
               <SummaryRow icon={IC.play} label="Starts at" value={first ? `#${first.sequenceNumber}` : "—"} />
               <SummaryRow icon={IC.listOrdered} label="Questions" value={pool.length} />
             </div>

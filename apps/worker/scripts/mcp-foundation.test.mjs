@@ -2550,7 +2550,7 @@ test("issues #92/#93: a duplicate found by admin_find_duplicate_questions is arc
   assert.deepEqual({ ...f.sqlite.prepare("SELECT revision, updated_at, stem FROM questions WHERE id = 'q2'").get() }, contentBefore,
     "archiving is lifecycle state, not a content edit");
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions").get().c, f.questionRowCount, "nothing is deleted");
-  assert.ok(f.kvInvalidations.includes("practice-questions:v2:examA"));
+  assert.ok(f.kvInvalidations.includes("practice-questions:v3:examA"));
 
   // The duplicate group is resolved, so the review loop terminates.
   assert.equal((await callAdminTool(f, "admin_find_duplicate_questions", { examId: "examA" })).items.length, 0);

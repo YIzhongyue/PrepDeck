@@ -8,7 +8,7 @@ import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, usePinnedCard, visibleNotes
+  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, UnderReviewNotice, usePinnedCard, visibleNotes
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
 import { questionTypeLabel } from "../lib/questionTypes";
@@ -126,11 +126,12 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
           style={{ height: desktop || flow ? undefined : fitHeight ?? undefined }}
         >
           <div className="st-q-head">
-            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow}>
+            <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow} underReview={q.needsReview}>
               {ready && detail?.correctAnswers && <CopyPromptButton status={copyStatus} onClick={copyAsPrompt} compact={flow} />}
             </QuestionBadges>
           </div>
           <div className="st-q-body" ref={bodyRef}>
+            <UnderReviewNotice question={q} />
             <QuestionContentGate question={q} learning>
               <div className="st-stem" onMouseUp={() => capture(q.id, "stem")}>
                 <QuestionContent src={q.stem} content={q.content} annotations={state.anns} qid={q.id} target="stem" show={true} onRemoveMark={removeMark} />
