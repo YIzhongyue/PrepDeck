@@ -1,3 +1,5 @@
+import MascotImage from "./MascotImage";
+
 /** Mascot loader shown across the viewport while an exam's data is
  * fetched. Fills the viewport-height flex parent in App.tsx so the scene
  * centers without content-column padding or navigation taking up space.
@@ -17,9 +19,9 @@ export default function WorkspaceLoading() {
         <div style={{ position: "absolute", left: "-14%", bottom: "-16%", width: "min(65%, 420px)", aspectRatio: "1 / 1", borderRadius: "50%", background: "var(--color-accent-100)" }} />
       </div>
 
-      <img
+      <MascotImage
         aria-hidden="true"
-        src="/mascot/3D-Chibi/normal.png"
+        scene="normal"
         alt=""
         style={{ position: "relative", zIndex: 1, width: "clamp(160px, 34vw, 240px)", height: "auto", filter: "drop-shadow(0 22px 30px color-mix(in srgb, var(--color-text) 16%, transparent))", animation: "pd-bob 2.6s ease-in-out infinite" }}
       />
