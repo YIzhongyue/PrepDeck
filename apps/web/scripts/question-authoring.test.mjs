@@ -68,3 +68,49 @@ test("AI Markdown retains its existing display coordinate system", () => {
   const parsed = parseMarkdown("**bold**\nnext");
   assert.equal(parsed.plainText, "boldnext"); assert.equal(parsed.sourceOffsets, undefined);
 });
+test("Markdown links render as safe anchors while keeping raw source coordinates", () => {
+  const src = "Reference: [File-size **tuning**](https://docs.databricks.com/aws/en/tables/tune-file-size)\n参见 https://example.com/a_b_c(1)。 [x](javascript:alert(1))";
+  const parsed = parseMarkdown(src, true);
+  assert.ok(parsed.sourceOffsets.every((off, i) => src[off] === parsed.plainText[i]));
+  const links = parsed.inline.filter(r => r.kind === "link").map(r => [parsed.plainText.slice(r.start, r.end), r.href]);
+  assert.deepEqual(links, [
+    ["File-size tuning", "https://docs.databricks.com/aws/en/tables/tune-file-size"],
+    ["https://example.com/a_b_c(1)", "https://example.com/a_b_c(1)"],
+  ]);
+  assert.ok(parsed.inline.some(r => r.kind === "bold" && parsed.plainText.slice(r.start, r.end) === "tuning"));
+  assert.ok(parsed.plainText.includes("[x](javascript:alert(1))"));
+  const segs = mdSegsFor(parsed, [], "q", "stem", false).flatMap(b => b.segs);
+  assert.ok(segs.some(s => s.text === "tuning" && s.href === "https://docs.databricks.com/aws/en/tables/tune-file-size" && s.weight === "700"));
+  assert.equal(parseMarkdown("see (https://a.com/x).").inline[0].href, "https://a.com/x");
+});
+test("AI annotations saved before link parsing keep their legacy display coordinates", () => {
+  const src = "See [docs](https://example.com) then remember this important rule.";
+  // Offsets the pre-link parser assigned: the link stayed literal, so plainText === src.
+  const start = src.indexOf("remember");
+  assert.deepEqual([start, start + 8], [37, 45]);
+  const parsed = parseMarkdown(src);
+  assert.ok(!parsed.plainText.includes("]("));
+  const annotations = [{ id: "legacy", qid: "q", target: "ai", start, end: start + 8, style: "bold", note: "" }];
+  const segs = mdSegsFor(parsed, annotations, "q", "ai", true).flatMap(b => b.segs);
+  assert.deepEqual(segs.filter(s => s.annotationIds.includes("legacy")).map(s => s.text).join(""), "remember");
+  // New marks are captured from data-off, which stays in the same legacy space.
+  for (const seg of segs) assert.equal(src.slice(seg.off, seg.off + seg.text.length), seg.text);
+  assert.equal(parseMarkdown("**bold** without links").sourceOffsets, undefined);
+});
+test("link labels with astral characters keep monotonic UTF-16 source offsets", () => {
+  const src = "Read [📘 docs](https://example.com) now";
+  for (const parsed of [parseMarkdown(src, true), parseMarkdown(src)]) {
+    assert.equal(parsed.plainText, "Read 📘 docs now");
+    assert.ok(parsed.sourceOffsets.every((off, i) => src[off] === parsed.plainText[i]));
+    assert.ok(parsed.sourceOffsets.every((off, i, all) => i === 0 || off > all[i - 1]));
+    const segs = mdSegsFor(parsed, [], "q", "stem", false).flatMap(b => b.segs);
+    for (const seg of segs) assert.equal(src.slice(seg.off, seg.off + seg.text.length), seg.text);
+    // Capturing the final "s" of "docs" resolves to its source offset.
+    const docs = segs.find(s => s.text.endsWith("docs"));
+    assert.equal(docs.off + docs.text.length - 1, src.indexOf("s]"));
+  }
+  const start = src.indexOf("now");
+  const annotations = [{ id: "a", qid: "q", target: "stem", start, end: start + 3, style: "bold", note: "" }];
+  const marked = mdSegsFor(parseMarkdown(src, true), annotations, "q", "stem", true).flatMap(b => b.segs).filter(s => s.annotationIds.includes("a"));
+  assert.equal(marked.map(s => s.text).join(""), "now");
+});

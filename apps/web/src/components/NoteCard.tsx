@@ -2,6 +2,7 @@ import { registerNavigationSave } from "../lib/examWorkspace";
 import { useCallback, useEffect, useState } from "react";
 import { MAX_NOTE_LENGTH } from "@prepdeck/shared";
 import LengthHint from "./LengthHint";
+import MarkdownHighlightedText from "./MarkdownHighlightedText";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Note } from "../types";
 
@@ -58,7 +59,9 @@ export default function NoteCard({ note }: { note: Note }) {
         </span>
 
         {!editing ? (
-          <span style={{ display: "block", fontSize: 12.5, lineHeight: 1.5, opacity: 0.85 }}>{note.text}</span>
+          <div className="note-body" style={{ opacity: 0.85, overflowWrap: "anywhere" }}>
+            <MarkdownHighlightedText src={note.text} annotations={[]} qid={note.qid} target="stem" show={false} style={{ fontSize: 12.5, lineHeight: 1.5 }} />
+          </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {error && <p role="alert">{error}</p>}

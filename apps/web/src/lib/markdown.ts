@@ -2,8 +2,9 @@ import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../typ
 import { isProseLine, proseLineSeparator } from "./prose";
 
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
-// italic, inline code, fenced code blocks, unordered/ordered lists, and
-// horizontal rules — into a flat plain-text string plus block/inline range
+// italic, inline code, links ([text](url) and bare http(s) URLs), fenced code
+// blocks, unordered/ordered lists, and horizontal rules — into a flat
+// plain-text string plus block/inline range
 // metadata. Not a full CommonMark implementation: this only needs to cover
 // what Claude/GPT actually produce for docs/requirements/ai-explanations.md's AI explanations (see
 // prompts/explanation.njk), and every one of those constructs showed up in
@@ -15,6 +16,31 @@ import { isProseLine, proseLineSeparator } from "./prose";
 // MarkdownHighlightedText.tsx / lib/annotations.ts's mdSegsFor), instead of
 // annotations breaking the moment formatting markers are stripped for display.
 export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false): ParsedMarkdown {
+  const { sourceOffsets, ...parsed } = parseBlocks(src, reflowProse, true);
+  if (sourceCoordinates) return { ...parsed, sourceOffsets };
+  // Display-coordinate callers (AI explanations) persist annotations as offsets
+  // into plainText as it was before links were parsed, when "[label](url)"
+  // stayed literal. Once a link is stripped, map each character back to that
+  // legacy offset so saved marks, and new ones captured through data-off, stay
+  // in one coordinate space. Text without links is unchanged.
+  if (!parsed.inline.some(r => r.kind === "link")) return parsed;
+  const legacy = parseBlocks(src, reflowProse, false);
+  const legacyAt = new Array<number>(src.length).fill(-1);
+  legacy.sourceOffsets.forEach((source, index) => { legacyAt[source] = index; });
+  const offsets = new Array<number>(sourceOffsets.length);
+  // A character the legacy parser dropped (e.g. "_" it read as italics inside a
+  // bare URL) takes the next mapped offset, keeping the map non-decreasing.
+  let next = legacy.plainText.length;
+  for (let i = offsets.length - 1; i >= 0; i--) {
+    const at = legacyAt[sourceOffsets[i]!]!;
+    next = offsets[i] = at >= 0 && at <= next ? at : next;
+  }
+  return { ...parsed, sourceOffsets: offsets };
+}
+
+// Always records each plainText character's source offset; parseMarkdown
+// decides which coordinate system callers see.
+function parseBlocks(src: string, reflowProse: boolean, links: boolean): ParsedMarkdown & { sourceOffsets: number[] } {
   // Keep existing AI display-coordinate annotations unchanged. Question callers
   // opt in and retain sourceOffsets, including gaps left by removed layout LFs.
   // Display-math regions remain conservative until they have a typed renderer.
@@ -28,13 +54,13 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
 
   const pushInlineBlock = (type: MdBlockType, text: string, inputOffsets?: number[]) => {
     const start = plainText.length;
-    plainText += parseInline(text, start, inline, sourceCoordinates ? sourceOffsets : undefined, blockOffset, inputOffsets);
+    plainText += parseInline(text, start, inline, sourceOffsets, blockOffset, inputOffsets, links);
     if (plainText.length > start) blocks.push({ type, start, end: plainText.length });
   };
   const pushRaw = (type: MdBlockType, text: string) => {
     const start = plainText.length;
     plainText += text;
-    if (sourceCoordinates) for (let i = 0; i < text.length; i++) sourceOffsets.push(codeOffset + i);
+    for (let i = 0; i < text.length; i++) sourceOffsets.push(codeOffset + i);
     blocks.push({ type, start, end: plainText.length });
   };
 
@@ -100,7 +126,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
     if (prose && hardBreak && line.endsWith("\\")) line = line.slice(0, -1);
     if (prose) {
       if (pendingProse) {
-        const separator = proseLineSeparator(parseInline(pendingProse.text, 0, []), parseInline(line, 0, []));
+        const separator = proseLineSeparator(parseInline(pendingProse.text, 0, [], undefined, 0, undefined, links), parseInline(line, 0, [], undefined, 0, undefined, links));
         pendingProse.text += separator;
         if (separator) pendingProse.offsets.push(src.lastIndexOf("\n", blockOffset - 1));
       } else pendingProse = { text: "", offsets: [] };
@@ -112,15 +138,15 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
   flushProse();
   if (inCodeFence && codeFenceText) pushRaw("code", codeFenceText);
 
-  return { plainText, blocks, inline, ...(sourceCoordinates ? { sourceOffsets } : {}) };
+  return { plainText, blocks, inline, sourceOffsets };
 }
 
-// Strips **bold**/__bold__, *italic*/_italic_ and `code` markers from
+// Strips **bold**/__bold__, *italic*/_italic_, `code` and [link](url) markers from
 // `text`, recording format ranges (offsets into the final plainText, via
 // `base` + how far into `text` each match starts) and returning the
 // marker-free string. Single-pass and greedy — not spec-correct for
 // adversarial/nested markdown, but matches real LLM output reliably.
-function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0, inputOffsets?: number[]): string {
+function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0, inputOffsets?: number[], links = true): string {
   const sourceAt = (index: number) => inputOffsets?.[index] ?? sourceBase + index;
   let out = "";
   let i = 0;
@@ -163,9 +189,51 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         continue;
       }
     }
+    if (links && one === "[") {
+      const link = /^\[([^\]\n]+)\]\(<?([^\s()<>]+)>?\)/.exec(text.slice(i));
+      if (link && SAFE_HREF.test(link[2]!)) {
+        const start = base + out.length;
+        // One entry per UTF-16 code unit, matching how parseInline indexes text.
+        const innerOffsets = Array.from({ length: link[1]!.length }, (_, n) => sourceAt(i + 1 + n));
+        out += parseInline(link[1]!, start, inline, offsets, 0, innerOffsets, links);
+        inline.push({ start, end: base + out.length, kind: "link", href: link[2]! });
+        i += link[0].length;
+        continue;
+      }
+    }
+    if (links && (one === "h" || one === "H") && !/[A-Za-z0-9]/.test(text[i - 1] ?? "")) {
+      const url = bareUrl(text.slice(i));
+      if (url) {
+        const start = base + out.length;
+        out += url;
+        if (offsets) for (let n = 0; n < url.length; n++) offsets.push(sourceAt(i + n));
+        inline.push({ start, end: start + url.length, kind: "link", href: url });
+        i += url.length;
+        continue;
+      }
+    }
     out += one;
     offsets?.push(sourceAt(i));
     i++;
   }
   return out;
+}
+
+// Only web and mail links become anchors; anything else (javascript:, data:,
+// relative paths) stays literal text.
+const SAFE_HREF = /^(https?:\/\/|mailto:)/i;
+
+// A bare http(s) URL, limited to ASCII URL characters so trailing CJK prose
+// (e.g. "…/tune-file-size。") isn't swallowed, minus trailing sentence
+// punctuation and any closing paren that has no opener inside the URL.
+function bareUrl(text: string): string | null {
+  let url = /^https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i.exec(text)?.[0];
+  if (!url) return null;
+  for (;;) {
+    const last = url.at(-1)!;
+    if (/[.,;:!?'"*_]/.test(last)) url = url.slice(0, -1);
+    else if (last === ")" && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) url = url.slice(0, -1);
+    else break;
+  }
+  return /^https?:\/\/./i.test(url) ? url : null;
 }

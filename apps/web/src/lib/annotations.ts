@@ -148,7 +148,7 @@ function mdSegsForBlock(
   for (let i = 0; i < arr.length - 1; i++) {
     const s0 = arr[i]!;
     const e0 = arr[i + 1]!;
-    let bg = "transparent", color = "inherit", pad = "0", br = "0", weight = "400", deco = "none", title = "", italic = false, code = false;
+    let bg = "transparent", color = "inherit", pad = "0", br = "0", weight = "400", deco = "none", title = "", italic = false, code = false, href: string | undefined;
     const activeAnns = localAnns.filter((a) => a.start <= s0 && a.end >= e0);
     activeAnns.forEach((a) => {
       const highlight = HL[a.style];
@@ -161,9 +161,10 @@ function mdSegsForBlock(
       if (r.kind === "bold") weight = "700";
       if (r.kind === "italic") italic = true;
       if (r.kind === "code") code = true;
+      if (r.kind === "link") href = r.href;
     });
     out.push({
-      key: String(i), off: blockStart + s0, text: blockText.slice(s0, e0), bg, color, pad, br, weight, deco, title, italic, code,
+      key: String(i), off: blockStart + s0, text: blockText.slice(s0, e0), bg, color, pad, br, weight, deco, title, italic, code, href,
       annotationIds: activeAnns.map((a) => a.id),
       endingAnnotationIds: activeAnns.filter((a) => a.endsInBlock && a.end === e0).map((a) => a.id)
     });
