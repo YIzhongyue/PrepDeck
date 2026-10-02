@@ -30,7 +30,9 @@ import {
   RESOURCE_NAMES, audienceForResource, audienceFromScopes, audienceScopes, isMcpOAuthEnabled, oauthIssuer,
   requestedScopes, resourceUrl, type McpAudience,
 } from "./config";
-import { getStoredClient, redirectTarget, redirectUriAllowed, registerDynamicClient, resolveClient, validRedirectUri } from "./clients";
+import {
+  TOKEN_ENDPOINT_AUTH_METHODS, getStoredClient, redirectTarget, redirectUriAllowed, registerDynamicClient, resolveClient, validRedirectUri,
+} from "./clients";
 import {
   authorizationRedirect, createAuthorizationRequest, decideAuthorizationRequest, exchangeAuthorizationCode,
   getPendingAuthorizationRequest, refreshAccessToken, revokeByToken, validCodeChallenge, type TokenResult,
@@ -85,7 +87,7 @@ oauthWellKnownRouter.get("/oauth-authorization-server", (c) => {
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
     grant_types_supported: ["authorization_code", "refresh_token"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: [...TOKEN_ENDPOINT_AUTH_METHODS],
     revocation_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
     client_id_metadata_document_supported: true,
