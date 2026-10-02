@@ -2,8 +2,9 @@ import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../typ
 import { isProseLine, proseLineSeparator } from "./prose";
 
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
-// italic, inline code, links ([text](url) and bare http(s) URLs), fenced code
-// blocks, unordered/ordered lists, and horizontal rules — into a flat
+// italic, inline code, links ([text](url) and bare http(s) URLs), backslash
+// escapes of inline markers, fenced code blocks, unordered/ordered lists, and
+// horizontal rules — into a flat
 // plain-text string plus block/inline range
 // metadata. Not a full CommonMark implementation: this only needs to cover
 // what Claude/GPT actually produce for docs/requirements/ai-explanations.md's AI explanations (see
@@ -16,15 +17,17 @@ import { isProseLine, proseLineSeparator } from "./prose";
 // MarkdownHighlightedText.tsx / lib/annotations.ts's mdSegsFor), instead of
 // annotations breaking the moment formatting markers are stripped for display.
 export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false): ParsedMarkdown {
-  const { sourceOffsets, ...parsed } = parseBlocks(src, reflowProse, true);
+  const { sourceOffsets, ...parsed } = parseBlocks(src, reflowProse, false);
   if (sourceCoordinates) return { ...parsed, sourceOffsets };
   // Display-coordinate callers (AI explanations) persist annotations as offsets
-  // into plainText as it was before links were parsed, when "[label](url)"
-  // stayed literal. Once a link is stripped, map each character back to that
-  // legacy offset so saved marks, and new ones captured through data-off, stay
-  // in one coordinate space. Text without links is unchanged.
-  if (!parsed.inline.some(r => r.kind === "link")) return parsed;
-  const legacy = parseBlocks(src, reflowProse, false);
+  // into plainText as the legacy parser produced it: "[label](url)" stayed
+  // literal, "\_" kept its backslash, and any "_" pair, even inside
+  // identifiers such as new_events, was read as italics. Where today's parse
+  // differs, map each character back to that legacy offset so saved marks, and
+  // new ones captured through data-off, stay in one coordinate space.
+  if (!parsed.inline.some(r => r.kind === "link") && !/[_\\]/.test(src)) return parsed;
+  const legacy = parseBlocks(src, reflowProse, true);
+  if (legacy.plainText === parsed.plainText) return parsed;
   const legacyAt = new Array<number>(src.length).fill(-1);
   legacy.sourceOffsets.forEach((source, index) => { legacyAt[source] = index; });
   const offsets = new Array<number>(sourceOffsets.length);
@@ -40,7 +43,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
 
 // Always records each plainText character's source offset; parseMarkdown
 // decides which coordinate system callers see.
-function parseBlocks(src: string, reflowProse: boolean, links: boolean): ParsedMarkdown & { sourceOffsets: number[] } {
+function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): ParsedMarkdown & { sourceOffsets: number[] } {
   // Keep existing AI display-coordinate annotations unchanged. Question callers
   // opt in and retain sourceOffsets, including gaps left by removed layout LFs.
   // Display-math regions remain conservative until they have a typed renderer.
@@ -54,7 +57,7 @@ function parseBlocks(src: string, reflowProse: boolean, links: boolean): ParsedM
 
   const pushInlineBlock = (type: MdBlockType, text: string, inputOffsets?: number[]) => {
     const start = plainText.length;
-    plainText += parseInline(text, start, inline, sourceOffsets, blockOffset, inputOffsets, links);
+    plainText += parseInline(text, start, inline, sourceOffsets, blockOffset, inputOffsets, legacy);
     if (plainText.length > start) blocks.push({ type, start, end: plainText.length });
   };
   const pushRaw = (type: MdBlockType, text: string) => {
@@ -126,7 +129,7 @@ function parseBlocks(src: string, reflowProse: boolean, links: boolean): ParsedM
     if (prose && hardBreak && line.endsWith("\\")) line = line.slice(0, -1);
     if (prose) {
       if (pendingProse) {
-        const separator = proseLineSeparator(parseInline(pendingProse.text, 0, [], undefined, 0, undefined, links), parseInline(line, 0, [], undefined, 0, undefined, links));
+        const separator = proseLineSeparator(parseInline(pendingProse.text, 0, [], undefined, 0, undefined, legacy), parseInline(line, 0, [], undefined, 0, undefined, legacy));
         pendingProse.text += separator;
         if (separator) pendingProse.offsets.push(src.lastIndexOf("\n", blockOffset - 1));
       } else pendingProse = { text: "", offsets: [] };
@@ -146,33 +149,55 @@ function parseBlocks(src: string, reflowProse: boolean, links: boolean): ParsedM
 // `base` + how far into `text` each match starts) and returning the
 // marker-free string. Single-pass and greedy — not spec-correct for
 // adversarial/nested markdown, but matches real LLM output reliably.
-function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0, inputOffsets?: number[], links = true): string {
+// `legacy` reproduces the parser AI annotations were saved against (see
+// parseMarkdown): no links, no escapes, and "_" emphasis anywhere.
+function parseInline(text: string, base: number, inline: MdInlineRange[], offsets?: number[], sourceBase = 0, inputOffsets?: number[], legacy = false): string {
   const sourceAt = (index: number) => inputOffsets?.[index] ?? sourceBase + index;
   let out = "";
+  // Appends text[from, to) with escapes resolved, as emphasis content.
+  const emit = (from: number, to: number) => {
+    for (let n = from; n < to; n++) {
+      if (!legacy && isEscape(text, n)) n++;
+      out += text[n]!;
+      offsets?.push(sourceAt(n));
+    }
+  };
+  // The next unescaped `marker` after `from` that can close emphasis.
+  const closer = (marker: string, from: number) => {
+    for (let close = text.indexOf(marker, from); close !== -1; close = text.indexOf(marker, close + 1)) {
+      if (legacy) return close;
+      if (isEscaped(text, close)) continue;
+      if (marker[0] !== "_" || canCloseUnderscore(text, close, marker.length)) return close;
+    }
+    return -1;
+  };
   let i = 0;
   while (i < text.length) {
+    if (!legacy && isEscape(text, i)) {
+      out += text[i + 1]!;
+      offsets?.push(sourceAt(i + 1));
+      i += 2;
+      continue;
+    }
     const two = text.slice(i, i + 2);
-    if (two === "**" || two === "__") {
-      const close = text.indexOf(two, i + 2);
+    if ((two === "**" || two === "__") && (two === "**" || legacy || canOpenUnderscore(text, i, 2))) {
+      const close = closer(two, i + 2);
       if (close !== -1) {
-        const inner = text.slice(i + 2, close);
         const start = base + out.length;
-        out += inner;
-        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceAt(i + 2 + n));
-        inline.push({ start, end: start + inner.length, kind: "bold" });
+        emit(i + 2, close);
+        inline.push({ start, end: base + out.length, kind: "bold" });
         i = close + 2;
         continue;
       }
     }
     const one = text[i]!;
-    if ((one === "*" || one === "_") && text[i + 1] !== " " && text[i + 1] !== one) {
-      const close = text.indexOf(one, i + 1);
+    if ((one === "*" || one === "_") && text[i + 1] !== " " && text[i + 1] !== one
+      && (one === "*" || legacy || canOpenUnderscore(text, i, 1))) {
+      const close = closer(one, i + 1);
       if (close !== -1 && close > i + 1) {
-        const inner = text.slice(i + 1, close);
         const start = base + out.length;
-        out += inner;
-        if (offsets) for (let n = 0; n < inner.length; n++) offsets.push(sourceAt(i + 1 + n));
-        inline.push({ start, end: start + inner.length, kind: "italic" });
+        emit(i + 1, close);
+        inline.push({ start, end: base + out.length, kind: "italic" });
         i = close + 1;
         continue;
       }
@@ -189,19 +214,19 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
         continue;
       }
     }
-    if (links && one === "[") {
+    if (!legacy && one === "[") {
       const link = /^\[([^\]\n]+)\]\(<?([^\s()<>]+)>?\)/.exec(text.slice(i));
       if (link && SAFE_HREF.test(link[2]!)) {
         const start = base + out.length;
         // One entry per UTF-16 code unit, matching how parseInline indexes text.
         const innerOffsets = Array.from({ length: link[1]!.length }, (_, n) => sourceAt(i + 1 + n));
-        out += parseInline(link[1]!, start, inline, offsets, 0, innerOffsets, links);
+        out += parseInline(link[1]!, start, inline, offsets, 0, innerOffsets, legacy);
         inline.push({ start, end: base + out.length, kind: "link", href: link[2]! });
         i += link[0].length;
         continue;
       }
     }
-    if (links && (one === "h" || one === "H") && !/[A-Za-z0-9]/.test(text[i - 1] ?? "")) {
+    if (!legacy && (one === "h" || one === "H") && !/[A-Za-z0-9]/.test(text[i - 1] ?? "")) {
       const url = bareUrl(text.slice(i));
       if (url) {
         const start = base + out.length;
@@ -217,6 +242,34 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
     i++;
   }
   return out;
+}
+
+// Backslash escapes for the inline markers only. Other punctuation keeps its
+// backslash, so LaTeX such as \( \{ \[ and paths such as \\server stay as
+// written; "\_" also reads the same in LaTeX.
+function isEscape(text: string, i: number): boolean {
+  return text[i] === "\\" && /[*_`]/.test(text[i + 1] ?? "");
+}
+
+// Whether text[i] is the marker half of an escape. "\\" is not an escape
+// itself, so a backslash always escapes the marker that follows it.
+function isEscaped(text: string, i: number): boolean {
+  return text[i - 1] === "\\";
+}
+
+// CommonMark's flanking rules for "_" and "__" (spec §6.2): a run inside a
+// word, as in new_events, event_id or AWS_S3_BUCKET, neither opens nor closes
+// emphasis. "*" stays usable inside words, as in CommonMark. "_" counts as a
+// word character so the second underscore of a run (foo__bar) cannot open.
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+const SPACE = /\s/u;
+function canOpenUnderscore(text: string, i: number, length: number): boolean {
+  const before = text[i - 1] ?? " ", after = text[i + length] ?? " ";
+  return !SPACE.test(after) && !WORD_CHAR.test(before);
+}
+function canCloseUnderscore(text: string, i: number, length: number): boolean {
+  const before = text[i - 1] ?? " ", after = text[i + length] ?? " ";
+  return !SPACE.test(before) && !WORD_CHAR.test(after);
 }
 
 // Only web and mail links become anchors; anything else (javascript:, data:,
