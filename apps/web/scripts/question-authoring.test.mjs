@@ -114,3 +114,41 @@ test("link labels with astral characters keep monotonic UTF-16 source offsets", 
   const marked = mdSegsFor(parseMarkdown(src, true), annotations, "q", "stem", true).flatMap(b => b.segs).filter(s => s.annotationIds.includes("a"));
   assert.equal(marked.map(s => s.text).join(""), "now");
 });
+test("underscores inside identifiers stay literal; escapes and real emphasis still work (issue #108)", () => {
+  const literal = (src) => {
+    const parsed = parseMarkdown(src, true);
+    assert.ok(parsed.sourceOffsets.every((off, i) => src[off] === parsed.plainText[i]), src);
+    return parsed;
+  };
+  for (const src of ["Use new_events and event_id.", "new_events contains records and event_id is unique.",
+    "question_bank_tag, some_long_python_variable and AWS_S3_BUCKET", "foo__bar__baz", "中文_标识_符"]) {
+    const parsed = literal(src);
+    assert.equal(parsed.plainText, src);
+    assert.deepEqual(parsed.inline, [], src);
+  }
+  assert.equal(literal("Use new\\_events and event\\_id.").plainText, "Use new_events and event_id.");
+  assert.equal(literal("\\*not italic\\* and \\`not code\\`").plainText, "*not italic* and `not code`");
+  assert.equal(literal("_a \\_ b_").plainText, "a _ b", "an escaped marker never closes emphasis");
+  // Other backslashes stay: LaTeX delimiters, paths.
+  assert.equal(literal("\\( x \\) at \\\\server\\share").plainText, "\\( x \\) at \\\\server\\share");
+
+  const emphasis = (src) => { const parsed = literal(src); return [parsed.plainText, parsed.inline.map(r => [r.kind, parsed.plainText.slice(r.start, r.end)])]; };
+  assert.deepEqual(emphasis("This is _important_."), ["This is important.", [["italic", "important"]]]);
+  assert.deepEqual(emphasis("This is *important*."), ["This is important.", [["italic", "important"]]]);
+  assert.deepEqual(emphasis("**important** and __also__"), ["important and also", [["bold", "important"], ["bold", "also"]]]);
+  assert.deepEqual(emphasis("`new_events` here"), ["new_events here", [["code", "new_events"]]]);
+  assert.deepEqual(emphasis("_snake_case name_"), ["snake_case name", [["italic", "snake_case name"]]]);
+  assert.deepEqual(emphasis("a*b*c"), ["abc", [["italic", "b"]]], "* still works inside words");
+});
+test("AI annotations saved before #108 keep their legacy display coordinates", () => {
+  const src = "The view new_events feeds event_id, then remember this rule.";
+  // The old parser read "_events feeds event_" as italics and dropped both underscores.
+  const legacyText = "The view newevents feeds eventid, then remember this rule.";
+  const start = legacyText.indexOf("remember");
+  const parsed = parseMarkdown(src);
+  assert.equal(parsed.plainText, src);
+  const annotations = [{ id: "legacy", qid: "q", target: "ai", start, end: start + 8, style: "bold", note: "" }];
+  const segs = mdSegsFor(parsed, annotations, "q", "ai", true).flatMap(b => b.segs);
+  assert.equal(segs.filter(s => s.annotationIds.includes("legacy")).map(s => s.text).join(""), "remember");
+  assert.equal(parseMarkdown("plain_text without changes").sourceOffsets, undefined, "unchanged text keeps plain display offsets");
+});
