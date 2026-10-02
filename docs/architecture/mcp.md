@@ -521,7 +521,7 @@ also ends refresh.
 - **Quotas.** The per-account quota key names the account
   (`mcp:<audience>:user:<id>`), so PATs and OAuth connections share one budget.
 - **Audit.** Admin MCP audit rows record `credential_id` for a PAT or
-  `oauth_grant_id` for an OAuth grant (exactly one is set; `0044_mcp_oauth.sql`),
+  `oauth_grant_id` for an OAuth grant (exactly one is set; `0045_mcp_oauth.sql`),
   also exposed by the `content_mutation_audit` view.
 - **Activity.** `last_used_at` is tracked on the grant, as on a PAT.
 - **No secrets in logs.** Only fixed event names and categories are logged
@@ -999,7 +999,7 @@ here. MCP-specific migrations as of this writing:
 `0021_admin_mcp_audit_log_targets.sql`, `0022_question_bank_tags.sql`,
 `0023_admin_mcp_import_jobs.sql`, `0024_admin_mcp_import_committed_items.sql`,
 `0025_kp_order_scopes.sql`, `0026_question_tag_links.sql`,
-`0027_drop_questions_tags_json.sql`, `0044_mcp_oauth.sql` (OAuth clients,
+`0027_drop_questions_tags_json.sql`, `0045_mcp_oauth.sql` (OAuth clients,
 requests, grants, codes and tokens, and the audit log's `oauth_grant_id`) — plus the earlier, REST-shared
 `0014_knowledge_points.sql` that User MCP's Knowledge Point tools also
 depend on. Until `0017`/`0018` are applied, neither endpoint grants access
