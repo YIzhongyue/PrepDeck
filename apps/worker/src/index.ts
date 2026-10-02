@@ -30,6 +30,7 @@ import { examPreferencesRouter } from "./routes/examPreferences";
 import { questionAiExplanationsRouter, aiGenerateRouter } from "./routes/ai";
 import { adminUsersRouter } from "./routes/adminUsers";
 import { adminOverviewRouter } from "./routes/adminOverview";
+import { appearanceRouter, adminAppearanceRouter } from "./routes/appearance";
 import { providerIconsRouter, providersRouter } from "./routes/providers";
 import { generalRateLimit, authenticatedRateLimit } from "./middleware/rateLimit";
 import { circuitBreaker } from "./middleware/circuitBreaker";
@@ -73,6 +74,7 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 // Dev-mode email+password login (/login, /logout are public; /me requires a
 // valid session/Access identity, per requireAccessUser — see routes/auth.ts).
 app.route("/api/auth", authRouter);
+app.route("/api/appearance", appearanceRouter);
 // implementation — the click comes from an email, so there's no session cookie;
 // authorized instead by a signed, scoped token (lib/unsubscribeToken.ts).
 app.route("/api/email/unsubscribe", unsubscribeRouter);
@@ -160,6 +162,7 @@ api.route("/ai/generate", aiGenerateRouter);
 // the usage overview and question-tag catalog. These routers are Admin-only (requireAdmin).
 api.route("/admin/users", adminUsersRouter);
 api.route("/admin/overview", adminOverviewRouter);
+api.route("/admin/appearance", adminAppearanceRouter);
 api.route("/admin/question-tags", questionTagsRouter);
 api.route("/admin/mcp-tokens", createMcpTokensRouter("admin"));
 api.route("/admin/mcp-connections", createMcpConnectionsRouter("admin"));

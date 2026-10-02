@@ -6,6 +6,7 @@ import "./styles/app.css";
 
 import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ACCESS_REVOKED_EVENT, apiFetch, ApiError } from "./lib/api";
+import { MascotProvider } from "./store/MascotContext";
 import { PrepDeckProvider, usePrepDeck } from "./store/PrepDeckContext";
 import { breakpointsFor, contentInset } from "./lib/responsive";
 import Login from "./screens/Login";
@@ -284,5 +285,5 @@ export default function App() {
     return <AuthenticatedApp connectRequest={request} />;
   }
 
-  return <AuthenticatedApp />;
+  return <MascotProvider><AuthenticatedApp /></MascotProvider>;
 }

@@ -13,6 +13,7 @@ import type {
 } from "@prepdeck/shared";
 import { AdminIcon, AdminModal } from "../components/AdminModal";
 import ProviderManager from "../components/ProviderManager";
+import MascotSettingsPanel from "../components/MascotSettingsPanel";
 import QuestionsPanel from "../components/QuestionsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import McpConnectionsCard from "../components/McpConnectionsCard";
@@ -21,7 +22,7 @@ import { examListChanged, questionBankChanged } from "../lib/questionAuthoring";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
 
-type Tab = "overview" | "users" | "exams" | "mcp";
+type Tab = "overview" | "users" | "exams" | "mcp" | "appearance";
 interface ExamRow extends Exam {
   questionCount: number;
 }
@@ -113,7 +114,8 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
     { id: "overview", label: "Overview", count: null },
     { id: "users", label: "People", count: userCount },
     { id: "exams", label: "Content", count: examCount },
-    { id: "mcp", label: "MCP tokens", count: null }
+    { id: "mcp", label: "MCP tokens", count: null },
+    { id: "appearance", label: "Appearance", count: null }
   ];
 
   // `backwards`, not `both` — see the note on `@keyframes pd-rise` in app.css.
@@ -152,6 +154,7 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
       {tab === "users" && <UsersPanel myId={state.me.id} onCount={setUserCount} />}
       {tab === "exams" && <ExamsPanel onCount={setExamCount} />}
       {tab === "mcp" && <McpTokensPanel />}
+      {tab === "appearance" && <MascotSettingsPanel />}
       </section>
     </div>
   );
