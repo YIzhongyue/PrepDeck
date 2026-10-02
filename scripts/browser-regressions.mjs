@@ -29,6 +29,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/knowledge-points.browser.mjs", 85],
   ["apps/web/scripts/question-authoring.browser.mjs", 12],
   ["apps/web/scripts/mcp-setup.browser.mjs", 4],
+  ["apps/web/scripts/mcp-connect.browser.mjs", 3],
   ["apps/web/scripts/turnstile.browser.mjs", 5],
   ["apps/web/scripts/answer-state.browser.mjs", 9],
   ["apps/web/scripts/question-card-layout.browser.mjs", 14],

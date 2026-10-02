@@ -97,3 +97,18 @@ are never touched. Starting practice runs the same close for that user and exam
 with a one-hour idle threshold ([`practiceSessions.ts`](../../apps/worker/src/lib/practiceSessions.ts)).
 The answers themselves already count in statistics before either runs; closing
 only adds the session to Study time and the session counts.
+
+## MCP OAuth cleanup
+
+The same daily trigger runs
+[the MCP OAuth prune](../../apps/worker/src/scheduled/pruneMcpOAuth.ts)
+([issue #102](https://github.com/YIzhongyue/PrepDeck/issues/102)). In pages of
+1,000 rows, at most ten per table, it deletes access and refresh tokens past
+their expiry, authorization codes and authorization requests expired for more
+than a day, and dynamically registered clients that have had no grant for 30
+days. A spent refresh token is kept until it expires so a later replay is still
+recognized. Its sealed rotation result is read only within a few seconds of the
+rotation; it becomes eligible for cleanup a minute after the rotation and is
+cleared by the next daily run, so it can remain, still sealed and unused, for up
+to about a day. Grants are never deleted (audit rows refer to them); a missed run is
+picked up the next day.

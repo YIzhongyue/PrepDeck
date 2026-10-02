@@ -58,9 +58,14 @@ function sanitizeMessage(message: Record<string, unknown>) {
   return message;
 }
 
-export async function serveMcp(request: Request, factory: () => Server, maxBodyBytes?: number, observation?: McpObservation): Promise<Response> {
+export async function serveMcp(
+  request: Request, factory: () => Server, maxBodyBytes?: number, observation?: McpObservation,
+  inspect?: (body: string) => void,
+): Promise<Response> {
   const body = await readMcpBody(request, maxBodyBytes);
   observation?.protocol(body);
+  // May throw an McpApplicationError (an OAuth scope refusal) before dispatch.
+  inspect?.(body);
   // Both modern and legacy requests receive a fresh server bound to the
   // current credential. No shared sessions or principal captured globally.
   const handler = createMcpHandler(factory, {

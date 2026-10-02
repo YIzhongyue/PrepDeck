@@ -9,9 +9,12 @@
    `prepdeck-user-mcp`; [connection.json](connection.json) records this contract.
    Use remote HTTP MCP with stateless Streamable HTTP compatibility. The host
    sends `Authorization: Bearer …` on every request. There is no local stdio
-   command, separate SSE-only endpoint or OAuth discovery flow.
-3. Create a User token in **Settings → MCP access** and enter it directly in the
-   MCP host's secure credential input/store. For compatible local clients the
+   command or separate SSE-only endpoint.
+3. If the host supports MCP OAuth authorization, let it connect with only the
+   URL: the user signs in with Google in the browser and approves access, and
+   no token is entered (see [credentials](credentials.md#oauth-capable-clients)).
+   Otherwise create a User token in **Settings → MCP access** and enter it
+   directly in the MCP host's secure credential input/store. For compatible local clients the
    environment variable is `PREPDECK_USER_MCP_TOKEN`. Read
    [credentials](credentials.md) for supported example formats and limitations.
    Do not substitute an Admin credential or browser session. A dismissed token

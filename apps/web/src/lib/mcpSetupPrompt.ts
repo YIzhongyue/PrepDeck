@@ -16,7 +16,7 @@ Server name: prepdeck-user-mcp
 Endpoint: ${url.origin}/mcp
 Transport: remote HTTP MCP, with stateless Streamable HTTP compatibility
 Authentication: Authorization: Bearer ${token ?? USER_MCP_TOKEN_PLACEHOLDER}
-Send authentication on every MCP request. This server does not provide OAuth.
+Send authentication on every MCP request. ${token ? "Use this personal access token; do not switch to OAuth." : "If this client supports MCP OAuth authorization, it may instead connect with only the endpoint URL: it discovers PrepDeck's authorization server, I sign in with Google and approve access in the browser, and no token needs to be entered. If OAuth is unavailable on this server or the client only supports manual headers, use a personal access token as described below."}
 
 Identify this client's actual MCP configuration capabilities. If authorized configuration tools or files are available, add this connection while preserving unrelated MCP entries. Otherwise, guide me through the exact client settings, asking for my client/version only if needed. Do not claim an ordinary chat can configure every client. If this client cannot support remote HTTP MCP with a Bearer header, explain that limitation; do not claim the connection succeeded. There is no local stdio command or separate SSE-only endpoint to invent.
 

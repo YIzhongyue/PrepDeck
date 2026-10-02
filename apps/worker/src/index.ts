@@ -42,6 +42,9 @@ import { runDailyReviewEmailDelivery } from "./scheduled/sendDailyReviewEmails";
 import { runStalePracticeClose } from "./scheduled/closeStalePracticeAttempts";
 import { userMcpRouter, adminMcpRouter } from "./mcp/routes";
 import { createMcpTokensRouter } from "./routes/mcpTokens";
+import { createMcpConnectionsRouter } from "./routes/mcpConnections";
+import { oauthRouter, oauthWellKnownRouter } from "./mcp/oauth/routes";
+import { runMcpOAuthPrune } from "./scheduled/pruneMcpOAuth";
 import { observeMcp } from "./mcp/observability";
 export { RateLimiterObject } from "./rateLimiterObject";
 
@@ -75,6 +78,13 @@ app.route("/api/appearance", appearanceRouter);
 // implementation — the click comes from an email, so there's no session cookie;
 // authorized instead by a signed, scoped token (lib/unsubscribeToken.ts).
 app.route("/api/email/unsubscribe", unsubscribeRouter);
+
+// Issue #102 — MCP OAuth authorization server: public discovery documents and
+// protocol endpoints (credential-free, CORS-enabled), plus the consent
+// endpoints, which require the browser session themselves. Mounted before the
+// session-protected `api` sub-app, like authRouter. See mcp/oauth/routes.ts.
+app.route("/.well-known", oauthWellKnownRouter);
+app.route("/api/oauth", oauthRouter);
 
 // Independent bearer-only MCP audiences; remain behind circuit/IP protection
 // above, but never inherit browser session/Cloudflare Access authentication.
@@ -136,6 +146,8 @@ api.route("/daily-email-settings", dailyEmailSettingsRouter);
 // (any authenticated user manages their own); /admin/mcp-tokens is Admin
 // MCP (requireAdmin, applied inside the factory).
 api.route("/mcp-tokens", createMcpTokensRouter("user"));
+// Issue #102 — connected OAuth applications (grants), the same split by audience.
+api.route("/mcp-connections", createMcpConnectionsRouter("user"));
 // docs/requirements/authentication-and-users.md — User Profile (Display Name & Avatar).
 api.route("/me", profileRouter);
 api.route("/avatars", avatarsRouter);
@@ -153,6 +165,7 @@ api.route("/admin/overview", adminOverviewRouter);
 api.route("/admin/appearance", adminAppearanceRouter);
 api.route("/admin/question-tags", questionTagsRouter);
 api.route("/admin/mcp-tokens", createMcpTokensRouter("admin"));
+api.route("/admin/mcp-connections", createMcpConnectionsRouter("admin"));
 
 app.route("/api", api);
 
@@ -177,5 +190,7 @@ export default {
     ctx.waitUntil(runContentMutationAuditPrune(env));
     // Practice sessions nobody ended (issue #40), on the same daily trigger.
     ctx.waitUntil(runStalePracticeClose(env));
+    // Spent/expired MCP OAuth codes, tokens and authorization requests (issue #102).
+    ctx.waitUntil(runMcpOAuthPrune(env));
   },
 } satisfies ExportedHandler<Env>;

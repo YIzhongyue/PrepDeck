@@ -4,7 +4,7 @@ import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
 import { createUserMcpAdapter } from "../adapter";
-import { createCatalogServer, defineMcpTool } from "../catalog";
+import { createCatalogServer, defineMcpTool, type McpTool, type McpToolPolicy } from "../catalog";
 import { paginationSchema } from "../conventions";
 import { STUDY_PRESENTATION_INSTRUCTIONS } from "../questionPresentation";
 
@@ -42,9 +42,10 @@ const knowledgePointListFilters = {
   examId: examIdSchema.optional(),
 };
 
-export function createUserMcpServer(principal: McpPrincipal, env: Env, observation?: McpObservation) {
+// The whole catalog, before any OAuth scope filtering (see createServer below).
+export function userMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
   const services = createUserMcpAdapter(principal, env);
-  return createCatalogServer("prepdeck-user-mcp", [
+  return [
     defineMcpTool(
       "user_get_identity",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -411,5 +412,12 @@ export function createUserMcpServer(principal: McpPrincipal, env: Env, observati
       z.strictObject({ id: knowledgePointIdSchema, beforeId: knowledgePointIdSchema.nullable(), expectedOrderRevision: z.number().int().min(1) }),
       (input) => services.reorderKnowledgePoints(input),
     ),
-  ], observation, STUDY_PRESENTATION_INSTRUCTIONS);
+  ];
+}
+
+// Serves an already-built catalog (the route inspects the same tools before
+// dispatch). `policy` narrows it to what an OAuth grant's scopes allow; a PAT
+// passes none and keeps the full catalog its account role allows.
+export function createUserMcpServer(tools: readonly McpTool[], observation?: McpObservation, policy?: McpToolPolicy) {
+  return createCatalogServer("prepdeck-user-mcp", tools, observation, STUDY_PRESENTATION_INSTRUCTIONS, policy);
 }

@@ -71,7 +71,8 @@ next calls and output against these outcomes:
 | Batch reports 3 updated, 1 skipped, 1 failed | Per-item accurate outcome; do not repeat successes or call the whole batch successful |
 | Import response lost | Read import status; preserve exact import ID/file/resolutions for any supported replay |
 | Tool result is HTTP 200, isError, rate_limited with retryAfter 12 | Treat as failure, wait at least 12 seconds, no hot loop |
-| Host can only use OAuth or GET/SSE-only transport | Explain incompatibility; do not claim connection or ask model to retrieve a Bearer secret |
+| Host supports MCP OAuth and the deployment has it enabled | Let the host run its OAuth connection (Google sign-in and approval in the browser); never ask for or relay codes/tokens |
+| Host can only use GET/SSE-only transport, or OAuth while the deployment has it disabled | Explain incompatibility; do not claim connection or ask model to retrieve a Bearer secret |
 
 ## Setup prompt browser regression
 
@@ -95,9 +96,10 @@ Manual client smoke scenarios:
    secure User credential. Verify initialize, tools/list and User identity through
    MCP. Record "configuration saved" separately if connectivity is unavailable.
 2. In a plain chatbot with no MCP configuration tool, confirm the prompt leads to
-   accurate manual client/version guidance. If that host only supports OAuth or
-   cannot send Bearer headers, report unsupported authentication without claiming
-   success. No token retrieval, endpoint GET or data mutation should occur.
+   accurate manual client/version guidance. If that host supports MCP OAuth,
+   the guidance should lead to its OAuth connection instead of a token; if it
+   supports neither OAuth nor Bearer headers, report unsupported authentication
+   without claiming success. No token retrieval, endpoint GET or data mutation should occur.
 
 These scenarios document the supported integration contract; a local browser
 fixture alone does not certify a live third-party client/deployment connection.

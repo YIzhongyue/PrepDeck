@@ -17,6 +17,11 @@ const STUDY_ERROR_MESSAGES: Record<StudyMutationDetail, string> = {
 export const MCP_ERRORS = {
   unauthenticated: { status: 401, message: "A valid credential for this MCP server is required." },
   unauthorized: { status: 403, message: "This operation is not authorized." },
+  // Issue #102 — a valid OAuth access token whose grant's approved scopes do
+  // not include the operation. Reconnecting the client and approving the
+  // wider access is the remedy; the account's role still bounds what can be
+  // approved. Never raised for a PAT, which has no scopes.
+  insufficient_scope: { status: 403, message: "This connection's approved permissions do not include this operation. Reconnect the client and approve the required access." },
   invalid_input: { status: 400, message: "Invalid request input." },
   not_found: { status: 404, message: "The requested resource was not found." },
   conflict: { status: 409, message: "This operation conflicts with the current state (a stale revision, modified proposal, or existing dependency). Refresh and retry." },
@@ -67,9 +72,13 @@ export function errorEnvelope(error: unknown) {
   };
 }
 
-export function httpError(error: unknown): Response {
+/** `challenge` builds the WWW-Authenticate value for a 401/403 — with OAuth
+ * enabled it names the resource metadata (RFC 9728) so an OAuth-capable client
+ * can start discovery; see mcp/oauth/config.ts's bearerChallenge. */
+export function httpError(error: unknown, challenge?: (code: McpErrorCode) => string | null): Response {
   const body = errorEnvelope(error);
   const headers: Record<string, string> = { "Cache-Control": "no-store" };
-  if (body.error.code === "unauthenticated") headers["WWW-Authenticate"] = 'Bearer realm="PrepDeck MCP"';
+  const value = challenge?.(body.error.code) ?? (body.error.code === "unauthenticated" ? 'Bearer realm="PrepDeck MCP"' : null);
+  if (value) headers["WWW-Authenticate"] = value;
   return Response.json(body, { status: MCP_ERRORS[body.error.code].status, headers });
 }

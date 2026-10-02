@@ -3,13 +3,16 @@ import type { Server } from "@modelcontextprotocol/server";
 import type { Env } from "../bindings";
 import type { Variables } from "../context";
 import { consumeRateLimit, configuredLimit } from "../middleware/rateLimit";
-import { authenticateUserMcp, authenticateAdminMcp, touchMcpCredentialLastUsed, type McpPrincipal } from "./credentials";
-import { createUserMcpServer } from "./user/server";
-import { createAdminMcpServer } from "./admin/server";
+import { authenticateMcp, touchMcpCredentialLastUsed, type McpAudience, type McpPrincipal } from "./credentials";
+import { createUserMcpServer, userMcpTools } from "./user/server";
+import { createAdminMcpServer, adminMcpTools } from "./admin/server";
 import { httpError, McpApplicationError } from "./errors";
 import { serveMcp } from "./runtime";
 import { IMPORT_BODY_MAX_BYTES } from "../lib/importSecurity";
 import type { McpObservation } from "./observability";
+import type { McpTool, McpToolPolicy } from "./catalog";
+import { bearerChallenge, scopePolicy } from "./oauth/config";
+import { touchGrantLastUsed } from "./oauth/grants";
 
 // implementation — user_update_knowledge_point/user_create_knowledge_point accept
 // a bodyMarkdown up to 200,000 characters (matching REST's own
@@ -20,7 +23,27 @@ import type { McpObservation } from "./observability";
 // UTF-8, plus JSON-RPC envelope overhead), not a tight fit.
 export const USER_MCP_BODY_MAX_BYTES = 1_048_576;
 
-type Authenticate = typeof authenticateUserMcp;
+interface Catalog {
+  tools(principal: McpPrincipal, env: Env): McpTool[];
+  serve(tools: readonly McpTool[], observation?: McpObservation, policy?: McpToolPolicy): Server;
+}
+
+/**
+ * Issue #102 — answers a tools/call for a tool the OAuth grant's scopes do not
+ * cover with HTTP 403 and an insufficient_scope challenge (MCP authorization
+ * spec, "Scope challenge handling"), before dispatch, so a client can step up
+ * by reauthorizing. The catalog server independently refuses it too.
+ */
+function enforceScopes(body: string, tools: readonly McpTool[], policy: McpToolPolicy) {
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return; /* The SDK owns protocol validation. */ }
+  for (const message of Array.isArray(parsed) ? parsed : [parsed]) {
+    const { method, params } = (message ?? {}) as { method?: unknown; params?: { name?: unknown } };
+    if (method !== "tools/call") continue;
+    const tool = tools.find((candidate) => candidate.definition.name === params?.name);
+    if (tool && !policy.allows(tool.definition)) throw new McpApplicationError("insufficient_scope");
+  }
+}
 
 // implementation — admin-audience import tools need to accept a full import file
 // inline (up to IMPORT_LIMITS.maxQuestions), well past the default 64 KB cap
@@ -30,12 +53,15 @@ type Authenticate = typeof authenticateUserMcp;
 // cap to match REST's existing import limit doesn't weaken the posture for
 // the user MCP endpoint, which keeps the default.
 function endpoint(
-  authenticate: Authenticate,
-  createServer: (principal: McpPrincipal, env: Env, observation?: McpObservation) => Server,
+  audience: McpAudience,
+  catalog: Catalog,
   opts?: { maxBodyBytes?: number },
 ) {
   const router = new Hono<{ Bindings: Env; Variables: Variables }>();
-  router.onError((error) => httpError(error));
+  router.onError((error, c) => httpError(error, (code) => {
+    c.get("mcpObservation")?.rejected(code);
+    return bearerChallenge(c.env, audience, code, c.req.raw.headers.has("Authorization"));
+  }));
   router.all("/", async (c) => {
     const observation = c.get("mcpObservation");
     if (observation) observation.stage = "origin";
@@ -53,15 +79,18 @@ function endpoint(
     // Credentials are accepted exclusively in Authorization, never in URLs.
     if (new URL(request.url).search) throw new McpApplicationError("invalid_input");
     if (observation) observation.stage = "auth";
-    const principal = await authenticate(request, c.env.DB, observation);
-    // Best-effort activity tracking for Settings/admin token lists; never
-    // gates or slows down the actual MCP call on failure.
-    await touchMcpCredentialLastUsed(c.env.DB, principal.credentialId).catch(() => {});
+    const principal = await authenticateMcp(request, c.env, audience, observation);
+    // Best-effort activity tracking for Settings/admin token and connected-app
+    // lists; never gates or slows down the actual MCP call on failure.
+    await (principal.credentialType === "oauth" ? touchGrantLastUsed(c.env.DB, principal.credentialId)
+      : touchMcpCredentialLastUsed(c.env.DB, principal.credentialId)).catch(() => {});
     if (observation) observation.stage = "method";
     if (request.method !== "POST") {
       return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
     }
-    // Separate audiences and account keys; rotating tokens cannot reset quotas.
+    // Separate audiences and account keys; rotating tokens cannot reset quotas,
+    // and the key names the account, not the credential, so PATs and OAuth
+    // connections of one account share a single budget (issue #102).
     // implementation — max is deployment-configurable (MCP_ADMIN_RATE_LIMIT_PER_MINUTE
     // / MCP_USER_RATE_LIMIT_PER_MINUTE); defaults match the original fixed values.
     if (observation) observation.stage = "account_limit";
@@ -79,11 +108,14 @@ function endpoint(
       } });
     }
     if (observation) observation.stage = "protocol";
-    return serveMcp(request, () => createServer(principal, c.env, observation), opts?.maxBodyBytes, observation);
+    const tools = catalog.tools(principal, c.env);
+    const policy = principal.scopes ? scopePolicy(audience, principal.scopes) : undefined;
+    return serveMcp(request, () => catalog.serve(tools, observation, policy), opts?.maxBodyBytes, observation,
+      policy ? (body) => enforceScopes(body, tools, policy) : undefined);
   });
   router.all("*", () => httpError(new McpApplicationError("not_found")));
   return router;
 }
 
-export const userMcpRouter = endpoint(authenticateUserMcp, createUserMcpServer, { maxBodyBytes: USER_MCP_BODY_MAX_BYTES });
-export const adminMcpRouter = endpoint(authenticateAdminMcp, createAdminMcpServer, { maxBodyBytes: IMPORT_BODY_MAX_BYTES });
+export const userMcpRouter = endpoint("user", { tools: userMcpTools, serve: createUserMcpServer }, { maxBodyBytes: USER_MCP_BODY_MAX_BYTES });
+export const adminMcpRouter = endpoint("admin", { tools: adminMcpTools, serve: createAdminMcpServer }, { maxBodyBytes: IMPORT_BODY_MAX_BYTES });

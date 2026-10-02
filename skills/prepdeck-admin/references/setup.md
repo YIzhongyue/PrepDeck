@@ -9,8 +9,12 @@
    Its advertised name is `prepdeck-admin-mcp`; see
    [connection.json](connection.json). It uses remote HTTP MCP with stateless
    Streamable HTTP compatibility and Bearer authentication on every POST request.
-   It has no local stdio command, separate SSE-only endpoint or OAuth discovery.
-3. An active administrator creates their own Admin credential in **Admin → MCP
+   It has no local stdio command or separate SSE-only endpoint.
+3. If the host supports MCP OAuth authorization, it can connect with only the
+   URL: an active administrator signs in with Google and approves the
+   administrative access in the browser (see
+   [credentials](credentials.md#oauth-capable-clients)). Otherwise an active
+   administrator creates their own Admin credential in **Admin → MCP
    tokens** and enters it through the host's secure input/store. Compatible local
    clients can reference `PREPDECK_ADMIN_MCP_TOKEN`. Read
    [credentials](credentials.md) for client formats. User tokens, cookies and

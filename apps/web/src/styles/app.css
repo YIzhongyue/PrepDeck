@@ -607,3 +607,32 @@ header .exam-selector--compact .exam-selector__menu {
 @media (prefers-reduced-motion: reduce) {
   .login-mascot, .login-fade { animation: none; }
 }
+
+/* MCP OAuth consent (issue #102, screens/McpConnect.tsx): the sign-in card's
+   frame, without the mascot, holding a left-aligned summary of the request. */
+.mcp-connect-card { padding-top: clamp(28px, 4vw, 40px); text-align: left; align-items: stretch; }
+.mcp-connect { display: flex; flex-direction: column; gap: var(--space-4); width: 100%; }
+.mcp-connect-message { display: flex; flex-direction: column; gap: 6px; }
+.mcp-connect-message h1 {
+  margin: 0; font-family: var(--font-heading); font-size: clamp(22px, 2.8vw, 27px);
+  line-height: 1.15; letter-spacing: -0.015em; overflow-wrap: anywhere;
+}
+.mcp-connect-message p { margin: 0; font-size: 14px; color: var(--color-neutral-700); }
+.mcp-connect-facts { margin: 0; display: flex; flex-direction: column; border-radius: 20px; border: 1px solid var(--color-divider); }
+.mcp-connect-facts > div { display: flex; gap: 12px; padding: 10px 14px; }
+.mcp-connect-facts > div + div { border-top: 1px solid var(--color-divider); }
+.mcp-connect-facts dt { flex: 0 0 82px; font-size: 12px; font-weight: 600; color: var(--color-text-muted); padding-top: 2px; }
+.mcp-connect-facts dd { margin: 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13.5px; }
+.mcp-connect-strong { font-weight: 600; overflow-wrap: anywhere; }
+.mcp-connect-id { flex: 1 1 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mcp-connect-scopes { display: flex; flex-direction: column; gap: 8px; }
+.mcp-connect-scopes h2 { margin: 0; font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0; }
+.mcp-connect-scopes ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.mcp-connect-scopes li { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 16px; background: var(--color-neutral-100); font-size: 13.5px; }
+.mcp-connect-scopes li span:last-child { font-size: 12.5px; color: var(--color-neutral-700); }
+.mcp-connect-muted { margin: 0; font-size: 12.5px; color: var(--color-text-muted); }
+.mcp-connect-error { margin: 0; font-size: 13px; color: var(--color-danger); }
+.mcp-connect-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.mcp-connect-actions .btn { flex: 1 1 140px; min-height: 46px; }
+/* No mascot above this card, so on short/narrow pages it would ride up under the logo. */
+@media (max-width: 619.98px) { .mcp-connect-card { margin-top: 48px; } }

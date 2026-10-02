@@ -20,10 +20,16 @@ list, and "Request safety and limits" for the hardening detail.
 
 ## Endpoints and runtime
 
-| Endpoint | Server name | Credential namespace |
-| --- | --- | --- |
-| `/mcp` | `prepdeck-user-mcp` | `pd_mcp_user_` |
-| `/admin-mcp` | `prepdeck-admin-mcp` | `pd_mcp_admin_` |
+| Endpoint | Server name | PAT namespace | OAuth access token namespace |
+| --- | --- | --- | --- |
+| `/mcp` | `prepdeck-user-mcp` | `pd_mcp_user_` | `pd_oat_user_` |
+| `/admin-mcp` | `prepdeck-admin-mcp` | `pd_mcp_admin_` | `pd_oat_admin_` |
+
+Each endpoint accepts two kinds of bearer credential side by side: a personal
+access token (PAT) a user creates and pastes into a client, and an OAuth
+access token PrepDeck's own authorization server issues to an OAuth-capable
+client after the user signs in with Google and approves it. See
+[OAuth authorization](#oauth-authorization-issue-102).
 
 Use `<PREPDECK_ORIGIN>/mcp` and `<PREPDECK_ORIGIN>/admin-mcp` for the intended
 production, staging or local origin. See [connection setup](../guides/mcp-and-skills.md).
@@ -115,9 +121,9 @@ discovery, initialization, notifications, and tool calls. Cookies, Cloudflare
 Access JWTs, URL parameters, and tool arguments cannot authenticate. URLs with
 query strings are rejected. Send credentials only over HTTPS outside local
 development, and store them in the client's secret store rather than a project
-configuration committed to Git. This foundation uses pre-provisioned bearer
-credentials, not an OAuth authorization/discovery service; OAuth-only clients
-need the later authentication integration.
+configuration committed to Git. A bearer credential is either a PAT
+(provisioned as below) or an OAuth access token (see
+[OAuth authorization](#oauth-authorization-issue-102)); this section describes PATs.
 
 `src/mcp/credentials.ts` exposes `issueMcpCredential(db, input)` as a **trusted
 internal provisioning primitive**. It is not reachable from MCP directly; the
@@ -165,9 +171,14 @@ the foreign key; inactive accounts and demoted admins return 403. Even an admin
 account needs two separately issued credentials to use both servers. A User
 credential owned by an admin still gets only the User catalog and own identity.
 
-The authenticated principal contains only the owner ID, credential ID, and
-audience. Raw credentials and the browser's auth headers are stripped before
-the SDK sees the request. Principals are per request and never globally shared.
+The authenticated principal contains only the owner ID, audience, credential
+type (`pat` or `oauth`), credential ID (the PAT id, or the OAuth grant id) and,
+for OAuth, the grant's approved scopes. Raw credentials and the browser's auth
+headers are stripped before the SDK sees the request. Principals are per
+request and never globally shared. Every check after authentication —
+account status and role, ownership, the per-account quota, mutation limits,
+audit records — reads only the principal, so it applies identically whichever
+credential type authenticated the request.
 
 ## Adapter and tool conventions
 
@@ -234,8 +245,9 @@ code always produces a distinct HTTP status:
 
 | Code | Pre-dispatch HTTP status | Meaning |
 | --- | --- | --- |
-| `unauthenticated` | 401 + Bearer challenge | Missing/invalid/wrong-audience/expired/revoked credential |
+| `unauthenticated` | 401 + Bearer challenge | Missing/invalid/wrong-audience/expired/revoked credential; with OAuth on, the challenge names the resource metadata |
 | `unauthorized` | 403 | Inactive account, insufficient role, or origin rejection |
+| `insufficient_scope` | 403 + `error="insufficient_scope"` challenge | An OAuth grant's approved scopes do not cover the called tool (also dispatched, if a tool is reached anyway) |
 | `invalid_input` | 400 | Invalid body or input (also occurs dispatched, on schema/business validation) |
 | `not_found` | 404 | Missing resource or tool in this catalog |
 | `conflict` | 409 (dispatched-only; no pre-dispatch case) | Stale revision, modified proposal, or existing dependency |
@@ -292,6 +304,279 @@ Tests: `apps/worker/scripts/mcp-tokens.test.mjs` covers the HTTP CRUD surface
 separation) against an in-memory D1-shaped SQLite DB; `mcp-foundation.test.mjs`
 covers non-expiring credentials and `last_used_at` tracking end-to-end through
 the real `/mcp` transport.
+
+## OAuth authorization (issue #102)
+
+OAuth-capable MCP clients can connect with nothing but the endpoint URL: the
+client discovers PrepDeck's authorization server, the user signs in with
+Google and approves the request in the browser, and the client receives an
+MCP access token. PATs keep working unchanged on the same endpoints; the two
+are alternative ways of obtaining a bearer credential, not a deployment-wide
+choice. The implementation targets the
+[MCP authorization specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+That is independent of transport compatibility: both the 2026-07-28 and the
+stateless legacy (2025-11-25) Streamable HTTP behavior described above are
+unchanged, and an OAuth access token works with either.
+
+### Flow and endpoints
+
+```text
+client ──POST /mcp (no token)──────────────▶ 401  WWW-Authenticate: Bearer resource_metadata=…, scope=…
+client ──GET /.well-known/oauth-protected-resource/mcp ─▶ resource, authorization_servers=[issuer], scopes
+client ──GET /.well-known/oauth-authorization-server ──▶ endpoints, S256, CIMD + DCR support
+client ──POST /api/oauth/register (DCR) ───────▶ client_id        (or: client_id is a metadata-document URL)
+browser ─GET /api/oauth/authorize?…&code_challenge&resource ─▶ 302 /connect?request=<id> + binding cookie
+browser ─/connect: website login gate (Google sign-in, Turnstile) ─▶ consent screen
+browser ─POST /api/oauth/requests/<id>/approve ─▶ { redirectTo: redirect_uri?code&state&iss }
+client ──POST /api/oauth/token (code + code_verifier) ─▶ access_token (1 h) + refresh_token (30 d)
+client ──POST /mcp  Authorization: Bearer pd_oat_user_… ─▶ tools
+```
+
+| Path | Purpose |
+| --- | --- |
+| `GET /.well-known/oauth-protected-resource/mcp`, `…/admin-mcp` | RFC 9728 protected-resource metadata, one document per MCP server. |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 authorization-server metadata. The issuer is the `APP_BASE_URL` origin. |
+| `GET /api/oauth/authorize` | Authorization request (authorization code + PKCE). |
+| `POST /api/oauth/token` | `authorization_code` and `refresh_token` grants. Form-encoded, public clients (`token_endpoint_auth_method: none`). |
+| `POST /api/oauth/register` | RFC 7591 dynamic client registration. |
+| `POST /api/oauth/revoke` | RFC 7009 revocation by the client; revokes the whole grant. |
+| `GET /api/oauth/requests/:id`, `POST …/approve`, `POST …/deny` | Consent screen data and decision. These alone require the browser session (`requireAccessUser`). |
+
+The discovery documents and protocol endpoints read no cookie and set none
+(except the binding cookie below), so they carry `Access-Control-Allow-Origin: *`
+for browser-based clients. The `.well-known` paths are listed in
+`run_worker_first` (`wrangler.toml`), so they never reach the SPA fallback;
+`/connect` is an SPA route (`apps/web/src/screens/McpConnect.tsx`). The MCP
+transport itself never returns login HTML or a login redirect: an
+unauthenticated request gets a `401` whose challenge carries
+`resource_metadata="<origin>/.well-known/oauth-protected-resource/<path>"` and
+the audience's scopes, plus `error="invalid_token"` when a credential was sent.
+The `/api/oauth/authorize` and `/api/oauth/register` endpoints share the
+`auth` IP rate-limit class (10 per minute per IP); registration also has a
+deployment-wide budget of 60 per minute (fail-closed, 429/503 with
+`Retry-After`), and registrations that never got a grant are deleted after 30
+days. `/api/oauth/token` uses the ordinary write class.
+
+### Design decisions
+
+- **Embedded authorization server.** PrepDeck issues MCP credentials itself
+  (`src/mcp/oauth/`), reusing its existing Google sign-in for identity. Google
+  is the upstream identity provider only: Google access and ID tokens are
+  never accepted on `/mcp` or `/admin-mcp` (they match no bearer format and
+  are refused as malformed, before any lookup). No external service or new
+  Google redirect URI is needed.
+- **Opaque tokens, stored as digests.** Access tokens (`pd_oat_<audience>_` +
+  256 random bits), refresh tokens (`pd_ort_<audience>_…`) and authorization
+  codes (`pd_oac_…`) are random values; D1 stores only their SHA-256, exactly
+  like PATs. Every MCP request already reads D1 for the account's current
+  status and role, so validating an opaque token costs no extra round trip,
+  revocation takes effect on the next request, and there are no signing keys
+  to manage or rotate.
+- **Lifetimes.** Access tokens: 1 hour. Refresh tokens: 30 days, rotated on
+  every use, so a connection in regular use never needs another login and an
+  idle one expires after 30 days. Authorization codes: 5 minutes, single use.
+  Authorization requests (the consent transaction): 10 minutes.
+- **Scopes.** Four scopes, each belonging to one audience:
+  `mcp:user:read`, `mcp:user:write`, `mcp:admin:read`, `mcp:admin:write`
+  (`MCP_OAUTH_SCOPES` in `@prepdeck/shared`). A read scope allows the tools
+  annotated `readOnlyHint: true`; a write scope allows every tool of its
+  audience (write includes read). The annotation is required on every tool,
+  so no tool falls outside the mapping. A request without `scope` asks for
+  both scopes of its audience; unknown scope names are ignored; a scope of
+  the other audience is refused (`invalid_scope`).
+- **Client onboarding.** Both Client ID Metadata Documents (an `https` URL
+  client_id whose JSON document PrepDeck fetches — no redirects, 5 KB, 5 s,
+  must name itself, cached for an hour and used stale for up to a day if the
+  host is down; see *Metadata document fetches* below) and Dynamic Client Registration (most clients released before
+  the 2025-11-25 specification only support this). Pre-registration is not
+  offered. Every client is public: no secrets, PKCE `S256` required. Client
+  names are self-asserted either way and the consent screen marks them
+  "unverified".
+- **Metadata document fetches.** Fetching `client_id` is an outbound request
+  chosen by the caller, so it is narrowed before and during the fetch. The URL
+  must be canonical `https` on the default port, with a path and no
+  credentials, query or fragment, and its host must be a public-looking DNS
+  name: IP literals (including numeric spellings the URL parser normalizes,
+  such as `https://2130706433/`), `localhost`, trailing-dot hosts, single-label
+  names and `.internal`/`.local`/`.lan`/`.home`/`.corp`/`.intranet`/`.private`
+  suffixes are refused. The fetch follows no redirects, is bounded to 5 KB and
+  5 seconds, and only a JSON document naming itself as `client_id` with valid
+  redirect URIs is accepted; nothing from a failed fetch is returned to the
+  caller. DNS is resolved by Cloudflare's network for the Worker, which has no
+  route to the deployment's own private network: a hostname that resolves to a
+  private or link-local address (including through DNS rebinding) reaches no
+  internal service of PrepDeck, and Cloudflare refuses Worker subrequests to
+  its own internal addresses. Name-based checks are therefore defense in depth,
+  not the boundary. A deployment that adds Workers VPC or service bindings to
+  private networks must not route this fetch through them.
+- **Redirect URIs.** `https`; `http` only on a loopback host (any port, per
+  RFC 8252 §7.3); or a private-use scheme for desktop clients. Never a
+  fragment, credentials, or `javascript:`/`data:`/`file:`-style schemes.
+  Matching is exact otherwise.
+
+### Authorization request and consent
+
+`/api/oauth/authorize` validates, in order: no repeated parameters; a known
+client (fetching its metadata document if the client_id is a URL); a
+registered redirect URI. A failure there is not safe to send back to the
+client, so the browser is sent to `/connect?error=<reason>`, which explains it
+without signing in. After that, errors go back to the client's redirect URI
+with `error`, `error_description`, `state` and `iss` (RFC 9207): unsupported
+`response_type`; PKCE missing or not `S256`; a `resource` (RFC 8707) that is
+not this server's `/mcp` or `/admin-mcp` (`invalid_target`); scopes that do
+not fit. Without `resource`, the scopes pick the audience (User MCP if none).
+
+The validated request is stored (`mcp_oauth_requests`) and bound to the
+initiating browser: a random binding secret goes into an `HttpOnly`,
+`SameSite=Lax` cookie scoped to `Path=/api/oauth/requests/<id>`, and only its
+digest is stored. The consent endpoints require both that cookie and a signed
+in session, and refuse a cross-origin `Origin`. The MCP client's `state` is
+never interpreted, and Google's own `state`/PKCE remain the separate, signed
+`pd_oauth` cookie of the website sign-in.
+
+`/connect?request=<id>` sits behind the SPA's ordinary login gate. A signed out
+user gets the usual Google sign-in, with Turnstile when configured; its
+`returnTo` is the same-origin `/connect?request=<id>` path, validated by the
+existing `safeReturnTo` rules, so no arbitrary external redirect is ever
+carried through the website login. An existing session skips the login but
+never the consent: every authorization request is shown and must be approved
+explicitly. The screen shows the client name (unverified), client id or
+metadata URL, where the browser returns to, the MCP server (with
+"administrative access" for Admin MCP), each permission, and the signed-in
+account. Approve or deny decides the request exactly once (compare-and-swap);
+deny returns `access_denied` to the client. Google sign-in alone grants
+nothing: the account must already be invited (FR-1.3), and approving Admin MCP
+requires an active administrator — the consent screen offers a non-admin no
+Allow button, and the grant INSERT re-checks status and role in SQL.
+
+### Token endpoint and grant lifecycle
+
+Approval creates a **grant** (`mcp_oauth_grants`: user, client, audience,
+scopes) and a code bound to the client, redirect URI, PKCE challenge and that
+grant. The code is claimed atomically before anything else is checked, so it
+redeems at most once even concurrently; presenting a redeemed code again
+revokes the grant and every token issued under it (RFC 6749 §4.1.2). The
+exchange checks expiry, client, redirect URI, the PKCE verifier and, if sent,
+the `resource`; it re-checks the account.
+
+Refresh validates the request before spending the refresh token (so a client
+that gets a parameter wrong keeps it), then rotates it. **A refresh token is
+strictly single-use**: exactly one request spends it (a compare-and-swap on
+`used_at`), and that same D1 batch creates its one successor pair; the
+successor rows are only written if this request's claim is the one that
+succeeded. Presenting a spent refresh token never creates another pair:
+
+- Within `REFRESH_TOKEN_REUSE_GRACE_MS` (10 seconds) of the rotation, by the
+  client it was issued to, the request gets back the **same** successor pair.
+  That keeps a client's own concurrent refreshes idempotent: when an access
+  token expires, parallel requests all get a 401 and refresh with the token
+  they hold (the official MCP TypeScript SDK does this with its background GET
+  stream and a tool call). To answer them without storing a usable secret, the
+  rotation stores its result encrypted with AES-GCM under a key derived from
+  the spent refresh token (`rotation_result`); only a holder of that token can
+  read it back, the database holds just the token's SHA-256 under a different
+  label. After the window the sealed copy is never read again; it becomes
+  eligible for cleanup a minute after the rotation and the next daily prune
+  clears it, so it can remain, sealed and unused, for up to about a day. Someone replaying a stolen
+  token inside the window therefore shares the one existing branch rather than
+  getting a second one; whichever party rotates it next turns the other's next
+  use into a replay.
+- Later, by anyone, it is a replay: the whole grant (the token family) is
+  revoked, so the thief and the client both lose it, and the user recovers by
+  reconnecting the client.
+
+Scope narrowing on refresh is not supported: tokens always carry the grant's
+scopes.
+
+Each MCP request with an OAuth access token checks: the token is unexpired,
+its grant unrevoked and for this endpoint's audience, and — as for a PAT —
+the account is active and, for Admin MCP, currently an administrator. Account
+revocation and admin demotion therefore take effect on the next request, not
+at token expiry. D1 is a single primary with no read replicas configured, so
+a revocation is visible to the next request everywhere; if read replication is
+ever enabled, revocation would lag by the replica's delay. Grant revocation
+also ends refresh.
+
+| Event | OAuth grant | PATs |
+| --- | --- | --- |
+| Browser sign-out (any device) | Keeps working (grants survive sign-out) | Keep working |
+| User disconnects the app in Settings / Admin, or the client calls `/api/oauth/revoke` | Revoked at once | Unaffected |
+| Account revoked | Refused at once (403), refresh refused | Refused at once (403) |
+| Admin demoted | Admin MCP grant refused at once | Admin PAT refused at once |
+| Refresh-token replay, authorization-code replay | Grant revoked; reconnect | n/a |
+| 30 days without a refresh | Expires; reconnect | per PAT expiry |
+| `MCP_OAUTH_ENABLED` turned off | Refused while off; resumes if still unexpired when turned on | Unaffected |
+
+### Shared protections
+
+- **Endpoint isolation.** Access tokens carry their audience in the prefix,
+  refused before any lookup on the wrong endpoint, and the stored grant
+  audience decides. A User MCP grant never authorizes Admin MCP and an Admin
+  MCP grant is not a User MCP credential.
+- **Scope enforcement.** A tool call outside the grant's scopes is answered
+  before dispatch with HTTP 403 and
+  `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"`,
+  so a client can step up by reauthorizing. The catalog server independently
+  omits such tools from `tools/list` and refuses calling them.
+- **Quotas.** The per-account quota key names the account
+  (`mcp:<audience>:user:<id>`), so PATs and OAuth connections share one budget.
+- **Audit.** Admin MCP audit rows record `credential_id` for a PAT or
+  `oauth_grant_id` for an OAuth grant (exactly one is set; `0045_mcp_oauth.sql`),
+  also exposed by the `content_mutation_audit` view.
+- **Activity.** `last_used_at` is tracked on the grant, as on a PAT.
+- **No secrets in logs.** Only fixed event names and categories are logged
+  (`mcp.oauth.authorize.refused` with its reason, `mcp.oauth.consent.approved`
+  with the audience). Codes, tokens, verifiers and binding values never are;
+  `mcp-oauth.test.mjs` asserts it.
+- **Metrics.** The MCP metrics data point gains a credential-type blob and an
+  `oauth_disabled` authentication outcome; see
+  [MCP observability](../operations/mcp-observability.md).
+
+### Managing connections
+
+`src/routes/mcpConnections.ts` mirrors the token routes: `/api/mcp-connections`
+(User MCP grants, any user) and `/api/admin/mcp-connections` (Admin MCP grants,
+`requireAdmin`). `GET /` lists the caller's unrevoked grants (client name and
+id, kind, scopes, created, last used, `active`/`expired`) and whether OAuth is
+enabled; `POST /:id/revoke` disconnects one. No secret is ever returned.
+`apps/web/src/components/McpConnectionsCard.tsx` shows them as "Connected
+apps" in Settings and "Connected admin apps" in the Admin console, next to
+and separate from the PAT cards.
+
+### Turning OAuth on or off
+
+`MCP_OAUTH_ENABLED = "true"` (checked in for both environments) enables it;
+anything else disables it: discovery and `/api/oauth/*` answer 404 (an
+authorization request lands on `/connect?error=unavailable`), the 401
+challenge reverts to the PAT-era `Bearer realm="PrepDeck MCP"`, and
+outstanding OAuth access tokens are refused until it is turned back on.
+Grants are not revoked by turning it off; users can still list and revoke
+them. PATs are unaffected either way. OAuth works in both `AUTH_MODE`s: the
+consent endpoints use whichever browser authentication the deployment uses
+(cookie session, or Cloudflare Access). `APP_BASE_URL` must be the public
+origin clients use, because it is the issuer and the base of both resource
+URLs. In local development it is the Vite origin (`http://localhost:5173`),
+which proxies `/.well-known/oauth-*` to Wrangler; local password login can be
+used to sign in before consenting.
+
+The daily scheduled job (`src/scheduled/pruneMcpOAuth.ts`) deletes expired
+access/refresh tokens, codes and authorization requests, and dynamically
+registered clients that have had no grant for 30 days. Grants are kept.
+
+### Client interoperability
+
+| Client | Version | Onboarding | Result |
+| --- | --- | --- | --- |
+| Official MCP TypeScript SDK client (`@modelcontextprotocol/client`) | 2.1.0 | 401 → discovery → DCR → authorization code + PKCE, `iss` validated | Connects, lists and calls tools, refreshes on expiry (including its concurrent refresh), steps up from read to write on `insufficient_scope`. Automated: `mcp-oauth-interop.test.mjs`. |
+| Same SDK, manual `Authorization` header with a PAT | 2.1.0 | none | Connects and calls tools without touching OAuth. Automated, same file. |
+| Official MCP TypeScript SDK (`@modelcontextprotocol/sdk`) | 1.31.0 | 401 → discovery → DCR → authorization code + PKCE | Connects, lists and calls tools, refreshes on expiry. Checked manually in-process during implementation; not part of the suite. |
+
+The browser leg in those runs is simulated: a signed-in session approves
+through the same consent endpoints the screen calls. Desktop and hosted MCP
+clients (Claude, ChatGPT, VS Code, Cursor and others) build on these flows but
+have not been verified against a deployed PrepDeck yet; support is not claimed
+for any client not listed here. A client that offers only manual headers keeps
+using PATs.
 
 Tool failures use an MCP result, not an HTTP error. SDK protocol failures retain
 JSON-RPC numeric codes and request IDs, but expose only fixed messages and
@@ -688,14 +973,18 @@ typed in `src/bindings.ts`):
 | `BUCKET` | R2 binding | import file archiving (Admin) and Knowledge Point images (User, via REST `/api/kp-images`, not an MCP tool). |
 | `APP_BASE_URL` | var | trusted Origin/URL check (see above) and absolute-URL construction. |
 | `ENVIRONMENT` | var | `"development"` additionally allows the local Worker origins above. |
+| `MCP_OAUTH_ENABLED` | var | `"true"` enables OAuth authorization alongside PATs (issue #102); anything else disables it. See [Turning OAuth on or off](#turning-oauth-on-or-off). |
 | `MCP_USER_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE`, `MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE`, `MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE` | vars | optional; see "Request safety and limits" for defaults if unset/non-numeric. |
 | `CIRCUIT_MODE`, `EMERGENCY_ADMIN_IPS` | vars | cost-containment circuit breaker (`src/middleware/circuitBreaker.ts`), shared with REST — see `docs/operations/cloudflare-cost-containment.md`. |
 
 The metrics completion of implementation adds no D1 migration. Verify dataset ingestion
 after deployment using the [MCP metrics rollout checklist](../operations/mcp-observability.md#rollout-and-verification).
 
-No MCP-specific secret exists: credentials are provisioned application-side
-(see "Authentication and provisioning" above), not via a Wrangler secret.
+No MCP-specific secret exists: PATs are provisioned application-side
+(see "Authentication and provisioning" above), not via a Wrangler secret, and
+OAuth tokens are opaque values with no signing key. OAuth reuses the website's
+existing Google OAuth client (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) and
+callback; no new Google redirect URI is registered.
 
 **Migrations**: apply **every** file in `migrations/` in order, with the
 normal D1 migration process (remote and local) — do not treat any
@@ -710,7 +999,8 @@ here. MCP-specific migrations as of this writing:
 `0021_admin_mcp_audit_log_targets.sql`, `0022_question_bank_tags.sql`,
 `0023_admin_mcp_import_jobs.sql`, `0024_admin_mcp_import_committed_items.sql`,
 `0025_kp_order_scopes.sql`, `0026_question_tag_links.sql`,
-`0027_drop_questions_tags_json.sql` — plus the earlier, REST-shared
+`0027_drop_questions_tags_json.sql`, `0045_mcp_oauth.sql` (OAuth clients,
+requests, grants, codes and tokens, and the audit log's `oauth_grant_id`) — plus the earlier, REST-shared
 `0014_knowledge_points.sql` that User MCP's Knowledge Point tools also
 depend on. Until `0017`/`0018` are applied, neither endpoint grants access
 (no credentials table to authenticate against); until `0025` is applied,
@@ -788,6 +1078,18 @@ adapter (applying the actual migrations, not a hand-rolled schema):
   bounded volume and sink-failure isolation.
 - `mcp-tokens.test.mjs` — the token-lifecycle HTTP CRUD surface (ownership
   isolation, validation, rotation, admin gating, namespace separation).
+- `mcp-oauth.test.mjs` — OAuth authorization end to end (issue #102):
+  discovery and challenges, routing, the feature switch, authorization request
+  validation, redirect URI rules, DCR and metadata documents, browser binding
+  and consent, PKCE/client/redirect/expiry/replay/concurrent code exchange,
+  refresh rotation, idempotent duplicates and replay, the registration budget,
+  metadata-document host rules, account revocation and demotion,
+  audience isolation, scope enforcement, shared quotas with PATs, Google
+  token and browser session rejection, connection management, sign-out,
+  RFC 7009 revocation, audit attribution, log safety and the prune job.
+- `mcp-oauth-interop.test.mjs` — the official MCP TypeScript SDK client
+  (2.1.0) against the real Worker: discovery from the 401, DCR, PKCE,
+  refresh, scope step-up, and the same SDK with a PAT.
 - `mcp-user-learning.test.mjs` — the implementation read catalog end-to-end.
 - `mcp-user-knowledge-points.test.mjs` — the implementation Knowledge Point catalog
   end-to-end, a REST harness for cross-checking the shared lib layer

@@ -4,7 +4,7 @@ import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
 import { createAdminMcpAdapter } from "../adapter";
-import { createCatalogServer, defineMcpTool } from "../catalog";
+import { createCatalogServer, defineMcpTool, type McpTool, type McpToolPolicy } from "../catalog";
 import { paginationSchema } from "../conventions";
 import { MAX_BATCH_MUTATION_ITEMS } from "../../lib/questionManagement";
 import { MAX_MERGE_SOURCE_TAGS } from "../../lib/questionBankTags";
@@ -78,9 +78,10 @@ const questionPayloadSchema = z.strictObject({
   content: z.record(z.string(), z.unknown()).optional(),
 });
 
-export function createAdminMcpServer(principal: McpPrincipal, env: Env, observation?: McpObservation) {
+// The whole catalog, before any OAuth scope filtering (see createServer below).
+export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
   const services = createAdminMcpAdapter(principal, env);
-  return createCatalogServer("prepdeck-admin-mcp", [
+  return [
     defineMcpTool(
       "admin_get_identity",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -370,5 +371,12 @@ export function createAdminMcpServer(principal: McpPrincipal, env: Env, observat
       z.strictObject({ names: z.array(tagNameSchema).min(1).max(MAX_MERGE_SOURCE_TAGS), targetName: tagNameSchema }),
       (input) => services.mergeTags(input),
     ),
-  ], observation);
+  ];
+}
+
+// Serves an already-built catalog (the route inspects the same tools before
+// dispatch). `policy` narrows it to what an OAuth grant's scopes allow; a PAT
+// passes none and keeps the full catalog its account role allows.
+export function createAdminMcpServer(tools: readonly McpTool[], observation?: McpObservation, policy?: McpToolPolicy) {
+  return createCatalogServer("prepdeck-admin-mcp", tools, observation, undefined, policy);
 }
