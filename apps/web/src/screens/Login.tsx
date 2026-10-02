@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { TURNSTILE_ACTIONS } from "@prepdeck/shared";
 import BrandLogo from "../components/BrandLogo";
+import MascotImage from "../components/MascotImage";
 import TurnstileWidget, { TurnstileConfigError } from "../components/TurnstileWidget";
 import { useGoogleSignIn } from "../lib/googleSignIn";
 import { currentPath } from "../lib/reauth";
@@ -51,8 +52,8 @@ function LockIcon({ size = 17 }: { size?: number }) {
 // The mascot pose crests the top edge of the sign-in card (Login Redesign,
 // Turn 1a): books for the sign-in states, a padlock once access is refused.
 const MASCOT = {
-  signin: { src: "/mascot/3D-Chibi/normal.png", alt: "PrepDeck mascot holding a stack of books" },
-  denied: { src: "/mascot/3D-Chibi/unauthorized.png", alt: "PrepDeck mascot holding a padlock, looking apologetic" },
+  signin: { alt: "PrepDeck mascot holding a stack of books" },
+  denied: { alt: "PrepDeck mascot holding a padlock, looking apologetic" },
 };
 
 // The card carries the page's only heading. The redesign sets it below the
@@ -103,7 +104,7 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
       <BrandLogo className="login-brand" />
 
       <div className="login-content">
-        <img key={mascot.src} className="login-mascot" src={mascot.src} alt={mascot.alt} />
+        <MascotImage className="login-mascot" scene={denied ? "unauthorized" : "normal"} alt={mascot.alt} />
 
         <div className="login-card">
           {denied ? (

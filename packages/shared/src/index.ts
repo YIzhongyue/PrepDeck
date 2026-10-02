@@ -14,6 +14,7 @@ export * from "./notes.ts";
 export * from "./knowledgePoints.ts";
 export * from "./ai.ts";
 export * from "./settings.ts";
+export * from "./appearance.ts";
 export * from "./dailyEmailSettings.ts";
 export * from "./profile.ts";
 export * from "./stats.ts";
