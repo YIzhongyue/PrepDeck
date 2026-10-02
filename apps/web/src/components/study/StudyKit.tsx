@@ -146,6 +146,15 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     const head = grid.parentElement?.querySelector(".st-head")?.getBoundingClientRect().bottom ?? 0;
     const hidden = Math.max(topBar, head) - grid.getBoundingClientRect().top;
     if (hidden > 0) window.scrollBy(0, -(hidden + 12));
+    // The browser's scroll anchor still belongs to the last question. When
+    // that question was scrolled further than the new one is long, the page
+    // is merely clamped; once the new one grows (a panel filling in), the
+    // browser scrolls back toward the old offset and under the header. Drop
+    // the anchor so it is chosen again from this question.
+    const root = document.documentElement;
+    root.style.overflowAnchor = "none";
+    void root.scrollTop;
+    root.style.overflowAnchor = "";
   }, [questionId, phone]);
   return { gridRef, bodyRef, fitHeight };
 }
