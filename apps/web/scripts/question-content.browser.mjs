@@ -23,12 +23,12 @@ const contents = {
     interaction: { id: "answer", type: "order", options: ["read", "print"].map(id => ({ id, body: [paragraph(id, id)] })) } },
   other: figureContent("Other exam component"),
 };
-const revisions = { q1: 1, q2: 1, other: 1 };
+const revisions = { q1: 1, q2: 1, legacy: 1, other: 1 };
 const questions = ["q1", "q2", "legacy"].map((id, i) => ({ id, externalId: id, sequenceNumber: i + 1,
   type: id === "q2" ? "ordering" : "single_choice", chooseCount: 1, stem: `${id} text projection`, tags: [], difficulty: "easy", points: 1,
   options: (id === "q2" ? ["read", "print"] : ["A", "B"]).map(id => ({ id, text: `Choice ${id}` })), hasContent: id !== "legacy", revision: 1 }));
 const otherQuestions = [{ ...questions[0], id: "other", externalId: "other" }];
-const attempts = new Map(), calls = [], errors = [], deferred = new Set(), failures = new Set(), pending = [];
+const attempts = new Map(), calls = [], errors = [], deferred = new Set(), failures = new Set(), pending = [], histories = {};
 let serial = 0;
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.endsWith("/learning/progress")) return json({ progress: { lastSequenceNumber: 1 } });
   if (url.pathname.endsWith("/learning-detail")) {
     const id = url.pathname.split("/")[3];
-    return json({ question: { content: contents[id], revision: revisions[id], correctAnswers: id === "q2" ? ["read", "print"] : ["A"], explanation: "Explanation", answerRevision: 1 }, history: [] });
+    return json({ question: { content: contents[id], revision: revisions[id], correctAnswers: id === "q2" ? ["read", "print"] : ["A"], explanation: "Explanation", answerRevision: 1 }, history: histories[id] ?? [] });
   }
   if (url.pathname.endsWith("/ai-explanations")) return json({ explanations: [] });
   if (url.pathname.endsWith("/knowledge-points")) return json({ knowledgePoints: [], total: 0 });
@@ -102,8 +102,11 @@ try {
   const detailCalls = () => calls.filter(call => /\/practice-catalog\/[^/]+$/.test(call.path));
   await page.goto(`http://127.0.0.1:${server.address().port}`); await ready();
   assert.equal(detailCalls().length, 0, "loading setup does not fetch every component snapshot");
-  deferred.add("q1"); await invoke("begin", ["q1", "q2", "legacy"]);
+  // q2 fails from the start: its prefetch (issue #106) must not turn into an
+  // error the user sees before opening it, only the request made on opening.
+  failures.add("q2"); deferred.add("q1"); await invoke("begin", ["q1", "q2", "legacy"]);
   await waitFor(() => pending.length === 1);
+  assert.deepEqual(detailCalls().map(call => call.path.split("/").pop()), ["q1"], "the open question loads before any prefetch");
   await page.getByText("Loading question…", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Check answer", exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole("button", { name: "End session", exact: true }).isVisible(), true);
@@ -116,7 +119,9 @@ try {
   assert.equal(await page.getByRole("img", { name: "Question figure", exact: true }).evaluate(img => img.complete && img.naturalWidth > 0), true);
   await choose("pick", "q1", "A"); await invoke("submit");
   await page.waitForFunction(() => window.store.state.done.q1 === "ok");
-  failures.add("q2"); await invoke("next");
+  await waitFor(() => detailCalls().some(call => call.path.endsWith("/q2")));
+  await page.waitForFunction(() => !window.store.state.questionContent.q2);
+  await invoke("next");
   await page.getByRole("button", { name: "Retry question", exact: true }).waitFor();
   assert.equal(await page.getByRole("combobox", { name: "Position 1", exact: true }).count(), 0);
   await invoke("prevQ"); await page.getByRole("img", { name: "Question figure", exact: true }).waitFor();
@@ -128,6 +133,21 @@ try {
   await page.waitForFunction(() => window.store.state.done.q2 === "ok");
   assert.deepEqual(calls.findLast(call => call.path.endsWith("/answers")).payload.selectedAnswer, ["read", "print"]);
   console.log("PASS lazy Practice loading blocks answers, retries failures, renders figures/ordering and retains graded state");
+
+  // Issue #106: the next questions load while the open one is read, so moving
+  // on shows them at once and asks for nothing more.
+  await page.reload(); await ready();
+  await invoke("begin", ["q1", "q2", "legacy"]);
+  await page.getByRole("img", { name: "Question figure", exact: true }).waitFor();
+  await page.waitForFunction(() => !!window.store.state.catalogBy.q2.content);
+  const prefetched = detailCalls().length;
+  await invoke("next");
+  assert.equal(await page.getByText("Loading question…", { exact: true }).count(), 0);
+  await page.getByRole("combobox", { name: "Position 1", exact: true }).waitFor();
+  await invoke("next");
+  assert.equal(detailCalls().length, prefetched, "prefetched questions are not requested again");
+  assert.equal(calls.filter(call => call.path.endsWith("/learning-detail")).length, 0, "Practice never prefetches answer-bearing detail");
+  console.log("PASS Practice prefetches upcoming component questions and opens them without loading");
 
   // An older request must not attach its content after a same-exam refresh.
   await page.reload(); await ready(); deferred.add("q1"); await invoke("begin", ["q1"]); await waitFor(() => pending.length === 1);
@@ -176,6 +196,36 @@ try {
   assert.ok((await state()).catalogBy.q1.content.assets.length);
   console.log("PASS Learning uses its existing answer/history fetch to hydrate full component content");
 
+  // Issue #106: Learning prefetches the next details and reuses them, and a
+  // detail it already holds is not fetched again on the way back.
+  const learningCalls = id => calls.filter(call => call.path === `/api/questions/${id}/learning-detail`).length;
+  await page.waitForFunction(() => window.store.state.lDetail.q2?.status === "ready" && window.store.state.lDetail.legacy?.status === "ready");
+  assert.deepEqual(["q1", "q2", "legacy"].map(learningCalls), [1, 1, 1]);
+  await invoke("learningNext");
+  await page.waitForFunction(() => window.store.state.lIdx === 1);
+  assert.equal(await page.getByText("Loading question…", { exact: true }).count(), 0);
+  await page.getByRole("combobox", { name: "Position 1", exact: true }).waitFor();
+  await invoke("learningNext"); await page.waitForFunction(() => window.store.state.lIdx === 2);
+  await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 1);
+  assert.deepEqual(["q1", "q2", "legacy"].map(learningCalls), [1, 1, 1], "ready Learning details are reused");
+  console.log("PASS Learning prefetches upcoming details and reuses ready ones");
+
+  // An answer recorded in another tab or on another device never reaches this
+  // tab's activity revision. Once a detail is older than its TTL, it is still
+  // shown at once, and refreshed behind it.
+  histories.q1 = [{ attemptId: "elsewhere", mode: "practice", selectedAnswer: ["A"], isCorrect: true, answeredAt: new Date().toISOString(), answerRevision: 1, gradedAnswers: null }];
+  await page.evaluate(() => { const now = Date.now; Date.now = () => now() + 3 * 60_000; });
+  await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 0);
+  assert.equal((await state()).lDetail.q1.status, "ready", "a stale detail stays on screen while it refreshes");
+  assert.equal(await page.getByText("Loading question…", { exact: true }).count(), 0);
+  await page.waitForFunction(() => window.store.state.lDetail.q1.history?.length === 1 && !window.store.state.lDetail.q1.refreshing);
+  assert.equal(learningCalls("q1"), 2);
+  await invoke("learningNext"); await page.waitForFunction(() => window.store.state.lIdx === 1);
+  await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 0);
+  assert.equal(learningCalls("q1"), 2, "the refreshed detail is fresh again");
+  delete histories.q1;
+  console.log("PASS Learning refreshes an old detail in the background without a loading state");
+
   // A failed current question must not hide the mock timer/palette or prevent
   // submission of answers already saved to other questions.
   // From "/": a reload would restore the Learning question above (issue #41),
@@ -198,6 +248,23 @@ try {
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "legacy").selectedAnswer, ["B"]);
   assert.deepEqual((await state()).mockResult.breakdown.find(row => row.questionId === "q1").selectedAnswer, []);
   console.log("PASS Mock keeps timer/palette/navigation available and submits saved answers during content failure");
+
+  // Issue #106: Mock prefetches the upcoming component snapshots from the
+  // answer-key-free endpoint, so a jump lands on a ready question.
+  failures.delete("q1");
+  await page.goto(`http://127.0.0.1:${server.address().port}/`); await ready();
+  const beforeMock = calls.length;
+  await invoke("go", "mock"); await invoke("beginMock");
+  await page.waitForFunction(() => window.store.state.mStage === "live");
+  await page.waitForFunction(() => window.store.state.mQueue.every(id => !window.store.state.catalogBy[id].hasContent || window.store.state.catalogBy[id].content));
+  const mockDetails = detailCalls().length;
+  for (const id of ["q1", "q2"]) {
+    await page.evaluate(id => window.store.mockGoto(window.store.state.mQueue.indexOf(id)), id);
+    assert.equal(await page.getByText("Loading question…", { exact: true }).count(), 0);
+  }
+  assert.equal(detailCalls().length, mockDetails, "prefetched Mock questions are not requested again");
+  assert.equal(calls.slice(beforeMock).filter(call => call.path.endsWith("/learning-detail")).length, 0, "Mock never prefetches answer-bearing detail");
+  console.log("PASS Mock prefetches upcoming component questions without answer keys");
   assert.deepEqual(errors, []);
 } finally {
   for (const request of pending) request.reply();

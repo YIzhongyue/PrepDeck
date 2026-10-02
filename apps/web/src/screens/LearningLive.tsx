@@ -2,6 +2,7 @@ import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { buildLearningPrompt, copyText } from "../lib/practicePrompt";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
 import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
@@ -26,6 +27,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
     state, width, learningQ, learningNext, learningPrev, learningGotoSequence, go, toggleBookmark, capture, removeMark
   } = usePrepDeck();
   const q = learningQ();
+  useQuestionPrefetch("learning", state.lQueue, state.lIdx);
   const detail = q ? state.lDetail[q.id] : undefined;
   const [jumpText, setJumpText] = useState("");
   const [tab, setTab] = useState("exp");

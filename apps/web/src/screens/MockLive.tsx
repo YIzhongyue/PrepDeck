@@ -6,6 +6,7 @@ import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, UnderReviewNotice, us
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { usePrefetchIntent, useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import type { Breakpoints } from "../lib/responsive";
 
 // Under five minutes the timer turns red and pulses.
@@ -16,6 +17,8 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
   const mq = mockQ();
   // Only the card is sized to the viewport; the palette stays sticky beside it.
   const { gridRef, bodyRef, fitHeight } = usePinnedCard(mq?.id, bp.phone);
+  useQuestionPrefetch("mock", state.mQueue, state.mIdx);
+  const prefetchIntent = usePrefetchIntent("mock");
   if (!mq) return null;
 
   const total = state.mQueue.length;
@@ -102,7 +105,7 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
               const isFlagged = !!state.mFlag[id];
               return (
                 <button
-                  key={id} type="button" className="st-pal" onClick={() => mockGoto(i)}
+                  key={id} type="button" className="st-pal" onClick={() => mockGoto(i)} {...prefetchIntent(id)}
                   data-state={isAnswered ? "answered" : isFlagged ? "flagged" : "open"}
                   aria-current={i === state.mIdx ? "true" : undefined}
                   aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ""}${isFlagged ? ", flagged" : ""}`}

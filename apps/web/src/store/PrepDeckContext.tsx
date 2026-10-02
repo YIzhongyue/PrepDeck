@@ -43,6 +43,7 @@ import {
 } from "../lib/keyStorage";
 import { clearLegacyKeyMode, getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME, getStoredTheme, storeTheme } from "../lib/themeStorage";
+import { learningDetailCache, type PrefetchMode } from "../lib/questionPrefetch";
 import type {
   AiExplanationEntry, AiRecord, Annotation, AnnotationStyle, AnnotationTarget, Difficulty, ExamSummary,
   GradedAnswer, KeyMode, LearningDetail, Note, Question, ScreenId, ThemeId, TextSelection, WrongEntry
@@ -224,6 +225,17 @@ const initialState: AppState = {
 
 type Patch = Partial<AppState> | ((s: AppState) => Partial<AppState>);
 
+// A prefetch (issue #106) is speculative: it leaves a question that already
+// failed alone, and its own failure clears the entry rather than recording an
+// error, so opening that question later makes an ordinary request.
+interface LoadOptions { prefetch?: boolean }
+
+function without<T>(entries: Record<string, T>, id: string): Record<string, T> {
+  if (!(id in entries)) return entries;
+  const rest = { ...entries }; delete rest[id];
+  return rest;
+}
+
 interface PrepDeckStore {
   state: AppState;
   width: number;
@@ -231,8 +243,13 @@ interface PrepDeckStore {
   pool: () => Question[];
   curQ: () => Question | undefined;
   mockQ: () => Question | undefined;
-  loadQuestionContent: (questionId: string) => void;
-  loadLearningDetail: (questionId: string) => void;
+  loadQuestionContent: (questionId: string, options?: LoadOptions) => void;
+  loadLearningDetail: (questionId: string, options?: LoadOptions) => void;
+  /**
+   * Issue #106: fetches these questions in the background for the given mode;
+   * nothing while the `after` question (the open one) is still loading.
+   */
+  prefetchQuestions: (mode: PrefetchMode, questionIds: readonly string[], options?: { after?: string }) => void;
 
   go: (id: ScreenId, options?: { newMock?: boolean }) => void;
   /** issue #41: moves to what a URL asks for (Back/Forward), through the same save gate as go(). */
@@ -643,10 +660,11 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     return id ? state.catalogBy[id] : undefined;
   }, [state.mQueue, state.mIdx, state.catalogBy]);
 
-  const loadQuestionContent = useCallback((qid: string) => {
+  const loadQuestionContent = useCallback((qid: string, { prefetch = false }: LoadOptions = {}) => {
     const { examId, catalogBy, catalogRevision, questionContent } = stateRef.current;
     const requested = catalogBy[qid];
-    if (!examId || !requested?.hasContent || requested.content || questionContent[qid]?.status === "loading") return;
+    const existing = questionContent[qid]?.status;
+    if (!examId || !requested?.hasContent || requested.content || existing === "loading" || (prefetch && existing === "error")) return;
     const update = scopedState(`questionContent:${qid}`);
     update(s => ({ questionContent: { ...s.questionContent, [qid]: { status: "loading" } } }));
     apiFetch<PracticeQuestionContentResponse>(`/api/exams/${encodeURIComponent(examId)}/practice-catalog/${encodeURIComponent(qid)}`, { cache: "no-store" })
@@ -663,9 +681,9 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           return { catalog: s.catalog.map(q => q.id === qid ? question : q),
             catalogBy: { ...s.catalogBy, [qid]: question }, questionContent: pending };
         });
-      }).catch(error => update(s => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : {
-        questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : "Could not load this question. Please retry." } }
-      }));
+      }).catch(error => update(s => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : prefetch
+        ? { questionContent: without(s.questionContent, qid) }
+        : { questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : "Could not load this question. Please retry." } } }));
   }, [scopedState]);
 
   // Shared by "start a filtered practice session," "practice this list of
@@ -721,6 +739,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           wrong[q.id] = { c: (prev ? prev.c : 0) + 1, at: new Date().toISOString() };
         }
         return {
+          // This answer joins the question's Learning history.
+          lDetail: without(s.lDetail, q.id),
           done: { ...s.done, [q.id]: isCorrect ? "ok" : "no" },
           graded: { ...s.graded, [q.id]: { isCorrect, correctAnswers, explanation, answerRevision, answerRevisedAt } },
           wrong,
@@ -908,13 +928,21 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   // FR-14.3/FR-14.4: fetches the answer-key'd question plus this user's own
   // answer history — unlike Practice's graded state, this is loaded as soon
-  // as a question is viewed, with no reveal step.
-  const loadLearningDetail = useCallback((qid: string) => {
-    const { catalogBy, catalogRevision, lDetail } = stateRef.current;
+  // as a question is viewed, with no reveal step. A detail already loaded for
+  // this question revision and answer history is shown again as it is, so a
+  // prefetched one is not requested a second time (issue #106); once it is
+  // older than LEARNING_DETAIL_TTL_MS it is still shown, and refreshed behind it.
+  const loadLearningDetail = useCallback((qid: string, { prefetch = false }: LoadOptions = {}) => {
+    const { catalogBy, catalogRevision, activityRevision, lDetail } = stateRef.current;
     const requested = catalogBy[qid];
-    if (!requested || lDetail[qid]?.status === "loading") return;
+    if (!requested) return;
+    const existing = lDetail[qid];
+    const cache = learningDetailCache(existing, requested, activityRevision, Date.now());
+    if (existing?.status === "loading" || (prefetch && existing?.status === "error") || cache === "fresh"
+      || (cache === "stale" && existing?.refreshing)) return;
+    const refresh = cache === "stale";
     const setState = scopedState("loadLearningDetail" + qid);
-    setState((s) => ({ lDetail: { ...s.lDetail, [qid]: { status: "loading" } } }));
+    setState((s) => ({ lDetail: { ...s.lDetail, [qid]: refresh ? { ...s.lDetail[qid]!, refreshing: true } : { status: "loading" } } }));
     apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`, { cache: "no-store" }).then(({ question, history }) => {
       if (requested.revision !== undefined && requested.revision !== question.revision) {
         throw new Error("This question changed. Refresh the exam and try again.");
@@ -928,16 +956,37 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           catalogBy: { ...s.catalogBy, [qid]: hydrated },
           lDetail: {
             ...s.lDetail,
-            [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt }
+            [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt,
+              questionRevision: requested.revision, activityRevision, loadedAt: Date.now() }
           }
         };
       });
     }).catch((err) => {
-      setState((s) => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : ({
-        lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
-      }));
+      setState((s) => {
+        if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
+        // A failed refresh keeps showing the detail it was refreshing.
+        if (refresh) {
+          const current = s.lDetail[qid];
+          return current?.status === "ready" ? { lDetail: { ...s.lDetail, [qid]: { ...current, refreshing: false } } } : {};
+        }
+        return prefetch ? { lDetail: without(s.lDetail, qid) } : {
+          lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
+        };
+      });
     });
   }, [scopedState]);
+
+  // Issue #106: Practice and Mock prefetch only the answer-key-free component
+  // snapshot (loadQuestionContent); only Learning, which shows the answer
+  // anyway, prefetches learning-detail.
+  const prefetchQuestions = useCallback((mode: PrefetchMode, questionIds: readonly string[], { after }: { after?: string } = {}) => {
+    const s = stateRef.current;
+    if (after && (mode === "learning" ? s.lDetail[after] : s.questionContent[after])?.status === "loading") return;
+    for (const qid of questionIds) {
+      if (mode === "learning") loadLearningDetail(qid, { prefetch: true });
+      else loadQuestionContent(qid, { prefetch: true });
+    }
+  }, [loadLearningDetail, loadQuestionContent]);
 
   // FR-14.9: updates lResume immediately (not just on the server) so leaving
   // Learning Mode mid-session and coming back — without a full page reload —
@@ -1717,7 +1766,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [setState, finishMock]);
 
   const store: PrepDeckStore = {
-    state, width, height, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail,
+    state, width, height, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail, prefetchQuestions,
     go, openMore, closeMore, setExamId, retryWorkspace, dismissActionError,
     setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, startPractice, openPracticeWithFilters,
     begin, pick, submit, next, prevQ, endSession, toggleBookmark, checkAiCache, genAi, showAlternateAi,

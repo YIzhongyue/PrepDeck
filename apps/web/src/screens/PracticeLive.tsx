@@ -2,6 +2,7 @@ import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useState } from "react";
 import { formatAnswerText } from "@prepdeck/shared";
 import { usePrepDeck } from "../store/PrepDeckContext";
+import { useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import { SHOW_KEYBOARD_HINTS } from "../data/constants";
 import { buildPracticePrompt, copyText } from "../lib/practicePrompt";
 import { canCheckAnswer, practiceShortcutHints, requiredSelections } from "../lib/practiceShortcuts";
@@ -26,6 +27,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
     state, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture, checkAiCache, removeMark
   } = usePrepDeck();
   const q = curQ();
+  useQuestionPrefetch("practice", state.queue, state.idx);
 
   const graded = q ? state.done[q.id] : undefined;
   const aiRec = q ? state.ai[q.id] : undefined;
