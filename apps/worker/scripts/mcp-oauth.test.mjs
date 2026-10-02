@@ -376,6 +376,48 @@ test("a Client ID Metadata Document client is fetched, must name itself, and is 
   assert.equal(refused.headers.get("Location"), "/connect?error=invalid_client", "a document naming another client_id is refused");
 });
 
+test("a metadata document client is accepted when the methods it supports include none (issue #109)", async (t) => {
+  const f = setup(t);
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const base = { client_name: "Codex", redirect_uris: [REDIRECT] };
+  const cases = [
+    // Codex/ChatGPT: supports none, prefers private_key_jwt.
+    [{ token_endpoint_auth_methods_supported: ["none", "private_key_jwt"], token_endpoint_auth_method: "private_key_jwt" }, true],
+    [{ token_endpoint_auth_methods_supported: ["none"] }, true],
+    [{ token_endpoint_auth_method: "none" }, true],
+    [{}, true],
+    [{ token_endpoint_auth_methods_supported: ["private_key_jwt"] }, false],
+    [{ token_endpoint_auth_methods_supported: ["private_key_jwt"], token_endpoint_auth_method: "none" }, false],
+    [{ token_endpoint_auth_method: "private_key_jwt" }, false],
+    [{ token_endpoint_auth_methods_supported: "none" }, false],
+    [{ token_endpoint_auth_methods_supported: [] }, false],
+    [{ token_endpoint_auth_methods_supported: ["none", 42] }, false],
+  ];
+  const { verifier, challenge } = await pkce();
+  for (const [index, [methods, accepted]] of cases.entries()) {
+    const clientId = `https://client.example/oauth/client-${index}.json`;
+    globalThis.fetch = async () => Response.json({ client_id: clientId, ...base, ...methods });
+    const response = await f.fetchWorker(authorizeUrl({
+      client_id: clientId, redirect_uri: REDIRECT, response_type: "code", state: "client-state",
+      code_challenge: challenge, code_challenge_method: "S256", resource: `${BASE}/mcp`,
+    }));
+    const location = new URL(response.headers.get("Location"), BASE);
+    assert.equal(location.searchParams.get("error"), accepted ? null : "invalid_client", JSON.stringify(methods));
+    assert.equal(location.searchParams.has("request"), accepted, JSON.stringify(methods));
+  }
+
+  // The Codex-shaped client completes the flow as a public client.
+  const clientId = "https://client.example/oauth/client-0.json";
+  const request = await startAuthorization(f, { clientId, challenge });
+  const decision = await consent(f, request, await session(f, "alice"));
+  assert.equal(decision.response.status, 200, JSON.stringify(decision.body));
+  const code = new URL(decision.body.redirectTo).searchParams.get("code");
+  const exchanged = await token(f, { grant_type: "authorization_code", code, client_id: clientId, redirect_uri: REDIRECT, code_verifier: verifier, resource: `${BASE}/mcp` });
+  assert.equal(exchanged.response.status, 200, JSON.stringify(exchanged.body));
+  assert.match(exchanged.body.access_token, /^pd_oat_user_/);
+});
+
 test("the consent screen needs the signed-in browser that started the request", async (t) => {
   const f = setup(t);
   const { body: client } = await register(f);

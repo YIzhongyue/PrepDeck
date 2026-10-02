@@ -218,6 +218,28 @@ async function readBounded(response: Response): Promise<string | null> {
   try { return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes); } catch { return null; }
 }
 
+// The token endpoint authentication methods PrepDeck accepts: every client is
+// public, so only "none" (routes.ts advertises the same list).
+export const TOKEN_ENDPOINT_AUTH_METHODS = ["none"] as const;
+
+/**
+ * Whether a metadata document's client can authenticate at the token endpoint
+ * the way PrepDeck requires. A token_endpoint_auth_methods_supported list
+ * decides when present (issue #109: Codex lists ["none", "private_key_jwt"]
+ * while preferring private_key_jwt); a single token_endpoint_auth_method
+ * otherwise, absent meaning "none" by default.
+ */
+export function supportsPublicTokenAuth(document: Record<string, unknown>): boolean {
+  const accepted: readonly unknown[] = TOKEN_ENDPOINT_AUTH_METHODS;
+  const methods = document.token_endpoint_auth_methods_supported;
+  if (methods !== undefined) {
+    return Array.isArray(methods) && methods.every((method) => typeof method === "string")
+      && methods.some((method) => accepted.includes(method));
+  }
+  const method = document.token_endpoint_auth_method;
+  return method === undefined || accepted.includes(method);
+}
+
 async function fetchMetadataDocument(clientId: string): Promise<{ name: string | null; uri: string | null; redirectUris: string[] } | null> {
   let response: Response;
   try {
@@ -240,8 +262,7 @@ async function fetchMetadataDocument(clientId: string): Promise<{ name: string |
   }
   // The document must name itself, or any URL could claim another's identity.
   if (document.client_id !== clientId) return null;
-  const method = document.token_endpoint_auth_method;
-  if (method !== undefined && method !== "none") return null;
+  if (!supportsPublicTokenAuth(document)) return null;
   const uris = redirectUris(document.redirect_uris);
   const name = cleanName(document.client_name);
   const uri = cleanUri(document.client_uri);

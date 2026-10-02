@@ -389,7 +389,11 @@ days. `/api/oauth/token` uses the ordinary write class.
   must name itself, cached for an hour and used stale for up to a day if the
   host is down; see *Metadata document fetches* below) and Dynamic Client Registration (most clients released before
   the 2025-11-25 specification only support this). Pre-registration is not
-  offered. Every client is public: no secrets, PKCE `S256` required. Client
+  offered. Every client is public: no secrets, PKCE `S256` required. A
+  metadata document is accepted when its `token_endpoint_auth_methods_supported`
+  includes `none`, whatever its preferred `token_endpoint_auth_method` (Codex
+  and ChatGPT list `none` and `private_key_jwt` and prefer the latter); without
+  that list, `token_endpoint_auth_method` must be absent or `none`. Client
   names are self-asserted either way and the consent screen marks them
   "unverified".
 - **Metadata document fetches.** Fetching `client_id` is an outbound request
