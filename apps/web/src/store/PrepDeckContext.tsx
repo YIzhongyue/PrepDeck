@@ -43,7 +43,7 @@ import {
 } from "../lib/keyStorage";
 import { clearLegacyKeyMode, getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME, getStoredTheme, storeTheme } from "../lib/themeStorage";
-import { learningDetailReusable, type PrefetchMode } from "../lib/questionPrefetch";
+import { learningDetailCache, type PrefetchMode } from "../lib/questionPrefetch";
 import type {
   AiExplanationEntry, AiRecord, Annotation, AnnotationStyle, AnnotationTarget, Difficulty, ExamSummary,
   GradedAnswer, KeyMode, LearningDetail, Note, Question, ScreenId, ThemeId, TextSelection, WrongEntry
@@ -930,15 +930,19 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // answer history — unlike Practice's graded state, this is loaded as soon
   // as a question is viewed, with no reveal step. A detail already loaded for
   // this question revision and answer history is shown again as it is, so a
-  // prefetched one is not requested a second time (issue #106).
+  // prefetched one is not requested a second time (issue #106); once it is
+  // older than LEARNING_DETAIL_TTL_MS it is still shown, and refreshed behind it.
   const loadLearningDetail = useCallback((qid: string, { prefetch = false }: LoadOptions = {}) => {
     const { catalogBy, catalogRevision, activityRevision, lDetail } = stateRef.current;
     const requested = catalogBy[qid];
+    if (!requested) return;
     const existing = lDetail[qid];
-    if (!requested || existing?.status === "loading" || (prefetch && existing?.status === "error")
-      || learningDetailReusable(existing, requested, activityRevision)) return;
+    const cache = learningDetailCache(existing, requested, activityRevision, Date.now());
+    if (existing?.status === "loading" || (prefetch && existing?.status === "error") || cache === "fresh"
+      || (cache === "stale" && existing?.refreshing)) return;
+    const refresh = cache === "stale";
     const setState = scopedState("loadLearningDetail" + qid);
-    setState((s) => ({ lDetail: { ...s.lDetail, [qid]: { status: "loading" } } }));
+    setState((s) => ({ lDetail: { ...s.lDetail, [qid]: refresh ? { ...s.lDetail[qid]!, refreshing: true } : { status: "loading" } } }));
     apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`, { cache: "no-store" }).then(({ question, history }) => {
       if (requested.revision !== undefined && requested.revision !== question.revision) {
         throw new Error("This question changed. Refresh the exam and try again.");
@@ -953,14 +957,22 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
           lDetail: {
             ...s.lDetail,
             [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt,
-              questionRevision: requested.revision, activityRevision }
+              questionRevision: requested.revision, activityRevision, loadedAt: Date.now() }
           }
         };
       });
     }).catch((err) => {
-      setState((s) => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : prefetch ? { lDetail: without(s.lDetail, qid) } : ({
-        lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
-      }));
+      setState((s) => {
+        if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
+        // A failed refresh keeps showing the detail it was refreshing.
+        if (refresh) {
+          const current = s.lDetail[qid];
+          return current?.status === "ready" ? { lDetail: { ...s.lDetail, [qid]: { ...current, refreshing: false } } } : {};
+        }
+        return prefetch ? { lDetail: without(s.lDetail, qid) } : {
+          lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
+        };
+      });
     });
   }, [scopedState]);
 

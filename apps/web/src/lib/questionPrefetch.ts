@@ -13,14 +13,23 @@ export function prefetchWindow(queue: readonly string[], index: number, ahead = 
   return queue.slice(index + 1, index + 1 + ahead);
 }
 
+// How long a Learning detail counts as current. Answers recorded in another
+// tab or on another device never reach this tab's activityRevision, so an
+// older detail is still shown at once but refreshed in the background.
+export const LEARNING_DETAIL_TTL_MS = 2 * 60_000;
+
 /**
- * Whether a Learning detail already in hand can be shown again instead of
- * fetched: it was loaded for this revision of the question, before no newer
- * answers changed the user's history, and it carried any component content.
+ * What a Learning detail already in hand is worth: "missing" must be fetched
+ * before it is shown; "fresh" is shown as it is; "stale" is shown and
+ * refreshed. Only a detail loaded for this revision of the question, with no
+ * newer answers from this tab and with any component content, counts at all.
  */
-export function learningDetailReusable(detail: LearningDetail | undefined, question: Question, activityRevision: number): boolean {
-  return detail?.status === "ready"
-    && detail.questionRevision === question.revision
-    && detail.activityRevision === activityRevision
-    && (!question.hasContent || !!question.content);
+export function learningDetailCache(
+  detail: LearningDetail | undefined, question: Question, activityRevision: number, now: number
+): "missing" | "fresh" | "stale" {
+  if (detail?.status !== "ready"
+    || detail.questionRevision !== question.revision
+    || detail.activityRevision !== activityRevision
+    || (question.hasContent && !question.content)) return "missing";
+  return now - (detail.loadedAt ?? 0) < LEARNING_DETAIL_TTL_MS ? "fresh" : "stale";
 }

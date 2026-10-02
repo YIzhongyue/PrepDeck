@@ -228,8 +228,12 @@ export interface LearningDetail {
   explanation?: string | null;
   history?: LearningHistoryRow[];
   error?: string;
-  // Issue #106: what a ready detail was loaded against, so a prefetched or
-  // revisited one is reused only while both still hold (lib/questionPrefetch.ts).
+  // Issue #106: what a ready detail was loaded against and when, so a
+  // prefetched or revisited one is reused only while it still holds, and
+  // refreshed in the background once it is old (lib/questionPrefetch.ts).
   questionRevision?: number;
   activityRevision?: number;
+  loadedAt?: number;
+  /** A background refresh of this ready detail is in flight. */
+  refreshing?: boolean;
 }

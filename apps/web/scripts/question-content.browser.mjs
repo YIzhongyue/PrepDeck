@@ -28,7 +28,7 @@ const questions = ["q1", "q2", "legacy"].map((id, i) => ({ id, externalId: id, s
   type: id === "q2" ? "ordering" : "single_choice", chooseCount: 1, stem: `${id} text projection`, tags: [], difficulty: "easy", points: 1,
   options: (id === "q2" ? ["read", "print"] : ["A", "B"]).map(id => ({ id, text: `Choice ${id}` })), hasContent: id !== "legacy", revision: 1 }));
 const otherQuestions = [{ ...questions[0], id: "other", externalId: "other" }];
-const attempts = new Map(), calls = [], errors = [], deferred = new Set(), failures = new Set(), pending = [];
+const attempts = new Map(), calls = [], errors = [], deferred = new Set(), failures = new Set(), pending = [], histories = {};
 let serial = 0;
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.endsWith("/learning/progress")) return json({ progress: { lastSequenceNumber: 1 } });
   if (url.pathname.endsWith("/learning-detail")) {
     const id = url.pathname.split("/")[3];
-    return json({ question: { content: contents[id], revision: revisions[id], correctAnswers: id === "q2" ? ["read", "print"] : ["A"], explanation: "Explanation", answerRevision: 1 }, history: [] });
+    return json({ question: { content: contents[id], revision: revisions[id], correctAnswers: id === "q2" ? ["read", "print"] : ["A"], explanation: "Explanation", answerRevision: 1 }, history: histories[id] ?? [] });
   }
   if (url.pathname.endsWith("/ai-explanations")) return json({ explanations: [] });
   if (url.pathname.endsWith("/knowledge-points")) return json({ knowledgePoints: [], total: 0 });
@@ -209,6 +209,22 @@ try {
   await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 1);
   assert.deepEqual(["q1", "q2", "legacy"].map(learningCalls), [1, 1, 1], "ready Learning details are reused");
   console.log("PASS Learning prefetches upcoming details and reuses ready ones");
+
+  // An answer recorded in another tab or on another device never reaches this
+  // tab's activity revision. Once a detail is older than its TTL, it is still
+  // shown at once, and refreshed behind it.
+  histories.q1 = [{ attemptId: "elsewhere", mode: "practice", selectedAnswer: ["A"], isCorrect: true, answeredAt: new Date().toISOString(), answerRevision: 1, gradedAnswers: null }];
+  await page.evaluate(() => { const now = Date.now; Date.now = () => now() + 3 * 60_000; });
+  await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 0);
+  assert.equal((await state()).lDetail.q1.status, "ready", "a stale detail stays on screen while it refreshes");
+  assert.equal(await page.getByText("Loading question…", { exact: true }).count(), 0);
+  await page.waitForFunction(() => window.store.state.lDetail.q1.history?.length === 1 && !window.store.state.lDetail.q1.refreshing);
+  assert.equal(learningCalls("q1"), 2);
+  await invoke("learningNext"); await page.waitForFunction(() => window.store.state.lIdx === 1);
+  await invoke("learningPrev"); await page.waitForFunction(() => window.store.state.lIdx === 0);
+  assert.equal(learningCalls("q1"), 2, "the refreshed detail is fresh again");
+  delete histories.q1;
+  console.log("PASS Learning refreshes an old detail in the background without a loading state");
 
   // A failed current question must not hide the mock timer/palette or prevent
   // submission of answers already saved to other questions.
