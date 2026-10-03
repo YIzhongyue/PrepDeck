@@ -78,6 +78,7 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
   const composing = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const uploadActive = useRef(false);
   const pasteJustInserted = useRef(false);
   const uploadRef = useRef<(file: File) => void>(() => {});
@@ -278,6 +279,11 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
   const slashActive = slash && slashPick.query === slash.query ? Math.min(slashPick.index, Math.max(0, slashItems.length - 1)) : 0;
   if (!slash && slashDismissed !== null) setSlashDismissed(null);
   const setSlashIndex = (index: number) => setSlashPick({ query: slash?.query ?? "", index });
+  // Keyboard selection can move past the menu's visible height, including
+  // the wrap from the first command to the last, so keep the active row shown.
+  useEffect(() => {
+    slashMenuRef.current?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" });
+  }, [slashActive, slashOpen]);
   const runSlash = (command: BlockCommand) => {
     if (!editor || !slash) return;
     editor.chain().focus().deleteRange({ from: slash.from, to: slash.to }).run();
@@ -345,7 +351,7 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
           <span>PNG, JPEG or WebP, up to 8 MB</span>
         </div>}
       </div>
-      {slashPosition && <div className="kp-menu kp-slash" role="listbox" aria-label="Insert a block" style={slashPosition}>
+      {slashPosition && <div ref={slashMenuRef} className="kp-menu kp-slash" role="listbox" aria-label="Insert a block" style={slashPosition}>
         <div className="kp-menu-label">Blocks</div>
         {slashItems.map((command, index) => (
           <div key={command.id} role="option" aria-selected={index === slashActive} data-active={index === slashActive || undefined}>
@@ -369,7 +375,7 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
         </div>
       </div>}
       {editor && <BubbleMenu editor={editor} pluginKey="kpSelectionMenu" className="kp-bubble" role="toolbar" aria-label="Format selection"
-        options={{ placement: "top", offset: 8 }}
+        options={{ placement: "top", offset: 8, shift: { padding: 8 } }}
         shouldShow={({ editor: current, state, from, to }) => modeRef.current === "visual" && from !== to
           && !(state.selection instanceof CellSelection) && !(state.selection instanceof NodeSelection)
           && !current.isActive("codeBlock") && !current.isActive("rawMarkdown")}>
@@ -379,7 +385,7 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
         {bubbleButton(`Link · ${MOD} K`, <Link01 size={16} />, editor.isActive("link"), openLink)}
       </BubbleMenu>}
       {editor && <BubbleMenu editor={editor} pluginKey="kpTableMenu" className="kp-bubble" role="toolbar" aria-label="Table controls"
-        options={{ placement: "top-start", offset: 8 }}
+        options={{ placement: "top-start", offset: 8, shift: { padding: 8 } }}
         getReferencedVirtualElement={() => {
           const { node } = editor.view.domAtPos(editor.state.selection.from);
           const table = (node instanceof Element ? node : node.parentElement)?.closest(".tableWrapper, table");

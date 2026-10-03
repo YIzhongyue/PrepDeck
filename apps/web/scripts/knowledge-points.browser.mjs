@@ -620,6 +620,41 @@ try {
   await page.getByRole("button", { name: "Preview diagram", exact: true }).click();
   await page.getByText(/Diagram is too large/).waitFor(); await saved();
   console.log("PASS keyboard creation, blank validation, first-save identity, Markdown/plain paste and diagram error isolation");
+  // The outline targets the headings it lists, table tools fit a phone, and
+  // keyboard selection in the slash menu stays visible.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await source.fill(`> # Quoted heading\n\n${"Filler paragraph.\n\n".repeat(30)}| A | B |\n| --- | --- |\n| 1 | 2 |\n\n# Actual heading\n\nAfter.`);
+  await page.getByRole("button", { name: "Visual", exact: true }).click(); await saved();
+  const outlineNav = page.getByRole("navigation", { name: "Outline" });
+  assert.deepEqual(await outlineNav.getByRole("button").allInnerTexts(), ["Actual heading"], "The outline lists the top-level headings only");
+  await outlineNav.getByRole("button", { name: "Actual heading", exact: true }).click();
+  // Jumping lands on the listed heading, not the quoted one that shares its
+  // index. Let the smooth scroll settle before judging where it landed.
+  for (let before = NaN, after = await page.evaluate(() => scrollY); before !== after;) {
+    before = after; await page.waitForTimeout(300); after = await page.evaluate(() => scrollY);
+  }
+  await page.waitForFunction(() => {
+    const top = text => [...document.querySelectorAll(".kp-editor .tiptap h1")].find(h => h.textContent === text)?.getBoundingClientRect().top;
+    return top("Quoted heading") < 0 && top("Actual heading") >= 0 && top("Actual heading") < innerHeight - 40;
+  }, null, { timeout: 3000 });
+  await visual.locator("td").first().click();
+  const tableTools = page.getByRole("toolbar", { name: "Table controls" });
+  await tableTools.waitFor();
+  for (const box of await tableTools.getByRole("button").evaluateAll(buttons => buttons.map(b => b.getBoundingClientRect().toJSON())))
+    assert.ok(box.left >= 0 && box.right <= 375, `A table control at ${Math.round(box.left)}–${Math.round(box.right)}px leaves the 375px viewport`);
+  await visual.press("Control+End"); await page.keyboard.press("Enter"); await page.keyboard.type("/");
+  const slashMenu = page.getByRole("listbox", { name: "Insert a block" });
+  await slashMenu.waitFor();
+  await page.keyboard.press("ArrowUp");
+  const activeRow = await slashMenu.evaluate(menu => {
+    const active = menu.querySelector("[data-active]"), m = menu.getBoundingClientRect(), a = active.getBoundingClientRect();
+    return { text: active.textContent, visible: a.top >= m.top - 1 && a.bottom <= m.bottom + 1 };
+  });
+  assert.ok(activeRow.text.startsWith("Divider"), "ArrowUp from the first command wraps to the last");
+  assert.ok(activeRow.visible, "The keyboard-selected slash command is scrolled into view");
+  await page.keyboard.press("Escape"); await page.keyboard.press("Backspace"); await saved();
+  console.log("PASS outline targets, 375px table tools and slash-menu keyboard scrolling");
   assert.deepEqual(errors, [], "No unhandled browser errors");
   console.log(`Knowledge Points browser regression passed (${writes.length} acknowledged/failed save attempts exercised).`);
 } finally { uploadGate?.resolve(); metadataGate?.resolve(); deleteGate?.resolve(); await browser.close(); await new Promise(resolve => server.close(resolve)); }

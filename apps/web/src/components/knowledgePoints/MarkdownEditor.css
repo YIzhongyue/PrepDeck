@@ -60,7 +60,7 @@
 .kp-ghost-danger { color: var(--color-danger-text); }
 
 /* Floating ink bubbles: selection formatting and table tools */
-.kp-bubble { z-index: 25; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--pd-ink); color: var(--pd-ink-fg); box-shadow: var(--pd-shadow-md); }
+.kp-bubble { z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: calc(100vw - 16px); padding: 4px; border-radius: 20px; background: var(--pd-ink); color: var(--pd-ink-fg); box-shadow: var(--pd-shadow-md); }
 .kp-bubble-btn, .kp-bubble-text { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--pd-ink-fg); cursor: pointer; white-space: nowrap; }
 .kp-bubble-btn { width: 32px; padding: 0; }
 .kp-bubble-text { padding: 0 11px; font-size: 12.5px; font-weight: 600; }

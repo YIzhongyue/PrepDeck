@@ -1,6 +1,7 @@
 // implementation — mockup Screen 2.
 
 import { useEffect, useMemo, useState } from "react";
+import { marked, type Token, type Tokens } from "marked";
 import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Copy01, DotsHorizontal, Download01, InfoCircle, Maximize01, Plus, Trash01, XClose } from "@untitledui/icons";
 import type { Breakpoints } from "../../lib/responsive";
 import { usePrepDeck } from "../../store/PrepDeckContext";
@@ -11,6 +12,7 @@ import TagPicker from "../../components/knowledgePoints/TagPicker";
 import LinkQuestionModal from "../../components/knowledgePoints/LinkQuestionModal";
 import DeleteKnowledgePointDialog from "../../components/knowledgePoints/DeleteKnowledgePointDialog";
 import { Dropdown, MenuItem } from "../../components/knowledgePoints/EditorMenu";
+import { prepareMarkdown } from "../../components/knowledgePoints/editorMarkdown";
 import "./KnowledgePointEditor.css";
 
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -24,19 +26,17 @@ function SaveStatus({ status, lastSavedAt, uploading }: { status: string; lastSa
   return null;
 }
 
-// Headings the outline can jump to. Fenced blocks are skipped so a "#"
-// comment inside code is not mistaken for a section.
+// The outline lists exactly the headings the visual editor renders at the top
+// level of the document, in order, so entry N jumps to top-level heading N.
+// Both sides read the same prepared Markdown with the same lexer: headings
+// nested in quotes or lists, and anything kept as raw source, appear in neither.
+const HEADINGS = ".kp-editor .tiptap > :is(h1, h2, h3)";
+const plainText = (tokens: readonly Token[]): string => tokens.map((token) =>
+  "tokens" in token && token.tokens ? plainText(token.tokens) : "text" in token ? String(token.text) : "").join("");
 function outlineOf(markdown: string) {
-  const headings: { level: number; text: string }[] = [];
-  let fence: string | null = null;
-  for (const line of markdown.split("\n")) {
-    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-    if (marker) { if (!fence) fence = marker[0]!; else if (marker[0] === fence) fence = null; continue; }
-    if (fence) continue;
-    const match = /^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (match) headings.push({ level: match[1]!.length, text: match[2]!.replace(/[*_`]|\\(?=.)/g, "") });
-  }
-  return headings;
+  return marked.lexer(prepareMarkdown(markdown))
+    .filter((token): token is Tokens.Heading => token.type === "heading" && token.depth <= 3)
+    .map((token) => ({ level: token.depth, text: plainText(token.tokens).trim() || token.text }));
 }
 
 export default function KnowledgePointEditor({
@@ -110,7 +110,7 @@ export default function KnowledgePointEditor({
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
   const jumpTo = (index: number) => {
-    document.querySelectorAll<HTMLElement>(".kp-editor .tiptap :is(h1, h2, h3)")[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.querySelectorAll<HTMLElement>(HEADINGS)[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const unavailable = editing.linkedQuestions.filter((l) => !l.accessible).length;
 
