@@ -202,7 +202,9 @@ try {
   await invoke('dismissActionError');
 
   hold('/api/exams/A/attempts'); await invoke('begin', ['A1']); await waitHeld('/api/exams/A/attempts');
-  await invoke('go', 'bookmarks'); release('/api/exams/A/attempts'); await page.waitForTimeout(60);
+  await invoke('go', 'bookmarks'); release('/api/exams/A/attempts');
+  // go() returns before navigation finishes draining the pending start request.
+  await page.waitForFunction(() => window.store.state.screen === 'bookmarks');
   assert.equal((await state()).screen, 'bookmarks'); assert.equal((await state()).attemptId, null);
   console.log('Passed: resumable mock/timer, bookmark rollback, and stale start response after navigation.');
 
