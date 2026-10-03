@@ -297,6 +297,7 @@ test("authorization requests are validated before anything is shown or redirecte
     [{ code_challenge_method: "plain" }, "invalid_request"],
     [{ resource: "https://elsewhere.example/mcp" }, "invalid_target"],
     [{ scope: "mcp:admin:read" }, "invalid_scope"],
+    [{ resource: `${BASE}/admin-mcp`, scope: "mcp:user:read" }, "invalid_scope"],
     [{ resource: undefined, scope: "mcp:user:read mcp:admin:read" }, "invalid_scope"],
     [{ resource: "" }, "invalid_target"],
   ]) {
@@ -313,6 +314,68 @@ test("authorization requests are validated before anything is shown or redirecte
     assert.equal(location.pathname, "/connect");
     assert.equal(f.db.prepare("SELECT audience FROM mcp_oauth_requests WHERE id = ?").get(location.searchParams.get("request")).audience, audience);
   }
+});
+
+test("issuer-wide requested scopes are narrowed to the explicit MCP resource through consent, exchange and refresh", async (t) => {
+  const f = setup(t);
+  const metadata = await (await f.fetchWorker("/.well-known/oauth-authorization-server")).json();
+  const allScopes = metadata.scopes_supported.join(" ");
+  for (const [audience, userId, rawScope, expected] of [
+    ["user", "alice", allScopes, ["mcp:user:read", "mcp:user:write"]],
+    ["admin", "root", allScopes, ["mcp:admin:read", "mcp:admin:write"]],
+    ["user", "alice", "mcp:admin:write mcp:user:read mcp:user:read", ["mcp:user:read"]],
+    ["admin", "root", "mcp:user:write mcp:admin:read", ["mcp:admin:read"]],
+  ]) {
+    const { body: client } = await register(f);
+    const { verifier, challenge } = await pkce();
+    const request = await startAuthorization(f, { clientId: client.client_id, audience, scope: rawScope, challenge });
+    const cookie = await session(f, userId);
+    const view = await (await f.fetchWorker(`/api/oauth/requests/${request.requestId}`, {
+      headers: { Cookie: `${cookie}; ${request.binding}` },
+    })).json();
+    assert.equal(view.audience, audience);
+    assert.deepEqual(view.scopes, expected, "consent only shows requested permissions for this resource");
+    const decision = await consent(f, request, cookie);
+    const code = new URL(decision.body.redirectTo).searchParams.get("code");
+    const exchanged = await token(f, {
+      grant_type: "authorization_code", code, client_id: client.client_id,
+      redirect_uri: REDIRECT, code_verifier: verifier, resource: view.resource,
+    });
+    assert.equal(exchanged.response.status, 200);
+    assert.equal(exchanged.body.scope, expected.join(" "), "report the actual granted scope to the client");
+    const grant = f.db.prepare("SELECT audience, scopes FROM mcp_oauth_grants WHERE client_id = ?").get(client.client_id);
+    assert.deepEqual({ ...grant }, { audience, scopes: expected.join(" ") });
+    assert.equal((await rpc(f, audience, exchanged.body.access_token)).status, 200);
+    const otherAudience = audience === "user" ? "admin" : "user";
+    assert.equal((await rpc(f, otherAudience, exchanged.body.access_token)).status, 401);
+    const refreshed = await token(f, {
+      grant_type: "refresh_token", refresh_token: exchanged.body.refresh_token,
+      client_id: client.client_id, resource: view.resource,
+    });
+    assert.equal(refreshed.response.status, 200);
+    assert.equal(refreshed.body.scope, expected.join(" "));
+    assert.equal((await rpc(f, otherAudience, refreshed.body.access_token)).status, 401);
+    if (expected.length === 1) {
+      const write = await rpc(f, audience, refreshed.body.access_token, "tools/call", {
+        name: audience === "user" ? "user_create_knowledge_point" : "admin_create_tag",
+        arguments: {},
+      });
+      assert.equal(write.status, 403, "a foreign write scope cannot upgrade a local read grant");
+    }
+  }
+});
+
+test("narrowing issuer-wide scopes never grants Admin MCP to a non-admin", async (t) => {
+  const f = setup(t);
+  const metadata = await (await f.fetchWorker("/.well-known/oauth-authorization-server")).json();
+  const { body: client } = await register(f);
+  const { challenge } = await pkce();
+  const request = await startAuthorization(f, {
+    clientId: client.client_id, audience: "admin", scope: metadata.scopes_supported.join(" "), challenge,
+  });
+  const decision = await consent(f, request, await session(f, "alice"));
+  assert.equal(new URL(decision.body.redirectTo).searchParams.get("error"), "access_denied");
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_grants").get().n, 0);
 });
 
 test("redirect URIs: https, loopback http on any port, private-use schemes; never script, fragments or remote http", () => {
