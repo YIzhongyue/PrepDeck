@@ -83,13 +83,18 @@ export function parseStoredScopes(value: string): McpOAuthScope[] {
  * The scopes an authorization request asks for, for the audience its
  * resource names. Unknown scope names (a client's generic "openid", say) are
  * ignored rather than granted; none left means the audience's full set, which
- * the account's role still bounds. A scope of the *other* audience is an
- * error: a grant never spans both endpoints.
+ * the account's role still bounds. Clients may request the authorization
+ * server's entire advertised scope list; retain only requested scopes for
+ * the selected resource (RFC 6749 section 3.3). A request containing known
+ * scopes but none for this audience is refused, never upgraded to defaults.
+ * The route rejects mixed audiences without an explicit resource first.
  */
 export function requestedScopes(raw: string | undefined, audience: McpAudience): McpOAuthScope[] | null {
   const known = (raw ?? "").split(" ").filter(isMcpOAuthScope);
-  if (known.some((scope) => MCP_OAUTH_SCOPE_INFO[scope].audience !== audience)) return null;
-  return known.length ? MCP_OAUTH_SCOPES.filter((scope) => known.includes(scope)) : audienceScopes(audience);
+  const allowed = audienceScopes(audience);
+  if (!known.length) return allowed;
+  const selected = allowed.filter((scope) => known.includes(scope));
+  return selected.length ? selected : null;
 }
 
 /** The audience a scope string implies when a client sends no `resource`; null if it mixes both. */

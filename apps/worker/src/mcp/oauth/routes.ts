@@ -163,7 +163,7 @@ oauthRouter.get("/authorize", async (c) => {
       : fail("invalid_scope", "A request may not mix User MCP and Admin MCP scopes.");
   }
   const scopes = requestedScopes(param("scope"), audience);
-  if (!scopes) return fail("invalid_scope", "The requested scopes belong to a different MCP server than the resource.");
+  if (!scopes) return fail("invalid_scope", "None of the requested MCP scopes apply to the selected resource.");
 
   const request = await createAuthorizationRequest(c.env.DB, {
     client, redirectUri, audience, scopes, state, codeChallenge: param("code_challenge")!,

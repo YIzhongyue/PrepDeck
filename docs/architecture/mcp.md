@@ -382,8 +382,14 @@ days. `/api/oauth/token` uses the ordinary write class.
   annotated `readOnlyHint: true`; a write scope allows every tool of its
   audience (write includes read). The annotation is required on every tool,
   so no tool falls outside the mapping. A request without `scope` asks for
-  both scopes of its audience; unknown scope names are ignored; a scope of
-  the other audience is refused (`invalid_scope`).
+  both scopes of its audience; unknown scope names are ignored. When a client
+  supplies `resource` and requests the authorization server's full advertised
+  scope list, only the requested scopes belonging to that resource appear on
+  the consent screen and grant. The token response reports the actual granted
+  `scope` (RFC 6749 section 3.3). Foreign scopes cannot add local write access.
+  Known scopes with no match for the resource are refused (`invalid_scope`),
+  rather than falling back to full access. Mixed User/Admin scopes without an
+  explicit resource remain ambiguous and are refused.
 - **Client onboarding.** Both Client ID Metadata Documents (an `https` URL
   client_id whose JSON document PrepDeck fetches — no redirects, 5 KB, 5 s,
   must name itself, cached for an hour and used stale for up to a day if the
