@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KnowledgePointGroup } from "@prepdeck/shared";
 import { Check, ChevronDown, Folder } from "@untitledui/icons";
+import { useClampToViewport } from "./EditorMenu";
 
 export default function GroupPicker({
   groups,
@@ -15,6 +16,8 @@ export default function GroupPicker({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useClampToViewport(menuRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +45,7 @@ export default function GroupPicker({
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open && (
-        <div className="kp-menu kp-menu-pop" role="menu" aria-label="Move to group" style={{ left: 0, width: 240, maxHeight: 280, overflowY: "auto" }}>
+        <div ref={menuRef} className="kp-menu kp-menu-pop" role="menu" aria-label="Move to group" style={{ left: 0, width: 240, maxHeight: 280, overflowY: "auto" }}>
           {option(null, "Ungrouped")}
           {groups.map((g) => option(g.id, g.name))}
         </div>

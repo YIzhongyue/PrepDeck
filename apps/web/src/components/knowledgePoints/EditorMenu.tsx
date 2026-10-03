@@ -1,7 +1,28 @@
 import { Check } from "@untitledui/icons";
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 const ITEMS = '[role^="menuitem"]:not(:disabled)';
+
+// A menu hangs off its trigger, so on a narrow screen a trigger far to the
+// right pushes it past the viewport edge and the page scrolls sideways.
+// Slide the open menu back inside, keeping a small gutter, whenever it shows
+// or the window resizes.
+export function useClampToViewport(ref: RefObject<HTMLElement | null>, shown: boolean, gutter = 8) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!shown || !el) return;
+    const place = () => {
+      el.style.translate = "";
+      const { left, right } = el.getBoundingClientRect();
+      const width = document.documentElement.clientWidth;
+      const dx = right > width - gutter ? Math.max(width - gutter - right, gutter - left) : left < gutter ? gutter - left : 0;
+      if (dx) el.style.translate = `${dx}px 0`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [ref, shown, gutter]);
+}
 
 // A small menu button for the editor chrome. Opening it with the mouse keeps
 // focus (and so the ProseMirror selection) in the document; opening it from
@@ -23,6 +44,7 @@ export function Dropdown({ label, menuLabel, triggerClassName, trigger, disabled
   const menu = useRef<HTMLDivElement>(null);
   const viaKeyboard = useRef(false);
   const items = () => Array.from(menu.current?.querySelectorAll<HTMLElement>(ITEMS) ?? []);
+  useClampToViewport(menu, open);
 
   useEffect(() => {
     if (!open) return;

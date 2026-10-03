@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgePointTag } from "@prepdeck/shared";
+import { useClampToViewport } from "./EditorMenu";
 
 export default function TagPicker({
   existingTags,
@@ -40,6 +41,9 @@ export default function TagPicker({
   };
 
   const exactMatch = existingTags.some((t) => t.name.toLowerCase() === value.trim().toLowerCase());
+  const menuShown = open && (!!value.trim() || suggestions.length > 0);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useClampToViewport(menuRef, menuShown);
 
   return (
     <div ref={ref} className="kp-dropdown">
@@ -56,8 +60,8 @@ export default function TagPicker({
           else if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); }
         }}
       />
-      {open && (value.trim() || suggestions.length > 0) && (
-        <div className="kp-menu kp-menu-pop" style={{ left: 0, width: 240 }}>
+      {menuShown && (
+        <div ref={menuRef} className="kp-menu kp-menu-pop" style={{ left: 0, width: 240 }}>
           {suggestions.length > 0 && (
             <>
               <span className="kp-menu-label">Your tags</span>

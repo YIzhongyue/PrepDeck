@@ -643,7 +643,23 @@ try {
   await tableTools.waitFor();
   for (const box of await tableTools.getByRole("button").evaluateAll(buttons => buttons.map(b => b.getBoundingClientRect().toJSON())))
     assert.ok(box.left >= 0 && box.right <= 375, `A table control at ${Math.round(box.left)}–${Math.round(box.right)}px leaves the 375px viewport`);
-  await visual.press("Control+End"); await page.keyboard.press("Enter"); await page.keyboard.type("/");
+  // Menus opened near the right edge stay inside a phone-width viewport.
+  for (const [trigger, menu] of [["Insert", "Insert"], ["More actions", "More actions"]]) {
+    await page.getByRole("button", { name: trigger, exact: true }).click();
+    const box = await page.getByRole("menu", { name: menu, exact: true }).evaluate(el => el.getBoundingClientRect().toJSON());
+    assert.ok(box.left >= 0 && box.right <= 375, `The ${menu} menu at ${Math.round(box.left)}–${Math.round(box.right)}px leaves the 375px viewport`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Opening the ${menu} menu adds horizontal scrolling`);
+    await page.keyboard.press("Escape");
+  }
+  const tagInput = page.getByPlaceholder("Add tag…");
+  await tagInput.fill("New tag");
+  const tagBox = await page.locator(".kp-dropdown:has(input[placeholder='Add tag…']) .kp-menu").evaluate(el => el.getBoundingClientRect().toJSON());
+  assert.ok(tagBox.left >= 0 && tagBox.right <= 375, `The tag menu at ${Math.round(tagBox.left)}–${Math.round(tagBox.right)}px leaves the 375px viewport`);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Opening the tag menu adds horizontal scrolling");
+  await tagInput.fill(""); await tagInput.press("Escape");
+  await visual.evaluate(el => el.editor.chain().focus("end").run());
+  await page.waitForFunction(() => document.activeElement === document.querySelector('[aria-label="Knowledge point body"]'));
+  await page.keyboard.press("Enter"); await page.keyboard.type("/");
   const slashMenu = page.getByRole("listbox", { name: "Insert a block" });
   await slashMenu.waitFor();
   await page.keyboard.press("ArrowUp");
@@ -654,7 +670,7 @@ try {
   assert.ok(activeRow.text.startsWith("Divider"), "ArrowUp from the first command wraps to the last");
   assert.ok(activeRow.visible, "The keyboard-selected slash command is scrolled into view");
   await page.keyboard.press("Escape"); await page.keyboard.press("Backspace"); await saved();
-  console.log("PASS outline targets, 375px table tools and slash-menu keyboard scrolling");
+  console.log("PASS outline targets, 375px table tools and menus, and slash-menu keyboard scrolling");
   assert.deepEqual(errors, [], "No unhandled browser errors");
   console.log(`Knowledge Points browser regression passed (${writes.length} acknowledged/failed save attempts exercised).`);
 } finally { uploadGate?.resolve(); metadataGate?.resolve(); deleteGate?.resolve(); await browser.close(); await new Promise(resolve => server.close(resolve)); }
