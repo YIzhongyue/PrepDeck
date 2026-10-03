@@ -1,14 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Node, selectionToInsertionEnd, type JSONContent } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { NodeSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import { AlertTriangle, Bold01, Code01, InfoCircle, Italic01, Link01, Trash01, Upload01, XClose } from "@untitledui/icons";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { TableKit } from "@tiptap/extension-table";
 import MarkdownToolbar, { type EditorMode } from "./MarkdownToolbar";
-import MarkdownPreview from "./MarkdownPreview";
 import PasteMarkdownBanner from "./PasteMarkdownBanner";
 import { RawMarkdown, VisualCodeBlock, VisualImage } from "./EditorBlocks";
+import { MenuItem } from "./EditorMenu";
+import { countWords, matchCommands, MOD, type BlockCommand } from "./editorCommands";
 import { escapeParagraphMarkdown, pasteContent, plainTextContent, prepareMarkdown, safeUrl } from "./editorMarkdown";
 import "./MarkdownEditor.css";
 
@@ -25,7 +30,7 @@ const UploadPlaceholder = Node.create({
   name: "uploadPlaceholder", group: "block", atom: true,
   addAttributes: () => ({ id: { default: null }, label: { default: "Uploading image…" } }),
   parseHTML: () => [{ tag: "div[data-kp-upload]" }],
-  renderHTML: ({ node }) => ["div", { "data-kp-upload": node.attrs.id, class: "kp-editor-message", role: "status" }, node.attrs.label],
+  renderHTML: ({ node }) => ["div", { "data-kp-upload": node.attrs.id, class: "kp-upload-placeholder", role: "status" }, node.attrs.label],
   renderMarkdown: () => "",
 });
 
@@ -41,23 +46,45 @@ const EditorStarterKit = StarterKit.extend({
   },
 });
 
+// The "/" menu opens on a paragraph that holds nothing but a slash and a short
+// query, with the caret at its end. Anything else is ordinary text.
+function slashQuery(editor: Editor | null): { query: string; from: number; to: number } | null {
+  if (!editor || editor.isDestroyed || !editor.view.hasFocus()) return null;
+  const { selection } = editor.state;
+  if (!selection.empty) return null;
+  const { $from } = selection;
+  if ($from.parent.type.name !== "paragraph") return null;
+  const text = $from.parent.textContent;
+  if ($from.parentOffset !== $from.parent.content.size || $from.parent.content.size !== text.length) return null;
+  const match = /^\/([\p{L}\p{N} ]{0,24})$/u.exec(text);
+  return match ? { query: match[1]!, from: $from.start(), to: $from.pos } : null;
+}
+
 export default function MarkdownEditor({ value, onChange, onUploadImage, onCompositionChange, onDismissUploadError, header }: MarkdownEditorProps) {
-  const [mode, setMode] = useState<EditorMode>("write");
+  const [mode, setMode] = useState<EditorMode>("visual");
   const [pendingPaste, setPendingPaste] = useState<{ text: string; from: number; to: number; before: JSONContent } | null>(null);
   const [uploadFailure, setUploadFailure] = useState<{ file: File; id: string; message: string } | null>(null);
   const [uploading, setUploading] = useState(0);
-  const [link, setLink] = useState<string | null>(null);
+  const [link, setLink] = useState<{ href: string; existing: boolean; top: number; left: number } | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [sourceDraft, setSourceDraft] = useState(value);
+  const [slashPick, setSlashPick] = useState({ query: "", index: 0 });
+  const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [, renderSelection] = useState(0);
   const callbacks = useRef({ onChange, onUploadImage, onCompositionChange });
   callbacks.current = { onChange, onUploadImage, onCompositionChange };
   const published = useRef(value);
   const composing = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const uploadActive = useRef(false);
   const pasteJustInserted = useRef(false);
   const uploadRef = useRef<(file: File) => void>(() => {});
+  const keyRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const publish = (markdown: string) => { published.current = markdown; callbacks.current.onChange(markdown); };
 
   const editor = useEditor({
@@ -74,8 +101,21 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
       if (!composing.current && !current.view.composing) publish(current.getMarkdown());
     },
     onSelectionUpdate: () => renderSelection(n => n + 1),
+    onFocus: () => renderSelection(n => n + 1),
+    onBlur: () => renderSelection(n => n + 1),
     editorProps: {
       attributes: { "aria-label": "Knowledge point body", role: "textbox", "aria-multiline": "true" },
+      handleKeyDown: (_view, event) => keyRef.current(event),
+      handleDrop: (view, event) => {
+        setDragging(false);
+        const file = Array.from(event.dataTransfer?.files ?? []).find(f => f.type.startsWith("image/"));
+        if (!file) return false;
+        event.preventDefault();
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (at) editorRef.current?.commands.setTextSelection(at.pos);
+        uploadRef.current(file);
+        return true;
+      },
       handleDOMEvents: {
         compositionstart: () => { composing.current = true; callbacks.current.onCompositionChange?.(true); return false; },
         compositionend: view => {
@@ -167,9 +207,9 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
   uploadRef.current = file => { void upload(file); };
 
   const changeMode = (next: EditorMode) => {
-    if (uploading || uploadFailure || composing.current) return;
-    if (mode === "source" && editor) editor.commands.setContent(prepareMarkdown(sourceDraft), { contentType: "markdown", emitUpdate: false });
-    if (next === "source") setSourceDraft(published.current);
+    if (next === mode || uploading || uploadFailure || composing.current) return;
+    if (mode === "markdown" && editor) editor.commands.setContent(prepareMarkdown(sourceDraft), { contentType: "markdown", emitUpdate: false });
+    if (next === "markdown") setSourceDraft(published.current);
     setPendingPaste(null); setLink(null);
     setMode(next);
   };
@@ -207,38 +247,169 @@ export default function MarkdownEditor({ value, onChange, onUploadImage, onCompo
     setUploadFailure(null); onDismissUploadError?.();
   };
 
+  // The link editor is a popover anchored under the selection, not a bar
+  // that pushes the document down.
+  const openLink = () => {
+    if (!editor || modeRef.current !== "visual") return;
+    const root = rootRef.current?.getBoundingClientRect();
+    const at = editor.view.coordsAtPos(editor.state.selection.from);
+    const href = editor.getAttributes("link").href as string | undefined;
+    const width = Math.min(380, (root?.width ?? 380) - 8);
+    setLink({ href: href ?? "", existing: !!href, top: root ? at.bottom - root.top + 8 : 0,
+      left: root ? Math.max(0, Math.min(at.left - root.left - 24, root.width - width)) : 0 });
+    setLinkError(null);
+  };
+  const closeLink = () => { setLink(null); editor?.commands.focus(); };
+  const applyLink = () => {
+    if (!editor || !link) return;
+    const href = link.href.trim();
+    if (href && !safeUrl(href)) { setLinkError("Use an https, http, mailto or relative link."); return; }
+    const chain = editor.chain().focus().extendMarkRange("link");
+    if (!href) chain.unsetLink().run();
+    else if (editor.state.selection.empty && !editor.isActive("link")) chain.insertContent({ type: "text", text: href, marks: [{ type: "link", attrs: { href } }] }).run();
+    else chain.setLink({ href }).run();
+    setLink(null);
+  };
+
+  const slash = mode === "visual" && link === null ? slashQuery(editor) : null;
+  const slashOpen = !!slash && slash.from !== slashDismissed;
+  const slashItems = slashOpen ? matchCommands(slash.query) : [];
+  // The highlighted row belongs to the query it was picked for; a new query
+  // starts at the top. A dismissal lasts until the slash itself is gone.
+  const slashActive = slash && slashPick.query === slash.query ? Math.min(slashPick.index, Math.max(0, slashItems.length - 1)) : 0;
+  if (!slash && slashDismissed !== null) setSlashDismissed(null);
+  const setSlashIndex = (index: number) => setSlashPick({ query: slash?.query ?? "", index });
+  // Keyboard selection can move past the menu's visible height, including
+  // the wrap from the first command to the last, so keep the active row shown.
+  useEffect(() => {
+    slashMenuRef.current?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" });
+  }, [slashActive, slashOpen]);
+  const runSlash = (command: BlockCommand) => {
+    if (!editor || !slash) return;
+    editor.chain().focus().deleteRange({ from: slash.from, to: slash.to }).run();
+    command.run(editor, { onImage: () => fileInputRef.current?.click() });
+  };
+  let slashPosition: { top: number; left: number } | null = null;
+  if (slashOpen && slashItems.length && editor && rootRef.current) {
+    const root = rootRef.current.getBoundingClientRect();
+    const at = editor.view.coordsAtPos(slash.from);
+    slashPosition = { top: at.bottom - root.top + 6, left: Math.max(0, Math.min(at.left - root.left, root.width - 320)) };
+  }
+
+  keyRef.current = event => {
+    if (slashOpen && slashItems.length) {
+      if (event.key === "ArrowDown") { setSlashIndex((slashActive + 1) % slashItems.length); return true; }
+      if (event.key === "ArrowUp") { setSlashIndex((slashActive - 1 + slashItems.length) % slashItems.length); return true; }
+      if (event.key === "Enter" || event.key === "Tab") { runSlash(slashItems[slashActive]!); return true; }
+    }
+    if (slashOpen && event.key === "Escape") { setSlashDismissed(slash.from); return true; }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") { event.preventDefault(); openLink(); return true; }
+    return false;
+  };
+
+  const onDragOver = (event: DragEvent) => {
+    if (mode === "visual" && !uploading && !uploadFailure && Array.from(event.dataTransfer.types).includes("Files")) setDragging(true);
+  };
+  const onDragLeave = (event: DragEvent) => {
+    if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setDragging(false);
+  };
+
+  const plainText = mode === "visual" ? editor?.getText() ?? "" : sourceDraft;
+  const words = countWords(plainText);
+  const minutes = Math.max(1, Math.round(words / 200));
+  const bubbleButton = (label: string, icon: React.ReactNode, active: boolean, action: () => void) => (
+    <button type="button" className="kp-bubble-btn" aria-label={label} aria-pressed={active} onMouseDown={e => e.preventDefault()} onClick={action}>{icon}</button>
+  );
+
   return (
-    <div className="kp-editor">
-      <MarkdownToolbar editor={editor} mode={mode} modeLocked={!!uploading || !!uploadFailure} onModeChange={changeMode} onImage={() => fileInputRef.current?.click()} onLink={() => { setLink(editor?.getAttributes("link").href ?? ""); setLinkError(null); }} />
-      {mode === "write" && editor?.isActive("table") && <div className="kp-table-tools" aria-label="Table controls">
-        <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()}>Add row</button>
-        <button type="button" onClick={() => editor.chain().focus().deleteRow().run()}>Remove row</button>
-        <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()}>Add column</button>
-        <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()}>Remove column</button>
-        <button type="button" onClick={() => editor.chain().focus().deleteTable().run()}>Remove table</button>
-      </div>}
-      {link !== null && <div className="kp-block-controls" role="group" aria-label="Edit link">
-        <label>Link URL <input autoFocus value={link} onChange={e => setLink(e.target.value)} /></label>
-        <button type="button" onClick={() => { if (link && !safeUrl(link)) { setLinkError("Use an https, http, mailto or relative link."); return; } const chain = editor?.chain().focus().extendMarkRange("link"); if (link) chain?.setLink({ href: link }).run(); else chain?.unsetLink().run(); setLink(null); }}>Apply link</button>
-        <button type="button" onClick={() => setLink(null)}>Cancel</button>
-        {linkError && <span role="alert">{linkError}</span>}
-      </div>}
-      <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void upload(file); }} />
+    <div ref={rootRef} className="kp-editor" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={() => setDragging(false)}>
       {header && <div className="kp-editor-header">{header}</div>}
-      {pendingPaste && <PasteMarkdownBanner
-        wordCount={pendingPaste.text.trim() ? pendingPaste.text.trim().split(/\s+/).length : 0}
-        onPasteAsPlainText={pasteAsPlainText} onDismiss={() => setPendingPaste(null)} />}
-      {uploadFailure && <div className="kp-editor-message" role="alert">{uploadFailure.message} <button type="button" onClick={() => void upload(uploadFailure.file, uploadFailure.id)}>Retry upload</button> <button type="button" onClick={dismissUpload}>Dismiss upload</button></div>}
-      {(uploading > 0 || uploadFailure) && <p className="kp-editor-message">Finish or dismiss this upload before adding another image or changing editor mode.</p>}
-      <div className="kp-editor-body">
-        <div hidden={mode !== "write"}><EditorContent editor={editor} /></div>
-        {mode === "preview" && <MarkdownPreview source={value} />}
-        {mode === "source" && <textarea className="kp-source-mode" aria-label="Markdown source" value={sourceDraft}
-          onCompositionStart={() => { composing.current = true; onCompositionChange?.(true); }}
-          onCompositionEnd={e => { composing.current = false; onCompositionChange?.(false); publish(e.currentTarget.value); }}
-          onChange={e => { setSourceDraft(e.target.value); if (!composing.current) publish(e.target.value); }} />}
+      <MarkdownToolbar editor={editor} mode={mode} modeLocked={!!uploading || !!uploadFailure} onModeChange={changeMode}
+        onImage={() => fileInputRef.current?.click()} onLink={openLink} />
+      <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void upload(file); }} />
+      {uploadFailure && <div className="kp-upload-failed" role="alert">
+        <span className="kp-upload-failed-icon" aria-hidden="true"><AlertTriangle size={18} /></span>
+        <span className="kp-upload-failed-text"><strong>Couldn’t add the image.</strong> {uploadFailure.message}</span>
+        {uploadFailure.id && <button type="button" className="kp-pill-btn" onClick={() => void upload(uploadFailure.file, uploadFailure.id)}>Retry upload</button>}
+        <button type="button" className="kp-icon-btn" aria-label="Dismiss upload" title="Dismiss upload" onClick={dismissUpload}><XClose size={16} /></button>
+      </div>}
+      <div className="kp-editor-body" data-dragging={dragging || undefined}>
+        <div hidden={mode !== "visual"} className="kp-visual">
+          <EditorContent editor={editor} />
+          {editor?.isEmpty && !editor.view.composing && <p className="kp-placeholder" aria-hidden="true">Start writing. Type <span className="kp-kbd">/</span> for tables, images and diagrams, or paste Markdown.</p>}
+        </div>
+        {mode === "markdown" && <>
+          <p className="kp-source-hint"><InfoCircle size={16} aria-hidden="true" />This is exactly what’s saved. Switch back to Visual any time; nothing is lost.</p>
+          <textarea className="kp-source-mode" aria-label="Markdown source" value={sourceDraft} spellCheck={false}
+            onCompositionStart={() => { composing.current = true; onCompositionChange?.(true); }}
+            onCompositionEnd={e => { composing.current = false; onCompositionChange?.(false); publish(e.currentTarget.value); }}
+            onChange={e => { setSourceDraft(e.target.value); if (!composing.current) publish(e.target.value); }} />
+        </>}
+        {dragging && <div className="kp-drop" aria-hidden="true">
+          <Upload01 size={26} />
+          <strong>Drop to add the image here</strong>
+          <span>PNG, JPEG or WebP, up to 8 MB</span>
+        </div>}
       </div>
-      <p className="kp-editor-message">Type Markdown shortcuts or paste as Markdown. Screenshots: PNG, JPEG or WebP, up to 8 MB.</p>
+      {slashPosition && <div ref={slashMenuRef} className="kp-menu kp-slash" role="listbox" aria-label="Insert a block" style={slashPosition}>
+        <div className="kp-menu-label">Blocks</div>
+        {slashItems.map((command, index) => (
+          <div key={command.id} role="option" aria-selected={index === slashActive} data-active={index === slashActive || undefined}>
+            <MenuItem icon={command.icon} title={command.title} hint={command.hint} kbd={command.kbd}
+              disabled={command.id === "image" && (!!uploading || !!uploadFailure)} onSelect={() => runSlash(command)} />
+          </div>
+        ))}
+        <p className="kp-menu-foot"><span><span className="kp-kbd">↑</span> <span className="kp-kbd">↓</span> move</span><span><span className="kp-kbd">Enter</span> insert</span><span><span className="kp-kbd">Esc</span> keep as text</span></p>
+      </div>}
+      {link !== null && <div className="kp-popover" role="group" aria-label="Edit link" style={{ top: link.top, left: link.left }}>
+        <label className="kp-field-label" htmlFor="kp-link-url">Link URL</label>
+        <input id="kp-link-url" className="kp-input" autoFocus value={link.href} aria-invalid={!!linkError} placeholder="https://"
+          onChange={e => { setLink({ ...link, href: e.target.value }); setLinkError(null); }}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applyLink(); } else if (e.key === "Escape") { e.preventDefault(); closeLink(); } }} />
+        <span className={linkError ? "kp-field-error" : "kp-field-hint"} role={linkError ? "alert" : undefined}>{linkError ?? "https, http, mailto or a relative link"}</span>
+        <div className="kp-popover-actions">
+          {link.existing && <button type="button" className="kp-ghost-btn kp-ghost-danger" onClick={() => { editor?.chain().focus().extendMarkRange("link").unsetLink().run(); setLink(null); }}>Remove link</button>}
+          <span className="kp-tb-spacer" />
+          <button type="button" className="btn btn-secondary" onClick={closeLink}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={applyLink}>Apply</button>
+        </div>
+      </div>}
+      {editor && <BubbleMenu editor={editor} pluginKey="kpSelectionMenu" className="kp-bubble" role="toolbar" aria-label="Format selection"
+        options={{ placement: "top", offset: 8, shift: { padding: 8 } }}
+        shouldShow={({ editor: current, state, from, to }) => modeRef.current === "visual" && from !== to
+          && !(state.selection instanceof CellSelection) && !(state.selection instanceof NodeSelection)
+          && !current.isActive("codeBlock") && !current.isActive("rawMarkdown")}>
+        {bubbleButton("Bold", <Bold01 size={16} />, editor.isActive("bold"), () => editor.chain().focus().toggleBold().run())}
+        {bubbleButton("Italic", <Italic01 size={16} />, editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run())}
+        {bubbleButton("Inline code", <Code01 size={16} />, editor.isActive("code"), () => editor.chain().focus().toggleCode().run())}
+        {bubbleButton(`Link · ${MOD} K`, <Link01 size={16} />, editor.isActive("link"), openLink)}
+      </BubbleMenu>}
+      {editor && <BubbleMenu editor={editor} pluginKey="kpTableMenu" className="kp-bubble" role="toolbar" aria-label="Table controls"
+        options={{ placement: "top-start", offset: 8, shift: { padding: 8 } }}
+        getReferencedVirtualElement={() => {
+          const { node } = editor.view.domAtPos(editor.state.selection.from);
+          const table = (node instanceof Element ? node : node.parentElement)?.closest(".tableWrapper, table");
+          return table ? { getBoundingClientRect: () => table.getBoundingClientRect() } : null;
+        }}
+        shouldShow={({ editor: current, state }) => modeRef.current === "visual" && current.isActive("table")
+          && (state.selection.empty || state.selection instanceof CellSelection)}>
+        <button type="button" className="kp-bubble-text" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().addRowAfter().run()}>Add row</button>
+        <button type="button" className="kp-bubble-text" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().addColumnAfter().run()}>Add column</button>
+        <span className="kp-bubble-sep" aria-hidden="true" />
+        <button type="button" className="kp-bubble-text" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().deleteRow().run()}>Remove row</button>
+        <button type="button" className="kp-bubble-text" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().deleteColumn().run()}>Remove column</button>
+        <span className="kp-bubble-sep" aria-hidden="true" />
+        <button type="button" className="kp-bubble-btn" aria-label="Remove table" title="Remove table" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().deleteTable().run()}><Trash01 size={16} /></button>
+      </BubbleMenu>}
+      <div className="kp-editor-foot">
+        <span>{words} {words === 1 ? "word" : "words"} · About {minutes} {minutes === 1 ? "minute" : "minutes"} to read</span>
+        <span className="kp-editor-foot-hints"><span className="kp-kbd">/</span> blocks <span aria-hidden="true">·</span> <span className="kp-kbd">{MOD} K</span> link <span aria-hidden="true">·</span> Markdown shortcuts work</span>
+      </div>
+      {pendingPaste && <div className="kp-toast-dock">
+        <PasteMarkdownBanner
+          wordCount={pendingPaste.text.trim() ? pendingPaste.text.trim().split(/\s+/).length : 0}
+          onPasteAsPlainText={pasteAsPlainText} onDismiss={() => setPendingPaste(null)} />
+      </div>}
     </div>
   );
 }

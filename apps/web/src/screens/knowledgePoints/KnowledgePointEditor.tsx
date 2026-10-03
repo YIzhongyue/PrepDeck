@@ -1,6 +1,8 @@
 // implementation — mockup Screen 2.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { marked, type Token, type Tokens } from "marked";
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Copy01, DotsHorizontal, Download01, InfoCircle, Maximize01, Plus, Trash01, XClose } from "@untitledui/icons";
 import type { Breakpoints } from "../../lib/responsive";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
@@ -9,41 +11,35 @@ import GroupPicker from "../../components/knowledgePoints/GroupPicker";
 import TagPicker from "../../components/knowledgePoints/TagPicker";
 import LinkQuestionModal from "../../components/knowledgePoints/LinkQuestionModal";
 import DeleteKnowledgePointDialog from "../../components/knowledgePoints/DeleteKnowledgePointDialog";
+import { Dropdown, MenuItem } from "../../components/knowledgePoints/EditorMenu";
+import { prepareMarkdown } from "../../components/knowledgePoints/editorMarkdown";
+import "./KnowledgePointEditor.css";
 
-function SaveStatusPill({ status, lastSavedAt, message }: { status: string; lastSavedAt: string | null; message: string | null }) {
-  if (status === "saving") {
-    return (
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-accent-300)", borderRadius: 999, background: "var(--color-accent-100)", color: "var(--color-accent-800)", fontSize: 12.5, fontWeight: 600 }}>
-        Saving…
-      </div>
-    );
-  }
-  if (status === "error") {
-    return (
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-danger-border)", borderRadius: 999, background: "var(--color-danger-bg)", color: "var(--color-danger-text)", fontSize: 12.5, fontWeight: 600 }}>
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l9 17H3z M12 9v5 M12 17h.01" /></svg>
-        {message ?? "Save failed"}
-      </div>
-    );
-  }
-  if (status === "saved") {
-    const time = lastSavedAt ? new Date(lastSavedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
-    return (
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-accent-2-200)", borderRadius: 999, background: "var(--color-accent-2-100)", color: "var(--color-accent-2-800)", fontSize: 12.5, fontWeight: 600 }}>
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4 10-10" /></svg>
-        Saved{time ? ` · ${time}` : ""}
-      </div>
-    );
-  }
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", border: "1px solid var(--color-divider)", borderRadius: 999, color: "var(--color-text-muted)", fontSize: 12.5, fontWeight: 600 }}>
-      Unsaved changes
-    </div>
-  );
+const timeOf = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+// One quiet line replaces the old status pill, sync card and error card.
+function SaveStatus({ status, lastSavedAt, uploading }: { status: string; lastSavedAt: string | null; uploading: number }) {
+  if (status === "saving") return <span className="kp-save"><span className="kp-dot" />{uploading ? "Waiting for image…" : "Saving…"}</span>;
+  if (status === "error") return <span className="kp-save kp-save-bad"><span className="kp-dot" />Not saved</span>;
+  if (status === "saved") return <span className="kp-save"><span className="kp-dot kp-dot-ok" />Saved{lastSavedAt ? ` · ${timeOf(lastSavedAt)}` : ""}</span>;
+  if (status === "unsaved") return <span className="kp-save"><span className="kp-dot" />Unsaved changes</span>;
+  return null;
+}
+
+// The outline lists exactly the headings the visual editor renders at the top
+// level of the document, in order, so entry N jumps to top-level heading N.
+// Both sides read the same prepared Markdown with the same lexer: headings
+// nested in quotes or lists, and anything kept as raw source, appear in neither.
+const HEADINGS = ".kp-editor .tiptap > :is(h1, h2, h3)";
+const plainText = (tokens: readonly Token[]): string => tokens.map((token) =>
+  "tokens" in token && token.tokens ? plainText(token.tokens) : "text" in token ? String(token.text) : "").join("");
+function outlineOf(markdown: string) {
+  return marked.lexer(prepareMarkdown(markdown))
+    .filter((token): token is Tokens.Heading => token.type === "heading" && token.depth <= 3)
+    .map((token) => ({ level: token.depth, text: plainText(token.tokens).trim() || token.text }));
 }
 
 export default function KnowledgePointEditor({
-  bp,
   noteId,
   onBack,
   onOpenNote,
@@ -61,10 +57,18 @@ export default function KnowledgePointEditor({
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const outline = useMemo(() => outlineOf(state.bodyMarkdown), [state.bodyMarkdown]);
 
   useEffect(() => {
     openNote(noteId);
   }, [noteId, openNote]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const editing = state.editing;
   const inSequence = kp.canReorder && state.items.some((i) => i.id === noteId);
@@ -84,13 +88,37 @@ export default function KnowledgePointEditor({
 
   if (state.editorError) return <div role="alert"><p>{state.editorError}</p><button type="button" className="btn btn-primary" onClick={() => kp.openNote(noteId)}>Retry loading note</button><button type="button" className="btn btn-secondary" onClick={onBack}>All notes</button></div>;
   if (state.editorLoading || !editing) {
-    return <p style={{ color: "var(--color-text-muted)", padding: "40px 0" }}>Loading…</p>;
+    return (
+      <div className="kp-skeleton" aria-busy="true" aria-label="Loading note">
+        <span style={{ width: "62%", height: 34 }} /><span style={{ width: 220, height: 30 }} /><span style={{ height: 44 }} />
+        <span style={{ width: "96%" }} /><span style={{ width: "88%" }} /><span style={{ width: "70%" }} />
+      </div>
+    );
   }
+
+  const groupLabel = editing.groupName ?? "Ungrouped";
+  const markdownFile = () => `# ${state.title.trim() || "Untitled knowledge point"}\n\n${state.bodyMarkdown}`;
+  const copyMarkdown = () => {
+    navigator.clipboard?.writeText(markdownFile()).then(() => setNotice("Markdown copied"), () => setNotice("Could not copy. Use Markdown mode to select the text."));
+  };
+  const downloadMarkdown = () => {
+    const url = URL.createObjectURL(new Blob([markdownFile()], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${state.title.trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, "-").slice(0, 80) || "knowledge-point"}.md`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  const jumpTo = (index: number) => {
+    document.querySelectorAll<HTMLElement>(HEADINGS)[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const unavailable = editing.linkedQuestions.filter((l) => !l.accessible).length;
 
   const header = (
     <>
       <input
         type="text"
+        className="kp-title-input"
         aria-label="Knowledge point title"
         aria-invalid={!state.title.trim()}
         value={state.title}
@@ -98,27 +126,23 @@ export default function KnowledgePointEditor({
         onCompositionStart={() => kp.setComposing(true)}
         onCompositionEnd={() => kp.setComposing(false)}
         placeholder="Untitled knowledge point"
-        style={{ width: "100%", padding: 0, margin: "0 0 10px", border: 0, outline: 0, background: "transparent", fontFamily: "var(--font-heading)", fontSize: "clamp(26px,3.4vw,36px)", lineHeight: 1.1, letterSpacing: "-0.015em", color: "var(--color-text)" }}
       />
-      {!state.title.trim() && <p role="alert">A title is required before this note can be saved.</p>}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 22, paddingBottom: 18, borderBottom: "1px solid var(--color-divider)" }}>
+      {!state.title.trim() && <p role="alert" className="kp-title-error">A title is required before this note can be saved.</p>}
+      <div className="kp-props">
         <GroupPicker groups={state.groups} groupId={editing.groupId} groupName={editing.groupName} onSelect={kp.setNoteGroup} />
         {editing.tags.map((t) => (
-          <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "4px 10px", borderRadius: 999, background: "var(--color-accent-100)", color: "var(--color-accent-800)" }}>
+          <span key={t.id} className="kp-chip kp-chip-tag">
             {t.name}
-            <button type="button" onClick={() => kp.removeTag(t.id)} aria-label={`Remove tag ${t.name}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: "var(--color-text-muted)", font: "inherit", fontSize: 11, padding: 0 }}>✕</button>
+            <button type="button" className="kp-chip-x" onClick={() => kp.removeTag(t.id)} aria-label={`Remove tag ${t.name}`}><XClose size={14} aria-hidden="true" /></button>
           </span>
         ))}
         <TagPicker existingTags={state.tags} currentTagIds={editing.tags.map((t) => t.id)} onAdd={kp.addTag} />
-        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
-          Created {new Date(editing.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Updated {new Date(editing.updatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-        </span>
       </div>
     </>
   );
 
   return (
-    <div style={{ animation: "pd-rise .28s ease backwards" }}>
+    <div className="kp-screen">
       {showLinkModal && <LinkQuestionModal knowledgePointId={editing.id} onClose={() => setShowLinkModal(false)} />}
       {showDeleteDialog && (
         <DeleteKnowledgePointDialog
@@ -128,135 +152,107 @@ export default function KnowledgePointEditor({
         />
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
-        <a href="#" onClick={(e) => { e.preventDefault(); backToList(); }} style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "var(--color-accent-700)", fontSize: 12.5, fontWeight: 600, textDecoration: "none" }}>
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
-          All notes
-        </a>
-        <span style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}>/</span>
-        <span style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}>{editing.groupName ?? "Ungrouped"}</span>
-
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span role="status" aria-live="polite"><SaveStatusPill status={state.saveStatus} lastSavedAt={state.lastSavedAt} message={state.saveErrorMessage} /></span>
+      <div className="kp-topbar">
+        <nav className="kp-crumbs" aria-label="Breadcrumb">
+          <a href="#" onClick={(e) => { e.preventDefault(); backToList(); }}><ArrowLeft size={16} aria-hidden="true" />All notes</a>
+          <span aria-hidden="true">/</span>
+          <span className="kp-crumb-group">{groupLabel}</span>
+        </nav>
+        <div className="kp-topbar-actions">
+          <span role="status" aria-live="polite">{notice ? <span className="kp-save"><span className="kp-dot kp-dot-ok" />{notice}</span> : <SaveStatus status={state.saveStatus} lastSavedAt={state.lastSavedAt} uploading={state.uploading} />}</span>
           {inSequence && (
             <>
-              <button type="button" className="btn btn-secondary" disabled={!prevId} onClick={() => prevId && openOther(prevId)}>
-                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l5 7-5 7 M20 12H8 M4 4v16" /></svg>
-                Previous
-              </button>
-              <button type="button" className="btn btn-secondary" disabled={!nextId} onClick={() => nextId && openOther(nextId)}>
-                Next in {editing.groupName ?? "Ungrouped"}
-                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
-              </button>
+              <span className="kp-tb-sep" aria-hidden="true" />
+              <span className="kp-count">{idx + 1} of {state.items.length}</span>
+              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!prevId} onClick={() => prevId && openOther(prevId)} aria-label={`Previous in ${groupLabel}`} title={`Previous in ${groupLabel}`}><ChevronLeft size={18} /></button>
+              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!nextId} onClick={() => nextId && openOther(nextId)} aria-label={`Next in ${groupLabel}`} title={`Next in ${groupLabel}`}><ChevronRight size={18} /></button>
             </>
           )}
+          <span className="kp-tb-sep" aria-hidden="true" />
+          <button type="button" className="kp-icon-btn kp-icon-btn-lg kp-focus-toggle" aria-pressed={focusMode} aria-label="Focus mode" title="Focus mode: hide the sidebar" onClick={() => setFocusMode((f) => !f)}><Maximize01 size={18} /></button>
+          <Dropdown label="More actions" menuLabel="More actions" triggerClassName="kp-icon-btn kp-icon-btn-lg" align="end" width={240} trigger={<DotsHorizontal size={18} aria-hidden="true" />}>
+            {(close) => <>
+              <MenuItem icon={<Copy01 size={16} aria-hidden="true" />} title="Copy as Markdown" onSelect={() => { close(); copyMarkdown(); }} />
+              <MenuItem icon={<Download01 size={16} aria-hidden="true" />} title="Download .md file" onSelect={() => { close(); downloadMarkdown(); }} />
+              <div className="kp-menu-sep" role="separator" />
+              <MenuItem danger icon={<Trash01 size={16} aria-hidden="true" />} title="Delete note…" onSelect={() => { close(); setShowDeleteDialog(true); }} />
+            </>}
+          </Dropdown>
         </div>
       </div>
 
-      {navigationError && <p role="alert" style={{ color: "var(--color-danger-text)" }}>{navigationError}</p>}
+      {navigationError && <p role="alert" className="kp-nav-error">{navigationError}</p>}
 
-      {state.conflict && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18, padding: "13px 16px", border: "1px solid var(--color-danger-border)", borderRadius: 16, background: "var(--color-danger-bg)" }}>
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--color-danger-text)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 2 }}><path d="M12 3l9 17H3z M12 9v5 M12 17h.01" /></svg>
-          <span style={{ flex: 1, fontSize: 13, color: "var(--color-danger-text)" }}>
-            This note was saved from another tab or device since you started editing. Keep your local changes (overwriting the other save) or reload the latest version (discarding yours)?
-          </span>
-          <div style={{ display: "flex", gap: 8, flex: "none" }}>
-            <button type="button" onClick={kp.reloadAfterConflict} style={{ padding: "6px 12px", border: "1px solid var(--color-danger-border)", borderRadius: 999, background: "var(--color-bg)", color: "var(--color-danger-text)", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}>
-              Reload latest
-            </button>
-            <button type="button" onClick={kp.keepMineAfterConflict} style={{ padding: "6px 12px", border: 0, borderRadius: 999, background: "var(--color-danger)", color: "#fff", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}>
-              Keep mine
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: bp.narrow ? "column" : "row", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
-        <div style={{ flex: bp.narrow ? "none" : "999 1 520px", minWidth: 0, width: "100%", border: "1px solid var(--color-divider)", borderRadius: 28, background: "var(--color-bg)", boxShadow: "var(--pd-shadow-sm)", overflow: "hidden" }}>
-          <MarkdownEditor key={editing.id} value={state.bodyMarkdown} onChange={kp.setBodyMarkdown} onUploadImage={kp.uploadImage} onCompositionChange={kp.setComposing} onDismissUploadError={kp.dismissUploadError} header={header} />
-        </div>
-
-        <div style={{ flex: bp.narrow ? "none" : "1 1 280px", minWidth: 0, width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
-          {state.saveStatus === "error" && !state.conflict && (
-            <div style={{ padding: "16px 18px", border: "1px solid var(--color-danger-border)", borderRadius: 24, background: "var(--color-danger-bg)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, color: "var(--color-danger-text)" }}>
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l9 17H3z M12 9v5 M12 17h.01" /></svg>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Save failed — Retry</span>
-              </div>
-              <p style={{ margin: "0 0 10px", fontSize: 12, lineHeight: 1.55, opacity: 0.8 }}>Your text is safe in the editor. {state.saveErrorMessage}</p>
-              <button type="button" onClick={kp.retryNow} style={{ padding: "6px 14px", border: 0, borderRadius: 999, background: "var(--color-danger-text)", color: "#fff", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}>
-                Retry now
-              </button>
-              {state.metadataError && <button type="button" className="btn btn-secondary" onClick={kp.discardFailedMetadata}>Discard failed metadata change</button>}
-            </div>
-          )}
-
-          <div style={{ padding: 18, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-surface)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-accent-700)" }}>Related questions</span>
-              <span style={{ fontSize: 11.5, color: "var(--color-text-muted)" }}>{editing.linkedQuestions.length}</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {editing.linkedQuestions.filter((l) => l.accessible).map((l) => (
-                <div key={l.questionId} style={{ padding: "11px 13px", borderRadius: 16, background: "var(--color-bg)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: "var(--color-text-muted)" }}>{l.examSlug} · {l.externalId ?? l.questionId.slice(0, 8)}</span>
-                    <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-                      <button
-                        type="button"
-                        onClick={() => l.examId && goToQuestionForReview(l.examId, l.questionId)}
-                        title="Open in Learning mode for review — does not record an attempt"
-                        style={{ padding: "1px 7px", border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 11, color: "var(--color-accent-700)" }}
-                      >
-                        Open
-                      </button>
-                      <button type="button" onClick={() => { void kp.unlinkQuestion(l.questionId).catch(() => {}); }} style={{ padding: "1px 7px", border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 11, color: "var(--color-accent-700)" }}>Unlink</button>
-                    </span>
-                  </div>
-                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, opacity: 0.8 }}>{l.stemExcerpt}</p>
-                </div>
-              ))}
-              {editing.linkedQuestions.some((l) => !l.accessible) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 13px", borderRadius: 16, background: "var(--color-neutral-100)" }}>
-                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.45, flex: "none" }}><path d="M12 8h.01 M11 12h1v4h1" /><circle cx={12} cy={12} r={9} /></svg>
-                  <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
-                    {editing.linkedQuestions.filter((l) => !l.accessible).length} linked question{editing.linkedQuestions.filter((l) => !l.accessible).length === 1 ? " is" : "s are"} no longer available to you.
-                  </span>
-                </div>
-              )}
-            </div>
-            <button type="button" onClick={() => setShowLinkModal(true)} className="btn btn-secondary btn-block">
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14 M5 12h14" /></svg>
-              Link a question
-            </button>
-          </div>
-
-          <div style={{ padding: 18, border: "1px solid var(--color-divider)", borderRadius: 24, background: "var(--color-bg)" }}>
-            <span style={{ display: "block", marginBottom: 10, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>Sync</span>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12.5, opacity: 0.75 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: state.saveStatus === "saved" ? "var(--color-accent-2-600)" : state.saveStatus === "error" ? "var(--color-danger)" : "var(--color-neutral-400)" }} />
-                Body {state.saveStatus === "saved" ? "saved" : state.saveStatus === "saving" ? "saving…" : state.saveStatus === "error" ? "failed to save" : "unsaved"} · rev {editing.revision}
-              </span>
-              {state.uploading > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#e0961b" }} />
-                  {state.uploading} attachment{state.uploading === 1 ? "" : "s"} still uploading
+      <div className="kp-layout">
+        <main className="kp-main">
+          <div className="kp-column">
+            {state.conflict && (
+              <div className="kp-banner kp-banner-warning" role="alert">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <span className="kp-banner-msg"><strong>This note was saved from another tab or device since you started editing.</strong> Keep your local changes (overwriting the other save) or reload the latest version (discarding yours).</span>
+                <span className="kp-banner-actions">
+                  <button type="button" className="kp-pill-btn" onClick={kp.reloadAfterConflict}>Reload latest</button>
+                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.keepMineAfterConflict}>Keep mine</button>
                 </span>
-              )}
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--color-neutral-400)" }} />
-                Tags &amp; links {state.saveStatus === "saved" ? "up to date" : "syncing with this note"}
-              </span>
-            </div>
-            <div style={{ height: 1, margin: "13px 0", background: "var(--color-divider)" }} />
-            <button type="button" onClick={() => setShowDeleteDialog(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: 0, border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 600, color: "var(--color-danger-text)" }}>
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3" /></svg>
-              Delete this note
-            </button>
+              </div>
+            )}
+            {state.saveStatus === "error" && !state.conflict && !state.uploadError && (
+              <div className="kp-banner kp-banner-danger" role="alert">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <span className="kp-banner-msg"><strong>Save failed.</strong> Your text is safe in the editor. {state.saveErrorMessage}</span>
+                <span className="kp-banner-actions">
+                  {state.metadataError && <button type="button" className="kp-pill-btn" onClick={kp.discardFailedMetadata}>Discard failed metadata change</button>}
+                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.retryNow}>Retry now</button>
+                </span>
+              </div>
+            )}
+            <MarkdownEditor key={editing.id} value={state.bodyMarkdown} onChange={kp.setBodyMarkdown} onUploadImage={kp.uploadImage} onCompositionChange={kp.setComposing} onDismissUploadError={kp.dismissUploadError} header={header} />
           </div>
-        </div>
+        </main>
+
+        {!focusMode && (
+          <aside className="kp-aside" aria-label="Note details">
+            {outline.length > 0 && (
+              <section className="kp-side-card">
+                <span className="kp-kicker">On this page</span>
+                <nav className="kp-toc" aria-label="Outline">
+                  {outline.map((h, i) => (
+                    <button key={i} type="button" className={`kp-toc-l${h.level}`} onClick={() => jumpTo(i)}>{h.text}</button>
+                  ))}
+                </nav>
+              </section>
+            )}
+
+            <section className="kp-side-card">
+              <div className="kp-side-head">
+                <span className="kp-kicker">Related questions</span>
+                <span className="kp-count">{editing.linkedQuestions.length}</span>
+              </div>
+              {editing.linkedQuestions.filter((l) => l.accessible).map((l) => (
+                <article key={l.questionId} className="kp-q">
+                  <span className="kp-q-meta">{l.examSlug} · {l.externalId ?? l.questionId.slice(0, 8)}</span>
+                  <p className="kp-q-stem">{l.stemExcerpt}</p>
+                  <span className="kp-q-actions">
+                    <button type="button" className="kp-ghost-btn" onClick={() => l.examId && goToQuestionForReview(l.examId, l.questionId)} title="Opens in Learning mode for review. No attempt is recorded.">Review in Learning</button>
+                    <button type="button" className="kp-ghost-btn kp-ghost-muted" onClick={() => { void kp.unlinkQuestion(l.questionId).catch(() => {}); }}>Unlink</button>
+                  </span>
+                </article>
+              ))}
+              {unavailable > 0 && (
+                <p className="kp-q-gone"><InfoCircle size={16} aria-hidden="true" />{unavailable} linked question{unavailable === 1 ? " is" : "s are"} no longer available to you.</p>
+              )}
+              {editing.linkedQuestions.length === 0 && <p className="kp-side-empty">Link the questions this note explains, so you can review them together.</p>}
+              <button type="button" onClick={() => setShowLinkModal(true)} className="btn btn-secondary btn-block">
+                <Plus size={16} aria-hidden="true" />
+                Link a question
+              </button>
+            </section>
+
+            <p className="kp-side-meta">
+              Created {new Date(editing.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Edited {timeOf(editing.updatedAt)}
+            </p>
+          </aside>
+        )}
       </div>
     </div>
   );
