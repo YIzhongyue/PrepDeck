@@ -358,7 +358,7 @@ test("a Client ID Metadata Document client is fetched, must name itself, and is 
   let document = { client_id: clientId, client_name: "Metadata Client", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" };
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), clientId);
-    assert.equal(init.redirect, "error", "a metadata document is never fetched through a redirect");
+    assert.equal(init.redirect, "manual", "disable redirects using a mode supported by Workers");
     fetches++;
     return Response.json(document);
   };
@@ -397,7 +397,12 @@ test("a metadata document client is accepted when the methods it supports includ
   const { verifier, challenge } = await pkce();
   for (const [index, [methods, accepted]] of cases.entries()) {
     const clientId = `https://client.example/oauth/client-${index}.json`;
-    globalThis.fetch = async () => Response.json({ client_id: clientId, ...base, ...methods });
+    globalThis.fetch = async (_url, init) => {
+      // Node accepts redirect: "error", but the deployed Workers runtime
+      // throws before making the request. Model that runtime boundary here.
+      if (init.redirect === "error") throw new TypeError('Invalid redirect value: "error"');
+      return Response.json({ client_id: clientId, ...base, ...methods });
+    };
     const response = await f.fetchWorker(authorizeUrl({
       client_id: clientId, redirect_uri: REDIRECT, response_type: "code", state: "client-state",
       code_challenge: challenge, code_challenge_method: "S256", resource: `${BASE}/mcp`,
@@ -416,6 +421,32 @@ test("a metadata document client is accepted when the methods it supports includ
   const exchanged = await token(f, { grant_type: "authorization_code", code, client_id: clientId, redirect_uri: REDIRECT, code_verifier: verifier, resource: `${BASE}/mcp` });
   assert.equal(exchanged.response.status, 200, JSON.stringify(exchanged.body));
   assert.match(exchanged.body.access_token, /^pd_oat_user_/);
+});
+
+test("CIMD redirects are rejected without following Location or storing the response document", async (t) => {
+  const f = setup(t);
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const { challenge } = await pkce();
+  for (const status of [301, 302, 303, 307, 308]) {
+    const clientId = `https://client.example/oauth/redirect-${status}.json`;
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), redirect: init.redirect });
+      // Even a valid-looking document in a 3xx body is not authoritative.
+      return Response.json({ client_id: clientId, redirect_uris: [REDIRECT] }, {
+        status, headers: { Location: "http://127.0.0.1/private-client.json" },
+      });
+    };
+    const response = await f.fetchWorker(authorizeUrl({
+      client_id: clientId, redirect_uri: REDIRECT, response_type: "code",
+      code_challenge: challenge, code_challenge_method: "S256",
+    }));
+    assert.equal(response.headers.get("Location"), "/connect?error=invalid_client");
+    assert.deepEqual(calls, [{ url: clientId, redirect: "manual" }]);
+    assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_clients WHERE id = ?").get(clientId).n, 0);
+  }
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_requests").get().n, 0);
 });
 
 test("the consent screen needs the signed-in browser that started the request", async (t) => {

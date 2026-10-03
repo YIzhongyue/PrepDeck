@@ -243,8 +243,10 @@ export function supportsPublicTokenAuth(document: Record<string, unknown>): bool
 async function fetchMetadataDocument(clientId: string): Promise<{ name: string | null; uri: string | null; redirectUris: string[] } | null> {
   let response: Response;
   try {
+    // Workers does not implement redirect: "error" (it throws before fetching).
+    // Manual mode never follows Location; the !ok check below rejects 3xx.
     response = await fetch(clientId, {
-      headers: { Accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+      headers: { Accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
     });
   } catch {
     return null;

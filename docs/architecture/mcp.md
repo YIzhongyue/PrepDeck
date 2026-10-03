@@ -403,9 +403,13 @@ days. `/api/oauth/token` uses the ordinary write class.
   name: IP literals (including numeric spellings the URL parser normalizes,
   such as `https://2130706433/`), `localhost`, trailing-dot hosts, single-label
   names and `.internal`/`.local`/`.lan`/`.home`/`.corp`/`.intranet`/`.private`
-  suffixes are refused. The fetch follows no redirects, is bounded to 5 KB and
-  5 seconds, and only a JSON document naming itself as `client_id` with valid
-  redirect URIs is accepted; nothing from a failed fetch is returned to the
+  suffixes are refused. The fetch uses `redirect: "manual"` and rejects non-2xx
+  responses, so it never follows redirects. Workers does not support
+  `redirect: "error"`; that mode throws before fetching and would reject all
+  uncached metadata clients as `invalid_client` even when their documents are
+  valid. The fetch is bounded to 5 KB and 5 seconds, and only a JSON document
+  naming itself as `client_id` with valid redirect URIs is accepted;
+  nothing from a failed fetch is returned to the
   caller. DNS is resolved by Cloudflare's network for the Worker, which has no
   route to the deployment's own private network: a hostname that resolves to a
   private or link-local address (including through DNS rebinding) reaches no
