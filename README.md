@@ -1,6 +1,10 @@
 ![PrepDeck](/imgs/PrepDeck-horizontal-logo-blue.png)
 
-[![CI](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml) [![M8ven Score](https://m8ven.ai/badge/mcp/yizhongyue-prepdeck-0kh85z)](https://m8ven.ai/mcp/yizhongyue-prepdeck-0kh85z) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://m8ven.ai/mcp/yizhongyue-prepdeck-0kh85z"><img alt="M8ven Score" src="https://m8ven.ai/badge/mcp/yizhongyue-prepdeck-0kh85z"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+</p>
 
 PrepDeck is a self-hosted, multi-exam study platform for a small invited group. Build a question bank, practice at your own pace, take timed mock exams, and turn mistakes into notes you can revisit. Study in the browser or connect an AI agent through dedicated User and Admin MCP endpoints.
 
