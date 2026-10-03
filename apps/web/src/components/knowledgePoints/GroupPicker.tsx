@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KnowledgePointGroup } from "@prepdeck/shared";
+import { Check, ChevronDown, Folder } from "@untitledui/icons";
 
 export default function GroupPicker({
   groups,
@@ -24,35 +25,26 @@ export default function GroupPicker({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  const name = groupId ? (groupName ?? "Group") : "Ungrouped";
+  const option = (id: string | null, label: string) => (
+    <button key={id ?? ""} type="button" role="menuitemradio" aria-checked={groupId === id} className="kp-menu-item"
+      onClick={() => { onSelect(id); setOpen(false); }}>
+      <span className="kp-mi-text"><span className="kp-mi-title">{label}</span></span>
+      {groupId === id && <Check size={16} aria-hidden="true" />}
+    </button>
+  );
+
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px solid var(--color-divider)", borderRadius: 999, background: "var(--color-accent-2-100)", cursor: "pointer", font: "inherit", fontSize: 11.5, color: "var(--color-accent-2-800)" }}
-      >
-        {groupId ? (groupName ?? "Group") : "Ungrouped"}
-        <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+    <div ref={ref} className="kp-dropdown" onKeyDown={(e) => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}>
+      <button type="button" className="kp-chip" aria-label={`Group: ${name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Folder size={16} aria-hidden="true" />
+        {name}
+        <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open && (
-        <div style={{ position: "absolute", zIndex: 40, top: "calc(100% + 6px)", left: 0, width: 220, maxHeight: 260, overflowY: "auto", padding: 6, border: "1px solid var(--color-divider)", borderRadius: 14, background: "var(--color-bg)", boxShadow: "var(--pd-shadow-lg)" }}>
-          <button
-            type="button"
-            onClick={() => { onSelect(null); setOpen(false); }}
-            style={{ width: "100%", display: "block", padding: "7px 10px", border: 0, borderRadius: 9, background: groupId === null ? "var(--color-neutral-100)" : "transparent", cursor: "pointer", font: "inherit", fontSize: 12.5, textAlign: "left" }}
-          >
-            Ungrouped
-          </button>
-          {groups.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => { onSelect(g.id); setOpen(false); }}
-              style={{ width: "100%", display: "block", padding: "7px 10px", border: 0, borderRadius: 9, background: groupId === g.id ? "var(--color-neutral-100)" : "transparent", cursor: "pointer", font: "inherit", fontSize: 12.5, textAlign: "left" }}
-            >
-              {g.name}
-            </button>
-          ))}
+        <div className="kp-menu kp-menu-pop" role="menu" aria-label="Move to group" style={{ left: 0, width: 240, maxHeight: 280, overflowY: "auto" }}>
+          {option(null, "Ungrouped")}
+          {groups.map((g) => option(g.id, g.name))}
         </div>
       )}
     </div>

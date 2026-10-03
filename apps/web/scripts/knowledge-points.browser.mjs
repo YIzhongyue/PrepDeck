@@ -131,6 +131,7 @@ await page.route("https://**", route => route.abort());
 const url = `http://127.0.0.1:${server.address().port}`;
 const wait = async (predicate, label) => { for (let i = 0; i < 160; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error(`Timed out: ${label}`); };
 const saved = () => page.getByText(/^Saved ·/).waitFor();
+const openDeleteDialog = async () => { await page.getByRole("button", { name: "More actions", exact: true }).click(); await page.getByRole("menuitem", { name: "Delete note…", exact: true }).click(); };
 const openA = async () => { await page.getByRole("link", { name: "Access policies", exact: true }).click(); await page.getByRole("textbox", { name: "Knowledge point body", exact: true }).waitFor(); };
 async function checkDeletionRecovery() {
   for (const scenario of ["validation", "upload", "pending-save"]) {
@@ -152,7 +153,7 @@ async function checkDeletionRecovery() {
       await title.fill("Draft awaiting deletion");
       await wait(() => concurrentWrites === 1, "save in flight before deletion");
     }
-    await page.getByRole("button", { name: "Delete this note", exact: true }).click();
+    await openDeleteDialog();
     const dialog = page.getByRole("dialog", { name: "Delete knowledge point" });
     const pendingDelete = deleteRequests;
     await dialog.getByRole("button", { name: "Delete note", exact: true }).click();
@@ -163,7 +164,7 @@ async function checkDeletionRecovery() {
       assert.equal(await title.inputValue(), "   ", "Failed deletion retains the unsaved title");
       await page.getByRole("button", { name: "Retry now", exact: true }).waitFor();
       failDelete = false;
-      await page.getByRole("button", { name: "Delete this note", exact: true }).click();
+      await openDeleteDialog();
       await dialog.getByRole("button", { name: "Delete note", exact: true }).click();
     } else if (scenario === "pending-save") {
       assert.equal(await dialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
@@ -250,7 +251,7 @@ try {
   // Failed saves retain text, block navigation, and can be explicitly retried.
   failSave = 422;
   await page.getByRole("textbox", { name: "Knowledge point title", exact: true }).fill("Retained title");
-  await page.getByText("Save failed — Retry", { exact: true }).waitFor();
+  await page.getByText("Save failed.", { exact: true }).waitFor();
   const attempts = writes.length; await new Promise(resolve => setTimeout(resolve, 2100)); assert.equal(writes.length, attempts, "Do not retry validation errors");
   await page.getByRole("link", { name: "All notes", exact: true }).click();
   await page.locator('p[role="alert"]').filter({ hasText: "Test save failure" }).waitFor(); assert.equal(await visual.count(), 1);
@@ -283,8 +284,10 @@ try {
   uploadGate = Promise.withResolvers();
   await page.locator('input[type="file"]').setInputFiles({ name: "screen.png", mimeType: "image/png", buffer: png });
   await page.getByText("Uploading image…", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Markdown source", exact: true }).isDisabled(), true, "Pending uploads cannot publish into a stale hidden visual document");
-  assert.equal(await page.getByRole("button", { name: "Image", exact: true }).isDisabled(), true, "Finish one upload before adding another");
+  assert.equal(await page.getByRole("button", { name: "Markdown", exact: true }).isDisabled(), true, "Pending uploads cannot publish into a stale hidden visual document");
+  await page.getByRole("button", { name: "Insert", exact: true }).click();
+  assert.equal(await page.getByRole("menuitem", { name: /^Image/ }).isDisabled(), true, "Finish one upload before adding another");
+  await page.keyboard.press("Escape");
   await visual.press("Control+End"); await page.keyboard.type(" text during upload");
   await new Promise(resolve => setTimeout(resolve, 1200));
   assert.equal(await page.getByText(/^Saved ·/).count(), 0);
@@ -292,11 +295,11 @@ try {
   uploadGate.resolve(); uploadGate = null;
   await wait(() => notes[0].bodyMarkdown.includes("/api/kp-images/uploaded"), "attachment reference saved"); await saved();
   assert.ok(notes[0].bodyMarkdown.includes("text during upload"));
-  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
   const source = page.getByRole("textbox", { name: "Markdown source", exact: true });
   await source.fill((await source.inputValue()) + "\n\nSource edit after upload"); await saved();
   assert.ok(notes[0].bodyMarkdown.includes("Source edit after upload"));
-  await page.getByRole("button", { name: "Write", exact: true }).click();
+  await page.getByRole("button", { name: "Visual", exact: true }).click();
   failUpload = true;
   await page.locator('input[type="file"]').setInputFiles({ name: "retry.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Retry upload" }).waitFor();
@@ -362,12 +365,12 @@ try {
     "the dimming layer does not cover the viewport"
   );
   assert.deepEqual(dimmed.corners, [true, true, true, true], "the page behind the modal is not dimmed to the corners");
-  assert.equal(await page.getByRole("button", { name: "Delete this note", exact: true }).evaluate(el => { el.focus(); return document.activeElement === el; }), false,
+  assert.equal(await page.getByRole("button", { name: "More actions", exact: true }).evaluate(el => { el.focus(); return document.activeElement === el; }), false,
     "a control behind the modal still takes focus");
   await linkDialog.getByRole("button", { name: "Link", exact: true }).click();
   await linkDialog.getByText("Linked", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await page.getByRole("button", { name: "Open", exact: true }).click();
+  await page.getByRole("button", { name: "Review in Learning", exact: true }).click();
   await page.waitForFunction(() => window.fixtureApp.state.screen === "learning" && window.fixtureApp.state.lStage === "live");
   assert.equal(await page.evaluate(() => window.fixtureApp.state.attemptId), null);
   await page.evaluate(() => window.fixtureApp.begin(["Q1", "Q2"]));
@@ -497,9 +500,9 @@ try {
   const selectOldParagraph = async () => {
     // Filling a rich document's DOM retains its heading type. Reset through
     // the source UI so this case starts with exactly one ordinary paragraph.
-    await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+    await page.getByRole("button", { name: "Markdown", exact: true }).click();
     await source.fill("Old paragraph");
-    await page.getByRole("button", { name: "Write", exact: true }).click();
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
     await saved();
     // Synthetic paste does not wait for native selectionchange. Set the model
     // selection, then verify that the browser selected the intended text too.
@@ -590,9 +593,9 @@ try {
   await plainTextOffer.waitFor({ state: "hidden" });
   assert.equal(await plainTextOffer.count(), 0, "Reloading another revision withdraws the old paste range");
   assert.equal(notes.at(-1).bodyMarkdown, "REMOTE content is authoritative");
-  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await source.fill("Before Old after");
-  await page.getByRole("button", { name: "Write", exact: true }).click(); await saved();
+  await page.getByRole("button", { name: "Visual", exact: true }).click(); await saved();
   await visual.evaluate(el => el.editor.chain().focus().setTextSelection({ from: 8, to: 11 }).run());
   await page.waitForFunction(() => window.getSelection()?.toString() === "Old");
   assert.equal(await page.evaluate(() => window.getSelection()?.toString()), "Old");
@@ -601,13 +604,14 @@ try {
   console.log("PASS paragraph paste, single-transaction alternative undo, literal block reopen and conflict reload safety");
   const literalFence = "```prepdeck-source\n# Literal code\n```";
   const linkedImage = "[![linked screenshot](https://example.test/image.png)](https://example.test/page)";
-  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await source.fill(`${literalFence}\n\n${linkedImage}\n\nEditable text`);
-  await page.getByRole("button", { name: "Write", exact: true }).click();
+  await page.getByRole("button", { name: "Visual", exact: true }).click();
   await visual.press("Control+End"); await page.keyboard.type(" updated"); await saved();
   assert.ok(notes.at(-1).bodyMarkdown.includes(literalFence), "Literal code cannot collide with the internal source marker");
   assert.ok(notes.at(-1).bodyMarkdown.includes(linkedImage), "Linked images retain their target URL after visual edits");
-  await page.getByRole("button", { name: "Mermaid", exact: true }).click();
+  await page.getByRole("button", { name: "Insert", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Diagram/ }).click();
   await page.locator('[aria-label="Code source"]').fill("this is not valid Mermaid !!!");
   await page.getByRole("button", { name: "Preview diagram", exact: true }).click();
   await page.getByText(/Diagram didn.*render/).waitFor();

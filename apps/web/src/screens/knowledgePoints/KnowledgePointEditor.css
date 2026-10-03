@@ -1,0 +1,80 @@
+/* Knowledge point editor screen: top bar, reading column and sidebar.
+   Figtree replaces the display face here, including buttons (.btn reads
+   --font-heading), so the whole screen shares one calm typeface. */
+.kp-screen { --font-heading: var(--font-body); --font-heading-weight: 600; font-family: var(--font-body); animation: pd-rise .28s ease backwards; }
+
+.kp-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; }
+.kp-crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--color-text-muted); }
+.kp-crumbs a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--color-accent); font-weight: 600; text-decoration: none; }
+.kp-crumbs a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.kp-crumb-group { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kp-topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: auto; }
+.kp-icon-btn-lg { width: 36px; height: 36px; }
+.kp-icon-btn[aria-pressed=true], .kp-icon-btn[aria-expanded=true] { background: var(--color-accent-100); color: var(--color-accent-800); }
+.kp-screen .kp-icon-btn:disabled { cursor: not-allowed; opacity: .45; }
+.kp-count { padding: 0 6px; font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kp-save { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap; }
+.kp-save-bad { color: var(--color-danger-text); }
+.kp-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-500); }
+.kp-dot-ok { background: var(--color-accent-2-600); }
+.kp-save-bad .kp-dot { background: var(--color-danger); }
+.kp-nav-error { margin: 0 0 14px; color: var(--color-danger-text); }
+
+.kp-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px 40px; }
+.kp-main { flex: 999 1 560px; min-width: 0; }
+.kp-column { max-width: 780px; margin: 0 auto; }
+.kp-aside { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+/* Title and properties */
+.kp-title-input { display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: 0; background: transparent; font-family: var(--font-body); font-size: clamp(28px, 3.2vw, 38px); font-weight: 700; line-height: 1.18; letter-spacing: -0.02em; color: var(--color-text); }
+.kp-title-input::placeholder { color: var(--color-text-muted); opacity: 1; }
+.kp-title-input:focus-visible { outline: none; }
+.kp-title-error { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--color-danger-text); }
+.kp-props { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 22px; }
+.kp-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border: 1px solid var(--color-divider); border-radius: 999px; background: var(--color-bg); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+button.kp-chip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.kp-chip-tag { padding: 4px 4px 4px 12px; border-color: transparent; background: var(--color-accent-100); color: var(--color-accent-800); cursor: default; }
+.kp-chip-x { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
+.kp-chip-x:hover { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
+input.kp-chip-add { width: 116px; border-style: dashed; border-color: var(--color-control-border); background: transparent; font-weight: 600; cursor: text; }
+input.kp-chip-add::placeholder { color: var(--color-text-muted); opacity: 1; }
+input.kp-chip-add:focus-visible { outline: none; border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-100); }
+
+/* Save and conflict banners sit above the title, where the eye already is */
+.kp-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 0 0 18px; padding: 12px 12px 12px 16px; border: 1px solid; border-radius: 18px; font-size: 13.5px; line-height: 1.45; }
+.kp-banner > svg { flex: none; }
+.kp-banner-danger { border-color: var(--color-danger-border); background: var(--color-danger-bg); color: var(--color-danger-text); }
+.kp-banner-warning { border-color: var(--color-warning-border); background: var(--color-warning-bg); color: var(--color-warning-text); }
+.kp-banner-msg { flex: 1 1 260px; min-width: 0; }
+.kp-banner-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.kp-banner-danger .kp-pill-solid { border-color: transparent; background: var(--color-danger-text); color: var(--color-danger-bg); }
+.kp-banner-warning .kp-pill-solid { border-color: transparent; background: var(--color-warning-text); color: var(--color-warning-bg); }
+
+/* Sidebar */
+.kp-side-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 24px; background: var(--color-surface); }
+.kp-side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.kp-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--color-accent-700); }
+.kp-toc { display: flex; flex-direction: column; gap: 2px; }
+.kp-toc button { display: block; width: 100%; padding: 7px 12px; border: 0; border-radius: 12px; background: transparent; font-size: 13.5px; line-height: 1.35; text-align: left; cursor: pointer; }
+.kp-toc button:hover { background: var(--color-bg); color: var(--color-accent-800); }
+.kp-toc .kp-toc-l1 { font-weight: 600; }
+.kp-toc .kp-toc-l3 { padding-left: 26px; font-size: 13px; color: var(--color-text-muted); }
+.kp-q { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 16px; background: var(--color-bg); }
+.kp-q-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--color-text-muted); }
+.kp-q-stem { margin: 0; font-size: 13px; line-height: 1.5; }
+.kp-q-actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: -10px; }
+.kp-ghost-muted { color: var(--color-text-muted); }
+.kp-q-gone { display: flex; align-items: center; gap: 8px; margin: 0; padding: 11px 13px; border-radius: 16px; background: var(--color-neutral-100); font-size: 12.5px; color: var(--color-text-muted); }
+.kp-q-gone svg { flex: none; }
+.kp-side-empty { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-text-muted); }
+.kp-side-card .btn-block { margin-top: 2px; }
+.kp-side-meta { margin: 0; padding: 0 6px; font-size: 12px; line-height: 1.5; color: var(--color-text-muted); }
+
+.kp-skeleton { display: flex; flex-direction: column; gap: 14px; max-width: 760px; margin: 40px auto; }
+.kp-skeleton span { display: block; width: 100%; height: 14px; border-radius: 999px; background: var(--color-neutral-200); }
+
+@media (max-width: 600px) {
+  .kp-count, .kp-topbar .kp-tb-sep { display: none; }
+  .kp-focus-toggle { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .kp-screen { animation: none; } }
