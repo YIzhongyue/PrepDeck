@@ -166,6 +166,49 @@
 
 .st-custom { display: grid; gap: 16px; }
 .st-start { max-width: 240px; }
+.st-start-hint { margin: 0; max-width: 460px; font-size: 13px; line-height: 20px; color: var(--st-fg-4); }
+
+/* A source with nothing in it stays selectable, but reads as empty at a glance. */
+.st-choice[data-empty] .st-choice-count { background: var(--st-warn-soft); color: var(--st-warn-fg); }
+
+/* ---- More options ------------------------------------------------------ */
+
+.st-more-opts { display: flex; flex-direction: column; min-width: 0; }
+.st-more-opts:not(:last-child) { border-bottom: 1px solid var(--st-soft-2); }
+.st-rows > .st-more-opts .st-more-row { border-bottom: 0; }
+.st-rows > .st-more-opts:first-child .st-more-row { padding-top: 0; }
+.st-more-body > .st-row:first-child { border-top: 1px solid var(--st-soft-2); }
+.st-more-body > .st-row:last-child { border-bottom: 0; }
+.st-more-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--st-soft);
+  box-shadow: inset 0 0 0 1px var(--st-line);
+  color: var(--st-fg-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow .2s;
+}
+.st-more-toggle:hover { box-shadow: inset 0 0 0 1px var(--st-line-2); }
+.st-more-toggle:focus-visible { outline: 2px solid var(--st-brand); outline-offset: 2px; }
+.st-more-summary { flex: 1 1 220px; min-width: 0; font-size: 14px; line-height: 20px; color: var(--st-fg-3); }
+.st-more-action { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; color: var(--st-brand-fg); white-space: nowrap; }
+.st-more-action svg { transition: transform .2s; }
+.st-more-toggle[aria-expanded="true"] .st-more-action svg { transform: rotate(180deg); }
+
+/* ---- Question count presets -------------------------------------------- */
+
+.st-count { display: flex; flex-direction: column; gap: 12px; }
+.st-count .st-segmented { align-self: flex-start; }
+.st-count .st-seg-btn { min-width: 52px; justify-content: center; font-variant-numeric: tabular-nums; }
+.st-count .st-seg-btn[aria-pressed="true"] { background: var(--st-brand-soft); color: var(--st-brand-fg); }
 
 /* ---- Summary card ------------------------------------------------------ */
 
@@ -178,6 +221,11 @@
 .st-summary-row > span:first-child { display: flex; align-items: center; gap: 8px; color: var(--st-fg-3); white-space: nowrap; }
 .st-summary-row > span:first-child svg { color: var(--st-fg-5); }
 .st-summary-row > span:last-child { font-weight: 600; color: var(--st-fg); text-align: right; }
+.st-summary-empty { display: flex; align-items: flex-start; gap: 10px; margin: 0 24px; padding: 12px 14px; border: 1px solid var(--st-warn-line); border-radius: 10px; background: var(--st-warn-soft); color: var(--st-warn-fg); font-size: 13px; line-height: 20px; }
+.st-summary-empty-icon { display: grid; margin-top: 2px; color: var(--st-warn); }
+.st-summary-empty-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.st-summary-empty-title { font-weight: 600; }
+.st-summary-empty .st-link { margin-top: 4px; font-size: 13px; }
 .st-summary-foot { padding: 16px 24px 24px; }
 .st-summary-foot .st-btn { width: 100%; padding: 12px 18px; font-size: 16px; }
 .st-summary-note { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0 0; padding: 0 4px; font-size: 13px; line-height: 20px; color: var(--st-fg-4); }

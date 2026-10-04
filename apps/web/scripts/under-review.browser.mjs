@@ -81,6 +81,11 @@ try {
   const capture = async name => { if (shots) { await mkdir(shots, { recursive: true }); await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/under-review-${name}.png`, fullPage: true }); } };
   const row = () => page.getByRole("region", { name: "Questions under review" });
   const choose = label => row().getByRole("button", { name: new RegExp(`^${label}\\b`) }).click();
+  // Practice folds difficulty, review and feedback under "More options".
+  const openOptions = async () => {
+    const toggle = page.locator(".st-more-toggle");
+    if (await toggle.count() && (await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  };
   const pressed = async label => (await row().getByRole("button", { name: new RegExp(`^${label}\\b`) }).getAttribute("aria-pressed")) === "true";
   const summary = label => page.locator(".st-summary-row").filter({ hasText: label }).locator("span").last().textContent();
   const notice = page.getByRole("note").filter({ hasText: "This question is currently under review and may contain disputed or uncertain content." });
@@ -93,6 +98,7 @@ try {
 
   // --- Practice -------------------------------------------------------------
   await invoke("go", "practice");
+  await openOptions();
   await row().waitFor();
   // Plain language for learners: the row says how many and what it means,
   // never the column it comes from.
@@ -103,6 +109,21 @@ try {
   await page.getByText("6 questions match your filters").waitFor();
   assert.equal(await summary("Under review"), "Included");
   await capture("practice-setup");
+
+  // An empty source is not a dead end: Start is disabled with the reason on
+  // it, and the notice offers the unattempted questions instead.
+  await page.getByRole("button", { name: "Wrong book 0", exact: true }).click();
+  await page.getByText("0 questions match your filters").waitFor();
+  const start = page.getByRole("button", { name: "Start session" });
+  assert.equal(await start.isDisabled(), true, "an empty source cannot start a session");
+  const reason = await page.locator(`#${await start.getAttribute("aria-describedby")}`).innerText();
+  assert.match(reason, /Your wrong book is empty/);
+  await capture("practice-empty-source");
+  await page.getByRole("button", { name: "Practice unattempted questions (6)" }).click();
+  await page.getByText("6 questions match your filters").waitFor();
+  assert.equal((await state()).source, "new");
+  assert.equal(await start.isDisabled(), false);
+  await page.getByRole("button", { name: "All questions 6", exact: true }).click();
 
   await choose("Skip");
   await page.getByText("4 questions match your filters").waitFor();
@@ -118,6 +139,7 @@ try {
 
   // Included again, every source draws them, and each is marked when it shows.
   await invoke("go", "practice");
+  await openOptions();
   await choose("Include");
   await page.getByText("6 questions match your filters").waitFor();
   await invoke("startPractice");

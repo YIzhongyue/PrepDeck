@@ -13,7 +13,7 @@ import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, UnderReviewNotice, usePinnedCard, visibleNotes,
+  BookmarkButton, CopyPromptButton, ExplanationPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, UnderReviewNotice, pinnedCardStyle, usePinnedCard, visibleNotes,
   type OptionState
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -140,7 +140,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
       >
         <section
           className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label="Question"
-          style={{ height: bp.narrow && !flow ? fitHeight ?? undefined : undefined }}
+          style={pinnedCardStyle(gridHeight, bp.narrow && !flow ? fitHeight : null)}
         >
           <div className="st-q-head">
             <QuestionBadges label={q.externalId} typeLabel={questionTypeLabel(q)} multi={q.type === "multiple_choice"} tags={q.tags} compact={flow} underReview={q.needsReview}>

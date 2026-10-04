@@ -23,7 +23,7 @@ function statusBadge(tag: FocusTag) {
     case "on-track":
       return <BadgeWithDot type="pill-color" size="sm" color="success">on track</BadgeWithDot>;
     default:
-      return <Badge type="pill-color" size="sm" color="gray">needs {FOCUS_TAG_MIN_ANSWERS} answers</Badge>;
+      return <Badge type="pill-color" size="sm" color="gray">not measured · needs {FOCUS_TAG_MIN_ANSWERS} answers</Badge>;
   }
 }
 
@@ -54,6 +54,7 @@ export default function FocusTagsCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? focus : focus.slice(0, FOCUS_PREVIEW_ROWS);
+  const measured = focus.some((tag) => tag.hasEvidence);
 
   return (
     <section className="pd-stats-card" aria-labelledby="pd-stats-focus-title">
@@ -61,7 +62,11 @@ export default function FocusTagsCard({
         <div style={{ minWidth: 0 }}>
           <h3 id="pd-stats-focus-title">Where to focus</h3>
           <p className="pd-stats-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-            {passMarkPct == null
+            {/* Nothing is "weakest" until something is measured: say so rather
+                than rank by an accuracy nobody has. */}
+            {!measured
+              ? `Not ranked yet: a tag is measured after ${FOCUS_TAG_MIN_ANSWERS} answers. Until then, the tags with the most questions to practise come first.`
+              : passMarkPct == null
               ? "Weakest tags first, hard questions weighted"
               : `Weakest tags first, hard questions weighted, against the ${passMarkPct}% pass line`}
           </p>

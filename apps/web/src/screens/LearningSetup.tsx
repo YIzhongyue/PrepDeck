@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { underReviewCount } from "../lib/underReview";
 import { IC, Icon } from "../components/study/StudyKit";
@@ -19,6 +19,8 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
   const [startText, setStartText] = useState(String(state.lStartInput));
   const pool = learningPool();
   const maxSeq = pool.length ? pool[pool.length - 1]!.sequenceNumber : 0;
+  const numberingGaps = maxSeq > pool.length;
+  const startHintId = useId();
   const diffCounts = useMemo(() => {
     const counts: Record<DifficultyChoice, number> = { all: state.catalog.length, easy: 0, medium: 0, hard: 0 };
     for (const q of state.catalog) if (q.diff) counts[q.diff]++;
@@ -59,10 +61,18 @@ export default function LearningSetup({ bp }: { bp: Breakpoints }) {
               Start from question #{maxSeq ? ` (1–${maxSeq})` : ""}
               <input
                 type="number" min={1} max={maxSeq || undefined} className="st-input" value={startText}
+                aria-describedby={numberingGaps ? startHintId : undefined}
                 onChange={(e) => setStartText(e.target.value)}
                 onBlur={(e) => commitStart(e.target.value)}
               />
             </label>
+            {/* Question numbers are stable IDs, not positions: the range and
+                the match count differ whenever numbers are missing or filtered. */}
+            {numberingGaps && (
+              <p id={startHintId} className="st-start-hint">
+                Numbers are fixed question IDs, not positions: {pool.length} of the numbers from 1 to {maxSeq} match your filters. A number that is skipped starts at the next one.
+              </p>
+            )}
           </SetupRow>
 
           <SetupRow title="Domains" desc="All included unless you select specific ones." cols={layout.rowCols}>

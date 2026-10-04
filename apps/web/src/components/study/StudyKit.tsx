@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState, type DependencyList, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState, type CSSProperties, type DependencyList, type KeyboardEvent, type ReactNode } from "react";
 import { CURATED_MODELS, MAX_NOTE_LENGTH, formatAnswerText } from "@prepdeck/shared";
 import { usePrepDeck } from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
@@ -9,6 +9,7 @@ import UnlockKeyPrompt from "../UnlockKeyPrompt";
 import AnswerRevisionNotice from "../AnswerRevisionNotice";
 import { UNDER_REVIEW_NOTICE } from "../../lib/underReview";
 import type { LearningHistoryRow, Question } from "../../types";
+import { requestSettingsSection } from "../../screens/settings/SettingsNav";
 import "./study.css";
 
 // Shared pieces of the live Practice, Mock and Learning screens. Styles live
@@ -37,6 +38,7 @@ export const IC = {
   clock: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 6v6l4 2",
   target: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 6a6 6 0 1 0 0 12a6 6 0 1 0 0-12z M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4z",
   trophy: "M6 9H4.5a2.5 2.5 0 0 1 0-5H6 M18 9h1.5a2.5 2.5 0 0 0 0-5H18 M4 22h16 M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22 M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22 M18 2H6v7a6 6 0 0 0 12 0V2z",
+  key: "M21 2l-9.6 9.6 M15.5 7.5l3 3L22 7l-3-3 M7.5 10a5.5 5.5 0 1 0 0 11a5.5 5.5 0 1 0 0-11z",
   lock: "M7 11h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M7 11V7a5 5 0 0 1 10 0v4",
   users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
   keyboard: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M10 8h.01 M12 12h.01 M14 8h.01 M16 12h.01 M18 8h.01 M6 8h.01 M7 16h10 M8 12h.01",
@@ -157,6 +159,19 @@ export function usePinnedCard(questionId: string | undefined, phone: boolean, de
     root.style.overflowAnchor = "";
   }, [questionId, phone]);
   return { gridRef, bodyRef, fitHeight };
+}
+
+/**
+ * The pinned question card's size. It hugs a short question, so the actions
+ * sit right under the answers instead of a viewport away, and only caps a long
+ * one so its body scrolls between the header and the actions: within the
+ * viewport-sized grid (`gridHeight`), or at `capHeight` where the card is
+ * sized on its own. Neither: the card takes its natural height.
+ */
+export function pinnedCardStyle(gridHeight: number | null, capHeight: number | null): CSSProperties | undefined {
+  if (gridHeight) return { alignSelf: "start", maxHeight: "100%" };
+  if (capHeight) return { maxHeight: capHeight };
+  return undefined;
 }
 
 /* `compact` (phones) keeps the tags to a single row that scrolls sideways.
@@ -335,7 +350,7 @@ export function ReviewTabs({ tabs, active, onChange, children }: { tabs: ReviewT
 
 /* Official explanation, then the AI explanation with its cache / generate states. */
 export function ExplanationPanel({ q, explanation, collapsible }: { q: Question; explanation?: string | null; collapsible: boolean }) {
-  const { state, genAi, showAlternateAi, capture, removeMark } = usePrepDeck();
+  const { state, go, genAi, showAlternateAi, capture, removeMark } = usePrepDeck();
   const aiRec = state.ai[q.id];
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
@@ -402,8 +417,10 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
             <UnlockKeyPrompt onUnlock={() => genAi(q)} />
           ) : (
             <>
-              <p className="st-muted">No key loaded — add one in Settings to generate a fresh explanation.</p>
-              <button type="button" className="st-btn st-btn--primary" disabled><Icon d={IC.sparkles} />Generate explanation</button>
+              <p className="st-muted">No API key loaded. Add one in Settings to generate a fresh explanation.</p>
+              <button type="button" className="st-btn" onClick={() => { requestSettingsSection("ai"); go("settings"); }}>
+                <Icon d={IC.key} />Add an API key in Settings
+              </button>
             </>
           )}
         </div>

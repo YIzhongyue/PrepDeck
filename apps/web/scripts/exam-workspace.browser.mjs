@@ -269,6 +269,7 @@ try {
   };
   await startDomainSession(['domains1', 'domains2', 'domains3', 'domains5']);
   await page.getByRole('button', { name: 'Bookmarked 4', exact: true }).click();
+  await page.locator('.st-more-toggle').click();
   await page.getByRole('button', { name: 'Easy', exact: true }).click();
   assert.deepEqual(await poolIds(), ['domains1', 'domains3'], 'Source and difficulty intersect the selected domains');
   await startDomainSession(['domains1', 'domains3']);

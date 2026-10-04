@@ -30,6 +30,16 @@ const SECTION_IDS = GROUPS.flatMap((g) => g.items.map((item) => item.id));
 
 export const sectionDomId = (id: SectionId) => `settings-${id}`;
 
+// A section another screen asked Settings to open at, such as the AI key from
+// an explanation panel. Read once, by the next Settings screen to mount.
+let requestedSection: SectionId | null = null;
+export function requestSettingsSection(id: SectionId) { requestedSection = id; }
+export function takeRequestedSettingsSection(): SectionId | null {
+  const id = requestedSection;
+  requestedSection = null;
+  return id;
+}
+
 // Props for the element a section's index entry scrolls to. It takes focus
 // on a jump, as following an in-page link would give it.
 export const sectionAnchor = (id: SectionId) => ({ id: sectionDomId(id), tabIndex: -1, "data-settings-section": "" });
