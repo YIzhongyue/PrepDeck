@@ -204,7 +204,7 @@ const wait = async (check, label) => {
   for (let i = 0; i < 120; i++) { if (await check()) return; await page.waitForTimeout(50); }
   throw new Error(`timed out waiting for ${label}`);
 };
-const reload = async () => {
+const reload = async ({ charts = true } = {}) => {
   await page.goto(base);
   await page.getByRole("heading", { name: /Good to see you/ }).waitFor();
   await page.getByRole("heading", { name: "Where to focus" }).waitFor();
@@ -213,9 +213,13 @@ const reload = async () => {
   // below race an empty workspace.
   await wait(() => page.evaluate(() => window.fixtureApp.state.workspaceStatus === "ready"), "the practice catalog");
   // Both chart cards are lazy chunks; wait for them so assertions never race
-  // a Suspense fallback.
-  await page.getByRole("heading", { name: "Accuracy trend" }).waitFor();
-  await page.getByRole("heading", { name: "Study time" }).waitFor();
+  // a Suspense fallback. Before the first answer they are left out.
+  if (charts) {
+    await page.getByRole("heading", { name: "Accuracy trend" }).waitFor();
+    await page.getByRole("heading", { name: "Study time" }).waitFor();
+  } else {
+    await page.getByRole("heading", { name: /^Answer your first/ }).waitFor();
+  }
   await page.waitForTimeout(60);
 };
 // The exam date is a segmented React Aria field (components/base/date-picker),
@@ -532,15 +536,28 @@ try {
     accuracyComparison: { days: 7, current: null, previous: null, deltaPts: null },
     accuracyTrend: [], byTag: [], byDifficulty: [], mockScoreHistory: [], bestMock: null, lastAttemptAt: null };
   activity = { days: [], activeDayCount: 0, averageSessionSeconds: 0, sessionsCompleted: 0, sessionsWithDuration: 0 };
-  await reload();
+  await reload({ charts: false });
+  if (screenshotDir) await page.screenshot({ path: `${screenshotDir}/statistics-first-session-1280.png`, fullPage: true });
   const emptyText = await body();
   assert.ok(/Answer some questions|no questions yet/i.test(emptyText), "an untouched exam explains itself");
   assert.ok(emptyText.includes("No mock exams completed yet"), "no mock history is stated, not blank");
-  assert.ok(emptyText.includes("Complete a practice or mock session"), "an empty trend explains what would fill it");
+  // Before the first answer the page leads with a first session, not 0% and two empty charts.
+  await page.getByRole("heading", { name: /^Answer your first/ }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Accuracy trend" }).count(), 0, "no empty trend chart before the first answer");
+  assert.equal(await page.getByRole("heading", { name: "Study time" }).count(), 0, "no empty study-time chart before the first answer");
+  assert.match(await cardText("Accuracy"), /—[\s\S]*Not measured yet/, "accuracy is not measured, not 0%");
+  assert.ok(!/(^|\s)0%\s+0 answers/.test(emptyText), "no 0% accuracy from zero answers");
+  const [focusTop, readinessBottom] = await page.evaluate(() => [
+    document.getElementById("pd-stats-focus-title").getBoundingClientRect().top,
+    document.getElementById("pd-stats-readiness-title").closest("section").getBoundingClientRect().bottom,
+  ]);
+  assert.ok(focusTop > readinessBottom, "where to focus follows the readiness row");
+  assert.ok(emptyText.includes("Not ranked yet"), "no tag is called weakest before any is measured");
   assert.ok(!/\+\d+ pts/.test(emptyText), "no delta chip without both comparison windows");
   assert.ok(!/pass line/.test(emptyText), "an exam without a pass mark shows no pass comparison anywhere");
-  assert.equal(await page.getByRole("button", { name: "Practice weak tags" }).isDisabled(), true,
-    "the weak-tag action is disabled when no tag qualifies");
+  assert.equal(await page.getByRole("button", { name: "Practice weak tags" }).count(), 0,
+    "no permanently disabled weak-tag action before the first answer");
+  assert.equal(await page.getByRole("button", { name: "Set up practice" }).count(), 1, "nothing to continue yet");
 
   // A single trend point still renders rather than throwing.
   stats = { ...fullStats(), accuracyTrend: [{ date: "2026-09-19", attempted: 5, correct: 3, accuracyPct: 60 }] };

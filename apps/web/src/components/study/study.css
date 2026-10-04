@@ -26,6 +26,9 @@
   --st-fg-5: color-mix(in srgb, var(--color-text) 40%, var(--color-bg));
   --st-line: color-mix(in srgb, var(--color-text) 10%, var(--color-bg));
   --st-line-2: color-mix(in srgb, var(--color-text) 20%, var(--color-bg));
+  /* Text-entry boundaries: 3:1 against the card in every scheme (WCAG 1.4.11),
+     where the decorative lines above are too faint to find the field by. */
+  --st-field-line: color-mix(in srgb, var(--color-text) 50%, var(--color-bg));
   --st-card: var(--color-bg);
   --st-soft: color-mix(in srgb, var(--color-text) 3%, var(--color-bg));
   --st-soft-2: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
@@ -394,7 +397,7 @@
 .st-input, .st-textarea {
   width: 100%;
   padding: 10px 14px;
-  border: 1px solid var(--st-line-2);
+  border: 1px solid var(--st-field-line);
   border-radius: 8px;
   background: var(--st-card);
   color: var(--st-fg);
@@ -582,11 +585,12 @@
 .st-seg-btn:hover { background: var(--st-soft); }
 .st-seg-btn[aria-pressed="true"] { background: var(--st-soft-2); color: var(--st-fg); }
 
+.st-segmented:has(.st-jump) { border-color: var(--st-field-line); }
 .st-jump {
   width: 100px;
   padding: 8px 12px;
   border: 0;
-  border-right: 1px solid var(--st-line-2);
+  border-right: 1px solid var(--st-field-line);
   background: var(--st-card);
   color: var(--st-fg);
   font: inherit;

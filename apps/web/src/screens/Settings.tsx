@@ -19,7 +19,7 @@ import { Toggle } from "@/components/base/toggle/toggle";
 import { cx } from "@/utils/cx";
 import AiExplanationsCard, { aiKeyStatus } from "./settings/AiExplanationsCard";
 import DailyEmailCard from "./settings/DailyEmailCard";
-import { SettingsChips, SettingsToc, sectionAnchor, useSectionNavigation, type SectionId, type SectionMeta } from "./settings/SettingsNav";
+import { SettingsChips, SettingsToc, sectionAnchor, takeRequestedSettingsSection, useSectionNavigation, type SectionId, type SectionMeta } from "./settings/SettingsNav";
 import { useNow, zoneClock } from "./settings/zoneClock";
 import "./settings/settings.css";
 
@@ -126,6 +126,12 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const [activeTokens, setActiveTokens] = useState(0);
   const chipBarRef = useRef<HTMLElement | null>(null);
   const { active, jump } = useSectionNavigation(chipBarRef);
+  // Arriving from a link to one section (an explanation panel's "Add a key"),
+  // open there rather than at the top.
+  useEffect(() => {
+    const requested = takeRequestedSettingsSection();
+    if (requested) jump(requested);
+  }, [jump]);
   const keyStatus = aiKeyStatus(state);
   const on = "var(--color-accent-2-600)";
   const off = "var(--color-neutral-400)";

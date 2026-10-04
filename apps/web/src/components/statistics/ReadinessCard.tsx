@@ -103,7 +103,9 @@ export default function ReadinessCard({
       </div>
 
       <div className="pd-stats-actions">
-        <Button
+        {/* Before any answer there are no weak tags to judge, and the first
+            session above is the way in; a permanently disabled button is not. */}
+        {model.accuracy.answerEvents > 0 && <Button
           size="md"
           onClick={onPracticeWeakTags}
           isDisabled={model.weakTags.length === 0}
@@ -113,7 +115,7 @@ export default function ReadinessCard({
             : `Practises ${model.weakTags.join(", ")}`}
         >
           Practice weak tags
-        </Button>
+        </Button>}
         <Button size="md" color="secondary" onClick={onStartMock} isDisabled={!canStartMock}>
           Start mock exam
         </Button>

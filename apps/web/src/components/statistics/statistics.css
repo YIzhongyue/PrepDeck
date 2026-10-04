@@ -150,6 +150,25 @@
 .pd-stats-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .pd-stats-actions > * { flex: 1 1 auto; min-width: 0; }
 
+/* --- First session ------------------------------------------------------ */
+
+/* The only accent-tinted card on the page: before the first answer it is the
+   one thing to do here. */
+.pd-stats-first {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px 32px;
+  border-color: var(--color-accent-300);
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg));
+}
+.pd-stats-first-copy { display: flex; flex: 1 1 360px; flex-direction: column; gap: 8px; min-width: 0; }
+.pd-stats-first-copy p { max-width: 62ch; line-height: 1.5; }
+.pd-stats-first-actions { flex: 0 1 auto; }
+@media (max-width: 620px) {
+  .pd-stats-first-actions { flex: 1 1 100%; }
+}
+
 /* --- Metric cards ------------------------------------------------------- */
 
 .pd-stats-metric-head {

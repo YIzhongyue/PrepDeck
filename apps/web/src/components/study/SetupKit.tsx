@@ -18,12 +18,15 @@ export interface SetupLayout {
 }
 
 // Mirrors the design's breakpoints: the summary card leaves the side at 1240px,
-// row labels move on top at 1000px and cards go single-column at 820px.
+// row labels move on top at 1000px and cards go single-column at 820px (or
+// sooner, when their column is too narrow for two).
 export function setupLayout(width: number, phone: boolean): SetupLayout {
   return {
     rowCols: phone || width < 1000 ? "minmax(0, 1fr)" : "192px minmax(0, 1fr)",
     setupCols: phone || width < 1240 ? "minmax(0, 1fr)" : "minmax(0, 1fr) 340px",
-    cardCols: phone || width < 820 ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))",
+    // At most two per row, and only while each keeps 240px: beside the summary
+    // card a two-up row is narrow enough to break "Unattempted" mid-word.
+    cardCols: phone || width < 820 ? "minmax(0, 1fr)" : "repeat(auto-fill, minmax(max(240px, calc((100% - 12px) / 2)), 1fr))",
     stickySummary: !phone && width >= 1240
   };
 }
@@ -59,7 +62,7 @@ export function ChoiceCard({ icon, label, count, desc, on, onSelect }: {
   const descId = useId();
   return (
     <button
-      type="button" className="st-choice" aria-pressed={on} onClick={onSelect}
+      type="button" className="st-choice" aria-pressed={on} onClick={onSelect} data-empty={count === 0 || undefined}
       aria-label={count == null ? label : `${label} ${count}`} aria-describedby={descId}
     >
       <span className="st-choice-tile"><Icon d={icon} size={18} /></span>
@@ -89,6 +92,57 @@ export function UnderReviewRow({ count, skip, onChange, layout }: {
         <ChoiceCard icon={IC.eyeOff} label="Skip" desc="Leave them out of this session" on={skip} onSelect={() => onChange(true)} />
       </div>
     </SetupRow>
+  );
+}
+
+/**
+ * Settings most sessions leave alone, folded under one row that names their
+ * current values, so the setup reads as "source, count, start". Starts open
+ * when any of them is already changed, so a choice is never hidden.
+ */
+export function MoreOptions({ summary, defaultOpen, cols, children }: { summary: string; defaultOpen: boolean; cols: string; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
+  return (
+    <div className="st-more-opts">
+      <div className="st-row st-more-row" style={{ gridTemplateColumns: cols }}>
+        <div className="st-row-label">
+          <div className="st-row-title">More options</div>
+          <div className="st-row-desc">Optional. The defaults suit most sessions.</div>
+        </div>
+        <div className="st-row-body">
+          <button type="button" className="st-more-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((o) => !o)}>
+            <span className="st-more-summary">{summary}</span>
+            <span className="st-more-action">{open ? "Hide" : "Customize"}<Icon d={IC.chevDown} size={16} strokeWidth={2.25} /></span>
+          </button>
+        </div>
+      </div>
+      <div id={bodyId} className="st-more-body" hidden={!open}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Why a setup has nothing to start, and the nearest choice that does. Shown in
+ * the summary card in place of an enabled start button, so selecting an empty
+ * source is never a dead end (design review, 4 October 2026).
+ */
+export function EmptyPoolNotice({ id, title, body, action }: {
+  id: string; title: string; body: string; action?: { label: string; onClick: () => void };
+}) {
+  return (
+    <div id={id} className="st-summary-empty">
+      <span className="st-summary-empty-icon"><Icon d={IC.info} size={16} /></span>
+      <div className="st-summary-empty-text">
+        <div className="st-summary-empty-title">{title}</div>
+        <div>{body}</div>
+        {action && (
+          <button type="button" className="st-link st-link--brand" onClick={action.onClick}>
+            {action.label}<Icon d={IC.arrowRight} size={14} />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -29,6 +29,7 @@ import StatisticsHeader from "../components/statistics/StatisticsHeader";
 import ReadinessCard from "../components/statistics/ReadinessCard";
 import MetricCard from "../components/statistics/MetricCard";
 import FocusTagsCard from "../components/statistics/FocusTagsCard";
+import FirstSessionCard from "../components/statistics/FirstSessionCard";
 import "../components/statistics/statistics.css";
 
 // Recharts only arrives with these two cards. Splitting them out keeps the
@@ -40,6 +41,9 @@ const StudyTimeCard = lazy(() => import("../components/statistics/StudyTimeCard"
 const StudyPlanDialog = lazy(() => import("../components/statistics/StudyPlanDialog"));
 
 const HEATMAP_DAYS = 84; // 12 weeks, matches the 7-row grid below
+// The first-session quick start: Practice's own default size and pace.
+const FIRST_SESSION_SIZE = 10;
+const MINUTES_PER_QUESTION = 1.5;
 
 function DataUnavailable({ title, failed }: { title: string; failed: boolean }) {
   return (
@@ -107,7 +111,7 @@ function Sparkline({ values }: { values: number[] }) {
 // (components/statistics/statistics.css), so it also reflows correctly inside a
 // content column narrower than the window, which a window-width breakpoint cannot see.
 export default function Dashboard() {
-  const { state, go, openPracticeWithFilters } = usePrepDeck();
+  const { state, go, openPracticeWithFilters, practiceList } = usePrepDeck();
 
   const examUrl = state.examId ? `/api/exams/${state.examId}` : null;
   const statsRequest = useStatisticsResource<ExamStatsResponse>(examUrl && `${examUrl}/stats`, state.activityRevision);
@@ -157,6 +161,18 @@ export default function Dashboard() {
 
   const practiceTag = useCallback((tag: FocusTag) => practiceTags([tag.tag]), [practiceTags]);
 
+  // The quick start draws from questions never answered, and honours the
+  // Practice setup's choice about questions under review.
+  const firstSessionPool = useMemo(
+    () => state.catalog.filter((q) => !state.attempted[q.id] && !(state.skipReview && q.needsReview)).map((q) => q.id),
+    [state.catalog, state.attempted, state.skipReview],
+  );
+  const firstSessionSize = Math.min(FIRST_SESSION_SIZE, firstSessionPool.length);
+  const startFirstSession = useCallback(() => {
+    const ids = firstSessionPool.slice().sort(() => Math.random() - 0.5).slice(0, FIRST_SESSION_SIZE);
+    if (ids.length) practiceList(ids);
+  }, [firstSessionPool, practiceList]);
+
   if (!state.examId) {
     return (
       <div className="pd-stats">
@@ -182,6 +198,10 @@ export default function Dashboard() {
 
   const heat = heatCells(activity, model.timeZone);
   const { answered, accuracy, wrongBook, bestMock, coverage } = model;
+  // Nothing answered yet: no figure below can be measured, so the page leads
+  // with the first session and leaves out the two charts that would be empty.
+  const firstSession = !!stats && accuracy.answerEvents === 0;
+  const measured = accuracy.answerEvents > 0;
 
   return (
     <div className="pd-stats">
@@ -191,6 +211,7 @@ export default function Dashboard() {
         countdown={model.countdown}
         planStatus={preferencesRequest.status}
         canContinue={state.catalog.length > 0}
+        hasAnswers={!firstSession}
         onContinue={() => go("practice")}
         onEditPlan={() => setPlanOpen(true)}
       />
@@ -206,6 +227,15 @@ export default function Dashboard() {
             if (preferencesError) preferencesRequest.retry();
           }}>Retry</Button>
         </div>
+      )}
+
+      {firstSession && (
+        <FirstSessionCard
+          sessionSize={firstSessionSize}
+          minutes={Math.round(firstSessionSize * MINUTES_PER_QUESTION)}
+          onStart={startFirstSession}
+          onLearn={() => go("learning")}
+        />
       )}
 
       <div className="pd-stats-row">
@@ -228,13 +258,15 @@ export default function Dashboard() {
 
           {stats ? <MetricCard
             icon={TrendUp02} tone="success" label="Accuracy"
-            value={`${accuracy.accuracyPct}%`}
+            value={measured ? `${accuracy.accuracyPct}%` : "—"}
             badge={accuracy.deltaPts != null && (
               <Badge type="pill-color" size="sm" color={accuracy.deltaPts >= 0 ? "success" : "error"}>
                 {formatSignedPoints(accuracy.deltaPts)}
               </Badge>
             )}
-            footer={accuracy.passMarkPct == null
+            footer={!measured
+              ? accuracy.passMarkPct == null ? "Not measured yet" : `Not measured yet · ${accuracy.passMarkPct}% pass line`
+              : accuracy.passMarkPct == null
               ? `${accuracy.answerEvents} answers · no pass mark set`
               : `${accuracy.answerEvents} answers · vs ${accuracy.passMarkPct}% pass line`}
           >
@@ -294,17 +326,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="pd-stats-row">
+      {/* The actions come before the charts: what to study next matters more
+          than how the last sessions went. */}
+      {stats ? <FocusTagsCard focus={model.focus} passMarkPct={model.passMarkPct} onPracticeTag={practiceTag} />
+        : <DataUnavailable title="Where to focus" failed={statsError} />}
+
+      {!firstSession && <div className="pd-stats-row">
         {stats ? <Suspense fallback={<ChartPlaceholder label="the accuracy trend" />}>
           <AccuracyTrendCard trend={model.trend} timeZone={model.timeZone} />
         </Suspense> : <DataUnavailable title="Accuracy trend" failed={statsError} />}
         {activity ? <Suspense fallback={<ChartPlaceholder label="study time" />}>
           <StudyTimeCard week={model.week} timeZone={model.timeZone} weeklyGoalMinutes={model.weeklyGoalMinutes} planStatus={preferencesRequest.status} onEditPlan={() => setPlanOpen(true)} />
         </Suspense> : <DataUnavailable title="Study time" failed={activityError} />}
-      </div>
-
-      {stats ? <FocusTagsCard focus={model.focus} passMarkPct={model.passMarkPct} onPracticeTag={practiceTag} />
-        : <DataUnavailable title="Where to focus" failed={statsError} />}
+      </div>}
 
       {/* Everything the screen showed before #151 that the concept does not
           have a place for. Kept reachable rather than dropped. */}

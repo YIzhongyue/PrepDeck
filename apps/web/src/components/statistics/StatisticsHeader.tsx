@@ -16,7 +16,7 @@ function countdownLabel(countdown: CountdownModel): string {
 }
 
 export default function StatisticsHeader({
-  greetingName, examName, countdown, planStatus, onContinue, onEditPlan, canContinue,
+  greetingName, examName, countdown, planStatus, onContinue, onEditPlan, canContinue, hasAnswers = true,
 }: {
   greetingName: string;
   examName: string | null;
@@ -25,6 +25,8 @@ export default function StatisticsHeader({
   onContinue: () => void;
   onEditPlan: () => void;
   canContinue: boolean;
+  /** False before the first answer, when there is nothing to "continue". */
+  hasAnswers?: boolean;
 }) {
   return (
     <header className="pd-stats-header">
@@ -62,7 +64,7 @@ export default function StatisticsHeader({
           </Button>
         )}
         <Button size="md" iconLeading={PlayCircle} onClick={onContinue} isDisabled={!canContinue}>
-          Continue practice
+          {hasAnswers ? "Continue practice" : "Set up practice"}
         </Button>
       </div>
     </header>
