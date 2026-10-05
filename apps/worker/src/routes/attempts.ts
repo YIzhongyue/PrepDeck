@@ -19,10 +19,12 @@ import {
 } from "../lib/attemptMutations";
 import type { AttemptRow } from "../lib/attemptRecords";
 import { studyMutationStatus } from "../lib/studyMutationResult";
+import { getStudyStatus, markAnsweredStatement } from "../lib/studyStatus";
 import {
-  answerProblem, answerSizeProblem, isStringArray, MOCK_SUBMIT_GRACE_SECONDS,
+  answerProblem, answerSizeProblem, hasAnswer, isStringArray, MOCK_SUBMIT_GRACE_SECONDS,
   type ActiveAttemptResponse, type AttemptMode, type SaveDraftAnswerRequest,
-  type SaveFlagRequest, type StartAttemptRequest, type SubmitPracticeAnswerRequest,
+  type SaveDraftAnswerResponse, type SaveFlagRequest, type StartAttemptRequest, type SubmitPracticeAnswerHttpResponse,
+  type SubmitPracticeAnswerRequest,
 } from "@prepdeck/shared";
 
 // Mounted at /api/exams/:examId/attempts
@@ -65,8 +67,14 @@ attemptsRouter.get("/active", async (c) => {
 });
 
 attemptsRouter.post("/:id/answers", async (c) => {
-  const result = await submitPracticeAnswer(c.env, c.get("user").id, c.req.param("id"), await c.req.json<SubmitPracticeAnswerRequest>().catch(() => null));
-  return result.ok ? c.json(result.data) : c.json(result.error, studyMutationStatus(result.reason));
+  const userId = c.get("user").id;
+  const body = await c.req.json<SubmitPracticeAnswerRequest>().catch(() => null);
+  const result = await submitPracticeAnswer(c.env, userId, c.req.param("id"), body);
+  if (!result.ok) return c.json(result.error, studyMutationStatus(result.reason));
+  // Issue #119: the web client keeps the question's studied status current
+  // from this, rather than refetching every status after each answer.
+  const response: SubmitPracticeAnswerHttpResponse = { ...result.data, studyStatus: await getStudyStatus(c.env.DB, userId, body!.questionId) };
+  return c.json(response);
 });
 
 // Mock draft and flag writes refused because the attempt was submitted
@@ -133,7 +141,19 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
       : c.json({ error: "This mock exam has ended and no longer accepts answers", expired: true }, 409);
   }
 
-  return c.json({ saved: true });
+  // Issue #119: a saved non-empty answer marks the question studied, without
+  // waiting for the mock to be submitted. The client replays its queued drafts
+  // before submitting, so a write of the answer already saved is a retry, not
+  // a new answer, and must not undo a reset made since. Completion reconciles
+  // anything this misses (completeAttempt).
+  const userId = c.get("user").id;
+  const previous = readMockDraft(attempt)[questionId];
+  const unchanged = !!previous && previous.length === body.selectedAnswer.length && previous.every((v, i) => v === body.selectedAnswer[i]);
+  if (hasAnswer(question.type, body.selectedAnswer) && !unchanged) {
+    await markAnsweredStatement(c.env.DB, userId, [questionId], "mock", new Date().toISOString()).run();
+  }
+  const response: SaveDraftAnswerResponse = { saved: true, studyStatus: await getStudyStatus(c.env.DB, userId, questionId) };
+  return c.json(response);
 });
 
 attemptsRouter.put("/:id/flags/:questionId", async (c) => {

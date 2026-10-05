@@ -5,7 +5,7 @@ export type StudyMutationReason = "invalid_input" | "not_found" | "conflict";
 export type StudyMutationDetail =
   | "attempt_not_practice" | "attempt_completed" | "question_not_in_attempt"
   | "invalid_answer" | "empty_answer" | "questions_not_in_exam" | "questions_archived"
-  | "attempt_too_large" | "invalid_time_spent" | "invalid_sequence_number";
+  | "attempt_too_large" | "invalid_time_spent" | "invalid_sequence_number" | "invalid_study_status";
 export type StudyMutationResult<T> =
   | { ok: true; data: T }
   | { ok: false; reason: StudyMutationReason; detail?: StudyMutationDetail; error: { error: string; attemptId?: string } };

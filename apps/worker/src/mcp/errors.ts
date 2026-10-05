@@ -12,6 +12,7 @@ const STUDY_ERROR_MESSAGES: Record<StudyMutationDetail, string> = {
   attempt_too_large: "Too many questions were selected. Reduce the selection to the tool's questionIds limit.",
   invalid_time_spent: "timeSpentSeconds must be a whole number within the tool's bounds. Omit it if the duration is unknown.",
   invalid_sequence_number: "sequenceNumber must be a positive integer identifying the Learning Mode resume position.",
+  invalid_study_status: "The study status must be \"studied\" or \"unstudied\".",
 };
 
 export const MCP_ERRORS = {

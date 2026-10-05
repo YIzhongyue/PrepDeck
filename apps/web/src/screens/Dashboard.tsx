@@ -154,7 +154,7 @@ export default function Dashboard() {
     const eligible = eligibleQuestionIdsForTags(sources, tags).length;
     if (eligible === 0) return;
     openPracticeWithFilters({
-      source: "focus", tags, diff: "all",
+      source: "focus", tags, diff: "all", study: "all",
       count: Math.min(eligible, MAX_ATTEMPT_QUESTIONS),
     });
   }, [sources, openPracticeWithFilters]);

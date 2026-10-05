@@ -17,6 +17,7 @@ already-applied migrations. DTOs and validators live in [shared code](../../pack
 | Answering | `attempts` belongs to user + exam; `attempt_answers` stores selections, correctness and grading snapshots. Mock drafts/flags and completion timestamps support resume. |
 | Review | `wrong_question_book`, `bookmarks`, `annotations`, `notes` refer to a user and question. Only notes have optional sharing; annotation ranges have a target type/reference. |
 | Resume | `learning_progress` stores user + exam + last sequence number; it is not an attempt. |
+| Study status | `user_question_study_status` stores user + question + studied/unstudied with a revision; exam scope comes through the question. Missing means unstudied. It is exposure, separate from attempts and mastery ([studied status](practice-and-learning-modes.md#studied-status)). |
 | Knowledge Points | Notes, groups, tags, question links, image records and order-scope revisions belong to the user. Exam-related views derive from links rather than duplicating notes. |
 | Email | `user_email_settings` and `daily_review_email_deliveries` hold preferences and unique user/local-date claims. |
 | MCP | `mcp_credentials` holds digests/lifecycle metadata; Admin audit, create-idempotency and import-job/committed-item tables support safe mutations and retries. |
