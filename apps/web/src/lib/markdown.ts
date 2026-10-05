@@ -99,6 +99,7 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
     lineOffset += raw.length + 1;
     if (skipDelimiter) { skipDelimiter = false; continue; }
     if (/^\s*```/.test(raw)) {
+      table = null;
       if (inCodeFence) {
         pushRaw("code", codeFenceText);
         inCodeFence = false;
@@ -121,7 +122,9 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
     if (!line) { table = null; continue; } // blank line: paragraph separator only
 
     if (table) {
-      if (line.includes("|") && !/^(#{1,3})\s/.test(line)) {
+      // GFM: the table runs until a blank line or another block structure; a
+      // row without pipes is a short row, padded with empty cells.
+      if (!BLOCK_START.test(line)) {
         pushRow(splitTableRow(line, blockOffset), table.aligns, table.row++, table.id);
         continue;
       }
@@ -179,6 +182,9 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
 
   return { plainText, blocks, inline, sourceOffsets };
 }
+
+// Lines that open a block other than a paragraph, and so end an open table.
+const BLOCK_START = /^(?:#{1,3}\s|-{3,}$|\*{3,}$|_{3,}$|[-*+]\s|\d+[.)]\s)/;
 
 interface TableCell { text: string; offsets: number[] }
 

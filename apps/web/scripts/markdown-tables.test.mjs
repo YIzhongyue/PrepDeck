@@ -48,3 +48,49 @@ test("source offsets address the original characters and the table ends at a bla
 test("a pipe line without a delimiter row stays a paragraph", () => {
   assert.deepEqual(parseMarkdown("a | b\nnot a delimiter", false, false, true).blocks.map(b => b.type), ["p", "p"]);
 });
+
+test("list items, headings and rules after a table end it and keep their full text", () => {
+  for (const next of ["- Use a | b | c to compare.", "1. Use a | b | c to compare.", "## Use a | b | c", "---"]) {
+    const parsed = parseMarkdown(`| A | B |\n| --- | --- |\n| one | two |\n${next}`, false, false, true);
+    assert.equal(parsed.blocks.filter(b => b.cell).length, 4, next);
+    const last = parsed.blocks.at(-1);
+    assert.ok(!last.cell, next);
+    if (next !== "---") assert.ok(parsed.plainText.endsWith("a | b | c to compare.") || parsed.plainText.endsWith("a | b | c"), next);
+  }
+});
+
+test("a code fence ends the table and the following line is a whole paragraph", () => {
+  const parsed = parseMarkdown("| A | B |\n| --- | --- |\n| one | two |\n```\nx | y\n```\nAfter | code | lost", false, false, true);
+  assert.deepEqual(parsed.blocks.map(b => b.type), ["cell", "cell", "cell", "cell", "code", "p"]);
+  assert.equal(parsed.plainText.slice(parsed.blocks.at(-1).start), "After | code | lost");
+});
+
+test("a short row without pipes is padded", () => {
+  const cells = cellsOf(parseMarkdown("| a | b |\n| - | - |\n| x | y |\nbar", false, false, true));
+  assert.deepEqual(cells.filter(c => c.row === 2).map(c => c.text), ["bar", ""]);
+});
+
+test("the renderer outputs semantic cells and complete text across block boundaries", async () => {
+  const { outputFiles } = await build({
+    stdin: {
+      contents: `import { createElement } from "react"; import { renderToStaticMarkup } from "react-dom/server"; import M from "./src/components/MarkdownHighlightedText.tsx"; export const render = (src) => renderToStaticMarkup(createElement(M, { src, annotations: [], qid: "q", target: "stem", show: false, tables: true }));`,
+      resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "tsx"
+    },
+    bundle: true, write: false, platform: "node", format: "esm", jsx: "automatic",
+    banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' }
+  });
+  const dir = fileURLToPath(new URL("../node_modules/.cache/", import.meta.url));
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  mkdirSync(dir, { recursive: true });
+  const file = `${dir}markdown-render.test.mjs`;
+  writeFileSync(file, outputFiles[0].text);
+  const { render } = await import(file);
+  const html = render("| Option | Why |\n| :-- | --: |\n| A | **SHA256** is `x` |\n- Use a | b | c\n```\nx | y\n```\nAfter | code | lost");
+  assert.equal((html.match(/<table/g) ?? []).length, 1);
+  assert.equal((html.match(/<th /g) ?? []).length, 2);
+  assert.equal((html.match(/<td /g) ?? []).length, 2);
+  assert.ok(html.includes("text-align:right"));
+  assert.ok(!html.includes("---") && !html.includes(":--"));
+  assert.ok(html.includes("<ul") && html.includes("Use a | b | c"));
+  assert.ok(html.includes("After | code | lost"));
+});
