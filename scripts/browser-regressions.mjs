@@ -36,6 +36,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/review-lists.browser.mjs", 5],
   ["apps/web/scripts/under-review.browser.mjs", 5],
   ["apps/web/scripts/study-status.browser.mjs", 5],
+  ["apps/web/scripts/setup-layout.browser.mjs", 6],
   ["apps/web/scripts/settings.browser.mjs", 10],
   ["apps/web/scripts/statistics.browser.mjs", 18],
   ["apps/web/scripts/admin-console.browser.mjs", 6],
