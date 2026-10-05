@@ -11,11 +11,12 @@ import type { Annotation, AnnotationTarget } from "../types";
 // lib/markdown.ts — they only ever look at `data-off` attributes, which
 // HighlightedText still renders on every leaf span, same as always).
 export default function MarkdownHighlightedText({
-  src, annotations, qid, target, show, onMouseUp, onRemoveMark, sourceCoordinates = false, reflowProse = false, style
+  src, annotations, qid, target, show, onMouseUp, onRemoveMark, sourceCoordinates = false, reflowProse = false, tables = false, style
 }: {
   src: string;
   sourceCoordinates?: boolean;
   reflowProse?: boolean;
+  tables?: boolean;
   annotations: Annotation[];
   qid: string;
   target: AnnotationTarget;
@@ -24,7 +25,7 @@ export default function MarkdownHighlightedText({
   onRemoveMark?: (id: string) => void;
   style?: CSSProperties;
 }) {
-  const parsed = parseMarkdown(src, sourceCoordinates, reflowProse);
+  const parsed = parseMarkdown(src, sourceCoordinates, reflowProse, tables);
   const blockSegs = mdSegsFor(parsed, annotations, qid, target, show);
 
   const elements: ReactElement[] = [];
@@ -47,6 +48,41 @@ export default function MarkdownHighlightedText({
             </li>
           ))}
         </Tag>
+      );
+      continue;
+    }
+
+    if (entry.block.cell) {
+      const tableId = entry.block.cell.table;
+      const cells: typeof blockSegs = [];
+      while (i < blockSegs.length && blockSegs[i]!.block.cell?.table === tableId) {
+        cells.push(blockSegs[i]!);
+        i++;
+      }
+      const rows: typeof blockSegs[] = [];
+      cells.forEach(cell => { (rows[cell.block.cell!.row] ??= []).push(cell); });
+      const cellStyle: CSSProperties = { padding: "5px 9px", border: "1px solid var(--color-divider)", minWidth: 96, verticalAlign: "top" };
+      elements.push(
+        <div key={`table-${tableId}-${cells[0]!.block.start}`} style={{ maxWidth: "100%", overflowX: "auto", margin: "6px 0 10px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95em" }}>
+            <thead>
+              <tr>{rows[0]?.map(({ block, segs }) => (
+                <th key={block.cell!.col} scope="col" style={{ ...cellStyle, textAlign: block.cell!.align ?? "left", background: "var(--color-neutral-200)", fontWeight: 700 }}>
+                  <HighlightedText segs={segs} onRemoveMark={onRemoveMark} />
+                </th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {rows.slice(1).map((row, r) => (
+                <tr key={r}>{row.map(({ block, segs }) => (
+                  <td key={block.cell!.col} style={{ ...cellStyle, textAlign: block.cell!.align ?? "left" }}>
+                    <HighlightedText segs={segs} onRemoveMark={onRemoveMark} />
+                  </td>
+                ))}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
       continue;
     }

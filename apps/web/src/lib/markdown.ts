@@ -1,10 +1,10 @@
-import type { MdBlock, MdBlockType, MdInlineRange, ParsedMarkdown } from "../types";
+import type { MdBlock, MdBlockType, MdCell, MdInlineRange, ParsedMarkdown } from "../types";
 import { isProseLine, proseLineSeparator } from "./prose";
 
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
 // italic, inline code, links ([text](url) and bare http(s) URLs), backslash
 // escapes of inline markers, fenced code blocks, unordered/ordered lists, and
-// horizontal rules — into a flat
+// horizontal rules, and (opt-in, `tables`) GFM pipe tables — into a flat
 // plain-text string plus block/inline range
 // metadata. Not a full CommonMark implementation: this only needs to cover
 // what Claude/GPT actually produce for docs/requirements/ai-explanations.md's AI explanations (see
@@ -16,8 +16,8 @@ import { isProseLine, proseLineSeparator } from "./prose";
 // system keep addressing the same text it always has (see
 // MarkdownHighlightedText.tsx / lib/annotations.ts's mdSegsFor), instead of
 // annotations breaking the moment formatting markers are stripped for display.
-export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false): ParsedMarkdown {
-  const { sourceOffsets, ...parsed } = parseBlocks(src, reflowProse, false);
+export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false, tables = false): ParsedMarkdown {
+  const { sourceOffsets, ...parsed } = parseBlocks(src, reflowProse, false, tables);
   if (sourceCoordinates) return { ...parsed, sourceOffsets };
   // Display-coordinate callers (AI explanations) persist annotations as offsets
   // into plainText as the legacy parser produced it: "[label](url)" stayed
@@ -26,7 +26,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
   // differs, map each character back to that legacy offset so saved marks, and
   // new ones captured through data-off, stay in one coordinate space.
   if (!parsed.inline.some(r => r.kind === "link") && !/[_\\]/.test(src)) return parsed;
-  const legacy = parseBlocks(src, reflowProse, true);
+  const legacy = parseBlocks(src, reflowProse, true, tables);
   if (legacy.plainText === parsed.plainText) return parsed;
   const legacyAt = new Array<number>(src.length).fill(-1);
   legacy.sourceOffsets.forEach((source, index) => { legacyAt[source] = index; });
@@ -43,7 +43,7 @@ export function parseMarkdown(src: string, sourceCoordinates = false, reflowPros
 
 // Always records each plainText character's source offset; parseMarkdown
 // decides which coordinate system callers see.
-function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): ParsedMarkdown & { sourceOffsets: number[] } {
+function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables: boolean): ParsedMarkdown & { sourceOffsets: number[] } {
   // Keep existing AI display-coordinate annotations unchanged. Question callers
   // opt in and retain sourceOffsets, including gaps left by removed layout LFs.
   // Display-math regions remain conservative until they have a typed renderer.
@@ -60,6 +60,11 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): Parsed
     plainText += parseInline(text, start, inline, sourceOffsets, blockOffset, inputOffsets, legacy);
     if (plainText.length > start) blocks.push({ type, start, end: plainText.length });
   };
+  const pushCell = (cell: MdCell, text: string, offsets: number[]) => {
+    const start = plainText.length;
+    plainText += parseInline(text, start, inline, sourceOffsets, 0, offsets, legacy);
+    blocks.push({ type: "cell", start, end: plainText.length, cell });
+  };
   const pushRaw = (type: MdBlockType, text: string) => {
     const start = plainText.length;
     plainText += text;
@@ -75,12 +80,27 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): Parsed
     pendingProse = null;
   };
 
-  for (const raw of lines) {
+  // Open GFM table: column alignments, the next row index, and its id.
+  let table: { aligns: MdCell["align"][]; row: number; id: number } | null = null;
+  let tableCount = 0;
+  let skipDelimiter = false;
+  let inTildeFence = false; // ~~~ is not a rendered fence, but its lines never form a table
+  const pushRow = (cells: TableCell[], aligns: MdCell["align"][], row: number, id: number) => {
+    for (let col = 0; col < aligns.length; col++) {
+      const cell = cells[col];
+      const align = aligns[col];
+      pushCell({ table: id, row, col, header: row === 0, ...(align ? { align } : {}) }, cell?.text ?? "", cell?.offsets ?? []);
+    }
+  };
+
+  for (const [lineIndex, raw] of lines.entries()) {
     const prose = reflowProse && !inCodeFence && Boolean(raw.trim()) && isProseLine(raw) && !/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim());
     if (!prose) flushProse();
     blockOffset = lineOffset;
     lineOffset += raw.length + 1;
+    if (skipDelimiter) { skipDelimiter = false; continue; }
     if (/^\s*```/.test(raw)) {
+      table = null;
       if (inCodeFence) {
         pushRaw("code", codeFenceText);
         inCodeFence = false;
@@ -100,7 +120,28 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): Parsed
 
     let line = raw.trim();
     blockOffset += raw.length - raw.trimStart().length;
-    if (!line) continue; // blank line: paragraph separator only
+    if (!line) { table = null; continue; } // blank line: paragraph separator only
+
+    if (tables && /^~~~/.test(line)) { inTildeFence = !inTildeFence; table = null; }
+    else if (table && !inTildeFence) {
+      // GFM: the table runs until a blank line or another block structure; a
+      // row without pipes is a short row, padded with empty cells.
+      if (!BLOCK_START.test(line)) {
+        pushRow(splitTableRow(line, blockOffset), table.aligns, table.row++, table.id);
+        continue;
+      }
+      table = null;
+    }
+    if (tables && !prose && !inTildeFence && !BLOCK_START.test(line) && line.includes("|")) {
+      const aligns = tableAligns(lines[lineIndex + 1]);
+      const header = aligns && splitTableRow(line, blockOffset);
+      if (aligns && header && header.length === aligns.length) {
+        table = { aligns, row: 1, id: tableCount++ };
+        pushRow(header, aligns, 0, table.id);
+        skipDelimiter = true;
+        continue;
+      }
+    }
 
     const heading = line.match(/^(#{1,3})\s+(.*)$/);
     if (heading) {
@@ -142,6 +183,47 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean): Parsed
   if (inCodeFence && codeFenceText) pushRaw("code", codeFenceText);
 
   return { plainText, blocks, inline, sourceOffsets };
+}
+
+// Lines that open a block other than a paragraph, and so end an open table.
+const BLOCK_START = /^(?:#{1,6}\s|>|~~~|-{3,}$|\*{3,}$|_{3,}$|[-*+]\s|\d+[.)]\s)/;
+
+interface TableCell { text: string; offsets: number[] }
+
+// The column alignments of a GFM delimiter row ("| :-- | :-: | --: |"), or
+// null when `line` is not one.
+function tableAligns(line: string | undefined): MdCell["align"][] | null {
+  const trimmed = line?.trim();
+  if (!trimmed || !trimmed.includes("|") || !/^[|:\-\s]+$/.test(trimmed)) return null;
+  const cells = splitTableRow(trimmed, 0);
+  if (!cells.length || !cells.every(cell => /^:?-+:?$/.test(cell.text))) return null;
+  return cells.map(({ text }) => {
+    const left = text.startsWith(":"), right = text.endsWith(":");
+    return left && right ? "center" : right ? "right" : left ? "left" : undefined;
+  });
+}
+
+// Splits a trimmed table row on unescaped pipes, trimming each cell. "\|"
+// becomes a literal "|". `offsets` give each cell character's source offset
+// (`base` is the source offset of line[0]); a leading/trailing pipe adds no cell.
+function splitTableRow(line: string, base: number): TableCell[] {
+  const cells: TableCell[] = [];
+  let text = "", offsets: number[] = [];
+  const end = () => {
+    const lead = text.length - text.trimStart().length;
+    const value = text.trim();
+    cells.push({ text: value, offsets: offsets.slice(lead, lead + value.length) });
+    text = ""; offsets = [];
+  };
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\" && line[i + 1] === "|") { text += "|"; offsets.push(base + i + 1); i++; continue; }
+    if (line[i] === "|") { end(); continue; }
+    text += line[i]; offsets.push(base + i);
+  }
+  end();
+  if (line.startsWith("|")) cells.shift();
+  if (line.endsWith("|") && !line.endsWith("\\|") && cells.length) cells.pop();
+  return cells;
 }
 
 // Strips **bold**/__bold__, *italic*/_italic_, `code` and [link](url) markers from
