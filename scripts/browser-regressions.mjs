@@ -35,6 +35,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/question-card-layout.browser.mjs", 14],
   ["apps/web/scripts/review-lists.browser.mjs", 5],
   ["apps/web/scripts/under-review.browser.mjs", 5],
+  ["apps/web/scripts/study-status.browser.mjs", 5],
   ["apps/web/scripts/setup-layout.browser.mjs", 6],
   ["apps/web/scripts/settings.browser.mjs", 10],
   ["apps/web/scripts/statistics.browser.mjs", 18],

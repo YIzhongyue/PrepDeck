@@ -11,6 +11,7 @@ import { importSchemasRouter } from "./routes/importSchemas";
 import { practiceCatalogRouter } from "./routes/practice";
 import { examAttemptsRouter, attemptsRouter } from "./routes/attempts";
 import { learningDetailRouter, learningProgressRouter } from "./routes/learning";
+import { studyStatusRouter } from "./routes/studyStatus";
 import { bookmarksRouter } from "./routes/bookmarks";
 import { wrongBookMasteredRouter } from "./routes/wrongBook";
 import { questionAnnotationsRouter, annotationsRouter } from "./routes/annotations";
@@ -99,7 +100,7 @@ api.use("*", requireAccessUser);
 api.use("*", authenticatedRateLimit);
 // Small JSON bodies only; see lib/bodyLimit.ts. After authentication, so an
 // anonymous request is still refused with 401 rather than told about sizes.
-for (const path of ["/questions/:questionId/notes/*", "/notes/*", "/questions/:questionId/annotations/*", "/annotations/*", "/attempts/*", "/exams/:examId/attempts/*"]) {
+for (const path of ["/questions/:questionId/notes/*", "/notes/*", "/questions/:questionId/annotations/*", "/annotations/*", "/attempts/*", "/exams/:examId/attempts/*", "/exams/:examId/study-status/*"]) {
   api.use(path, jsonBodyLimit);
 }
 
@@ -122,6 +123,8 @@ api.route("/questions/:questionId/bookmark", bookmarksRouter);
 // unchanged (Learning Mode is a "review context" per FR-8.3/FR-11.6).
 api.route("/exams/:examId/learning/progress", learningProgressRouter);
 api.route("/questions/:questionId/learning-detail", learningDetailRouter);
+// Issue #119 — per-question studied status, shared by Learning and Practice setup.
+api.route("/exams/:examId/study-status", studyStatusRouter);
 // docs/requirements/review-notes-and-annotations.md — Wrong Question Book.
 api.route("/questions/:questionId/wrong-book/mastered", wrongBookMasteredRouter);
 // docs/requirements/review-notes-and-annotations.md — Annotation & Review.

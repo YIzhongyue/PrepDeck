@@ -31,6 +31,7 @@ export const IC = {
   history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5 M12 7v5l4 2",
   msg: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z M13 8H7 M17 12H7",
   lightbulb: "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5 M9 18h6 M10 22h4",
+  circle: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z",
   circleCheck: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M9 12l2 2 4-4",
   circleX: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M15 9l-6 6 M9 9l6 6",
   circleDot: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 11a1 1 0 1 0 0 2a1 1 0 1 0 0-2z",
@@ -83,6 +84,22 @@ export function BookmarkButton({ on, onClick }: { on: boolean; onClick: () => vo
   return (
     <button type="button" className={`st-btn st-btn--icon${on ? " st-btn--on" : ""}`} onClick={onClick} title="Bookmark" aria-label="Bookmark" aria-pressed={on}>
       <Icon d={IC.bookmark} size={18} fill={on ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+/* Issue #119: the shown question's studied status, as a toggle button named
+   "Studied": pressed (a checked circle) means studied, so pressing it is
+   "Mark as unstudied", which its tooltip says. `compact` (phones) is
+   icon-only, like the bookmark beside it. */
+export function StudiedToggle({ studied, onChange, compact = false }: { studied: boolean; onChange: (studied: boolean) => void; compact?: boolean }) {
+  const action = studied ? "Mark as unstudied" : "Mark as studied";
+  return (
+    <button
+      type="button" className={`st-btn${compact ? " st-btn--icon" : ""}${studied ? " st-btn--on" : ""}`}
+      onClick={() => onChange(!studied)} aria-pressed={studied} aria-label="Studied" title={action}
+    >
+      <Icon d={studied ? IC.circleCheck : IC.circle} size={18} />{!compact && "Studied"}
     </button>
   );
 }
