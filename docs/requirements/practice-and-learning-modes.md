@@ -53,11 +53,90 @@ underlying field name; the screens say **Under review**.
   and **Review** on the Bookmarks and Wrong Question Book screens practise
   exactly the listed questions.
 
+## Studied status
+
+<a id="studied-status"></a>
+
+Implementation ([issue #119](https://github.com/YIzhongyue/PrepDeck/issues/119)):
+each user has a studied or unstudied status for every question, stored per
+user and question in `user_question_study_status` ([migration](../../migrations/0046_question_study_status.sql))
+and shared across devices. **Studied means exposure**, not mastery and not a
+correct answer. Four separate ideas must not be confused:
+
+| Concept | Meaning | Source |
+| --- | --- | --- |
+| Resume position | Where Learning stopped in an exam (FR-14.9). Says nothing about which earlier questions were seen. | `learning_progress` |
+| Studied status | The question was displayed in Learning, or the user recorded a real answer to it in Practice or Mock, and has not since marked it unstudied. | `user_question_study_status` |
+| Attempted | The question has an answer row from Practice or Mock. Learning never creates one, so a question seen only in Learning is **studied but unattempted**. | `attempt_answers` |
+| Mastery | Membership of the Wrong Question Book and its mastered flag. | `wrong_question_book` |
+
+What changes the status:
+
+| Event | Effect |
+| --- | --- |
+| Learning displays a question with its content (start, resume, Next, Back, a jump or a linked question) | Studied |
+| The user presses **Studied** in Learning ("Mark as unstudied" / "Mark as studied") | The chosen status, always applied |
+| A Practice answer is recorded, right or wrong | Studied |
+| A Mock draft answer is saved, or a Mock is submitted with that question answered | Studied |
+| A question is only prefetched, fails to load, is merely included in a session, is skipped, or a fill-in is left blank | No change |
+
+- **A reset is durable.** "Mark as unstudied" keeps an explicit unstudied
+  record; a question with no record is also unstudied. Each record has a
+  revision that moves on every change. Learning's automatic mark is applied
+  only against the revision the client last saw, and status writes for a
+  question are sent in order, so a visit delayed or retried past a reset, a
+  passive refresh of the exam, or a fetch that left the server earlier cannot
+  undo it. Within one visit the question is marked at most once, so a reset
+  stays in place while the question remains on screen. A later visit (moving
+  away and back, starting a new session, or reloading the page) marks it again.
+- **Practice and Mock mark on the server** where the answer is recorded, in
+  the same transaction as a Practice answer or a Mock submission, so MCP
+  practice counts too. A recorded answer is a new exposure and marks the
+  question studied even after a reset; a replayed Practice answer, or a Mock
+  draft saved again unchanged, is a retry and does not. Mock submission
+  reconciles answered questions whose drafts were never marked, but leaves
+  alone a reset made after the attempt started. "Answered" follows the same
+  question-type rules as the Wrong Question Book.
+- **Filters.** Learning and Practice setup each offer **Study status: Any
+  status / Unstudied only / Studied only** (default Any status; the first
+  option is not called "All questions" because Practice's source row has a card
+  of that name). It combines with the exam, source, domain, difficulty and
+  review filters, the counts and summary reflect it, and an empty result says
+  whether the study status alone emptied it and offers to show every matching
+  question. Each screen keeps its own choice for the browser session; a linked
+  question resets Learning's filters as before. Mock has no such filter but
+  contributes to the status.
+- **Sessions are snapshots.** A Learning or Practice session's questions are
+  fixed when it starts, so marking a question studied never removes the current
+  question, skips the next one or disturbs Back in an "Unstudied only" session.
+  Resume, start and jump work within the filtered questions.
+- **Learning stays ungraded.** Marking creates no attempt and changes no
+  accuracy, statistics, mastery or Wrong Question Book entry (FR-14.7).
+- **Backfill.** The migration marks as studied every question with a genuinely
+  answered Practice or Mock answer, and every non-empty draft answer in an
+  unfinished Mock. Unanswered mock rows are not answers, and nothing is
+  inferred from the resume position. It never overwrites an existing record.
+- **Degraded load.** If the statuses cannot be loaded, the exam still opens
+  and the setup screens say the study-status counts may be incomplete.
+
+REST API (session-authenticated, scoped to the signed-in user; DTOs in
+[studyStatus.ts](../../packages/shared/src/studyStatus.ts)):
+
+| Request | Behavior |
+| --- | --- |
+| `GET /api/exams/:examId/study-status` | `{ examId, statuses: [{ questionId, status, revision, updatedAt }] }` for this exam's questions that have a record. |
+| `PUT /api/exams/:examId/study-status/:questionId` with `{ status }` (`"studied"` or `"unstudied"`) | Manual choice; always applies. Returns `{ applied: true, status }`. |
+| `POST /api/exams/:examId/study-status/:questionId/learning-view` with `{ expectedRevision }` | Learning's automatic mark; applies only while the stored revision equals `expectedRevision` (0 for no record). Returns `{ applied, status }` with the current record either way. |
+
+`POST /api/attempts/:id/answers` and `PUT /api/attempts/:id/answers/:questionId`
+also return the question's `studyStatus` after the write. The MCP practice
+tools mark questions the same way but return their responses unchanged.
+
 ## Practice
 
 <a id="fr-3-1"></a>
 
-- **FR-3.1 (M):** A user starts practice in the active exam, filtering by tags, difficulty and source (all, unattempted, bookmarked or wrong questions). Question-type filtering remains part of the original intent but has no dedicated control in the current Practice setup UI; treat that part as a gap.
+- **FR-3.1 (M):** A user starts practice in the active exam, filtering by tags, difficulty and source (all, unattempted, bookmarked or wrong questions), and by [studied status](#studied-status). Question-type filtering remains part of the original intent but has no dedicated control in the current Practice setup UI; treat that part as a gap.
 
   Domains search filters the displayed choices without changing the selection.
   For a non-empty search, **Select all results** replaces the current selection
@@ -200,7 +279,7 @@ underlying field name; the screens say **Under review**.
 
 <a id="fr-14-2"></a>
 
-- **FR-14.2 (M):** Optional filters (category/tag), as in Practice Mode (FR-3.1), may be applied to a Learning session; when a filter is active, "sequence order" refers to the filtered subset's order, not the full exam.
+- **FR-14.2 (M):** Optional filters (category/tag), as in Practice Mode (FR-3.1), may be applied to a Learning session; when a filter is active, "sequence order" refers to the filtered subset's order, not the full exam. Learning also filters by [studied status](#studied-status), and marks each question it displays as studied.
 
 <a id="fr-14-3"></a>
 
@@ -228,7 +307,7 @@ underlying field name; the screens say **Under review**.
 
 <a id="fr-14-9"></a>
 
-- **FR-14.9 (S):** PrepDeck remembers, per user and per exam, the sequence number of the last question viewed in Learning Mode, and offers to resume from there the next time the user starts a Learning session for that exam (in addition to letting them pick a different starting number per FR-14.1).
+- **FR-14.9 (S):** PrepDeck remembers, per user and per exam, the sequence number of the last question viewed in Learning Mode, and offers to resume from there the next time the user starts a Learning session for that exam (in addition to letting them pick a different starting number per FR-14.1). The resume position is only a position: which questions were actually viewed is the separate [studied status](#studied-status).
 
 <a id="fr-14-10"></a>
 

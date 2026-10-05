@@ -263,8 +263,10 @@ test("issue #89: MCP practice persists in browser history, fresh cached stats an
   assert.equal(saved.answer_revision, 1);
 
   // Cross-transport retry cannot revise the locked grade or count a second wrong.
-  const replay = await webCall(f, "alice", `/attempts/${attemptId}/answers`, "POST", { questionId: "q1", selectedAnswer: ["a"] });
+  const { studyStatus, ...replay } = await webCall(f, "alice", `/attempts/${attemptId}/answers`, "POST", { questionId: "q1", selectedAnswer: ["a"] });
   assert.deepEqual(replay, wrong);
+  // Issue #119: the MCP answer marked the question studied, as a web answer does.
+  assert.equal(studyStatus.status, "studied");
   const wrongRow = f.sqlite.prepare("SELECT * FROM wrong_question_book WHERE user_id = 'alice' AND question_id = 'q1'").get();
   assert.equal(wrongRow.wrong_count, 3);
   assert.equal(wrongRow.mastered, 0);

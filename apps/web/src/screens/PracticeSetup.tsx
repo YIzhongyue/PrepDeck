@@ -2,10 +2,11 @@ import { useId, useMemo } from "react";
 import { reviewIds } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
 import { underReviewCount } from "../lib/underReview";
+import { STUDY_FILTERS, studyFilterCounts } from "../lib/studyStatus";
 import { usePrepDeck } from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
 import {
-  ChoiceCard, DifficultyPicker, DomainPicker, EmptyPoolNotice, MoreOptions, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, domainSummary, setupLayout,
+  ChoiceCard, DifficultyPicker, DomainPicker, EmptyPoolNotice, MoreOptions, SetupHeader, SetupRow, StudyStatusRow, SummaryRow, UnderReviewRow, domainSummary, setupLayout,
   type DifficultyChoice
 } from "../components/study/SetupKit";
 import type { Breakpoints } from "../lib/responsive";
@@ -40,7 +41,7 @@ const COUNT_PRESETS = [5, 10, 20, 40] as const;
 const MINUTES_PER_QUESTION = 1.5;
 
 export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, startPractice, pool } = usePrepDeck();
+  const { state, width, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, setStudyFilter, startPractice, pool } = usePrepDeck();
   const layout = setupLayout(width, bp.phone);
   const emptyId = useId();
   const attemptedCount = Object.keys(state.attempted).length;
@@ -57,10 +58,12 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
     return counts;
   }, [state.catalog]);
   const reviewCount = useMemo(() => underReviewCount(state.catalog), [state.catalog]);
+  const studyCounts = useMemo(() => studyFilterCounts(state.catalog, state.studyStatus), [state.catalog, state.studyStatus]);
   const matched = pool().length;
   const sessionSize = Math.min(state.count, matched);
   const source = SOURCES.find((s) => s.id === state.source) ?? SOURCES[0];
   const feedback = FEEDBACK.find((f) => f.id === state.feedback) ?? FEEDBACK[0];
+  const study = STUDY_FILTERS.find((f) => f.id === state.studyFilter) ?? STUDY_FILTERS[0]!;
 
   // Nothing to start: say why, and offer the nearest source or filter change
   // that has questions, instead of a start button that does nothing.
@@ -72,12 +75,22 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
         ...EMPTY_SOURCE[source.id],
         action: fallback ? { label: `Practice ${fallback.id === "new" ? "unattempted questions" : "all questions"} (${sourceCounts[fallback.id]})`, onClick: () => setSource(fallback.id) } : undefined
       };
+    } else if (state.studyFilter !== "all" && pool({ study: "all" }).length > 0) {
+      // Only the study status rules every question out (issue #119).
+      const others = pool({ study: "all" }).length;
+      empty = {
+        title: state.studyFilter === "unstudied" ? "You have studied every matching question" : "You have not studied any matching question yet",
+        body: state.studyFilter === "unstudied"
+          ? "Every question that fits your other choices has been shown in Learning or answered. Mark a question as unstudied in Learning to practise it here again."
+          : "None of the questions that fit your other choices has been shown in Learning or answered yet.",
+        action: { label: `Practice all ${others} matching ${others === 1 ? "question" : "questions"}`, onClick: () => setStudyFilter("all") }
+      };
     } else {
-      const narrowed = state.tags.length > 0 || state.diff !== "all";
+      const narrowed = state.tags.length > 0 || state.diff !== "all" || state.studyFilter !== "all";
       empty = {
         title: "No questions match these filters",
-        body: `${source.label} has ${sourceCounts[source.id]} ${sourceCounts[source.id] === 1 ? "question" : "questions"}, but none fit your domain, difficulty and review choices.`,
-        action: narrowed ? { label: "Clear domain and difficulty filters", onClick: () => { setPracticeTags([]); setDiff("all"); } } : undefined
+        body: `${source.label} has ${sourceCounts[source.id]} ${sourceCounts[source.id] === 1 ? "question" : "questions"}, but none fit your domain, difficulty, study status and review choices.`,
+        action: narrowed ? { label: "Clear domain, difficulty and study status filters", onClick: () => { setPracticeTags([]); setDiff("all"); setStudyFilter("all"); } } : undefined
       };
     }
   }
@@ -129,6 +142,8 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
             />
           </SetupRow>
 
+          <StudyStatusRow value={state.studyFilter} counts={studyCounts} unavailable={state.studyStatusError} onChange={setStudyFilter} layout={layout} />
+
           <MoreOptions summary={optionsSummary} defaultOpen={optionsChanged} cols={layout.rowCols}>
             <SetupRow title="Difficulty" desc="Filter by question difficulty." cols={layout.rowCols}>
               <DifficultyPicker value={state.diff} counts={diffCounts} onChange={setDiff} />
@@ -154,6 +169,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
             </div>
             <div className="st-summary-rows">
               <SummaryRow icon={source.icon} label="Source" value={source.label} />
+              <SummaryRow icon={IC.circleCheck} label="Study status" value={study.label} />
               <SummaryRow icon={IC.tag} label="Domains" value={domainSummary(state.tags)} />
               {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.skipReview ? "Skipped" : "Included"} />}
               <SummaryRow icon={IC.listOrdered} label="Questions" value={sessionSize} />
