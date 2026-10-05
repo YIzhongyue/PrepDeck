@@ -38,6 +38,7 @@ const body = '# Access policies\n\n**Bold concept** and *careful reasoning*.\n\n
 const note = (id, title, markdown = "") => ({ id, title, bodyMarkdown: markdown, groupId: "group", groupName: "Cloud fundamentals", tags: [], linkedQuestions: [], images: [], position: 1024, revision: 1, createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
 let notes = [note("a", "Access policies", body), note("b", "Service boundaries", "Second note body"), note("c", "Recovery drills", "Third note body")];
 let order = ["a", "b", "c"], orderRevision = 1, writes = [], questionNotes = [], creations = 0;
+let groups = [{ id: "group", name: "Cloud fundamentals" }], groupCreations = [];
 let failSave = 0, delaySave = 0, failUpload = false, uploadGate = null, metadataGate = null, failReorder = false, failLink = false, mockStarts = 0;
 let concurrentWrites = 0, maxConcurrentWrites = 0;
 let failDelete = false, deleteGate = null, deleteRequests = 0;
@@ -64,7 +65,15 @@ const server = createServer(async (req, res) => {
     if (path === "/api/settings") return json(200, { showSharedNotes: true });
     if (path === "/api/annotation-settings") return json(200, { hl1Alias: "Important", hl2Alias: "Review", hl3Alias: "Question" });
     if (path === "/api/daily-email-settings") return json(200, { enabled: false });
-    if (path === "/api/knowledge-point-groups") return json(200, { groups: [{ id: "group", name: "Cloud fundamentals", noteCount: notes.length }], ungroupedCount: 0 });
+    if (path === "/api/knowledge-point-groups" && req.method === "POST") {
+      const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
+      groupCreations.push(input.name);
+      if (!name || name.length > 40) return json(400, { error: "A valid group name is required" });
+      if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) return json(409, { error: "A group with that name already exists" });
+      const group = { id: `group-${groups.length}`, name }; groups.push(group);
+      return json(201, { group: { ...group, noteCount: 0 } });
+    }
+    if (path === "/api/knowledge-point-groups") return json(200, { groups: groups.map(g => ({ ...g, noteCount: g.id === "group" ? notes.length : notes.filter(n => n.groupId === g.id).length })), ungroupedCount: 0 });
     if (path === "/api/knowledge-point-tags") return json(200, { tags: [{ id: "tag", name: "Cloud", noteCount: 0 }] });
     if (path === "/api/knowledge-points/linkable-questions") return json(200, { questions: [{ questionId: "Q1", examId: "exam", examSlug: "cloud", examName: "Cloud fundamentals", externalId: "Q1", stemExcerpt: "Question Q1", linked: false }], total: 1 });
     if (path === "/api/knowledge-points" && req.method === "GET") {
@@ -101,6 +110,7 @@ const server = createServer(async (req, res) => {
         order = order.filter(x => x !== id); order.splice(input.beforeId ? order.indexOf(input.beforeId) : order.length, 0, id); orderRevision++;
         return json(200, { position: order.indexOf(id) * 1024 });
       }
+      if (path.endsWith("/group")) { const group = groups.find(g => g.id === input.groupId); Object.assign(n, { groupId: group?.id ?? null, groupName: group?.name ?? null }); return json(200, { knowledgePoint: n }); }
       if (path.endsWith("/tags")) { if (metadataGate) await metadataGate.promise; n.tags.push({ id: `tag-${input.name}`, name: input.name }); return json(201, { knowledgePoint: n }); }
       if (path.endsWith("/questions")) { if (failLink) return json(503, { error: "Link temporarily unavailable" }); n.linkedQuestions.push({ questionId: input.questionId, examId: "exam", examSlug: "cloud", externalId: input.questionId, accessible: true, stemExcerpt: "Question Q1" }); return json(201, { knowledgePoint: n }); }
       if (req.method === "PUT") {
@@ -320,6 +330,41 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Knowledge point title" }).inputValue(), "Service boundaries");
   assert.equal(notes[0].title, "Access policies");
   console.log("PASS metadata status/navigation prevents stale responses crossing note identity");
+
+  // A missing group is created from the editor's group picker and the open
+  // note moves into it, without leaving the editor.
+  const groupChip = name => page.getByRole("button", { name: `Group: ${name}`, exact: true });
+  const newGroupName = page.getByRole("textbox", { name: "New group", exact: true });
+  await groupChip("Cloud fundamentals").click();
+  await page.getByRole("menuitem", { name: "New group…", exact: true }).click();
+  await newGroupName.fill("  cloud   FUNDAMENTALS ");
+  await newGroupName.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "A group named “cloud FUNDAMENTALS” already exists." }).waitFor();
+  assert.deepEqual(groupCreations, [], "A name the picker already lists is refused before a request");
+  groups.push({ id: "elsewhere", name: "Made elsewhere" });
+  await newGroupName.fill("made elsewhere");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "A group with that name already exists" }).waitFor();
+  if (process.env.KP_SCREENSHOTS) await page.screenshot({ path: resolve(process.env.KP_SCREENSHOTS, "kp-new-group-desktop.png") });
+  assert.equal(notes[1].groupId, "group", "A refused group leaves the note where it was");
+  await newGroupName.fill("Exam   prep");
+  await newGroupName.press("Enter");
+  await groupChip("Exam prep").waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Group: Exam prep", "Focus returns to the group chip");
+  assert.deepEqual([notes[1].groupId, notes[1].groupName], ["group-2", "Exam prep"]);
+  assert.equal(await page.getByRole("textbox", { name: "Knowledge point title" }).inputValue(), "Service boundaries", "The editor stays open");
+  await groupChip("Exam prep").click();
+  assert.equal(await page.getByRole("menuitemradio", { name: "Exam prep", exact: true }).getAttribute("aria-checked"), "true");
+  await page.getByRole("menuitem", { name: "New group…", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu", { name: "Move to group", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu", { name: "Move to group", exact: true }).waitFor({ state: "detached" });
+  await groupChip("Exam prep").click();
+  await page.getByRole("menuitemradio", { name: "Cloud fundamentals", exact: true }).click();
+  await groupChip("Cloud fundamentals").waitFor();
+  assert.equal(notes[1].groupId, "group");
+  console.log("PASS create a group from the editor's group picker and move the note into it");
 
   // Library order uses a CAS revision; failed/conflicting writes cannot clobber it.
   await page.getByRole("link", { name: "All notes", exact: true }).click();
@@ -657,6 +702,13 @@ try {
   assert.ok(tagBox.left >= 0 && tagBox.right <= 375, `The tag menu at ${Math.round(tagBox.left)}–${Math.round(tagBox.right)}px leaves the 375px viewport`);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Opening the tag menu adds horizontal scrolling");
   await tagInput.fill(""); await tagInput.press("Escape");
+  await page.getByRole("button", { name: /^Group: /, exact: false }).click();
+  await page.getByRole("menuitem", { name: "New group…", exact: true }).click();
+  const groupForm = await page.getByRole("form", { name: "New group", exact: true }).evaluate(el => el.closest(".kp-menu").getBoundingClientRect().toJSON());
+  assert.ok(groupForm.left >= 0 && groupForm.right <= 375, `The new-group form at ${Math.round(groupForm.left)}–${Math.round(groupForm.right)}px leaves the 375px viewport`);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Opening the new-group form adds horizontal scrolling");
+  if (process.env.KP_SCREENSHOTS) await page.screenshot({ path: resolve(process.env.KP_SCREENSHOTS, "kp-new-group-mobile.png") });
+  await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
   await visual.evaluate(el => el.editor.chain().focus("end").run());
   await page.waitForFunction(() => document.activeElement === document.querySelector('[aria-label="Knowledge point body"]'));
   await page.keyboard.press("Enter"); await page.keyboard.type("/");
