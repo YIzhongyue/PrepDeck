@@ -60,7 +60,7 @@ export default function NoteCard({ note }: { note: Note }) {
 
         {!editing ? (
           <div className="note-body" style={{ opacity: 0.85, overflowWrap: "anywhere" }}>
-            <MarkdownHighlightedText src={note.text} annotations={[]} qid={note.qid} target="stem" show={false} style={{ fontSize: 12.5, lineHeight: 1.5 }} />
+            <MarkdownHighlightedText src={note.text} annotations={[]} qid={note.qid} target="stem" show={false} tables style={{ fontSize: 12.5, lineHeight: 1.5 }} />
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

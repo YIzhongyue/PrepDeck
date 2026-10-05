@@ -140,12 +140,23 @@ export interface TextSegment {
 // see lib/markdown.ts. Deliberately a flat plainText + offset-range model,
 // not an AST/HTML string, so the existing character-offset annotation
 // system (docs/requirements/review-notes-and-annotations.md, FR-8.1) keeps working unchanged against `plainText`.
-export type MdBlockType = "p" | "h1" | "h2" | "h3" | "li" | "oli" | "hr" | "code";
+export type MdBlockType = "p" | "h1" | "h2" | "h3" | "li" | "oli" | "hr" | "code" | "cell";
+
+// One GFM table cell (type "cell"). Cells of the same `table` form one table;
+// empty cells are zero-length blocks so every row keeps its column count.
+export interface MdCell {
+  table: number;
+  row: number; // 0 is the header row
+  col: number;
+  header: boolean;
+  align?: "left" | "center" | "right";
+}
 
 export interface MdBlock {
   type: MdBlockType;
   start: number; // offset into ParsedMarkdown.plainText
   end: number;
+  cell?: MdCell;
 }
 
 export type MdInlineKind = "bold" | "italic" | "code" | "link";
