@@ -70,7 +70,7 @@ test("a short row without pipes is padded", () => {
   assert.deepEqual(cells.filter(c => c.row === 2).map(c => c.text), ["bar", ""]);
 });
 
-test("the renderer outputs semantic cells and complete text across block boundaries", async () => {
+async function renderer() {
   const { outputFiles } = await build({
     stdin: {
       contents: `import { createElement } from "react"; import { renderToStaticMarkup } from "react-dom/server"; import M from "./src/components/MarkdownHighlightedText.tsx"; export const render = (src) => renderToStaticMarkup(createElement(M, { src, annotations: [], qid: "q", target: "stem", show: false, tables: true }));`,
@@ -84,7 +84,11 @@ test("the renderer outputs semantic cells and complete text across block boundar
   mkdirSync(dir, { recursive: true });
   const file = `${dir}markdown-render.test.mjs`;
   writeFileSync(file, outputFiles[0].text);
-  const { render } = await import(file);
+  return import(file);
+}
+
+test("the renderer outputs semantic cells and complete text across block boundaries", async () => {
+  const { render } = await renderer();
   const html = render("| Option | Why |\n| :-- | --: |\n| A | **SHA256** is `x` |\n- Use a | b | c\n```\nx | y\n```\nAfter | code | lost");
   assert.equal((html.match(/<table/g) ?? []).length, 1);
   assert.equal((html.match(/<th /g) ?? []).length, 2);
@@ -93,4 +97,28 @@ test("the renderer outputs semantic cells and complete text across block boundar
   assert.ok(!html.includes("---") && !html.includes(":--"));
   assert.ok(html.includes("<ul") && html.includes("Use a | b | c"));
   assert.ok(html.includes("After | code | lost"));
+});
+
+test("block quotes, h4-h6 headings and tilde fences end the table and keep their full text", () => {
+  for (const next of ["> Keep a | b | c intact.", "#### Keep a | b | c intact."]) {
+    const parsed = parseMarkdown(`| A | B |\n| --- | --- |\n| one | two |\n${next}`, false, false, true);
+    assert.equal(parsed.blocks.filter(b => b.cell).length, 4, next);
+    assert.ok(parsed.plainText.endsWith("Keep a | b | c intact."), next);
+  }
+  const fenced = parseMarkdown("| A | B |\n| --- | --- |\n| one | two |\n~~~sql\nselect a | b | c\nfrom t | u\n~~~\nAfter | x | y", false, false, true);
+  assert.equal(fenced.blocks.filter(b => b.cell).length, 4);
+  assert.ok(fenced.plainText.includes("select a | b | c") && fenced.plainText.includes("from t | u") && fenced.plainText.endsWith("After | x | y"));
+});
+
+test("pipe lines inside a tilde fence never start a table", () => {
+  const parsed = parseMarkdown("~~~\na | b\n- | -\n~~~\nz", false, false, true);
+  assert.equal(parsed.blocks.filter(b => b.cell).length, 0);
+  assert.ok(parsed.plainText.includes("a | b"));
+});
+
+test("the renderer keeps block-quote text complete after a table", async () => {
+  const { render } = await renderer();
+  const html = render("| A | B |\n| - | - |\n| one | two |\n> Keep a | b | c intact.\n~~~sql\nx | y | z\n~~~");
+  assert.equal((html.match(/<table/g) ?? []).length, 1);
+  assert.ok(html.includes("Keep a | b | c intact.") && html.includes("x | y | z"));
 });

@@ -84,6 +84,7 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
   let table: { aligns: MdCell["align"][]; row: number; id: number } | null = null;
   let tableCount = 0;
   let skipDelimiter = false;
+  let inTildeFence = false; // ~~~ is not a rendered fence, but its lines never form a table
   const pushRow = (cells: TableCell[], aligns: MdCell["align"][], row: number, id: number) => {
     for (let col = 0; col < aligns.length; col++) {
       const cell = cells[col];
@@ -121,7 +122,8 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
     blockOffset += raw.length - raw.trimStart().length;
     if (!line) { table = null; continue; } // blank line: paragraph separator only
 
-    if (table) {
+    if (tables && /^~~~/.test(line)) { inTildeFence = !inTildeFence; table = null; }
+    else if (table && !inTildeFence) {
       // GFM: the table runs until a blank line or another block structure; a
       // row without pipes is a short row, padded with empty cells.
       if (!BLOCK_START.test(line)) {
@@ -130,7 +132,7 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
       }
       table = null;
     }
-    if (tables && !prose && line.includes("|")) {
+    if (tables && !prose && !inTildeFence && !BLOCK_START.test(line) && line.includes("|")) {
       const aligns = tableAligns(lines[lineIndex + 1]);
       const header = aligns && splitTableRow(line, blockOffset);
       if (aligns && header && header.length === aligns.length) {
@@ -184,7 +186,7 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
 }
 
 // Lines that open a block other than a paragraph, and so end an open table.
-const BLOCK_START = /^(?:#{1,3}\s|-{3,}$|\*{3,}$|_{3,}$|[-*+]\s|\d+[.)]\s)/;
+const BLOCK_START = /^(?:#{1,6}\s|>|~~~|-{3,}$|\*{3,}$|_{3,}$|[-*+]\s|\d+[.)]\s)/;
 
 interface TableCell { text: string; offsets: number[] }
 
