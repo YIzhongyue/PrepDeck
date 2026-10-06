@@ -55,7 +55,12 @@ export default function GroupPicker({
     setBusy(true);
     setError(null);
     onCreate(name)
-      .then((group) => { onSelect(group.id); close(); triggerRef.current?.focus(); })
+      .then((group) => {
+        // Changing notes unmounts this picker with its keyed editor. Creation
+        // may still finish, but must not select a group on the newly open note.
+        if (!ref.current) return;
+        onSelect(group.id); close(); triggerRef.current?.focus();
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not create group."))
       .finally(() => setBusy(false));
   };

@@ -39,6 +39,7 @@ const note = (id, title, markdown = "") => ({ id, title, bodyMarkdown: markdown,
 let notes = [note("a", "Access policies", body), note("b", "Service boundaries", "Second note body"), note("c", "Recovery drills", "Third note body")];
 let order = ["a", "b", "c"], orderRevision = 1, writes = [], questionNotes = [], creations = 0;
 let groups = [{ id: "group", name: "Cloud fundamentals" }], groupCreations = [];
+let groupCreationGate = null;
 let failSave = 0, delaySave = 0, failUpload = false, uploadGate = null, metadataGate = null, failReorder = false, failLink = false, mockStarts = 0;
 let concurrentWrites = 0, maxConcurrentWrites = 0;
 let failDelete = false, deleteGate = null, deleteRequests = 0;
@@ -68,6 +69,7 @@ const server = createServer(async (req, res) => {
     if (path === "/api/knowledge-point-groups" && req.method === "POST") {
       const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
       groupCreations.push(input.name);
+      if (groupCreationGate) await groupCreationGate.promise;
       if (!name || name.length > 40) return json(400, { error: "A valid group name is required" });
       if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) return json(409, { error: "A group with that name already exists" });
       const group = { id: `group-${groups.length}`, name }; groups.push(group);
@@ -365,6 +367,26 @@ try {
   await groupChip("Cloud fundamentals").waitFor();
   assert.equal(notes[1].groupId, "group");
   console.log("PASS create a group from the editor's group picker and move the note into it");
+
+  // A delayed group creation may outlive the note that initiated it. Its
+  // completion must not assign the group to a different, newly opened note.
+  groupCreationGate = Promise.withResolvers();
+  await groupChip("Cloud fundamentals").click();
+  await page.getByRole("menuitem", { name: "New group…", exact: true }).click();
+  await newGroupName.fill("Created after navigation");
+  await newGroupName.press("Enter");
+  await wait(() => groupCreations.includes("Created after navigation"), "group creation in flight");
+  await page.getByRole("link", { name: "All notes", exact: true }).click();
+  await openA();
+  await groupChip("Cloud fundamentals").click();
+  groupCreationGate.resolve(); groupCreationGate = null;
+  await page.getByRole("menuitemradio", { name: "Created after navigation", exact: true }).waitFor();
+  await saved();
+  assert.equal(notes[0].groupId, "group", "Delayed creation must not move the newly opened note");
+  assert.equal(notes[1].groupId, "group", "Leaving the original editor cancels its automatic group assignment");
+  assert.equal(await groupChip("Cloud fundamentals").count(), 1);
+  await page.keyboard.press("Escape");
+  console.log("PASS delayed group creation cannot move another note after navigation");
 
   // Library order uses a CAS revision; failed/conflicting writes cannot clobber it.
   await page.getByRole("link", { name: "All notes", exact: true }).click();
@@ -725,4 +747,4 @@ try {
   console.log("PASS outline targets, 375px table tools and menus, and slash-menu keyboard scrolling");
   assert.deepEqual(errors, [], "No unhandled browser errors");
   console.log(`Knowledge Points browser regression passed (${writes.length} acknowledged/failed save attempts exercised).`);
-} finally { uploadGate?.resolve(); metadataGate?.resolve(); deleteGate?.resolve(); await browser.close(); await new Promise(resolve => server.close(resolve)); }
+} finally { groupCreationGate?.resolve(); uploadGate?.resolve(); metadataGate?.resolve(); deleteGate?.resolve(); await browser.close(); await new Promise(resolve => server.close(resolve)); }
