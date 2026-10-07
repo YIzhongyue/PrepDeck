@@ -9,8 +9,9 @@ import AnswerRevisionNotice from "../components/AnswerRevisionNotice";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import {
-  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, UnderReviewNotice, pinnedCardStyle, usePinnedCard, visibleNotes
+  BookmarkButton, CopyPromptButton, ExplanationPanel, HistoryPanel, IC, Icon, NotesPanel, OptionGroup, OptionRow, QuestionBadges, ReviewTabs, StudiedToggle, UnderReviewNotice, pinnedCardStyle, usePinnedCard, visibleNotes
 } from "../components/study/StudyKit";
+import { isQuestionStudied } from "../lib/studyStatus";
 import type { Breakpoints } from "../lib/responsive";
 import { questionTypeLabel } from "../lib/questionTypes";
 import type { Question } from "../types";
@@ -24,11 +25,17 @@ import type { Question } from "../types";
 // "review context" per FR-8.3/FR-11.6.
 export default function LearningLive({ bp }: { bp: Breakpoints }) {
   const {
-    state, width, learningQ, learningNext, learningPrev, learningGotoSequence, go, toggleBookmark, capture, removeMark
+    state, width, learningQ, learningNext, learningPrev, learningGotoSequence, go, toggleBookmark, capture, removeMark, markLearningViewed, setQuestionStudied
   } = usePrepDeck();
   const q = learningQ();
   useQuestionPrefetch("learning", state.lQueue, state.lIdx);
   const detail = q ? state.lDetail[q.id] : undefined;
+  const ready = detail?.status === "ready";
+  // Issue #119: once this visit's question is on screen with its content —
+  // never for a prefetch, a load still in flight or one that failed.
+  useEffect(() => {
+    if (q && ready) markLearningViewed(q.id);
+  }, [q, ready, state.lVisit, markLearningViewed]);
   const [jumpText, setJumpText] = useState("");
   const [tab, setTab] = useState("exp");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -51,7 +58,6 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
 
   if (!q) return null;
 
-  const ready = detail?.status === "ready";
   const correctAnswers = detail?.correctAnswers ?? [];
   const liveCols = desktop && !flow ? "minmax(0, 1.65fr) minmax(300px, 1fr)" : "minmax(0, 1fr)";
   const atEnd = state.lIdx + 1 >= state.lQueue.length;
@@ -110,6 +116,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
             <PageBreadcrumb screen="learning" />
             <h1 className="st-title">Question #{q.sequenceNumber} <span className="st-title-sub">· {state.lIdx + 1} of {state.lQueue.length}</span></h1>
           </div>
+          <StudiedToggle studied={isQuestionStudied(state.studyStatus, q.id)} onChange={(studied) => setQuestionStudied(q.id, studied)} compact={flow} />
           <BookmarkButton on={!!state.bookmarks[q.id]} onClick={() => toggleBookmark(q.id)} />
           <button type="button" className="st-btn" onClick={() => go("learning")}><Icon d={IC.logout} />Exit</button>
         </div>

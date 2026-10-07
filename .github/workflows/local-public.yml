@@ -22,8 +22,6 @@ jobs:
         run: npm run oss:check
       - name: Verify configuration, export sanitization and isolated history
         run: npm run test:local
-      - name: Install browser test tooling without changing the lockfile
-        run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium
       - name: Exercise clean local bootstrap, bindings and browser login
         run: npm run test:local:smoke -- --browser

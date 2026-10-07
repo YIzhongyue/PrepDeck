@@ -39,6 +39,7 @@ button.kp-chip:hover { background: color-mix(in srgb, var(--color-text) 7%, tran
 input.kp-chip-add { width: 116px; border-style: dashed; border-color: var(--color-control-border); background: transparent; font-weight: 600; cursor: text; }
 input.kp-chip-add::placeholder { color: var(--color-text-muted); opacity: 1; }
 input.kp-chip-add:focus-visible { outline: none; border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-100); }
+.kp-group-create { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 
 /* Save and conflict banners sit above the title, where the eye already is */
 .kp-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 0 0 18px; padding: 12px 12px 12px 16px; border: 1px solid; border-radius: 18px; font-size: 13.5px; line-height: 1.45; }

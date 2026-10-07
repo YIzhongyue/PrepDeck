@@ -1,4 +1,5 @@
 import type { QuestionContentModel } from "./question-components.ts";
+import type { QuestionStudyStatusEntry } from "./studyStatus.ts";
 // DTOs for the Practice (3.3) / Mock Exam (3.4) API, shared between the
 // Worker's responses and the web client's fetch calls.
 
@@ -57,9 +58,9 @@ export interface PracticeCatalogResponse {
   attemptedIds: string[];
 }
 
-// POST /attempts/:id/complete grades a whole attempt in ONE D1 batch (2N+1
-// statements) because its answers, wrong-book entries and the attempt's own
-// final row have to commit together. The attempt's size is therefore what
+// POST /attempts/:id/complete grades a whole attempt in ONE D1 batch (2N+2
+// statements) because its answers, wrong-book entries, studied statuses and
+// the attempt's own final row have to commit together. The attempt's size is therefore what
 // bounds that batch, so it is capped when the attempt is created. Shared so
 // the Mock setup screen never offers a size the API will reject.
 export const MAX_ATTEMPT_QUESTIONS = 200;
@@ -112,8 +113,19 @@ export interface SubmitPracticeAnswerResponse {
   explanation: string | null;
 }
 
+// The REST answer route adds the question's studied status after the write
+// (issue #119). MCP returns SubmitPracticeAnswerResponse unchanged.
+export interface SubmitPracticeAnswerHttpResponse extends SubmitPracticeAnswerResponse {
+  studyStatus: QuestionStudyStatusEntry;
+}
+
 export interface SaveDraftAnswerRequest {
   selectedAnswer: string[];
+}
+
+export interface SaveDraftAnswerResponse {
+  saved: true;
+  studyStatus: QuestionStudyStatusEntry;
 }
 
 export interface SaveFlagRequest {
