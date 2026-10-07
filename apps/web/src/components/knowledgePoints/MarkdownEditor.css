@@ -50,7 +50,7 @@
 .kp-popover { position: absolute; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(380px, calc(100% - 8px)); padding: 14px; border: 1px solid var(--color-divider); border-radius: 22px; background: var(--color-bg); box-shadow: var(--pd-shadow-md); }
 .kp-popover-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .kp-field-label { font-size: 13px; font-weight: 600; }
-.kp-input { width: 100%; min-height: 40px; padding: 9px 16px; border: 1px solid var(--color-control-border); border-radius: 999px; background: var(--color-bg); font-size: 14px; caret-color: var(--color-accent); }
+.kp-input { width: 100%; min-height: 40px; padding: 9px 16px; border: 1px solid var(--color-control-border, var(--color-divider)); border-radius: 999px; background: var(--color-bg); font-size: 14px; caret-color: var(--color-accent); }
 .kp-input:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 5px var(--color-accent-100); }
 .kp-input[aria-invalid=true] { border-color: var(--color-danger); }
 .kp-field-hint { font-size: 12px; color: var(--color-text-muted); }

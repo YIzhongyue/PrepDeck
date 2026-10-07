@@ -9,8 +9,11 @@
 .st-setup { display: grid; gap: 32px; align-items: start; }
 .st-rows { display: flex; flex-direction: column; min-width: 0; }
 .st-row { display: grid; gap: 14px 32px; padding: 28px 0; border-bottom: 1px solid var(--st-soft-2); min-width: 0; }
-.st-row:first-child { padding-top: 0; }
-.st-row:last-child { border-bottom: 0; }
+/* Only the screen's own first and last rows: More options nests rows one level
+   down, where :first-child would also match its header and its first folded
+   row and pull them up against the divider above (issue #120). */
+.st-rows > .st-row:first-child { padding-top: 0; }
+.st-rows > .st-row:last-child { border-bottom: 0; }
 .st-row-label { display: flex; flex-direction: column; gap: 6px; max-width: 260px; padding-top: 4px; }
 .st-row-title { font-size: 15px; font-weight: 600; line-height: 22px; color: var(--st-fg); }
 .st-row-desc { font-size: 13px; line-height: 20px; color: var(--st-fg-4); text-wrap: pretty; }

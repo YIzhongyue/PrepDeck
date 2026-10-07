@@ -1,5 +1,7 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import type { StudyStatusFilter } from "@prepdeck/shared";
 import PageBreadcrumb from "../PageBreadcrumb";
+import { STUDY_FILTERS } from "../../lib/studyStatus";
 import type { ScreenId } from "../../types";
 import { IC, Icon } from "./StudyKit";
 import "./setup.css";
@@ -90,6 +92,32 @@ export function UnderReviewRow({ count, skip, onChange, layout }: {
       <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
         <ChoiceCard icon={IC.alert} label="Include" count={count} desc="They can appear, each marked as under review" on={!skip} onSelect={() => onChange(false)} />
         <ChoiceCard icon={IC.eyeOff} label="Skip" desc="Leave them out of this session" on={skip} onSelect={() => onChange(true)} />
+      </div>
+    </SetupRow>
+  );
+}
+
+const STUDY_ICONS: Record<StudyStatusFilter, string> = { all: IC.library, unstudied: IC.circleDot, studied: IC.circleCheck };
+
+/**
+ * Issue #119: All questions / Unstudied only / Studied only. Studied means
+ * shown in Learning or answered in Practice or Mock; it is not mastery, and it
+ * combines with every other filter on the screen.
+ */
+export function StudyStatusRow({ value, counts, onChange, layout, unavailable = false }: {
+  value: StudyStatusFilter; counts: Record<StudyStatusFilter, number>; onChange: (filter: StudyStatusFilter) => void; layout: SetupLayout;
+  /** The statuses failed to load, so the counts may treat studied questions as unstudied. */
+  unavailable?: boolean;
+}) {
+  return (
+    <SetupRow title="Study status" desc="Studied means shown in Learning or answered in Practice or Mock, not mastered." cols={layout.rowCols}>
+      {unavailable && (
+        <p className="st-start-hint" role="status">Your study status could not be loaded, so questions may show as unstudied. Refresh the exam to try again.</p>
+      )}
+      <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
+        {STUDY_FILTERS.map((f) => (
+          <ChoiceCard key={f.id} icon={STUDY_ICONS[f.id]} label={f.label} count={counts[f.id]} desc={f.desc} on={value === f.id} onSelect={() => onChange(f.id)} />
+        ))}
       </div>
     </SetupRow>
   );

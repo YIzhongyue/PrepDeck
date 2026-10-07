@@ -472,7 +472,14 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       });
   }, [setState, refreshList]);
 
-  const createGroup = useCallback((name: string) => api.createKnowledgePointGroup(name).then((res) => { refreshGroupsAndTags(); return res.group; }), [refreshGroupsAndTags]);
+  // The new group joins the local list (in the server's name order) before
+  // the refetch lands, so a picker can show and select it straight away.
+  const createGroup = useCallback((name: string) => api.createKnowledgePointGroup(name).then((res) => {
+    setState((s) => ({ groups: [...s.groups.filter((g) => g.id !== res.group.id), res.group]
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })) }));
+    refreshGroupsAndTags();
+    return res.group;
+  }), [refreshGroupsAndTags, setState]);
   const renameGroup = useCallback((id: string, name: string) => api.renameKnowledgePointGroup(id, name).then(() => { refreshGroupsAndTags(); refreshList(); }), [refreshGroupsAndTags, refreshList]);
   const deleteGroup = useCallback((id: string) => api.deleteKnowledgePointGroup(id).then(() => {
     refreshGroupsAndTags();

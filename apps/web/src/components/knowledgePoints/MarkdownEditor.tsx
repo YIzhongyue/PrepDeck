@@ -40,7 +40,7 @@ const EditorStarterKit = StarterKit.extend({
       renderMarkdown(node, helpers, context) {
         // The upstream renderer escapes inline delimiters, but literal block
         // markers must also stay ordinary paragraph text after a reload.
-        return escapeParagraphMarkdown(extension.config.renderMarkdown!(node, helpers, context));
+        return escapeParagraphMarkdown(this.parent!(node, helpers, context));
       },
     }));
   },

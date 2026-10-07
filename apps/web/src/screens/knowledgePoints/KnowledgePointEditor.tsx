@@ -129,7 +129,7 @@ export default function KnowledgePointEditor({
       />
       {!state.title.trim() && <p role="alert" className="kp-title-error">A title is required before this note can be saved.</p>}
       <div className="kp-props">
-        <GroupPicker groups={state.groups} groupId={editing.groupId} groupName={editing.groupName} onSelect={kp.setNoteGroup} />
+        <GroupPicker groups={state.groups} groupId={editing.groupId} groupName={editing.groupName} onSelect={kp.setNoteGroup} onCreate={kp.createGroup} />
         {editing.tags.map((t) => (
           <span key={t.id} className="kp-chip kp-chip-tag">
             {t.name}

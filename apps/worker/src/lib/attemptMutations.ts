@@ -7,6 +7,7 @@ import { examExists, loadExamPassRule } from "./examManagement";
 import { closeStalePracticeAttempts, PRACTICE_IDLE_ON_START_SECONDS } from "./practiceSessions";
 import { toAttemptBreakdown, loadAttemptBreakdown, type AttemptRow } from "./attemptRecords";
 import { success, failure, type StudyMutationResult } from "./studyMutationResult";
+import { markAnsweredStatement } from "./studyStatus";
 import {
   answerProblem, answerSizeProblem, attemptDeadlineMs, hasAnswer, isAnswerCorrect, isMockPassed,
   isStringArray, isValidTimeSpent, MAX_TIME_SPENT_SECONDS, MAX_ATTEMPT_QUESTIONS,
@@ -273,6 +274,14 @@ export async function submitPracticeAnswer(env: Env, userId: string, id: string,
   if (!isCorrect && hasAnswer(question.type, body.selectedAnswer)) {
     statements.push(wrongBookUpsert(env.DB, userId, body.questionId, now, answerId));
   }
+  // Issue #119: a recorded answer, right or wrong, means the question has been
+  // studied. Guarded like the wrong-book entry on this request's own answer, so
+  // a replay or a lost race marks nothing a second time.
+  if (hasAnswer(question.type, body.selectedAnswer)) {
+    statements.push(markAnsweredStatement(env.DB, userId, [body.questionId], "practice", now, {
+      guard: { sql: "EXISTS (SELECT 1 FROM attempt_answers WHERE id = ?)", binds: [answerId] },
+    }));
+  }
   const [saved] = await env.DB.batch(statements);
   if (!saved!.meta.changes) {
     // Lost the race to a concurrent write of this same answer, or the attempt
@@ -310,6 +319,7 @@ export async function completeAttempt(env: Env, userId: string, id: string, opti
       const questionsById = new Map((questionRows ?? []).map((q) => [q.id, q]));
 
       const draft = readMockDraft(attempt);
+      const answeredIds: string[] = [];
       for (const qid of questionIds) {
         const q = questionsById.get(qid);
         if (!q) continue;
@@ -330,6 +340,17 @@ export async function completeAttempt(env: Env, userId: string, id: string, opti
           ).bind(answerId, id, qid, JSON.stringify(selected), isCorrect ? 1 : 0, now, q.answer_revision, q.correct_answers_json, id, attempt.draft_revision)
         );
         if (!isCorrect && hasAnswer(q.type, selected)) statements.push(wrongBookUpsert(env.DB, userId, qid, now, answerId));
+        if (hasAnswer(q.type, selected)) answeredIds.push(qid);
+      }
+      // Issue #119: saving each draft already marked its question studied;
+      // this reconciles drafts saved before that existed. Every question gets
+      // an answer row here, so only genuinely answered ones count, and a reset
+      // made since the attempt started is left alone.
+      if (answeredIds.length) {
+        statements.push(markAnsweredStatement(env.DB, userId, answeredIds, "mock", now, {
+          guard: { sql: "EXISTS (SELECT 1 FROM attempts WHERE id = ? AND completed_at IS NULL AND draft_revision = ?)", binds: [id, attempt.draft_revision] },
+          unchangedSince: attempt.started_at,
+        }));
       }
       totalQuestions = questionIds.length;
     } else {

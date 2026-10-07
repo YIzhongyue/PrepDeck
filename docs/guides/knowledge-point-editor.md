@@ -77,6 +77,12 @@ queued behind it.
 
 ## Organize and review
 
+The group chip under the title moves the open note to another group. If the
+group you want doesn't exist yet, choose **New group…** at the bottom of that
+menu, enter a name and press **Create**: the group is created and the note moves
+into it without leaving the editor. Names are trimmed, at most 40 characters and
+unique regardless of case; a name that is already taken is reported in the form.
+
 Choose a group or **Ungrouped**, then **Custom order**. Drag the grip, focus it
 and press Space followed by arrow keys, or use the up/down buttons. The buttons
 also support touch. Sorting by title/date does not change custom order. Search,
