@@ -67,7 +67,8 @@ jobs:
     # console/request log. It never retries; a flaky script has to be fixed.
     name: Browser regressions (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Allow slow Ubuntu package mirrors without consuming the test budget.
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -87,20 +88,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      # Install both engines in one apt transaction on shard 1. npm ci above
+      # supplies the lockfile's Playwright CLI; never resolve a fresh package.
+      - name: Install browser engines and system dependencies
+        timeout-minutes: 15
+        run: ./node_modules/.bin/playwright install --with-deps chromium ${{ matrix.shard == 1 && 'webkit' || '' }}
 
       # The runner's own failure paths: a failing or timed-out script must
       # leave its page behind. One shard is enough; they do not depend on it.
       - name: Test the browser regression runner
+        timeout-minutes: 2
         if: matrix.shard == 1
         run: npm run test:browser:runner
 
-      - name: Install WebKit for phone reading regressions
-        if: matrix.shard == 1
-        run: npx playwright install --with-deps webkit
-
       - name: Check phone reading in WebKit
+        timeout-minutes: 5
         if: matrix.shard == 1
         run: npm run test:browser -- question-card-layout
         env:
@@ -108,6 +110,7 @@ jobs:
           BROWSER_DIAGNOSTICS_ROOT: ${{ runner.temp }}/browser-diagnostics-webkit
 
       - name: Run browser regressions
+        timeout-minutes: 10
         run: npm run test:browser -- --shard ${{ matrix.shard }}/3
         env:
           SCREENSHOT_DIR: ${{ runner.temp }}/browser-screenshots
