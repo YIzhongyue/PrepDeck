@@ -17,13 +17,13 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@internationalized/date": "^3.12.4",
     "@prepdeck/shared": "*",
-    "@tiptap/core": "^3.31.3",
-    "@tiptap/extension-code-block": "^3.31.3",
-    "@tiptap/extension-image": "^3.31.3",
-    "@tiptap/extension-table": "^3.31.3",
-    "@tiptap/markdown": "^3.31.3",
-    "@tiptap/react": "^3.31.3",
-    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-code-block": "^3.31.4",
+    "@tiptap/extension-image": "^3.31.4",
+    "@tiptap/extension-table": "^3.31.4",
+    "@tiptap/markdown": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
     "@untitledui/icons": "^0.0.23",
     "marked": "^18.0.14",
     "mermaid": "^12.0.0",
@@ -38,7 +38,7 @@
     "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "tailwindcss-react-aria-components": "^2.2.0",
-    "wrangler": "4.140.0"
+    "wrangler": "4.146.0"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
@@ -49,6 +49,6 @@
     "axe-core": "^4.13.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.2"
   }
 }
