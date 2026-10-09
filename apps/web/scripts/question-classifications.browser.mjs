@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { waitUntil } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
@@ -19,7 +20,7 @@ const catalogs = { sg: { dimensions: [{ id: "subject", label: "Subject / 科目"
   ip: { dimensions: [{ id: "field", label: "Field / 分野", allLabel: "All fields", values: [{ id: "technology", label: "テクノロジ系", count: 1 }, { id: "strategy", label: "ストラテジ系", count: 1 }], unclassifiedCount: 0 }] } };
 catalogs.empty = { dimensions: [] };
 let failCatalog = false, failPage = false, failProbe = false;
-let heldProbe = null;
+let heldProbe = null, releaseProbe = () => {};
 const requests = [], errors = [];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -151,17 +152,21 @@ try {
   assert.equal(await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).count(), 0);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
-  // A pending empty-bank probe must not overwrite a newly selected bank.
-  let releaseProbe, probeArrived;
-  const arrived = new Promise(resolve => { probeArrived = resolve; });
-  heldProbe = { arrived: probeArrived, released: new Promise(resolve => { releaseProbe = resolve; }) };
-  await search.fill("delayed probe"); await search.press("Enter"); await arrived;
-  await page.getByRole("button", { name: "IP exam", exact: true }).click();
-  await page.getByText("1–2 of 2", { exact: true }).waitFor();
-  releaseProbe();
-  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await page.getByText("1–2 of 2", { exact: true }).waitFor();
-  assert.equal(await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).count(), 0);
+  // Cancel a pending probe both within one panel (Clear filters) and across
+  // keyed panels (exam switching). Bound the wait and always release the server.
+  for (const action of ["clear", "switch"]) {
+    await page.getByRole("button", { name: action === "clear" ? "SG exam" : "Empty exam", exact: true }).click();
+    await page.getByText(action === "clear" ? "1–50 of 152" : "This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+    let probeArrived = false;
+    heldProbe = { arrived: () => { probeArrived = true; }, released: new Promise(resolve => { releaseProbe = resolve; }) };
+    await search.fill("delayed probe"); await search.press("Enter");
+    await waitUntil("the unfiltered bank probe", () => probeArrived);
+    await page.getByRole("button", { name: action === "clear" ? "Clear filters" : "IP exam", exact: true }).click();
+    releaseProbe();
+    await page.getByText(action === "clear" ? "1–50 of 152" : "1–2 of 2", { exact: true }).waitFor();
+    assert.equal(await search.inputValue(), "");
+    assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 0);
+  }
   await page.getByRole("button", { name: "Empty exam", exact: true }).click();
   await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
   // A failed request is not evidence of an empty bank.
@@ -172,4 +177,4 @@ try {
   await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log("PASS classification controls: full-bank categories, combined filters, pagination/export, exam switching, unknown metadata, retry and mobile");
-} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+} finally { releaseProbe(); await browser.close(); await new Promise(resolve => server.close(resolve)); }
