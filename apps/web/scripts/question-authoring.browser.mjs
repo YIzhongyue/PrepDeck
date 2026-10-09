@@ -458,7 +458,7 @@ try {
   assert.equal((await clearedPage).status(), 200);
   assert.equal(rows[151].needsReview, false);
   assert.deepEqual(rows[151].tags, ["tag-one"], "clearing the review flag must not disturb the question's tags");
-  await page.getByText("No questions found. Add a question to start authoring, or adjust the filters.", { exact: true }).waitFor();
+  await page.getByText("No questions match the current filters.", { exact: true }).waitFor();
   assert.equal(await destination.isDisabled(), true); assert.equal(await go.isDisabled(), true);
   // Back to "Any review state": the empty value is not a filter.
   const anyPage = questionPageResponse(0);
