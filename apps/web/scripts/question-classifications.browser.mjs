@@ -144,7 +144,16 @@ try {
   assert.equal(await page.getByLabel("Filter by exact tag").inputValue(), "");
   await page.getByRole("button", { name: "Empty exam", exact: true }).click();
   await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
-  await search.fill("anything"); await search.press("Enter");
+  await search.fill("anything");
+  // The empty-bank copy is already on screen before this submission. Wait for
+  // its response AND the subsequent probe to settle before arming failProbe;
+  // otherwise the preceding request can consume the next scenario's failure.
+  const emptySearch = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/exams/empty/questions" && url.searchParams.get("q") === "anything";
+  });
+  await search.press("Enter"); await emptySearch;
+  await page.getByText("Loading…", { exact: true }).waitFor({ state: "hidden" });
   await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
   assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 0);
   failProbe = true; await search.fill("probe failure"); await search.press("Enter");
@@ -161,8 +170,14 @@ try {
     heldProbe = { arrived: () => { probeArrived = true; }, released: new Promise(resolve => { releaseProbe = resolve; }) };
     await search.fill("delayed probe"); await search.press("Enter");
     await waitUntil("the unfiltered bank probe", () => probeArrived);
+    const recoveredPage = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `/api/exams/${action === "clear" ? "sg" : "ip"}/questions`
+        && url.searchParams.get("q") === "" && url.searchParams.get("limit") === "50";
+    });
     await page.getByRole("button", { name: action === "clear" ? "Clear filters" : "IP exam", exact: true }).click();
-    releaseProbe();
+    releaseProbe(); await recoveredPage;
+    await page.getByText("Loading…", { exact: true }).waitFor({ state: "hidden" });
     await page.getByText(action === "clear" ? "1–50 of 152" : "1–2 of 2", { exact: true }).waitFor();
     assert.equal(await search.inputValue(), "");
     assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 0);
