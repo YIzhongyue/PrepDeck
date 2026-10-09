@@ -625,7 +625,7 @@ try {
   assert.equal(questionRequests.at(-1).archived, "true");
   await archiveRow().getByRole("button", { name: "Restore", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Restored question #1." }).waitFor();
-  await page.getByText("No questions found", { exact: false }).waitFor();
+  await page.getByText("No questions match the current filters.", { exact: true }).waitFor();
   await archivedFilter.selectOption("");
   await archiveRow().getByRole("button", { name: "Archive", exact: true }).waitFor();
   assert.deepEqual(archiveRequests, [["archive-0", "archive"], ["archive-0", "unarchive"]]);
