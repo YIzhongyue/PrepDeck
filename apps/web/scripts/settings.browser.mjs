@@ -78,6 +78,9 @@ const { outputFiles } = await build({ stdin: { contents: `
       <Select label="Picker" defaultSelectedKey="one" items={[{id:'one',label:'One'},{id:'two',label:'Two'}]}>
         {item => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
       </Select>
+      <Select.ComboBox label="Search picker" placeholder="Search choices" shortcut={false} items={[{id:'one',label:'One'}]}>
+        {item => <Select.Item key={item.id} id={item.id} label={item.label}>{item.label}</Select.Item>}
+      </Select.ComboBox>
       <Toggle size="md" label="Toggle on" defaultSelected data-kit="toggle-on" />
       <Toggle size="md" label="Toggle off" />
       <Toggle size="md" label="Toggle disabled" isDisabled />
@@ -174,7 +177,7 @@ const server = createServer(async (req, res) => {
 await new Promise(done => server.listen(0, done));
 const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 1.5 });
 const failures = [];
 page.on("pageerror", err => failures.push(String(err)));
 
@@ -250,6 +253,48 @@ if (screenshotDir) await mkdir(screenshotDir, { recursive: true });
 try {
   await page.goto(base);
   await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+
+  // Issue #133: the visible value is an overlay, not the transparent input.
+  // Measure the painted text's line box against both the pill and its icon.
+  const zoneAlignment = async (label) => {
+    const zone = page.getByRole("combobox", { name: "Time zone" });
+    await zone.scrollIntoViewIfNeeded();
+    const metrics = await zone.evaluate(input => {
+      const group = input.parentElement.parentElement;
+      const text = input.parentElement.querySelector('[aria-hidden="true"] > :first-child');
+      const center = element => { const r = element.getBoundingClientRect(); return r.y + r.height / 2; };
+      return { input: center(input), text: text ? center(text) : null,
+        icon: center(group.querySelector("svg")), field: center(group),
+        margin: text ? getComputedStyle(text).marginBottom : null };
+    });
+    if (screenshotDir) await page.locator("#settings-timezone").screenshot({ path: `${screenshotDir}/timezone-${label}.png` });
+    console.log("Time zone alignment", label, metrics);
+    assert.ok(Math.abs((metrics.text ?? metrics.input) - metrics.field) <= 1, `${label}: visible value centered in field: ${JSON.stringify(metrics)}`);
+    assert.ok(Math.abs((metrics.text ?? metrics.input) - metrics.icon) <= 1, `${label}: visible value centered on icon`);
+  };
+  await wait(async () => !!await page.getByRole("combobox", { name: "Time zone" }).inputValue(), "populated time zone");
+  await zoneAlignment("filled-desktop");
+  const alignmentZone = page.getByRole("combobox", { name: "Time zone" });
+  const initialZone = await alignmentZone.inputValue();
+  for (const width of [2505, 1280, 375]) {
+    await page.setViewportSize({ width, height: width === 2505 ? 1343 : 1000 });
+    await alignmentZone.focus();
+    await zoneAlignment(`focus-${width}`);
+    await alignmentZone.fill("");
+    await zoneAlignment(`empty-${width}`);
+    await alignmentZone.fill(initialZone);
+    await alignmentZone.press("Escape");
+    await alignmentZone.blur();
+    await zoneAlignment(`filled-${width}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  // CSS zoom exercises fractional layout without pretending to change Chrome's
+  // browser-menu zoom; that platform-specific production setting is unverified.
+  await page.evaluate(() => { document.body.style.zoom = "1.25"; });
+  await zoneAlignment("css-zoom-125");
+  await page.evaluate(() => { document.body.style.zoom = ""; });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+
 
   // --- Accessible labels on the migrated controls -------------------------
   const name = page.getByRole("textbox", { name: "Display name" });
@@ -410,6 +455,17 @@ try {
   // --- Every imported primitive, in every scheme ---------------------------
   await page.goto(`${base}/?kit`);
   await page.getByRole("button", { name: "Primary", exact: true }).waitFor();
+  const placeholder = page.getByRole("combobox", { name: "Search picker" });
+  assert.equal(await placeholder.inputValue(), "");
+  assert.equal(await placeholder.getAttribute("placeholder"), "Search choices");
+  await placeholder.focus();
+  const placeholderCentered = await placeholder.evaluate(input => {
+    const field = input.parentElement.parentElement.getBoundingClientRect();
+    const box = input.getBoundingClientRect();
+    return Math.abs(box.y + box.height / 2 - field.y - field.height / 2) <= 1;
+  });
+  assert.equal(placeholderCentered, true, "empty placeholder centered in the combobox");
+  await placeholder.press("Escape"); await placeholder.blur();
   // The controls cross-fade over 100ms on a scheme change, and getComputedStyle
   // reports the interpolated colour part-way through. Settle them so the
   // contrast figures below are the real ones rather than a blend.
