@@ -65,6 +65,12 @@ The search also matches an exact internal or external ID. Both IDs and the
 sequence number are visible. Mutations refresh Admin counts, the selected exam's
 practice catalog, learning details and client AI caches.
 
+When no questions match, the list distinguishes filtered zero results from a
+truly empty bank. **Clear filters** clears the search (including unsubmitted
+text), type, difficulty, tag, review state, archive state and classifications,
+then returns to page 1 of the same exam. The default includes both active and
+archived questions. Empty results keep page export disabled.
+
 Use **Go to page** and **Go** (or Enter) to jump directly within the filtered
 50-question pages. Only whole page numbers in the displayed range are accepted.
 Navigation is disabled while loading; a failed request keeps the previous page

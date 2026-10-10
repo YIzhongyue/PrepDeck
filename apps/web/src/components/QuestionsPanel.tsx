@@ -8,6 +8,8 @@ import QuestionEditorDialog from "./QuestionEditorDialog";
 import QuestionImportDialog from "./QuestionImportDialog";
 import QuestionPageNavigation from "./QuestionPageNavigation";
 
+const defaultFilters = { q: "", type: "", difficulty: "", tag: "", needsReview: "", archived: "", classifications: "" };
+
 export default function QuestionsPanel({ exam }: { exam: { id: string } }) {
   // Changing exams discards the old exam's filter/page/draft state before any
   // new requests, rather than sending its classification IDs to another bank.
@@ -20,7 +22,7 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   // 201–205 range over page 4's rows for the frame between the click and the
   // effect that loads them. Keeping the rows, their offset and their total in
   // one state object means no label can describe a page that is not rendered.
-  const [page, setPage] = useState<{ offset: number; questions: Question[]; total: number; query: string }>({ offset: 0, questions: [], total: 0, query: "" });
+  const [page, setPage] = useState<{ offset: number; questions: Question[]; total: number; query: string; bankEmpty: boolean }>({ offset: 0, questions: [], total: 0, query: "", bankEmpty: false });
   const { offset: shownOffset, questions, total } = page;
   const [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -29,7 +31,7 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   // same spelling the API parses, so they go straight into the query string.
   // Archived questions are listed by default, marked, so archiving a row
   // leaves it in place with its Restore button rather than making it vanish.
-  const [filters, setFilters] = useState({ q: "", type: "", difficulty: "", tag: "", needsReview: "", archived: "", classifications: "" });
+  const [filters, setFilters] = useState(defaultFilters);
   const [offset, setOffset] = useState(0), [refresh, setRefresh] = useState(0);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
@@ -39,13 +41,22 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
     const controller = new AbortController(); setLoading(true); setError("");
     const query = new URLSearchParams({ ...filters, limit: String(limit), offset: String(offset) });
     apiFetch<{ questions: Question[]; total: number }>(`/api/exams/${exam.id}/questions?${query}`, { signal: controller.signal })
-      .then(data => {
+      .then(async data => {
         if (controller.signal.aborted) return;
         if (offset && offset >= data.total) {
           setOffset(Math.max(0, Math.floor((data.total - 1) / limit) * limit));
           return;
         }
-        setPage({ offset, questions: data.questions, total: data.total, query: query.toString() });
+        // A zero-match response says nothing about whether the bank is empty.
+        // Check the unfiltered bank only when needed, including archived rows,
+        // with the same cancellation/error handling as the displayed request.
+        let bankEmpty = data.total === 0;
+        if (bankEmpty && Object.values(filters).some(Boolean)) {
+          const bank = await apiFetch<{ total: number }>(`/api/exams/${exam.id}/questions?limit=1&offset=0`, { signal: controller.signal });
+          if (controller.signal.aborted) return;
+          bankEmpty = bank.total === 0;
+        }
+        setPage({ offset, questions: data.questions, total: data.total, query: query.toString(), bankEmpty });
         setLoading(false);
       })
       .catch(err => { if (!controller.signal.aborted) { setError(err.message); setLoading(false); } });
@@ -96,11 +107,12 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
       <select className="input" aria-label="Filter by archived state" value={filters.archived} onChange={e => { setOffset(0); setFilters(f => ({ ...f, archived: e.target.value })); }}><option value="">Any status</option><option value="false">Active only</option><option value="true">Archived only</option></select>
       <QuestionClassificationFilters examId={exam.id} revision={catalogRevision} selected={JSON.parse(filters.classifications || "{}")} onChange={selected => { setOffset(0); setFilters(f => ({ ...f, classifications: JSON.stringify(selected) })); }} />
       <button className="btn btn-secondary" type="submit">Search</button>
+      <button className="btn btn-secondary" type="button" onClick={() => { setSearch(""); setFilters({ ...defaultFilters }); setOffset(0); }}>Clear filters</button>
     </form>
     {notice && <p role="status" className="authoring-feedback">{notice}</p>}
     {error && <p role="alert" className="authoring-errors authoring-feedback">{error} <button type="button" className="btn btn-secondary" onClick={() => setRefresh(n => n + 1)}>Retry</button></p>}
     {loading ? <p className="authoring-feedback">Loading…</p> : <>
-      {questions.length === 0 && <p className="authoring-feedback">No questions found. Add a question to start authoring, or adjust the filters.</p>}
+      {!error && questions.length === 0 && <p className="authoring-feedback">{page.bankEmpty ? "This question bank is empty. Add a question to start authoring." : "No questions match the current filters."}</p>}
       {questions.map(q => <div key={q.id} className={q.archivedAt ? "admin-question-row is-archived" : "admin-question-row"}><span className="admin-question-id">#{q.sequenceNumber}</span>
         <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar">{q.archivedAt && <span className="tag tag-warning" title={`Archived ${new Date(q.archivedAt).toLocaleString()}`}>Archived</span>}<span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.needsReview && <span className="tag tag-accent-2">Needs review</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
           <p className="authoring-identifier">ID: {q.id}{q.externalId && ` · External ID: ${q.externalId}`}</p><span className="admin-question-stem">{q.stem}</span></div>

@@ -3,19 +3,24 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { waitUntil } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionsPanel from './src/components/QuestionsPanel'; import './src/styles/tokens.css'; import './src/styles/app.css';
-  function Fixture(){const [exam,setExam]=useState('sg');return <><button onClick={()=>setExam('sg')}>SG exam</button><button onClick={()=>setExam('ip')}>IP exam</button><QuestionsPanel exam={{id:exam}}/></>}
+  function Fixture(){const [exam,setExam]=useState('sg');return <><button onClick={()=>setExam('sg')}>SG exam</button><button onClick={()=>setExam('ip')}>IP exam</button><button onClick={()=>setExam('empty')}>Empty exam</button><QuestionsPanel exam={{id:exam}}/></>}
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const question = (id, tags, extra = {}) => ({ id, externalId: id, sequenceNumber: Number(id.match(/\d+/)?.[0] ?? 0) + 1, type: "single_choice", stem: `Question ${id}`, tags, options: [{ id: "a", text: "One" }, { id: "b", text: "Two" }], correctAnswers: ["a"], difficulty: "easy", ...extra });
 const banks = { sg: [...Array.from({ length: 75 }, (_, i) => question(`a-${i}`, ["科目A"])),
   ...Array.from({ length: 75 }, (_, i) => question(`b-${i}`, ["科目B", ...(i === 54 ? ["focus"] : [])], i === 54 ? { stem: "Selected question", difficulty: "hard", needsReview: true } : {})), question("missing", []), question("ambiguous", ["科目A", "科目B"])],
   ip: [question("technology-1", ["テクノロジ系"]), question("strategy-2", ["ストラテジ系"])] };
+banks.empty = [];
+banks.sg[0].archivedAt = 1;
 const catalogs = { sg: { dimensions: [{ id: "subject", label: "Subject / 科目", allLabel: "All subjects", values: [{ id: "a", label: "科目A", count: 75 }, { id: "b", label: "科目B", count: 75 }], unclassifiedCount: 2 }] },
   ip: { dimensions: [{ id: "field", label: "Field / 分野", allLabel: "All fields", values: [{ id: "technology", label: "テクノロジ系", count: 1 }, { id: "strategy", label: "ストラテジ系", count: 1 }], unclassifiedCount: 0 }] } };
-let failCatalog = false, failPage = false;
+catalogs.empty = { dimensions: [] };
+let failCatalog = false, failPage = false, failProbe = false;
+let heldProbe = null, releaseProbe = () => {};
 const requests = [], errors = [];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
@@ -28,6 +33,10 @@ const server = createServer(async (req, res) => {
       return json(catalogs[exam]);
     }
     if (failPage && !url.pathname.endsWith("/export")) { failPage = false; return json({ error: "Page unavailable" }, 503); }
+    if (params.limit === "1") {
+      if (failProbe) { failProbe = false; return json({ error: "Bank check unavailable" }, 503); }
+      if (heldProbe) { const probe = heldProbe; heldProbe = null; probe.arrived(); await probe.released; }
+    }
     const classifications = JSON.parse(params.classifications || "{}");
     let rows = banks[exam].filter(q => {
       if (classifications.subject === "__unclassified") return q.tags.length === 0 || q.tags.includes("科目A") && q.tags.includes("科目B");
@@ -35,8 +44,9 @@ const server = createServer(async (req, res) => {
       if (classifications.field) return q.tags.includes(classifications.field === "technology" ? "テクノロジ系" : "ストラテジ系");
       return true;
     }).filter(q => (!params.q || q.stem.includes(params.q)) && (!params.type || q.type === params.type) && (!params.tag || q.tags.includes(params.tag))
+      && (!params.archived || Boolean(q.archivedAt) === (params.archived === "true"))
       && (!params.difficulty || q.difficulty === params.difficulty) && (!params.needsReview || Boolean(q.needsReview) === (params.needsReview === "true")));
-    const total = rows.length; rows = rows.slice(Number(params.offset || 0), Number(params.offset || 0) + 50);
+    const total = rows.length; rows = rows.slice(Number(params.offset || 0), Number(params.offset || 0) + Number(params.limit || 50));
     if (url.pathname.endsWith("/export")) return json({ file: { questions: rows } });
     return json({ questions: rows, total });
   }
@@ -89,6 +99,97 @@ try {
   await page.getByRole("button", { name: "Retry filters" }).click(); await subject.waitFor();
   await subject.selectOption("__unclassified"); await page.getByText("1–2 of 2", { exact: true }).waitFor();
   assert.deepEqual(await exportedIds(), ["missing", "ambiguous"]);
+  // Issue #132: reproduce a submitted zero-match search in a non-empty bank.
+  await page.getByRole("button", { name: "SG exam", exact: true }).click();
+  await subject.selectOption("");
+  await page.getByText("1–50 of 152", { exact: true }).waitFor();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await search.fill("PREPDECK-UX-NO-MATCH-20261009");
+    await search.press("Enter");
+    await page.getByText("0 of 0", { exact: true }).waitFor();
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/zero-results-${width}.png`, fullPage: true });
+    assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "Export this page" }).isDisabled(), true);
+    const clear = page.getByRole("button", { name: "Clear filters", exact: true });
+    await clear.focus(); await page.keyboard.press("Enter");
+    await page.getByText("1–50 of 152", { exact: true }).waitFor();
+    assert.equal(await search.inputValue(), "");
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  // Reset every filter, including archived and classification criteria, and
+  // discard an unsubmitted search draft. Keep the current exam and defaults.
+  await subject.selectOption("b");
+  await page.getByLabel("Filter by type").selectOption("single_choice");
+  await page.getByLabel("Filter by difficulty").selectOption("easy");
+  await page.getByLabel("Filter by review state").selectOption("false");
+  await page.getByLabel("Filter by archived state").selectOption("false");
+  await page.getByText("1–50 of 74", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("51–74 of 74", { exact: true }).waitFor();
+  await search.fill("unsent draft");
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await page.getByText("1–50 of 152", { exact: true }).waitFor();
+  const resetRequest = requests.filter(r => r.path.endsWith("/questions")).at(-1);
+  assert.equal(resetRequest.exam, "sg");
+  assert.deepEqual(resetRequest.params, { q: "", type: "", difficulty: "", tag: "", needsReview: "", archived: "", classifications: "", limit: "50", offset: "0" });
+  assert.equal(await search.inputValue(), "");
+  assert.equal(await subject.inputValue(), "");
+  // The default includes archived rows; reset must not silently select active.
+  await page.locator(".admin-question-row.is-archived").waitFor();
+  await page.getByLabel("Filter by exact tag").fill("missing-tag");
+  await page.getByText("No questions match the current filters.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await page.getByText("1–50 of 152", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Filter by exact tag").inputValue(), "");
+  await page.getByRole("button", { name: "Empty exam", exact: true }).click();
+  await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+  await search.fill("anything");
+  // The empty-bank copy is already on screen before this submission. Wait for
+  // its response AND the subsequent probe to settle before arming failProbe;
+  // otherwise the preceding request can consume the next scenario's failure.
+  const emptySearch = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/exams/empty/questions" && url.searchParams.get("q") === "anything";
+  });
+  await search.press("Enter"); await emptySearch;
+  await page.getByText("Loading…", { exact: true }).waitFor({ state: "hidden" });
+  await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+  assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 0);
+  failProbe = true; await search.fill("probe failure"); await search.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "Bank check unavailable" }).waitFor();
+  assert.equal(await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+  // Cancel a pending probe both within one panel (Clear filters) and across
+  // keyed panels (exam switching). Bound the wait and always release the server.
+  for (const action of ["clear", "switch"]) {
+    await page.getByRole("button", { name: action === "clear" ? "SG exam" : "Empty exam", exact: true }).click();
+    await page.getByText(action === "clear" ? "1–50 of 152" : "This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+    let probeArrived = false;
+    heldProbe = { arrived: () => { probeArrived = true; }, released: new Promise(resolve => { releaseProbe = resolve; }) };
+    await search.fill("delayed probe"); await search.press("Enter");
+    await waitUntil("the unfiltered bank probe", () => probeArrived);
+    const recoveredPage = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `/api/exams/${action === "clear" ? "sg" : "ip"}/questions`
+        && url.searchParams.get("q") === "" && url.searchParams.get("limit") === "50";
+    });
+    await page.getByRole("button", { name: action === "clear" ? "Clear filters" : "IP exam", exact: true }).click();
+    releaseProbe(); await recoveredPage;
+    await page.getByText("Loading…", { exact: true }).waitFor({ state: "hidden" });
+    await page.getByText(action === "clear" ? "1–50 of 152" : "1–2 of 2", { exact: true }).waitFor();
+    assert.equal(await search.inputValue(), "");
+    assert.equal(await page.getByText("No questions match the current filters.", { exact: true }).count(), 0);
+  }
+  await page.getByRole("button", { name: "Empty exam", exact: true }).click();
+  await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
+  // A failed request is not evidence of an empty bank.
+  failPage = true; await search.fill("failed query"); await search.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "Page unavailable" }).waitFor();
+  assert.equal(await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByText("This question bank is empty. Add a question to start authoring.", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log("PASS classification controls: full-bank categories, combined filters, pagination/export, exam switching, unknown metadata, retry and mobile");
-} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+} finally { releaseProbe(); await browser.close(); await new Promise(resolve => server.close(resolve)); }
