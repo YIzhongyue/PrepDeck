@@ -13,6 +13,8 @@ export function questionForm(q: Question): QuestionForm {
 }
 export function formPayload(form: QuestionForm) {
   return { ...form, externalId: form.externalId || undefined, options: form.type === "fill_blank" ? undefined : form.options,
+    // "One per line": blank lines are layout, not empty accepted answers.
+    correctAnswers: form.type === "fill_blank" ? form.correctAnswers.filter(answer => answer.trim()) : form.correctAnswers,
     explanation: form.explanation || null, difficulty: form.difficulty || null,
     // The API removes one leading # from input; escape it in canonical chip names.
     tags: form.tags.map(tag => tag.startsWith("#") ? `#${tag}` : tag), points: form.points.trim() ? Number(form.points) : NaN };
