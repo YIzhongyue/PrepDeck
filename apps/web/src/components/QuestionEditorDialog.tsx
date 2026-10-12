@@ -33,6 +33,8 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
   const saving = useRef(false), saved = useRef(false), focusAfter = useRef<string | null>(null);
+  // Set by a save attempt only: removing errors while typing must never move focus.
+  const focusInvalid = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null), stem = useRef<HTMLTextAreaElement>(null);
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
   const mayLeave = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
@@ -52,7 +54,11 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  useEffect(() => { if (issues.length) dialog.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus(); }, [issues]);
+  useEffect(() => {
+    if (!focusInvalid.current) return;
+    focusInvalid.current = false;
+    dialog.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus();
+  }, [issues]);
   useEffect(() => {
     if (!focusAfter.current) return;
     dialog.current?.querySelector<HTMLElement>(focusAfter.current)?.focus();
@@ -70,7 +76,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const fieldErrors = (field: string) => issues.filter(i => inField(field, i.path));
   // Editing a field clears its errors; the rest stay until the next save. An
   // option edit clears only that option's errors (see the option textarea).
-  const clearErrors = (field: string) => setIssues(list => list.filter(i => !inField(field, i.path)));
+  const clearErrors = (field: string) => setIssues(list => list.some(i => inField(field, i.path)) ? list.filter(i => !inField(field, i.path)) : list);
   const change = <K extends keyof QuestionForm>(key: K, value: QuestionForm[K]) => { setForm(f => ({ ...f, [key]: value })); if (key !== "options") clearErrors(key); };
   const groupErrors = (field: string) => issues.filter(i => i.path === `$.${field}`);
   const errorId = (field: string) => `error-${field.replace(/\W+/g, "-")}`;
@@ -82,8 +88,9 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     if (saving.current) return;
     const body = formPayload(form);
     const problems = validateQuestionRow(body, "$");
+    focusInvalid.current = problems.length > 0;
     setIssues(problems); setError(""); setStale(false);
-    if (problems.length) { dialog.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus(); return; }
+    if (problems.length) return;
     saving.current = true; setBusy(true);
     try {
       const { question: result } = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions${base ? `/${base.id}` : ""}`, {
@@ -91,9 +98,11 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       saved.current = true;
       onSaved(result, addNext);
     } catch (err) {
-      const details = err instanceof ApiError ? err.body as { issues?: ValidationIssue[] } : null;
+      const details = err instanceof ApiError ? err.body as { issues?: ValidationIssue[]; code?: string } | null : null;
+      focusInvalid.current = !!details?.issues?.length;
       setIssues(details?.issues ?? []);
-      const conflict = !!base && err instanceof ApiError && err.status === 409;
+      // 409 also means a duplicate external ID; only a revision conflict offers recovery.
+      const conflict = !!base && err instanceof ApiError && err.status === 409 && details?.code === "stale_question";
       setStale(conflict);
       setError(conflict ? "Someone saved a newer version of this question while you were editing." : err instanceof Error ? err.message : "Could not save this question. Your input has been kept.");
     } finally { saving.current = false; setBusy(false); }

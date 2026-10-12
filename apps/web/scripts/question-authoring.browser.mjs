@@ -87,7 +87,9 @@ const server = createServer(async (req, res) => {
         heldComponentSave = null; return json(503, { error: "Save temporarily unavailable" });
       }
       const q = rows.find(q => q.id === url.pathname.split("/").at(-1));
-      if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving." });
+      if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving.", code: "stale_question" });
+      if (body.externalId && rows.some(other => other !== q && other.externalId === body.externalId))
+        return json(409, { error: "External ID already exists in this exam.", issues: [{ path: "$.externalId", message: "Choose a unique external ID or leave it empty." }] });
       Object.assign(q, body, { revision: q.revision + 1 }); return json(200, { question: q });
     }
     return json(404, { error: "Unknown fixture route" });
@@ -691,6 +693,33 @@ try {
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.deepEqual(rows.at(-1).correctAnswers, ["alpha", "beta"]);
+  // Clearing errors while typing never moves focus to another invalid field.
+  await page.getByRole("button", { name: "Add question", exact: true }).click();
+  const newStem = page.getByLabel("Stem · Markdown", { exact: true });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("stem: must be a non-empty string", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "question-stem");
+  await newStem.pressSequentially("Typed stem");
+  assert.equal(await newStem.inputValue(), "Typed stem");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "question-stem");
+  assert.equal(await optionText("A").getAttribute("aria-invalid"), "true", "other errors remain");
+  await optionText("A").pressSequentially("One");
+  assert.equal(await optionText("A").inputValue(), "One");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "option-0");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  // A duplicate external ID (also HTTP 409) is a field error, not a stale save.
+  await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel(/^External ID/).fill("A-1");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("externalId: Choose a unique external ID or leave it empty.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Load latest and keep my edits", exact: true }).count(), 0);
+  assert.equal(await page.getByText("Someone saved a newer version", { exact: false }).count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "external-id");
+  await page.getByLabel(/^External ID/).fill("A-0");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
   await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Stem · Markdown", { exact: true }).fill("My stale edit");
   Object.assign(rows[0], { stem: "Changed elsewhere", difficulty: "hard", revision: rows[0].revision + 1 });
