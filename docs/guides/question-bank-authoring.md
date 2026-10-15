@@ -13,6 +13,17 @@ the same exam, retains only its type, and focuses the stem. Failed validation or
 server requests keep the current input. Dismissal and app/browser navigation
 protect unsaved edits. Imported questions use the same editor.
 
+Validation errors appear next to the field they belong to, including the
+individual option, and editing a field clears its errors. Changing the type
+keeps compatible options and answers (single ↔ multiple choice); when a change
+or an option removal discards content, the editor offers **Undo** until the
+options or answers are edited again. Existing option IDs are never relabelled;
+a new option takes the next free letter after the last one. Blank lines in
+fill-in-the-blank accepted answers are ignored. If someone saves the question
+while it is open, the save is rejected (HTTP 409) and the editor offers **Load
+latest and keep my edits** (the draft is saved against the new revision and the
+changed fields are listed) or **Discard my edits**.
+
 In the component editor, click or tap the dimmed area outside the drawer to
 cancel. Unsaved drafts use the same discard confirmation as **Cancel** and
 Escape; saving blocks dismissal. Selecting text inside and releasing outside

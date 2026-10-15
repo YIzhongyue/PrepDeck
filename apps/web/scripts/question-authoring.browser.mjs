@@ -43,6 +43,11 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname.endsWith("/questions/classifications")) return json(200, { dimensions: [] });
     if (req.method === "GET" && url.pathname.endsWith("/questions/export")) return json(200, { file: exportComponentPackage({ id: "exam", name: "Exam" }, rows), total: rows.length, offset: 0, nextOffset: null });
+    const single = url.pathname.match(/^\/api\/exams\/exam\/questions\/([^/]+)$/);
+    if (req.method === "GET" && single && single[1] !== "export" && single[1] !== "classifications") {
+      const q = rows.find(row => row.id === single[1]);
+      return q ? json(200, { question: q }) : json(404, { error: "Question not found" });
+    }
     if (req.method === "GET") {
       questionRequests.push(Object.fromEntries(url.searchParams));
       if (questionPageFailures > 0) { questionPageFailures--; return json(503, { error: "Question page unavailable" }); }
@@ -82,7 +87,9 @@ const server = createServer(async (req, res) => {
         heldComponentSave = null; return json(503, { error: "Save temporarily unavailable" });
       }
       const q = rows.find(q => q.id === url.pathname.split("/").at(-1));
-      if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving." });
+      if (q.revision !== body.expectedRevision) return json(409, { error: "This question has changed. Reopen it before saving.", code: "stale_question" });
+      if (body.externalId && rows.some(other => other !== q && other.externalId === body.externalId))
+        return json(409, { error: "External ID already exists in this exam.", issues: [{ path: "$.externalId", message: "Choose a unique external ID or leave it empty." }] });
       Object.assign(q, body, { revision: q.revision + 1 }); return json(200, { question: q });
     }
     return json(404, { error: "Unknown fixture route" });
@@ -294,9 +301,15 @@ try {
   rows[0].revision++;
   await page.getByLabel("Stem · Markdown", { exact: true }).fill("Stale local edit");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await page.getByRole("alert").filter({ hasText: "This question has changed" }).waitFor();
+  await page.getByRole("alert").filter({ hasText: "Someone saved a newer version of this question" }).waitFor();
   assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Stale local edit");
-  page.once("dialog", dialog => dialog.accept()); await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  // Issue #137: recover from a stale save without losing the draft.
+  await page.getByRole("button", { name: "Load latest and keep my edits", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: `Loaded revision ${rows[0].revision}. Your edits are kept` }).waitFor();
+  assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Stale local edit");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(rows[0].stem, "Stale local edit");
   // Imported questions at the limit can remove a tag and replace it without losing others.
   rows[0].tags = Array.from({ length: 50 }, (_, i) => `Limit ${i}`);
   await page.reload();
@@ -630,6 +643,96 @@ try {
   await archiveRow().getByRole("button", { name: "Archive", exact: true }).waitFor();
   assert.deepEqual(archiveRequests, [["archive-0", "archive"], ["archive-0", "unarchive"]]);
   console.log("PASS question archiving: confirmation, archived badge and styling, archived filter, restore");
+
+  // Issue #137: errors are attributed to the option, type changes and option
+  // removal are undoable, new option IDs follow the last one, blank accepted
+  // answers are dropped, and a stale save names the fields changed elsewhere.
+  await page.getByRole("button", { name: "Add question", exact: true }).click();
+  const optionText = id => page.getByLabel(`Option ${id} · Markdown`, { exact: true });
+  const correct = id => page.getByLabel(`Correct answer ${id}`, { exact: true });
+  const typeSelect = page.getByLabel("Type", { exact: true });
+  await page.getByLabel("Stem · Markdown", { exact: true }).fill("Which apply?");
+  await optionText("A").fill("First");
+  await correct("A").check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("options[1]: id and text must be non-empty strings", { exact: true }).waitFor();
+  assert.equal(await optionText("B").getAttribute("aria-invalid"), "true");
+  assert.equal(await optionText("A").getAttribute("aria-invalid"), "false");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "option-1");
+  await optionText("B").fill("Second");
+  assert.equal(await optionText("B").getAttribute("aria-invalid"), "false", "editing an option clears its error");
+  await typeSelect.selectOption("multiple_choice");
+  assert.equal(await correct("A").isChecked(), true, "choice to choice keeps answers");
+  assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).count(), 0);
+  await correct("B").check();
+  await typeSelect.selectOption("single_choice");
+  await page.getByRole("status").filter({ hasText: "Changed to single choice. Correct answers were cleared." }).waitFor();
+  assert.equal(await correct("A").isChecked(), false);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  assert.equal(await typeSelect.inputValue(), "multiple_choice");
+  assert.equal(await correct("A").isChecked() && await correct("B").isChecked(), true);
+  await page.getByRole("button", { name: "Remove option A", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Removed option A (a correct answer)." }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "option-0");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  assert.equal(await optionText("A").inputValue(), "First");
+  assert.equal(await correct("A").isChecked(), true);
+  assert.equal(await page.locator(".authoring-option textarea").first().getAttribute("id"), "option-0");
+  assert.equal(await page.locator(".authoring-option > label").first().textContent(), "A");
+  await page.getByRole("button", { name: "Add option", exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Option C · Markdown");
+  await page.getByRole("button", { name: "Remove option B", exact: true }).click();
+  // An undo is never offered over later edits to options or answers.
+  await optionText("C").fill("Third");
+  assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Add option", exact: true }).click();
+  assert.deepEqual(await page.locator(".authoring-option > label").allTextContents(), ["A", "C", "D"]);
+  await typeSelect.selectOption("fill_blank");
+  await page.getByRole("status").filter({ hasText: "Changed to fill in the blank. Options and correct answers were cleared." }).waitFor();
+  await page.getByLabel("Accepted answers (one per line)").fill("alpha\n\nbeta\n");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.deepEqual(rows.at(-1).correctAnswers, ["alpha", "beta"]);
+  // Clearing errors while typing never moves focus to another invalid field.
+  await page.getByRole("button", { name: "Add question", exact: true }).click();
+  const newStem = page.getByLabel("Stem · Markdown", { exact: true });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("stem: must be a non-empty string", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "question-stem");
+  await newStem.pressSequentially("Typed stem");
+  assert.equal(await newStem.inputValue(), "Typed stem");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "question-stem");
+  assert.equal(await optionText("A").getAttribute("aria-invalid"), "true", "other errors remain");
+  await optionText("A").pressSequentially("One");
+  assert.equal(await optionText("A").inputValue(), "One");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "option-0");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  // A duplicate external ID (also HTTP 409) is a field error, not a stale save.
+  await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel(/^External ID/).fill("A-1");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("externalId: Choose a unique external ID or leave it empty.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Load latest and keep my edits", exact: true }).count(), 0);
+  assert.equal(await page.getByText("Someone saved a newer version", { exact: false }).count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "external-id");
+  await page.getByLabel(/^External ID/).fill("A-0");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Stem · Markdown", { exact: true }).fill("My stale edit");
+  Object.assign(rows[0], { stem: "Changed elsewhere", difficulty: "hard", revision: rows[0].revision + 1 });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Discard my edits", exact: true }).waitFor();
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Discard my edits", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Changed since you opened it: Stem, Difficulty." }).waitFor();
+  assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Changed elsewhere");
+  await page.getByText(`#1 · archive-0 · revision ${rows[0].revision}`, { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  console.log("PASS question editor safety: per-option errors, undoable type changes and removals, option IDs, blank answers, stale recovery");
   assert.deepEqual(errors, []);
   console.log("Browser regression passed: tag search/create/normalization/removal, keyboard and touch, catalog recovery, tag-only dirty state, exact tag-array saves, continuous creation, true/false defaults, failure retention, focus, previews, stale updates, review-state chip/filter/editor, mobile layout, and pagination beyond 200.");
 } finally { initialCatalog.resolve(); heldQuestions?.gate.resolve(); heldComponentSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

@@ -499,6 +499,12 @@ header .exam-selector--compact .exam-selector__menu {
 .authoring-filters > .input { flex: 1 1 145px; width: 145px; }
 .authoring-option { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
 .authoring-option textarea { flex: 1; min-width: 0; }
+.authoring-option-entry { margin-bottom: 10px; }
+.authoring-option-entry > .authoring-option { margin-bottom: 0; }
+.authoring-option-entry > .authoring-errors:not(:empty) { margin: 4px 0 0 52px; }
+.authoring-undo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 13px; }
+.authoring-rebased { margin: 0; padding: 10px 12px; border-radius: var(--pd-radius-md); background: var(--color-neutral-100); font-size: 13px; }
+.question-drawer-footer [role=alert] p { margin: 0 0 8px; }
 .authoring-identifier { font-size: 11px; opacity: .7; overflow-wrap: anywhere; user-select: text; }
 /* The review flag is a single boolean, so it reads as one clickable row
    rather than a labelled control stacked above its input like the rest. */
