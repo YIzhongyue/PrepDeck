@@ -92,7 +92,7 @@ try {
       await page.goto("http://localhost:8788");
       await page.getByRole("button", { name: "Sign in as local admin" }).click();
       await page.waitForURL("http://localhost:5173/");
-      await page.getByRole("button", { name: /^Select exam/ }).first().click();
+      await page.getByRole("button", { name: "local-examples — Select exam, current exam: Local practice examples", exact: true }).click();
       await page.getByRole("option", { name: "Local practice examples" }).click();
       await page.waitForTimeout(700);
       assert.equal((await page.request.get("http://localhost:5173/api/auth/me")).status(), 200);
