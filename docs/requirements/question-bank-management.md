@@ -52,6 +52,14 @@ separate creation entry point. Icons accept JPEG, PNG or WebP up to 2 MB and can
 be replaced or removed; a failed icon upload can be retried without creating
 another provider.
 
+In an exam's **Providers** card, each provider is a toggle button whose accessible
+name is the provider name (plus the archived label when applicable). Its pressed
+state reports whether the exam is assigned; the decorative checkmark is hidden
+from assistive technology. Pointer, Space and Enter use the same assignment
+action. The displayed and announced state changes only after a successful server
+response, so a failed update keeps the previous assignment
+([issue #136](https://github.com/YIzhongyue/PrepDeck/issues/136)).
+
 All provider mutations require an admin. `PATCH /api/providers/:id` validates
 nonempty name/short name and optional HTTP(S) website URL; null or an empty URL
 clears it. `POST /api/providers/:id/archive` and `/unarchive` preserve exam links

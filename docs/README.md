@@ -47,6 +47,7 @@ records the gaps between the original specification, current code and open issue
 | [Knowledge Point editor](guides/knowledge-point-editor.md) | Visual authoring, Markdown fallback and recovery. |
 | [Shared UI components](guides/ui-components.md) | Vendored Untitled UI primitives, the design-token mapping behind the five color schemes, and remaining migration scope. |
 | [Settings layout](screenshots/settings.md) | Desktop/mobile screenshots of the grouped Settings page and its section index. |
+| [Provider assignment accessibility](screenshots/provider-assignment.md) | Toggle-state, keyboard and failure-path verification, local screenshots and the screen-reader testing boundary. |
 | [Phone question layout](screenshots/mobile-question-viewport.md) | Before/after phone screenshots of Learning and Practice, with the sticky session header and actions. |
 | [Page breadcrumbs](screenshots/breadcrumbs.md) | Before/after headers of the Study and Resources pages, with the shared Section › Page breadcrumb. |
 | [Human verification](screenshots/turnstile.md) | Before/after login and MCP token screens with the Turnstile check, rotation, the sign-in-again dialog and a refused check. |
