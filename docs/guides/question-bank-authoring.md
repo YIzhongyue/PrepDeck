@@ -8,6 +8,14 @@ editing and Markdown preview. The editor supports single choice,
 multiple choice, true/false and fill in the blank, including Markdown stems,
 options, official explanations, accepted answers and existing metadata.
 
+For Markdown questions, the fields and existing live preview sit side by side
+at viewport widths of 1100 CSS pixels or more, with independent scrolling.
+Below that width, **Edit** and **Preview** switch the visible pane. Returning to
+Edit restores the last field's focus, selection and scroll position without
+recreating the draft. Browser zoom can switch to this compact layout. Saving
+from Preview reveals and focuses a field that needs correction.
+The component/JSON editor and preview rendering rules are unchanged.
+
 **Save** takes effect immediately. **Save & add next** opens an empty question in
 the same exam, retains only its type, and focuses the stem. Failed validation or
 server requests keep the current input. Dismissal and app/browser navigation
@@ -333,3 +341,11 @@ The optional browser regression is
 It runs actual authoring components against isolated HTTP fixtures, covering
 continuous creation, failed saves, previews, focus, stale edits, unsaved-input
 protection, phone layout and pagination beyond 200 questions.
+
+`npm run test:browser -- question-editor-preview` checks the responsive Markdown
+editor at wide, breakpoint and 390px widths, plus zoom-equivalent reflow, long
+content, repeated keyboard/pointer switching, draft/caret/scroll retention,
+validation, Undo, stale recovery and interrupted saves. It uses original
+synthetic content and a loopback fixture; no deployed bank is accessed.
+See the [preview layout evidence](../screenshots/question-editor-preview.md)
+for the baseline reproduction and local browser screenshots.
