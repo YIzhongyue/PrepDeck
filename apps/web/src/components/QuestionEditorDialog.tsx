@@ -32,6 +32,12 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const [undo, setUndo] = useState<Undo | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
+  // Keep this query in step with the workspace layout in app.css.
+  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  const previousWide = useRef(wide);
+  const fields = useRef<HTMLDivElement>(null), previewPane = useRef<HTMLElement>(null), viewSwitch = useRef<HTMLDivElement>(null);
+  const lastField = useRef<HTMLElement | null>(null), editScroll = useRef(0);
+  const restorePaneFocus = useRef<"edit" | "preview" | null>(null);
   const saving = useRef(false), saved = useRef(false), focusAfter = useRef<string | null>(null);
   // Set by a save attempt only: removing errors while typing must never move focus.
   const focusInvalid = useRef(false);
@@ -54,6 +60,45 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1100px)");
+    const resize = () => {
+      const active = document.activeElement;
+      // Reflow/zoom must not hide the field or preview that has keyboard focus.
+      if (!media.matches) {
+        if (fields.current?.contains(active)) setPreview(false);
+        else if (previewPane.current?.contains(active)) setPreview(true);
+      } else if (viewSwitch.current?.contains(active)) {
+        if (fields.current && !fields.current.hidden) editScroll.current = fields.current.scrollTop;
+        restorePaneFocus.current = active?.getAttribute("aria-controls") === "question-preview" ? "preview" : "edit";
+      }
+      setWide(media.matches);
+    };
+    media.addEventListener("change", resize);
+    return () => media.removeEventListener("change", resize);
+  }, []);
+  useLayoutEffect(() => {
+    const target = restorePaneFocus.current;
+    restorePaneFocus.current = null;
+    if (target === "preview") previewPane.current?.focus({ preventScroll: true });
+    if (target === "edit") {
+      const field = lastField.current?.isConnected ? lastField.current : stem.current;
+      field?.focus({ preventScroll: true });
+      if (fields.current) fields.current.scrollTop = editScroll.current;
+    }
+    // A narrower column can move the focused field below the viewport. Keep
+    // that editing location visible after reflow, without moving it on switches.
+    if (wide !== previousWide.current && fields.current?.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement).scrollIntoView({ block: "nearest" });
+    }
+    previousWide.current = wide;
+  }, [preview, wide]);
+  const switchView = (next: boolean) => {
+    if (next === preview) return;
+    if (next) editScroll.current = fields.current?.scrollTop ?? 0;
+    else restorePaneFocus.current = "edit";
+    setPreview(next);
+  };
   useEffect(() => {
     if (!focusInvalid.current) return;
     focusInvalid.current = false;
@@ -90,7 +135,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     const problems = validateQuestionRow(body, "$");
     focusInvalid.current = problems.length > 0;
     setIssues(problems); setError(""); setStale(false);
-    if (problems.length) return;
+    if (problems.length) { setPreview(false); return; }
     saving.current = true; setBusy(true);
     try {
       const { question: result } = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions${base ? `/${base.id}` : ""}`, {
@@ -100,6 +145,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     } catch (err) {
       const details = err instanceof ApiError ? err.body as { issues?: ValidationIssue[]; code?: string } | null : null;
       focusInvalid.current = !!details?.issues?.length;
+      if (focusInvalid.current) setPreview(false);
       setIssues(details?.issues ?? []);
       // 409 also means a duplicate external ID; only a revision conflict offers recovery.
       const conflict = !!base && err instanceof ApiError && err.status === 409 && details?.code === "stale_question";
@@ -118,6 +164,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       const before = questionForm(base), after = questionForm(latest);
       const changed = (Object.keys(after) as (keyof QuestionForm)[]).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(k => FIELD_LABELS[k] ?? k);
       setBase(latest); setInitial(after); setIssues([]); setError(""); setStale(false); setUndo(null);
+      setPreview(false);
       if (!keepDraft) setForm(after);
       setRebased(`Loaded revision ${latest.revision}.${changed.length ? ` Changed since you opened it: ${changed.join(", ")}.` : ""}${keepDraft ? " Your edits are kept; review them and save again." : ""}`);
     } catch (err) { setError(err instanceof Error ? `Could not load the latest version: ${err.message}` : "Could not load the latest version."); }
@@ -175,15 +222,20 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     }}>Undo</button></p>;
   return <dialog ref={dialog} autoFocus tabIndex={-1} className="question-drawer-backdrop" aria-modal="true" aria-labelledby="question-editor-title"
     onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}>
-    <div className="question-editor question-drawer">
+    <div className="question-editor question-drawer question-editor-responsive">
       <header className="question-drawer-header">
       <div className="authoring-toolbar"><h3 id="question-editor-title" className="dialog-title">{base ? "Edit question" : "Add question"}</h3>
         <button className="btn btn-ghost question-drawer-close" type="button" aria-label="Close question editor" disabled={busy} onClick={close}>×</button></div>
       {base && <p className="authoring-identifier">#{base.sequenceNumber} · {base.id} · revision {base.revision}</p>}
+      <div ref={viewSwitch} className="question-editor-view-switch" role="group" aria-label="Question view" hidden={wide}>
+        <button className="btn btn-secondary" type="button" aria-pressed={!preview} aria-controls="question-fields" onClick={() => switchView(false)}>Edit</button>
+        <button className="btn btn-secondary" type="button" aria-pressed={preview} aria-controls="question-preview" onClick={() => switchView(true)}>Preview</button>
+      </div>
       </header>
-      <div className="question-drawer-body">
+      <div className="question-drawer-body question-editor-workspace">
+      <div ref={fields} id="question-fields" className="question-editor-fields question-editor-pane" hidden={!wide && preview}
+        onFocusCapture={e => { lastField.current = e.target as HTMLElement; }}>
       {rebased && <p role="status" className="authoring-rebased">{rebased}</p>}
-      <button className="btn btn-secondary" type="button" aria-expanded={preview} onClick={() => setPreview(!preview)}>{preview ? "Hide preview" : "Show Markdown preview"}</button>
       <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="field"><label htmlFor="question-type">Type</label><select id="question-type" className="input" value={form.type} onChange={e => selectType(e.target.value as QuestionType)}>
           <option value="single_choice">Single choice</option><option value="multiple_choice">Multiple choice</option><option value="true_false">True / false</option><option value="fill_blank">Fill in the blank</option>
@@ -220,10 +272,11 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
           <span>Needs review</span></label>
           <p className="authoring-identifier">Review state is stored on the question itself, not as a tag. Imports set it; clear it once the question has been checked.</p>{errors("needsReview")}</div>
       </fieldset>
-      {preview && <section className="authoring-preview" aria-label="Markdown preview"><h4>Preview</h4><QuestionContent src={form.stem} />
+      </div>
+      <section ref={previewPane} id="question-preview" className="authoring-preview question-editor-pane" aria-label="Markdown preview" tabIndex={0} hidden={!wide && !preview}><h4>Preview</h4><QuestionContent src={form.stem} />
         {form.type !== "fill_blank" && form.options.map(o => <div key={o.id}><strong>{o.id}{form.correctAnswers.includes(o.id) ? " ✓" : ""}</strong><QuestionContent src={o.text} /></div>)}
         <p>Correct answers: {formPayload(form).correctAnswers.join(", ") || "Not selected"}</p><QuestionContent src={form.explanation} />
-      </section>}
+      </section>
       </div>
       <footer className="question-drawer-footer">
       {error && <div role="alert" className="authoring-errors"><p>{error}{stale && " Your edits are kept."}</p>

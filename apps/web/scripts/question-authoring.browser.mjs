@@ -201,7 +201,6 @@ try {
   await page.getByRole("button", { name: "Save & add next" }).click();
   await page.getByText("points: must be a number greater than 0 and at most 100").waitFor();
   await page.getByLabel("Points", { exact: true }).fill("0.5");
-  await page.getByRole("button", { name: "Show Markdown preview" }).click();
   await page.getByRole("region", { name: "Markdown preview" }).getByRole("heading", { name: "First question" }).waitFor();
   tagFailures = 1;
   await page.getByRole("button", { name: "Save & add next" }).click();
@@ -247,7 +246,6 @@ try {
   page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Fill **this** blank");
-  await page.getByRole("button", { name: "Show Markdown preview" }).click();
   const longTag = "Long tag ".repeat(22).trim();
   await createTag(longTag);
   await createTag("Mobile touch");
