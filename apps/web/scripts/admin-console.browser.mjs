@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { waitUntil } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
@@ -20,8 +21,13 @@ const exams = [
   { id: "exam", name: "Solutions Architect Professional", slug: "sap-c02", questionCount: 12, archivedAt: null, badgeIconUrl: null, providers: [{ id: "aws", name: "Amazon Web Services", shortName: "AWS" }] },
   { id: "exam-2", name: "Cloud Practitioner", slug: "clf-c02", questionCount: 4, archivedAt: null, badgeIconUrl: null, providers: [] }
 ];
-const providers = [{ id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null, archivedAt: null }];
+const providers = [
+  { id: "aws", name: "Amazon Web Services", shortName: "AWS", websiteUrl: null, iconUrl: null, archivedAt: null },
+  { id: "open", name: "Open Learning", shortName: "OL", websiteUrl: null, iconUrl: null, archivedAt: null },
+];
 let providerCreates = 0, providerDeletes = 0, failNextIcon = false;
+let heldAssignment = null;
+const assignmentRequests = [];
 const examPatches = [];
 const errors = [];
 const apiRequests = [];
@@ -65,6 +71,15 @@ const server = createServer(async (req, res) => {
     const [, , , id, action] = url.pathname.split("/");
     const provider = providers.find(p => p.id === id);
     if (!provider) return json({ error: "Provider not found" }, 404);
+    if (action === "exams") {
+      const exam = exams.find(e => e.id === url.pathname.split("/")[5]);
+      assignmentRequests.push({ providerId: id, examId: exam.id, method: req.method });
+      const held = heldAssignment;
+      if (held) { held.arrived.resolve(); await held.release.promise; }
+      if (held?.fail) return json({ error: "Assignment temporarily unavailable" }, 503);
+      exam.providers = req.method === "PUT" ? [...exam.providers.filter(p => p.id !== id), provider] : exam.providers.filter(p => p.id !== id);
+      return json({ ok: true });
+    }
     if (action === "icon") {
       if (failNextIcon) { failNextIcon = false; return json({ error: "Upload temporarily unavailable" }, 503); }
       provider.iconUrl = req.method === "DELETE" ? null : "/fixture-icon.png";
@@ -137,6 +152,65 @@ try {
   console.log("PASS status pill follows the overview request (checking, operational, slow, unavailable, retry) and counts are pluralised");
 
   await page.getByRole("button", { name: /^Content/ }).click();
+
+  // Issue #136: provider assignments are native toggle buttons. Their names
+  // stay the provider's name, and the accessibility tree exposes the same
+  // confirmed state as the visible checkmark, including slow/failed writes.
+  await page.getByRole("button", { name: /Solutions Architect Professional.*Open/ }).click();
+  const assignment = page.getByRole("button", { name: "Amazon Web Services", exact: true });
+  const unassigned = page.getByRole("button", { name: "Open Learning", exact: true });
+  const ax = await page.context().newCDPSession(page);
+  const assertAssignment = async (button, name, pressed) => {
+    await waitUntil(`${name} pressed=${pressed}`, () => button.getAttribute("aria-pressed"), { until: value => value === String(pressed) });
+    assert.equal(await button.evaluate(el => el.classList.contains("is-on")), pressed);
+    const { nodes } = await ax.send("Accessibility.getFullAXTree");
+    const node = nodes.find(node => !node.ignored && node.role?.value === "button" && node.name?.value === name);
+    assert.ok(node, `the accessibility tree must contain the exact provider name ${name}`);
+    assert.equal(String(node.properties.find(property => property.name === "pressed")?.value.value), String(pressed));
+  };
+  const changeAssignment = async ({ before, gesture, fail = false }) => {
+    const held = heldAssignment = { arrived: Promise.withResolvers(), release: Promise.withResolvers(), fail };
+    const requestsBefore = assignmentRequests.length;
+    let alert = null;
+    if (fail) page.once("dialog", async dialog => { alert = dialog.message(); await dialog.accept(); });
+    if (gesture === "pointer") await assignment.click();
+    else await assignment.press(gesture);
+    await held.arrived.promise;
+    assert.equal(assignmentRequests.length, requestsBefore + 1, `${gesture} must submit exactly one assignment request`);
+    assert.deepEqual(assignmentRequests.at(-1), { providerId: "aws", examId: "exam", method: before ? "DELETE" : "PUT" });
+    await assertAssignment(assignment, "Amazon Web Services", before);
+    assert.equal(exams[0].providers.some(p => p.id === "aws"), before, "pending writes keep the confirmed assignment");
+    heldAssignment = null;
+    held.release.resolve();
+    if (fail) await waitUntil("failed assignment alert", () => alert, { until: value => value === "Assignment temporarily unavailable" });
+    await assertAssignment(assignment, "Amazon Web Services", fail ? before : !before);
+    assert.equal(exams[0].providers.some(p => p.id === "aws"), fail ? before : !before);
+    assert.equal(await assignment.evaluate(el => el === document.activeElement), true, "toggling retains keyboard focus");
+  };
+  for (const [label, width, height] of [["desktop", 1280, 900], ["phone", 390, 780]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(width => window.store.width === width, width);
+    await assertAssignment(assignment, "Amazon Web Services", true);
+    await assertAssignment(unassigned, "Open Learning", false);
+    await page.getByRole("button", { name: "New provider", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    assert.equal(await assignment.evaluate(el => el === document.activeElement), true, "Tab reaches the assigned toggle");
+    await page.keyboard.press("Tab");
+    assert.equal(await unassigned.evaluate(el => el === document.activeElement), true, "Tab reaches the unassigned toggle");
+    await page.keyboard.press("Shift+Tab");
+    await changeAssignment({ before: true, gesture: "Space" });
+    await changeAssignment({ before: false, gesture: "Enter", fail: true });
+    await changeAssignment({ before: false, gesture: "pointer" });
+    await changeAssignment({ before: true, gesture: "pointer", fail: true });
+    await assertAssignment(unassigned, "Open Learning", false);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${label}: provider assignment must not overflow`);
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/provider-assignment-${label}.png` });
+  }
+  await ax.detach();
+  console.log(`PASS provider assignments: stable accessible names and pressed states, Tab/Space/Enter/pointer, delayed success and failed assignment/unassignment at 1280px and 390px (Chromium ${browser.version()}; accessibility-tree checks, not screen-reader speech)`);
+  await page.getByRole("button", { name: "All exams" }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForFunction(() => window.store.width === 1280);
 
   // Whatever the dialog is mounted in — the assertions below are about what the
   // user sees, not about which element paints it.

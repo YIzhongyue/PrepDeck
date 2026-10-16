@@ -830,8 +830,8 @@ function ExamDetail({
           {providers.filter((p) => !p.archivedAt || exam.providers.some((assigned) => assigned.id === p.id)).map((p) => {
             const on = exam.providers.some((x) => x.id === p.id);
             return (
-              <button key={p.id} type="button" className={on ? "admin-provider-toggle is-on" : "admin-provider-toggle"} onClick={() => onToggleProvider(p, exam, !on)}>
-                <span className="tick">✓</span>{p.name}{p.archivedAt ? " (archived)" : ""}
+              <button key={p.id} type="button" className={on ? "admin-provider-toggle is-on" : "admin-provider-toggle"} aria-pressed={on} onClick={() => onToggleProvider(p, exam, !on)}>
+                <span className="tick" aria-hidden="true">✓</span>{p.name}{p.archivedAt ? " (archived)" : ""}
               </button>
             );
           })}
