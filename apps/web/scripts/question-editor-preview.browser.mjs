@@ -12,7 +12,7 @@ const question = { id: "preview-fixture", examId: "exam", sequenceNumber: 1, rev
   options: [{ id: "A", text: "**First** answer" }, { id: "B", text: "Second answer" }],
   correctAnswers: ["A"], explanation: "## Explanation\n\n" + "A synthetic explanation.\n\n".repeat(35),
   externalId: "SYNTHETIC-1", difficulty: "easy", points: 1, tags: [], needsReview: false };
-let latest = structuredClone(question), failSave = false, holdSave = null, writes = 0;
+let latest = structuredClone(question), failSave = false, holdSave = null, serverIssues = null, writes = 0;
 const { outputFiles } = await build({ stdin: { contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionEditorDialog from './src/components/QuestionEditorDialog'; import './src/styles/tokens.css'; import './src/styles/app.css';
   function Fixture() { const [open, setOpen] = useState(false); return <><button onClick={() => setOpen(true)}>Open editor</button>
@@ -27,6 +27,7 @@ const server = createServer(async (req, res) => {
     const { payload } = await readBody(req);
     if (holdSave) { holdSave.arrived.resolve(); await holdSave.gate.promise; }
     if (failSave) return json(503, { error: "Synthetic save interruption. Your draft is kept." });
+    if (serverIssues) return json(422, { error: "Synthetic server validation", issues: serverIssues });
     if (payload.expectedRevision !== latest.revision) return json(409, { error: "Stale", code: "stale_question" });
     latest = { ...latest, ...payload, revision: latest.revision + 1 }; writes++;
     return json(200, { question: latest });
@@ -95,12 +96,19 @@ try {
   await explanation.evaluate(el => { el.setSelectionRange(26, 40); el.scrollTop = 60; });
   const position = await explanation.evaluate(el => ({ start: el.selectionStart, end: el.selectionEnd, scroll: el.scrollTop }));
   const editScroll = await page.locator(".question-editor-fields").evaluate(el => el.scrollTop);
+  let compactPreviewScroll;
   await screenshot("mobile-edit");
   for (let i = 0; i < 4; i++) {
     await showPreview.click();
     assert.equal(await preview.isVisible(), true);
     assert.equal(await explanation.isVisible(), false);
     assert.equal(await showPreview.getAttribute("aria-pressed"), "true");
+    if (i === 0) {
+      compactPreviewScroll = await preview.evaluate(el => { el.scrollTop = 325; return el.scrollTop; });
+      assert.ok(compactPreviewScroll > 0, "Long preview has a nonzero scroll position to preserve");
+    } else {
+      assert.equal(await preview.evaluate(el => el.scrollTop), compactPreviewScroll, "Preview retains its own scroll position across repeated switches");
+    }
     await assertNoOverflow();
     if (i === 0) await screenshot("mobile-preview");
     await edit.click();
@@ -149,6 +157,23 @@ try {
   await page.waitForFunction(() => document.activeElement?.id === "question-stem");
   assert.equal(await stem.isVisible(), true, "Validation reveals and focuses the invalid field from Preview");
   await stem.fill("Recovered draft");
+  // Client-valid content can still receive a field error from the server.
+  // Reveal Edit and focus that specific field without discarding the draft.
+  serverIssues = [{ path: "$.options[1].text", message: "Synthetic server option validation" }];
+  await showPreview.click(); await save.click();
+  await page.waitForFunction(() => document.activeElement?.id === "option-1");
+  const optionB = page.getByLabel("Option B · Markdown", { exact: true });
+  assert.equal(await edit.getAttribute("aria-pressed"), "true");
+  assert.equal(await preview.isVisible(), false);
+  assert.equal(await optionB.getAttribute("aria-invalid"), "true");
+  await page.getByText("options[1].text: Synthetic server option validation", { exact: true }).waitFor();
+  assert.equal(await optionB.inputValue(), question.options[1].text);
+  assert.equal(await stem.inputValue(), "Recovered draft");
+  assert.equal(await explanation.inputValue(), question.explanation);
+  assert.equal(writes, 0, "Rejected server validation must not save a question");
+  await optionB.fill("Second answer corrected");
+  assert.equal(await optionB.getAttribute("aria-invalid"), "false");
+  serverIssues = null;
   // Undo and conflict recovery remain available after switching.
   await page.getByLabel("Type", { exact: true }).selectOption("fill_blank");
   await showPreview.click(); await edit.click();
@@ -178,5 +203,5 @@ try {
   assert.equal(writes, 1); assert.equal(latest.stem, "Recovered draft");
   assert.equal(await page.getByRole("button", { name: "Open editor" }).evaluate(el => document.activeElement === el), true);
   assert.deepEqual(errors, []);
-  console.log("PASS responsive preview: long content, 1100/1099/390px, zoom reflow, live rendering, independent scrolling, draft/caret/focus retention, keyboard, validation, Undo, conflict recovery, interrupted save and close");
+  console.log("PASS responsive preview: long content, 1100/1099/390px, zoom reflow, live rendering, independent scrolling and preview scroll retention, draft/caret/focus retention, keyboard, client/server validation from Preview, Undo, conflict recovery, interrupted save and close");
 } finally { holdSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

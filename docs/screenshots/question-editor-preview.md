@@ -34,7 +34,9 @@ existing behavior. No migration or API change is needed.
 Run `npm run test:browser -- question-editor-preview question-authoring`.
 Set `SCREENSHOT_DIR` to retain images. The preview test covers long content,
 live rendering, 1100/1099/390px layouts, 720px zoom-equivalent reflow, repeated
-switching, caret/focus/scroll retention, keyboard navigation, validation, Undo,
+switching, caret/focus/edit and preview scroll retention, keyboard navigation,
+client and server field validation from Preview (including draft retention and
+focus on the rejected field), Undo,
 conflict recovery, a delayed failed save, cancellation and eventual successful
 save. The authoring suite preserves the broader regression coverage from #140.
 
