@@ -374,7 +374,7 @@ export function OfficialExplanation({ explanation, collapsible = false }: { expl
     <div className="st-official">
       <div className="st-official-title"><Icon d={IC.badgeCheck} size={14} />Official explanation</div>
       <Collapsible cap={110} enabled={collapsible}>
-        <div className="st-prose"><QuestionContent src={explanation} /></div>
+        <div className="st-prose"><QuestionContent src={explanation} tables /></div>
       </Collapsible>
     </div>
   );
