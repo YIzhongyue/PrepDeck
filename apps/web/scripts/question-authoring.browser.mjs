@@ -761,7 +761,7 @@ try {
   assert.equal(await optionText("A").inputValue(), "First");
   assert.equal(await correct("A").isChecked(), true);
   assert.equal(await page.locator(".authoring-option textarea").first().getAttribute("id"), "option-0");
-  assert.equal(await page.locator(".authoring-option > label").first().textContent(), "A");
+  assert.equal(await page.locator(".authoring-option-label").first().textContent(), "Option A");
   await page.getByRole("button", { name: "Add option", exact: true }).click();
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Option C · Markdown");
   await page.getByRole("button", { name: "Remove option B", exact: true }).click();
@@ -769,7 +769,7 @@ try {
   await optionText("C").fill("Third");
   assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Add option", exact: true }).click();
-  assert.deepEqual(await page.locator(".authoring-option > label").allTextContents(), ["A", "C", "D"]);
+  assert.deepEqual(await page.locator(".authoring-option-label").allTextContents(), ["Option A", "Option C", "Option D"]);
   await typeSelect.selectOption("fill_blank");
   await page.getByRole("status").filter({ hasText: "Changed to fill in the blank. Options and correct answers were cleared." }).waitFor();
   await page.getByLabel("Accepted answers (one per line)").fill("alpha\n\nbeta\n");
