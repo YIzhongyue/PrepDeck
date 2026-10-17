@@ -538,8 +538,9 @@ try {
   const assertInvalidDraft = async source => {
     assert.equal(await jsonEditor.inputValue(), source, "diagnostics do not rewrite raw JSON");
     assert.equal(await jsonEditor.getAttribute("aria-invalid"), "true");
-    assert.equal(await structuredSave.isDisabled(), true);
-    assert.equal(await structuredPreview.count(), 0, "invalid drafts retain the existing hidden-preview behavior");
+    assert.equal(await structuredSave.isEnabled(), true, "invalid Save remains reachable for error navigation");
+    await structuredPreview.getByRole("status").filter({ hasText: "Preview is out of date" }).waitFor();
+    await structuredPreview.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
     assert.equal(await jsonEditor.evaluate(el => el === document.activeElement), true, "feedback never steals typing focus");
     const description = await jsonEditor.getAttribute("aria-describedby");
     assert.ok(description);

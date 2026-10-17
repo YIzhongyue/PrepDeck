@@ -27,7 +27,7 @@ is fully expanded. Stem, options, answers and explanation reflect the unsaved
 draft. Previewing does not answer a question, mark it viewed or studied, request
 an AI explanation, or change the draft. This is the approved first slice of
 [#148](https://github.com/YIzhongyue/PrepDeck/issues/148); interactive try-answer
-is outside this slice. Component/JSON preview and diagnostics remain unchanged.
+is outside this slice. Component/JSON questions use the structured editor below.
 
 Option textareas grow and shrink with their content and reflow when the editor
 changes width. Their correct-answer controls have visible labels, and removal
@@ -75,6 +75,17 @@ Escape; saving blocks dismissal. Selecting text inside and releasing outside
 does not close the editor. Returning to the overview retains its page, filters,
 scroll position and opening control's focus.
 See the [component drawer and backdrop](../screenshots/component-backdrop-desktop.png).
+
+The component editor retains the most recent valid preview while the current
+JSON has syntax or package-validation errors. **Preview is out of date** marks
+that retained content; if no valid draft exists, the preview explains that it is
+unavailable. Correcting the JSON immediately refreshes the preview and removes
+the notice. **Save** stays available unless a request is pending. An invalid
+save, including Ctrl/Cmd+S, focuses the current error summary without sending a
+request; Shift+Tab returns to the JSON field with its selection and scroll intact.
+Only the current validated draft can be saved, never the retained preview. Raw
+text, the saved baseline and preview context belong to the same question/exam
+editing session. See [component JSON diagnostics and preview context](../screenshots/component-json-errors.md).
 
 The tag selector (implementation)
 searches the existing question-bank catalog. Select a suggestion or choose
