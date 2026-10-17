@@ -110,8 +110,8 @@ try {
     assert.equal(await header.getByText("#7", { exact: true }).isVisible(), true);
     const originalRaw = await field.inputValue(), draft = JSON.parse(originalRaw);
     draft.questions[0].body[0].text = "My exact retained draft";
-    // Noncanonical whitespace, duplicate keys and number spellings survive Keep.
-    const raw = JSON.stringify(draft, null, 3).replace('"points": 1', '"points": 1e0, "points": 1.0') + "\n\n";
+    // Noncanonical whitespace and number spellings survive Keep.
+    const raw = JSON.stringify(draft, null, 3).replace('"points": 1', '"points": 1.0') + "\n\n";
     await field.fill(raw);
     await field.evaluate(el => { el.focus(); el.setSelectionRange(180, 210, "backward"); el.scrollTop = 100; });
     const position = () => field.evaluate(el => ({ focused: el === document.activeElement, start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection, top: el.scrollTop, paneTop: el.closest(".question-drawer-body").scrollTop }));
@@ -120,6 +120,9 @@ try {
     remoteEdit(); const firstWrite = writes.length;
     await conflict(); assert.equal(writes.length, firstWrite + 1); assert.equal(writes.at(-1).expectedRevision, 1); await expectRevision(1);
     await layout(size); assert.equal(await field.inputValue(), raw);
+    const duplicateRaw = raw.replace('"points": 1.0', '"points": 2, "points": 1.0');
+    await field.fill(duplicateRaw); await save.click(); assert.equal(writes.length, firstWrite + 1);
+    await field.fill(raw);
     failGet = true; await keepLatest.click(); await editor.getByRole("alert").filter({ hasText: "Synthetic latest-load failure" }).waitFor();
     assert.equal(await editor.evaluate(el => el.contains(document.activeElement)), true, "failed latest load keeps focus inside the modal");
     await preview.getByText("My exact retained draft", { exact: true }).waitFor();
