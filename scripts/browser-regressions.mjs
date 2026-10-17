@@ -30,6 +30,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/question-authoring.browser.mjs", 12],
   ["apps/web/scripts/question-editor-preview.browser.mjs", 8],
   ["apps/web/scripts/question-editor-fields.browser.mjs", 14],
+  ["apps/web/scripts/question-save-discard.browser.mjs", 7],
   ["apps/web/scripts/question-draft-preview.browser.mjs", 50],
   ["apps/web/scripts/mcp-setup.browser.mjs", 4],
   ["apps/web/scripts/mcp-connect.browser.mjs", 3],

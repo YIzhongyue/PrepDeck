@@ -28,7 +28,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React, {useStat
   function Fixture() { const [open, setOpen] = useState(false); const params = new URLSearchParams(location.search);
     const q = {...fixtures[params.get('type')], ...(params.has('long') ? {externalId: ${JSON.stringify(longExternalId)}} : {})};
     return <><button onClick={() => setOpen(true)}>Open editor</button>{open && <QuestionEditorDialog examId="exam" question={q}
-      initialType={q.type} onClose={() => setOpen(false)} onSaved={() => setOpen(false)}/>}</>; }
+      initialType={q.type} onClose={() => setOpen(false)} onSaved={() => {}}/>}</>; }
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const server = createServer(async (req, res) => {
@@ -195,6 +195,8 @@ try {
       await noOverflow();
       const count = writes.length;
       await save.click();
+      await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("dialog").waitFor({ state: "detached" });
       assert.equal(writes.length, count + 1);
       const payload = writes.at(-1);
@@ -244,12 +246,14 @@ try {
       // Exercise real field editing and both footer buttons, preserving the
       // exact identifier after cancelling the dirty-discard confirmation.
       await page.getByLabel("Stem · Markdown", { exact: true }).fill(`Edited ${mode} long-identifier fixture`);
-      page.once("dialog", dialog => dialog.dismiss());
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Keep editing", exact: true }).click();
       assert.equal(await page.getByRole("dialog").count(), 1);
       assert.equal(await external.inputValue(), longExternalId);
       const count = writes.length;
       await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("dialog").waitFor({ state: "detached" });
       assert.equal(writes.length, count + 1);
       assert.equal(writes.at(-1).externalId, longExternalId, "Saving retains all 5,000 identifier characters exactly");

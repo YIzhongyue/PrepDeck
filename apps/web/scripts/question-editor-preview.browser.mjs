@@ -32,7 +32,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React, {useStat
   import QuestionEditorDialog from './src/components/QuestionEditorDialog'; import './src/styles/tokens.css'; import './src/styles/app.css';
   window.__previewWork = { questionContent: 0, markdown: 0 };
   function Fixture() { const [open, setOpen] = useState(false); return <><button onClick={() => setOpen(true)}>Open editor</button>
-    {open && <QuestionEditorDialog examId="exam" question={${JSON.stringify(question)}} initialType="single_choice" onClose={() => setOpen(false)} onSaved={() => setOpen(false)}/>}</>; }
+    {open && <QuestionEditorDialog examId="exam" question={${JSON.stringify(question)}} initialType="single_choice" onClose={() => setOpen(false)} onSaved={() => {}}/>}</>; }
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", plugins: [previewWorkPlugin], define: { "process.env.NODE_ENV": '"development"' } });
 assert.deepEqual([...instrumented].sort(), ["markdown", "questionContent"], "Both real implementations must be instrumented");
@@ -249,13 +249,14 @@ try {
   holdSave.gate.resolve();
   await page.getByRole("alert").filter({ hasText: "Synthetic save interruption" }).waitFor();
   await edit.click(); assert.equal(await stem.inputValue(), "Recovered draft");
-  page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   assert.equal(await page.getByRole("dialog").count(), 1);
-  page.once("dialog", dialog => dialog.dismiss());
   assert.equal(await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:before-navigate", { cancelable: true }))), false);
   failSave = false; holdSave = null;
   await showPreview.click(); await save.click();
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.equal(writes, 1); assert.equal(latest.stem, "Recovered draft");
   assert.equal(await page.getByRole("button", { name: "Open editor" }).evaluate(el => document.activeElement === el), true);

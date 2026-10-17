@@ -1,5 +1,5 @@
 import QuestionClassificationFilters from "./QuestionClassificationFilters";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Question, QuestionType } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 import { questionBankChanged } from "../lib/questionAuthoring";
@@ -35,6 +35,16 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   const [offset, setOffset] = useState(0), [refresh, setRefresh] = useState(0);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
+  const editControls = useRef(new Map<string, HTMLButtonElement>()), returnToQuestion = useRef<string | null>(null);
+  const closeEditor = () => { returnToQuestion.current = editor?.question?.id ?? null; setEditor(null); };
+  useLayoutEffect(() => {
+    // Saving refreshes the list and can replace the original opening button
+    // while the standard editor remains open. Return to its current control.
+    if (!editor && !loading && returnToQuestion.current) {
+      editControls.current.get(returnToQuestion.current)?.focus({ preventScroll: true });
+      returnToQuestion.current = null;
+    }
+  }, [editor, loading]);
   const [importing, setImporting] = useState(false);
   const limit = 50;
   useEffect(() => {
@@ -116,13 +126,14 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
       {questions.map(q => <div key={q.id} className={q.archivedAt ? "admin-question-row is-archived" : "admin-question-row"}><span className="admin-question-id">#{q.sequenceNumber}</span>
         <div style={{ flex: 1, minWidth: 0 }}><div className="authoring-toolbar">{q.archivedAt && <span className="tag tag-warning" title={`Archived ${new Date(q.archivedAt).toLocaleString()}`}>Archived</span>}<span className="tag tag-neutral">{questionTypeLabel({ type: q.type, chooseCount: q.correctAnswers.length })}</span>{q.difficulty && <span className="tag">{q.difficulty}</span>}{q.needsReview && <span className="tag tag-accent-2">Needs review</span>}{q.tags.map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
           <p className="authoring-identifier">ID: {q.id}{q.externalId && ` · External ID: ${q.externalId}`}</p><span className="admin-question-stem">{q.stem}</span></div>
-        <div className="authoring-toolbar"><button type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-secondary" onClick={() => setArchived(q, !q.archivedAt)}>{q.archivedAt ? "Restore" : "Archive"}</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
+        <div className="authoring-toolbar"><button ref={element => { if (element) editControls.current.set(q.id, element); else editControls.current.delete(q.id); }} type="button" className="btn btn-secondary" onClick={() => setEditor({ key: Date.now(), question: q, type: q.type })}>Edit</button><button type="button" className="btn btn-secondary" onClick={() => setArchived(q, !q.archivedAt)}>{q.archivedAt ? "Restore" : "Archive"}</button><button type="button" className="btn btn-ghost" onClick={() => remove(q)}>Delete</button></div>
       </div>)}
     </>}
     <QuestionPageNavigation offset={shownOffset} total={total} limit={limit} loading={loading} onRequest={requestPage} />
-    {editor && <QuestionEditorDialog key={editor.key} examId={exam.id} question={editor.question} initialType={editor.type} onClose={() => setEditor(null)} onSaved={(q, next) => {
+    {editor && <QuestionEditorDialog key={editor.key} examId={exam.id} question={editor.question} initialType={editor.type} onClose={closeEditor} onSaved={(q, next) => {
       mutated(`Saved question #${q.sequenceNumber}${q.externalId ? ` (${q.externalId})` : ""}.`);
-      setEditor(next ? { key: editor.key + 1, question: null, type: q.type } : null);
+      setEditor(next ? { key: editor.key + 1, question: null, type: q.type }
+        : editor.question && !editor.question.content ? { ...editor, question: q } : null);
     }} />}
     {importing && <QuestionImportDialog examId={exam.id} onClose={() => setImporting(false)} onImported={() => mutated("Import completed. Review the per-question results in the import dialog.")} />}
   </div>;

@@ -1,22 +1,22 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { exportComponentPackage, formatAnswerText, type Question } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 import { inspectComponentQuestionDraft } from "../lib/componentQuestionDraft";
 import QuestionContent from "./QuestionContent";
+import { useQuestionDraftGuard } from "./QuestionDraftGuard";
 
 export default function ComponentQuestionEditor({ examId, question, onClose, onSaved }: {
   examId: string; question: Question; onClose: () => void; onSaved: (q: Question, next: boolean) => void;
 }) {
   const initial = useRef(JSON.stringify(exportComponentPackage({ id: examId, name: examId }, [{ ...question, externalId: question.externalId ?? question.id, options: question.options ?? undefined }]), null, 2));
   const [text, setText] = useState(initial.current), [error, setError] = useState(""), [busy, setBusy] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false), saved = useRef(false);
+  const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false);
   const backdropPress = useRef(false);
   const feedbackId = useId();
   const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
   const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
-  const canClose = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
-  const close = () => { if (canClose()) onClose(); };
+  const close = async () => { if (await guard.requestDiscard()) onClose(); };
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const element = dialog.current;
@@ -24,23 +24,18 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
     element?.showModal(); document.body.style.overflow = "hidden";
     return () => { element?.close(); document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
-  useEffect(() => {
-    const leave = (e: BeforeUnloadEvent) => { if (dirty || saving.current) { e.preventDefault(); e.returnValue = ""; } };
-    const navigate = (e: Event) => { if (!canClose()) e.preventDefault(); };
-    window.addEventListener("beforeunload", leave); window.addEventListener("prepdeck:before-navigate", navigate);
-    return () => { window.removeEventListener("beforeunload", leave); window.removeEventListener("prepdeck:before-navigate", navigate); };
-  }, [dirty, canClose]);
   const save = async () => {
     if (saving.current) return;
     if (!preview) { setError("Enter a valid package with exactly one question. Check component IDs, references and scoring."); return; }
     saving.current = true; setBusy(true); setError("");
     try {
       const result = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions/${question.id}`, { method: "PATCH", body: JSON.stringify({ ...preview, expectedRevision: question.revision }) });
-      saved.current = true; onSaved(result.question, false);
+      initial.current = text; onSaved(result.question, false);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save question"); }
     finally { saving.current = false; setBusy(false); }
   };
-  return <dialog ref={dialog} className="question-drawer-backdrop" aria-label="Edit component question"
+  const guard = useQuestionDraftGuard(dirty, saving, () => { void save(); });
+  return <><dialog ref={dialog} className="question-drawer-backdrop" aria-label="Edit component question" onKeyDown={guard.onKeyDown}
     onCancel={e => { e.preventDefault(); close(); }}
     onPointerDown={e => { backdropPress.current = e.isPrimary && e.button === 0 && e.target === e.currentTarget; }}
     onPointerCancel={() => { backdropPress.current = false; }}
@@ -61,6 +56,6 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
       </div>
       {error && <p role="alert">{error}</p>}
       {preview && <section aria-label="Component question preview"><QuestionContent src={preview.stem} content={preview.content} />{preview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={preview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(preview, preview.correctAnswers)}</p></section>}
-    </div><div className="question-drawer-footer"><div className="dialog-actions"><button className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" disabled={busy || !preview} onClick={save}>Save</button></div></div></div>
-  </dialog>;
+    </div><div className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : "No unsaved changes"}</p><button className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" disabled={busy || !preview} onClick={save}>Save</button></div></div></div>
+  </dialog>{guard.confirmation}</>;
 }

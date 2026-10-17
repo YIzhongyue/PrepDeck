@@ -1390,8 +1390,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   saveQuestionDraftRef.current = saveQuestionDraft;
 
-  const go = useCallback((id: ScreenId, options?: { newMock?: boolean }) => {
-    if (stateRef.current.switching || !allowAuthoringNavigation()) return;
+  const go = useCallback(async (id: ScreenId, options?: { newMock?: boolean }) => {
+    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
     requests.cancelLane("start");
     const update = scopedState("navigation");
     const clearError = errorLeftBehind(stateRef.current.actionError);
@@ -1413,13 +1413,16 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const closeMore = useCallback(() => setState({ more: false }), [setState]);
 
   const switchExam = useCallback(async (id: string | null, questionId?: string): Promise<boolean> => {
-    const original = stateRef.current;
-    if (original.switching || finishingMock.current) return false;
-    if (id === original.examId && !questionId) return true;
-    if (id && !original.exams.some(e => e.id === id)) {
+    const before = stateRef.current;
+    if (before.switching || finishingMock.current) return false;
+    if (id === before.examId && !questionId) return true;
+    if (id && !before.exams.some(e => e.id === id)) {
       setState({ actionError: "This exam is unavailable. Choose another exam." }); return false;
     }
-    if (!allowAuthoringNavigation()) return false;
+    if (!await allowAuthoringNavigation() || stateRef.current.switching || finishingMock.current) return false;
+    const original = stateRef.current;
+    if (id === original.examId && !questionId) return true;
+    if (id && !original.exams.some(e => e.id === id)) return false;
     if ((original.pStage === "live" || original.mStage === "live" || requests.has("start")) &&
       !window.confirm("Switch study context? Practice answers will be saved and the practice ended. Mock answers will be saved so you can resume; its timer keeps running.")) return false;
     setState({ switching: true, actionError: null });
@@ -1463,9 +1466,9 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   }, [requests, setState, saveQuestionDraft, savePracticeAnswer, persistMockDraft]);
   switchExamRef.current = switchExam;
   const setExamId = useCallback((id: string) => switchExam(id), [switchExam]);
-  const goToQuestionForReview = useCallback((examId: string, questionId: string) => {
+  const goToQuestionForReview = useCallback(async (examId: string, questionId: string) => {
     if (examId === stateRef.current.examId) {
-      if (stateRef.current.switching || !allowAuthoringNavigation()) return;
+      if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
       requests.cancelLane("start");
       const update = scopedState("navigation");
       void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
@@ -1478,8 +1481,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
 
   // implementation — open a specific Knowledge Point note from outside the
   // Knowledge Points screen (e.g. Learning Mode's related-notes card).
-  const openKnowledgePointNote = useCallback((noteId: string) => {
-    if (stateRef.current.switching || !allowAuthoringNavigation()) return;
+  const openKnowledgePointNote = useCallback(async (noteId: string) => {
+    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
     const update = scopedState("navigation");
     const clearError = errorLeftBehind(stateRef.current.actionError);
     void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update(s => ({ screen: "knowledgePoints", more: false, actionError: clearError(s), kpNoteId: noteId })))
@@ -1504,7 +1507,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (exam && exam.id !== s.examId) {
       if (!await switchExam(exam.id)) return false;
     } else {
-      if (s.switching || !allowAuthoringNavigation()) return false;
+      if (s.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return false;
       requests.cancelLane("start");
       try {
         await beforeWorkspaceNavigation();
@@ -1607,8 +1610,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // through the same save-drafts-then-navigate path as go(), and it always
   // returns to `pStage: "setup"`: arriving from Statistics must never drop the
   // user into the middle of a previous live session under new filters.
-  const openPracticeWithFilters = useCallback((filters: PracticeFilters) => {
-    if (stateRef.current.switching || !allowAuthoringNavigation()) return;
+  const openPracticeWithFilters = useCallback(async (filters: PracticeFilters) => {
+    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
     requests.cancelLane("start");
     const update = scopedState("navigation");
     void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
