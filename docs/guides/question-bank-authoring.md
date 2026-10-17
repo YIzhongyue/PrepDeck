@@ -40,10 +40,23 @@ unsaved edits. Long External IDs use a single line with an ellipsis in the
 header; the complete value stays in the editable field and header tooltip.
 See the [field layout examples](../screenshots/question-editor-fields.md).
 
-**Save** takes effect immediately. **Save & add next** opens an empty question in
-the same exam, retains only its type, and focuses the stem. Failed validation or
-server requests keep the current input. Dismissal and app/browser navigation
-protect unsaved edits. Imported questions use the same editor.
+Both editors show whether the draft has unsaved changes. **Save** takes effect
+immediately; when editing an existing standard question, it keeps the editor
+open and shows the saved revision. Further edits become unsaved again, and the
+next save uses that revision. **Ctrl+S** / **Cmd+S** invoke the same Save action,
+including validation and pending-request guards. Failed validation or server
+requests keep the current input. Component saves retain their existing behavior
+of returning to the question list.
+
+**Save & add next** appears only when creating a standard question. It opens an
+empty question in the same exam, retains only its type, and focuses the stem.
+Normal Save during creation returns to the list. Dismissing a dirty editor or
+navigating within the app opens a keyboard-accessible **Keep editing** / **Discard
+changes** confirmation. Cancellation restores focus and keeps the draft; approval
+continues the requested action. Browser unload retains its native warning. Saving
+blocks dismissal and duplicate shortcut requests. Imported questions use the same
+editor. See the [save/discard verification](../screenshots/question-save-discard.md)
+for [#151](https://github.com/YIzhongyue/PrepDeck/issues/151).
 
 Validation errors appear next to the field they belong to, including the
 individual option, and editing a field clears its errors. Changing the type

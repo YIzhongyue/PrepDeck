@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from "../lib/api";
 import { blankQuestion, formPayload, questionForm, type QuestionForm } from "../lib/questionAuthoring";
 import QuestionDraftPreview from "./QuestionDraftPreview";
 import QuestionTagPicker from "./QuestionTagPicker";
+import { useQuestionDraftGuard } from "./QuestionDraftGuard";
 
 // Undo for a type change or option removal. It is offered only while the
 // type/options/answers it would restore are exactly as the action left them,
@@ -64,6 +65,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const [rebased, setRebased] = useState("");
   const [undo, setUndo] = useState<Undo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedRevision, setSavedRevision] = useState<number | null>(null);
   const [preview, setPreview] = useState(false);
   // Keep this query in step with the workspace layout in app.css.
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
@@ -73,13 +75,12 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const fields = useRef<HTMLDivElement>(null), previewPane = useRef<HTMLElement>(null), viewSwitch = useRef<HTMLDivElement>(null);
   const lastField = useRef<HTMLElement | null>(null), editScroll = useRef(0);
   const restorePaneFocus = useRef<"edit" | "preview" | null>(null);
-  const saving = useRef(false), saved = useRef(false), focusAfter = useRef<string | null>(null);
+  const saving = useRef(false), focusAfter = useRef<string | null>(null);
   // Set by a save attempt only: removing errors while typing must never move focus.
   const focusInvalid = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null), stem = useRef<HTMLTextAreaElement>(null);
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const mayLeave = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
-  const close = () => { if (mayLeave()) onClose(); };
+  const close = async () => { if (await guard.requestDiscard()) onClose(); };
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const element = dialog.current;
@@ -145,12 +146,6 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     dialog.current?.querySelector<HTMLElement>(focusAfter.current)?.focus();
     focusAfter.current = null;
   });
-  useEffect(() => {
-    const unload = (e: BeforeUnloadEvent) => { if (!saved.current && (dirty || saving.current)) { e.preventDefault(); e.returnValue = ""; } };
-    const navigate = (e: Event) => { if (!mayLeave()) e.preventDefault(); };
-    window.addEventListener("beforeunload", unload); window.addEventListener("prepdeck:before-navigate", navigate);
-    return () => { window.removeEventListener("beforeunload", unload); window.removeEventListener("prepdeck:before-navigate", navigate); };
-  }, [dirty, mayLeave]);
   // `$.options` matches only `$.options`, `$.options[…]` and `$.options.…`;
   // `options[1]` must not also match `options[10]`.
   const inField = (field: string, path: string) => path === `$.${field}` || (!field.endsWith("]") && path.startsWith(`$.${field}[`)) || path.startsWith(`$.${field}.`);
@@ -176,7 +171,9 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
     try {
       const { question: result } = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions${base ? `/${base.id}` : ""}`, {
         method: base ? "PATCH" : "POST", body: JSON.stringify({ ...body, externalId: form.externalId || null, expectedRevision: base?.revision }) });
-      saved.current = true;
+      const canonical = questionForm(result);
+      setBase(result); setInitial(canonical); setForm(canonical);
+      setSavedRevision(result.revision); setRebased("");
       onSaved(result, addNext);
     } catch (err) {
       const details = err instanceof ApiError ? err.body as { issues?: ValidationIssue[]; code?: string } | null : null;
@@ -189,17 +186,19 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       setError(conflict ? "Someone saved a newer version of this question while you were editing." : err instanceof Error ? err.message : "Could not save this question. Your input has been kept.");
     } finally { saving.current = false; setBusy(false); }
   };
+  const guard = useQuestionDraftGuard(dirty, saving, () => { void save(false); });
   // Stale save recovery: load the latest revision, then either keep the draft
   // (saved against the new revision) or replace it.
   const loadLatest = async (keepDraft: boolean) => {
     if (!base || saving.current) return;
-    if (!keepDraft && !window.confirm("Discard your edits and load the latest version?")) return;
+    if (!keepDraft && !await guard.requestDiscard({ title: "Discard edits and load latest?", description: "Your unsaved changes will be replaced with the latest saved question.", action: "Discard and load latest" })) return;
+    if (saving.current) return;
     saving.current = true; setBusy(true);
     try {
       const { question: latest } = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions/${base.id}`);
       const before = questionForm(base), after = questionForm(latest);
       const changed = (Object.keys(after) as (keyof QuestionForm)[]).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(k => FIELD_LABELS[k] ?? k);
-      setBase(latest); setInitial(after); setIssues([]); setError(""); setStale(false); setUndo(null);
+      setBase(latest); setInitial(after); setIssues([]); setError(""); setStale(false); setUndo(null); setSavedRevision(null);
       setPreview(false);
       if (!keepDraft) setForm(after);
       setRebased(`Loaded revision ${latest.revision}.${changed.length ? ` Changed since you opened it: ${changed.join(", ")}.` : ""}${keepDraft ? " Your edits are kept; review them and save again." : ""}`);
@@ -256,7 +255,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       setForm(activeUndo.restore); setUndo(null);
       focusAfter.current = at === "type" ? "#question-type" : null;
     }}>Undo</button></p>;
-  return <dialog ref={dialog} autoFocus tabIndex={-1} className="question-drawer-backdrop" aria-modal="true" aria-labelledby="question-editor-title"
+  return <><dialog ref={dialog} autoFocus tabIndex={-1} className="question-drawer-backdrop" aria-modal="true" aria-labelledby="question-editor-title" onKeyDown={guard.onKeyDown}
     onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget) close(); }}>
     <div className="question-editor question-drawer question-editor-responsive">
       <header className="question-drawer-header">
@@ -324,12 +323,12 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>Discard my edits</button>
         </div>}</div>}
       {issues.length > 0 && <p role="alert" className="authoring-errors">Check the highlighted fields. Your input has been kept.</p>}
-      <div className="dialog-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button>
-        <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => save(true)}>Save &amp; add next</button>
+      <div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : savedRevision !== null ? `Saved revision ${savedRevision}. No unsaved changes.` : "No unsaved changes"}</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button>
+        {!base && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => save(true)}>Save &amp; add next</button>}
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => save(false)}>{busy ? "Saving…" : "Save"}</button></div>
       </footer>
     </div>
-  </dialog>;
+  </dialog>{guard.confirmation}</>;
 }
 
 export default function QuestionEditorDialog(props: Parameters<typeof LegacyQuestionEditorDialog>[0]) {

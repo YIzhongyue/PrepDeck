@@ -529,6 +529,8 @@ header .exam-selector--compact .exam-selector__menu {
 .authoring-checkbox + .authoring-identifier { margin: 6px 0 0; }
 .authoring-errors { color: var(--color-danger, #b42318); font-size: 12px; overflow-wrap: anywhere; }
 .authoring-feedback { padding: 12px 18px; }
+.authoring-save-status { margin: 0 auto 0 0; font-size: 13px; }
+.authoring-discard-dialog { max-width: 480px; }
 .authoring-preview { border: 1px solid var(--color-divider); border-radius: 16px; padding: 16px; overflow-wrap: anywhere; }
 /* The legacy Markdown editor keeps its draft and both scroll containers mounted.
    ComponentQuestionEditor retains its existing layout. At 1100px the two panes

@@ -54,7 +54,7 @@ const { outputFiles } = await build({ stdin: { contents: `
     const [question, setQuestion] = useState(() => freeze(questions[new URLSearchParams(location.search).get('type') || 'single_choice']));
     const [open, setOpen] = useState(false); window.savedQuestion = question;
     return <><button onClick={()=>setOpen(true)}>Open editor</button>{open && <QuestionEditorDialog examId="exam" question={question} initialType="single_choice"
-      onClose={()=>setOpen(false)} onSaved={q=>{setQuestion(freeze(q)); setOpen(false);}}/>}</>;
+      onClose={()=>setOpen(false)} onSaved={q=>setQuestion(freeze(q))}/>}</>;
   }
   createRoot(document.getElementById('root')).render(location.pathname === '/learning' ? <Reference/> : <Editor/>);
 `, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
@@ -237,6 +237,8 @@ try {
       await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/learning-card-preview-${width}.png` });
     }
     await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "detached" });
     assert.equal(saved.stem, draft.stem); assert.equal(saved.explanation, draft.explanation);
     assert.equal(saved.needsReview, draft.needsReview);
