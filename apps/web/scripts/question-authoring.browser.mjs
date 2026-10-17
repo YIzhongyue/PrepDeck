@@ -9,6 +9,7 @@ import { build } from "esbuild";
 import { readBody } from "./browser-fixture.mjs";
 import { normalizeTagName } from "../../../packages/shared/src/questionTags.ts";
 import { normalizeImportFile, exportComponentPackage } from "../../../packages/shared/src/question-components.ts";
+import { validateImportFile } from "../../../packages/shared/src/import-validate.ts";
 import { getImportSchemas } from "../../../packages/shared/src/pdf-layouts.ts";
 const pdfSchemas = getImportSchemas();
 let importedFile = null, schemaFailures = 0;
@@ -520,6 +521,87 @@ try {
   const jsonEditor = page.getByRole("textbox", { name: "Question package JSON" });
   const edited = JSON.parse(await jsonEditor.inputValue());
   edited.questions[0].body[0].text = "Edited structured prompt";
+  const structuredSave = structuredDialog.getByRole("button", { name: "Save", exact: true });
+  const structuredPreview = structuredDialog.getByRole("region", { name: "Component question preview" });
+  const componentPatchRequests = [];
+  page.on("request", request => {
+    if (request.method() === "PATCH" && new URL(request.url()).pathname === "/api/exams/exam/questions/structured") componentPatchRequests.push(request.postDataJSON());
+  });
+  const assertInvalidDraft = async source => {
+    assert.equal(await jsonEditor.inputValue(), source, "diagnostics do not rewrite raw JSON");
+    assert.equal(await jsonEditor.getAttribute("aria-invalid"), "true");
+    assert.equal(await structuredSave.isDisabled(), true);
+    assert.equal(await structuredPreview.count(), 0, "invalid drafts retain the existing hidden-preview behavior");
+    assert.equal(await jsonEditor.evaluate(el => el === document.activeElement), true, "feedback never steals typing focus");
+    const description = await jsonEditor.getAttribute("aria-describedby");
+    assert.ok(description);
+    return structuredDialog.locator(`[id="${description}"]`);
+  };
+  for (const newline of ["\n", "\r\n"]) {
+    const broken = `{${newline}  "broken": x${newline}}`;
+    await jsonEditor.fill(broken);
+    // Textarea values normalize CRLF to LF; line/column should stay stable.
+    const feedback = await assertInvalidDraft(broken.replaceAll("\r\n", "\n"));
+    await feedback.getByText(/line 2, column 13/i).waitFor();
+  }
+  await jsonEditor.press("Tab");
+  assert.equal(await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await jsonEditor.evaluate(el => el === document.activeElement), true);
+  const invalidPackages = [
+    ["missing field", draft => { delete draft.exam.name; }],
+    ["duplicate component ID", draft => { draft.questions[0].body.push(structuredClone(draft.questions[0].body[0])); }],
+    ["unknown reference", draft => { draft.questions[0].stimulusRefs = ["missing"]; }],
+    ["invalid scoring", draft => { draft.questions[0].scoring.correctAnswers = ["invalid matching answer"]; }],
+    ["long message", draft => { draft.questions[0].body.find(block => block.type === "figure").assetId = "missing-" + "unbroken-reference".repeat(10); }],
+  ];
+  for (const [label, mutate] of invalidPackages) {
+    const draft = structuredClone(edited); mutate(draft);
+    const source = JSON.stringify(draft, null, 2), expected = validateImportFile(draft).issues;
+    assert.ok(expected.length, label);
+    if (label === "long message") assert.ok(expected.some(issue => issue.message.length > 180));
+    await jsonEditor.fill(source);
+    const feedback = await assertInvalidDraft(source);
+    const shown = await feedback.locator("li").allTextContents();
+    for (const issue of expected) assert.ok(shown.some(text => text.includes(issue.path) && text.includes(issue.message)), `${label}: show original path/message`);
+    for (const width of label === "long message" ? [390, 1280] : []) {
+      await page.setViewportSize({ width, height: 844 });
+      await feedback.scrollIntoViewIfNeeded();
+      assert.ok(await page.locator(".question-drawer-body").evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${width}px error wraps within drawer`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}px page does not overflow`);
+      if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/component-validation-${width}.png` });
+    }
+  }
+  for (const [source, expected] of [
+    [JSON.stringify({ ...edited, schemaVersion: "1.0" }), /schemaVersion/],
+    [JSON.stringify({ ...edited, questions: [edited.questions[0], { ...edited.questions[0], externalId: "second" }] }), /exactly one/],
+  ]) {
+    await jsonEditor.fill(source); const feedback = await assertInvalidDraft(source);
+    await feedback.getByText(expected).first().waitFor();
+  }
+  assert.equal(componentPatchRequests.length, 0, "invalid drafts never issue a save request");
+  await jsonEditor.fill(JSON.stringify(edited, null, 2));
+  assert.notEqual(await jsonEditor.getAttribute("aria-invalid"), "true");
+  assert.equal(await structuredSave.isEnabled(), true);
+  await structuredPreview.waitFor();
+  assert.equal(await jsonEditor.evaluate(el => el === document.activeElement), true);
+  // Existing stale rejection must keep the exact corrected draft and preview.
+  rows[0].revision++;
+  await structuredSave.click();
+  await structuredDialog.getByRole("alert").filter({ hasText: "This question has changed. Reopen it before saving." }).waitFor();
+  assert.equal(await jsonEditor.inputValue(), JSON.stringify(edited, null, 2));
+  assert.equal(rows[0].content.body[0].text, componentFile.questions[0].body[0].text);
+  await structuredPreview.waitFor();
+  assert.equal(componentPatchRequests.length, 1);
+  assert.equal(componentPatchRequests[0].expectedRevision, 1);
+  page.once("dialog", dialog => dialog.accept());
+  await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await structuredDialog.waitFor({ state: "detached" });
+  // The existing component editor has no in-place revision recovery. Refresh
+  // the list before reopening rather than changing that behavior in this slice.
+  await page.reload();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await structuredDialog.waitFor();
   await jsonEditor.fill(JSON.stringify(edited, null, 2));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".question-drawer").evaluate(async e => { await Promise.all(e.getAnimations().map(a => a.finished)); });
@@ -533,6 +615,9 @@ try {
   await structuredDialog.waitFor({ state: "detached" });
   assert.equal(rows[0].content.body[0].text, "Edited structured prompt");
   assert.deepEqual(rows[0].content.assets, componentFile.assets);
+  assert.equal(componentPatchRequests.length, 2);
+  assert.equal(componentPatchRequests[1].expectedRevision, 2);
+  console.log("PASS component JSON diagnostics: syntax locations, original semantic paths/messages, long errors at 390px/desktop, keyboard focus, correction, stale retention and successful save");
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export this page", exact: true }).click();
   const download = await downloadEvent;

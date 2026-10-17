@@ -212,7 +212,16 @@ files; exam creation and shared-bank writes/exports require an administrator.
 Admin MCP uses `admin_preview_import` then `admin_execute_import`.
 
 Structured questions open a JSON editor with a live preview and optimistic
-revision checks. Save the component source; changing only its derived flat stem
+revision checks. Malformed JSON shows a syntax explanation and one-based line
+and column; a string error points to the start of that string. If an unusually
+deep malformed document prevents locating the error, the editor reports that
+limitation without inventing a position. Package validation lists the existing
+paths and messages below the JSON field, including the editor's schema 2.0 and
+exactly-one-question requirements. Feedback does not move typing focus or rewrite
+the draft. Save stays disabled and the preview stays hidden until the draft is
+valid. See [verification examples](../screenshots/component-json-errors.md).
+
+Save the component source; changing only its derived flat stem
 or options is rejected. **Export this page** downloads a portable 2.0 package;
 `GET /api/exams/:examId/questions/export` and `admin_export_questions` expose
 paginated export with `nextOffset`. Export shared-material revisions separately

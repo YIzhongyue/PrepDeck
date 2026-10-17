@@ -25,6 +25,7 @@
     "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
     "@untitledui/icons": "^0.0.23",
+    "jsonc-parser": "^3.3.1",
     "marked": "^18.0.14",
     "mermaid": "^12.0.0",
     "react": "^19.3.0",
