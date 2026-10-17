@@ -70,6 +70,7 @@ records the gaps between the original specification, current code and open issue
 | [Content mutation audit](operations/content-mutation-audit.md) | Actor, entry point, target and outcome across browser, import and MCP writes. |
 | [Scheduled jobs](operations/scheduled-jobs.md) | Review email, unsubscribe, image cleanup, the abandoned-practice sweep and operational caveats. |
 | [Component question UI](screenshots/component-questions.md) | Synthetic desktop/mobile evidence for component rendering, answering and editing. |
+| [Matching side identity](screenshots/matching-side-content.md) | Shared rich-renderer side selection, corrected learner impact, and synthetic browser regression evidence. |
 | [Screenshot policy](screenshots/README.md) | Where to add current, sanitized visual evidence. |
 | [Login layout](screenshots/login-layout.md) | Desktop/mobile login layout and browser verification. |
 

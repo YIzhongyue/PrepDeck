@@ -22,9 +22,11 @@ export default function ComponentContent({ content, blocks }: { content: Questio
     }
   })}</div>;
 }
-export function ComponentOptionContent({ content, optionId }: { content: QuestionContentModel; optionId: string }) {
+// Normalized matching options project the left side; right-side callers must
+// select that namespace explicitly because IDs can overlap across the sides.
+export function ComponentOptionContent({ content, optionId, matchingSide = "left" }: { content: QuestionContentModel; optionId: string; matchingSide?: "left" | "right" }) {
   const i = content.interaction;
-  const options = i.type === "text" ? [] : i.type === "match" ? [...i.left, ...i.right] : i.options;
+  const options = i.type === "text" ? [] : i.type === "match" ? i[matchingSide] : i.options;
   const option = options.find(o => o.id === optionId);
   if (!option) return null;
   if (option.body) return <ComponentContent content={content} blocks={option.body} />;
