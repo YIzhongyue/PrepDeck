@@ -521,6 +521,9 @@ header .exam-selector--compact .exam-selector__menu {
 /* External IDs have no length cap. Only this fixed-header copy is shortened;
    the editable field and tooltip retain the full value. */
 .authoring-external-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component-editor-identity { display: flex; gap: 8px; }
+.component-editor-identity > span { flex-shrink: 0; }
+.component-editor-identity > .authoring-external-id { flex: 0 1 auto; min-width: 0; }
 /* The review flag is a single boolean, so it reads as one clickable row
    rather than a labelled control stacked above its input like the rest. */
 .authoring-checkbox { display: flex; gap: 8px; align-items: center; cursor: pointer; }
