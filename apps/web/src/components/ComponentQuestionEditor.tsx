@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { exportComponentPackage, formatAnswerText, type Question } from "@prepdeck/shared";
-import { apiFetch } from "../lib/api";
+import { ApiError, apiFetch } from "../lib/api";
 import { inspectComponentQuestionDraft } from "../lib/componentQuestionDraft";
 import { formatJsonSource, type JsonSelection } from "../lib/formatJsonSource";
 import QuestionContent from "./QuestionContent";
@@ -11,6 +11,24 @@ type ComponentQuestionEditorProps = {
 };
 
 type JsonPosition = JsonSelection & { top: number; left: number; paneTop: number };
+function packageText(examId: string, question: Question) {
+  return JSON.stringify(exportComponentPackage({ id: examId, name: examId }, [{ ...question, externalId: question.externalId ?? question.id, options: question.options ?? undefined }]), null, 2);
+}
+function changedFields(before: Question, after: Question) {
+  const fields: [string, unknown, unknown][] = [
+    ["External ID", before.externalId, after.externalId],
+    ["Question body", before.content?.body, after.content?.body],
+    ["Interaction", before.content?.interaction, after.content?.interaction],
+    ["Shared material", before.content?.stimuli, after.content?.stimuli],
+    ["Assets", before.content?.assets, after.content?.assets],
+    ["Correct response", before.correctAnswers, after.correctAnswers],
+    ["Official explanation", before.explanation, after.explanation],
+    ["Tags", before.tags, after.tags], ["Difficulty", before.difficulty, after.difficulty],
+    ["Needs review", before.needsReview, after.needsReview], ["Points", before.points, after.points],
+    ["Archive status", before.archivedAt, after.archivedAt]
+  ];
+  return fields.filter(([, a, b]) => JSON.stringify(a) !== JSON.stringify(b)).map(([label]) => label);
+}
 function restoreJsonPosition(field: HTMLTextAreaElement, pane: HTMLDivElement | null, position: JsonPosition) {
   field.focus({ preventScroll: true });
   field.setSelectionRange(position.start, position.end, position.direction);
@@ -25,11 +43,15 @@ export default function ComponentQuestionEditor(props: ComponentQuestionEditorPr
 }
 
 function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: ComponentQuestionEditorProps) {
-  const initial = useRef(JSON.stringify(exportComponentPackage({ id: examId, name: examId }, [{ ...question, externalId: question.externalId ?? question.id, options: question.options ?? undefined }]), null, 2));
+  const [openingText] = useState(() => packageText(examId, question));
+  const initial = useRef(openingText);
+  const [base, setBase] = useState(question), [stale, setStale] = useState(false), [rebased, setRebased] = useState("");
   const [text, setText] = useState(initial.current), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false), mounted = useRef(false);
   const backdropPress = useRef(false);
-  const feedbackId = useId();
+  const feedbackId = useId(), titleId = useId();
+  const recovery = useRef<HTMLDivElement>(null), serverFeedback = useRef<HTMLDivElement>(null);
+  const requestFailed = useRef(false);
   const feedback = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
   const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
@@ -39,6 +61,14 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const shownPreview = preview ?? lastValidPreview.current;
   const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
+  useLayoutEffect(() => {
+    // Disabling the active control can move browser focus to the page body.
+    // Only request completion moves focus to failure feedback. Formatter errors
+    // keep the textarea's native history, selection and restored editing focus.
+    if (busy) pane.current?.focus({ preventScroll: true });
+    else if (requestFailed.current) { requestFailed.current = false; serverFeedback.current?.focus(); }
+  }, [busy, error]);
+  useLayoutEffect(() => { if (rebased) recovery.current?.focus(); }, [rebased]);
   const formatText = () => {
     const field = textarea.current;
     if (saving.current || !field) return;
@@ -83,14 +113,38 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
     if (!preview) { feedback.current?.focus(); return; }
     saving.current = true; setBusy(true); setError("");
     try {
-      const result = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions/${question.id}`, { method: "PATCH", body: JSON.stringify({ ...preview, expectedRevision: question.revision }) });
+      const result = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions/${base.id}`, { method: "PATCH", body: JSON.stringify({ ...preview, expectedRevision: base.revision }) });
       if (!mounted.current) return;
       initial.current = text; onSaved(result.question, false);
-    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Could not save question"); }
+    } catch (e) { if (mounted.current) {
+      requestFailed.current = true;
+      setError(e instanceof Error ? e.message : "Could not save question");
+      setStale(e instanceof ApiError && e.status === 409 && (e.body as { code?: string } | null)?.code === "stale_question");
+    } }
     finally { saving.current = false; if (mounted.current) setBusy(false); }
   };
   const guard = useQuestionDraftGuard(dirty, saving, () => { void save(); });
-  return <><dialog ref={dialog} className="question-drawer-backdrop" aria-label="Edit component question" onKeyDown={guard.onKeyDown}
+  const loadLatest = async (keepDraft: boolean) => {
+    if (saving.current) return;
+    if (!keepDraft && !await guard.requestDiscard({ title: "Discard edits and load latest?", description: "Your raw JSON will be replaced with the latest saved question.", action: "Discard and load latest" })) return;
+    if (saving.current || !mounted.current) return;
+    saving.current = true; setBusy(true);
+    try {
+      const { question: latest } = await apiFetch<{ question: Question }>(`/api/exams/${examId}/questions/${base.id}`);
+      if (!mounted.current) return;
+      // Validate/export before changing any baseline. A failed load or export
+      // leaves the raw draft, revision, retained preview and retry actions intact.
+      const latestText = packageText(examId, latest), changed = changedFields(base, latest);
+      initial.current = latestText; setBase(latest); setError(""); setStale(false);
+      if (!keepDraft) setText(latestText);
+      setRebased(`Loaded revision ${latest.revision}. ${changed.length ? `Changed since revision ${base.revision}: ${changed.join(", ")}.` : `No content changes since revision ${base.revision}.`} ${keepDraft ? "Your raw JSON is kept." : "Your draft now matches the latest saved question."} Review the question, then Save when ready.`);
+    } catch (e) { if (mounted.current) {
+      requestFailed.current = true;
+      setError(`Could not load the latest version: ${e instanceof Error ? e.message : "Please try again."}`);
+    } }
+    finally { saving.current = false; if (mounted.current) setBusy(false); }
+  };
+  return <><dialog ref={dialog} className="question-drawer-backdrop" aria-labelledby={titleId} aria-modal="true" aria-busy={busy} onKeyDown={guard.onKeyDown}
     onCancel={e => { e.preventDefault(); close(); }}
     onPointerDown={e => { backdropPress.current = e.isPrimary && e.button === 0 && e.target === e.currentTarget; }}
     onPointerCancel={() => { backdropPress.current = false; }}
@@ -102,8 +156,20 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       // editor and ends outside it. Only a press that began on the wash closes.
       if (startedOutside) close();
     }}>
-    <div className="question-drawer question-editor"><div ref={pane} className="question-drawer-body">
-      <h3>Edit component question</h3><p>Edit the structured package. The preview updates when the question is valid.</p>
+    <div className="question-drawer question-editor">
+      <header className="question-drawer-header">
+        <div className="authoring-toolbar"><h3 id={titleId} className="dialog-title">Edit component question</h3>
+          <button type="button" className="btn btn-ghost question-drawer-close" aria-label="Close question editor" disabled={busy} onClick={close}>×</button></div>
+        <p className="authoring-identifier component-editor-identity"><span>#{base.sequenceNumber}</span><span className="authoring-external-id" title={base.id}>ID: {base.id}</span><span>revision {base.revision}</span></p>
+      </header>
+      <div ref={pane} className="question-drawer-body" tabIndex={-1}>
+      <p>Edit the structured package. The preview updates when the question is valid.</p>
+      <div ref={recovery} tabIndex={-1} hidden={!rebased}><p role="status" className="authoring-rebased">{rebased}</p></div>
+      {(error || stale) && <div ref={serverFeedback} role="alert" className="authoring-errors" tabIndex={-1}><p>{error || "This question has changed."}{stale && " Your raw JSON is kept."}</p>
+        {stale && <div className="authoring-toolbar">
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => loadLatest(true)}>Load latest and keep my edits</button>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>Discard my edits</button>
+        </div>}</div>}
       <div><button type="button" className="btn btn-secondary" disabled={busy} onClick={formatText}>Format JSON</button></div>
       <label>Question package JSON<textarea ref={textarea} className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId}
         onBlur={e => { editScroll.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 }; }}
@@ -112,11 +178,10 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
         {syntaxError && <p>JSON syntax error{syntaxError.line !== undefined && syntaxError.column !== undefined ? ` at line ${syntaxError.line}, column ${syntaxError.column}` : ""}: {syntaxError.message}</p>}
         {issues.length > 0 && <><p>Package validation errors:</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
       </div>
-      {error && <p role="alert">{error}</p>}
       <section aria-label="Component question preview">
         <p role="status" hidden={Boolean(preview)}>{shownPreview ? "Preview is out of date. Showing the most recent valid draft." : "No valid preview yet. Correct the package errors to see a preview."}</p>
         {shownPreview && <><QuestionContent src={shownPreview.stem} content={shownPreview.content} />{shownPreview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={shownPreview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(shownPreview, shownPreview.correctAnswers)}</p></>}
       </section>
-    </div><div className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : "No unsaved changes"}</p><button className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={save}>Save</button></div></div></div>
+    </div><footer className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : "No unsaved changes"}</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button type="button" className="btn btn-primary" disabled={busy} onClick={save}>Save</button></div></footer></div>
   </dialog>{guard.confirmation}</>;
 }

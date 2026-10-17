@@ -136,6 +136,11 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
     <QuestionPageNavigation offset={shownOffset} total={total} limit={limit} loading={loading} onRequest={requestPage} />
     {editor && <QuestionEditorDialog key={editor.key} examId={exam.id} question={editor.question} initialType={editor.type} onClose={closeEditor} onSaved={(q, next) => {
       mutated(`Saved question #${q.sequenceNumber}${q.externalId ? ` (${q.externalId})` : ""}.`);
+      if (editor.question?.content && !next) {
+        // Component Save closes immediately as the list refreshes. Focus the
+        // stable list fallback before its old opening control is replaced.
+        setLoading(true); closeEditor(); return;
+      }
       setEditor(next ? { key: editor.key + 1, question: null, type: q.type }
         : editor.question && !editor.question.content ? { ...editor, question: q } : null);
     }} />}
