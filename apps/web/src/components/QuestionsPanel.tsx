@@ -36,12 +36,16 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [editor, setEditor] = useState<{ key: number; question: Question | null; type: QuestionType } | null>(null);
   const editControls = useRef(new Map<string, HTMLButtonElement>()), returnToQuestion = useRef<string | null>(null);
+  const listHeading = useRef<HTMLHeadingElement>(null);
   const closeEditor = () => { returnToQuestion.current = editor?.question?.id ?? null; setEditor(null); };
   useLayoutEffect(() => {
     // Saving refreshes the list and can replace the original opening button
     // while the standard editor remains open. Return to its current control.
-    if (!editor && !loading && returnToQuestion.current) {
-      editControls.current.get(returnToQuestion.current)?.focus({ preventScroll: true });
+    if (!editor && returnToQuestion.current) {
+      // A saved edit can stop matching the active filters. Keep those filters
+      // and return to a stable place in this list when its row has disappeared
+      // or is loading. Do it now; a later refresh must not steal focus again.
+      (editControls.current.get(returnToQuestion.current) ?? listHeading.current)?.focus({ preventScroll: true });
       returnToQuestion.current = null;
     }
   }, [editor, loading]);
@@ -104,7 +108,7 @@ function ExamQuestionsPanel({ exam }: { exam: { id: string } }) {
     catch (err) { setError(err instanceof Error ? err.message : "Could not delete question."); }
   };
   return <div className="admin-question-list">
-    <div className="admin-question-list-head"><div style={{ marginRight: "auto" }}><h3>Questions</h3><span>{total ? `${shownOffset + 1}–${Math.min(shownOffset + limit, total)}` : "0"} of {total}</span></div>
+    <div className="admin-question-list-head"><div style={{ marginRight: "auto" }}><h3 ref={listHeading} tabIndex={-1}>Questions</h3><span>{total ? `${shownOffset + 1}–${Math.min(shownOffset + limit, total)}` : "0"} of {total}</span></div>
       <button type="button" className="btn btn-secondary" disabled={loading || !questions.length} onClick={exportPage}>Export this page</button>
       <button type="button" className="btn btn-secondary" onClick={() => setImporting(true)}>Import JSON</button>
       <button type="button" className="btn btn-primary" onClick={() => setEditor({ key: Date.now(), question: null, type: "single_choice" })}>Add question</button></div>

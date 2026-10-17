@@ -14,7 +14,7 @@
 // every entry this app writes carries its position, and history.go() returns
 // by the same distance.
 
-import { useCallback, useEffect, useRef, type MouseEvent } from "react";
+import { useCallback, useEffect, useReducer, useRef, type MouseEvent } from "react";
 import { parseRoute, routePath, routeTitle, type Route } from "../lib/routes";
 import type { ScreenId } from "../types";
 import { usePrepDeck, type AppState } from "./PrepDeckContext";
@@ -60,7 +60,10 @@ export function useUrlRouting(): void {
   const { state, navigateTo } = usePrepDeck();
   const index = useRef(indexOf(window.history.state) ?? 0);
   const written = useRef<Route | null>(null);
-  const ignoredPops = useRef(0);
+  const pendingPop = useRef<{ destination: number | null } | null>(null);
+  const [popRevision, finishPop] = useReducer((revision: number) => revision + 1, 0);
+  const navigateRef = useRef(navigateTo);
+  navigateRef.current = navigateTo;
 
   const route = currentRoute(state);
   const path = routePath(route);
@@ -73,6 +76,9 @@ export function useUrlRouting(): void {
   useEffect(() => {
     if (!settled) return;
     document.title = title;
+    // A confirmation may outlive several Back/Forward events. Do not write
+    // the store's route over an intervening entry while reconciling them.
+    if (pendingPop.current) return;
     const current = routeRef.current;
     const here = `${window.location.pathname}${window.location.search}`;
     const previous = written.current;
@@ -89,38 +95,48 @@ export function useUrlRouting(): void {
       index.current += 1;
       window.history.pushState({ prepdeckIndex: index.current } satisfies EntryState, "", path);
     }
-  }, [settled, path, title]);
+  }, [settled, path, title, popRevision]);
 
   useEffect(() => {
+    const reconcile = (pending: { destination: number | null }) => {
+      if (pendingPop.current !== pending || pending.destination == null) return;
+      const current = indexOf(window.history.state);
+      if (current != null && current !== pending.destination) {
+        // Always measure from where the browser is NOW, never from the first
+        // pop's captured position. Only the expected destination ends restore.
+        window.history.go(pending.destination - current);
+        return;
+      }
+      index.current = pending.destination;
+      pendingPop.current = null;
+      written.current = null;
+      // The route effect may already have run while waiting; refs alone do
+      // not rerun it to restore the canonical URL/title/written route.
+      finishPop();
+    };
     const onPop = (event: PopStateEvent) => {
       const target = indexOf(event.state);
-      if (ignoredPops.current > 0) {
-        ignoredPops.current -= 1;
-        if (target != null) index.current = target;
+      if (pendingPop.current) {
+        // One decision owns its original destination. Further traversals are
+        // observed, not sent through another guard that could race its answer.
+        reconcile(pendingPop.current);
         return;
       }
       const asked = parseRoute(window.location.pathname, window.location.search);
       const fallback: Route = { screen: "dash", examSlug: null, learningSequence: null, knowledgePointId: null };
       const from = index.current;
-      void navigateTo(asked ?? fallback).then((moved) => {
-        if (moved) {
-          if (target != null) index.current = target;
-          written.current = null;
-          return;
-        }
-        // Refused: return to the entry the app is still showing.
-        const distance = target == null ? null : target - from;
-        if (distance) {
-          ignoredPops.current += 1;
-          window.history.go(-distance);
-        } else {
-          window.history.pushState({ prepdeckIndex: from } satisfies EntryState, "", routePath(routeRef.current));
-        }
-      });
+      const pending = { destination: null as number | null };
+      pendingPop.current = pending;
+      const decide = (moved: boolean) => {
+        if (pendingPop.current !== pending) return;
+        pending.destination = moved && target != null ? target : from;
+        reconcile(pending);
+      };
+      void navigateRef.current(asked ?? fallback).then(decide, () => decide(false));
     };
     window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [navigateTo]);
+    return () => { window.removeEventListener("popstate", onPop); pendingPop.current = null; };
+  }, []);
 }
 
 /**
