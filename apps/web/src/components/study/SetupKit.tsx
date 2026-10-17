@@ -56,21 +56,19 @@ export function SetupRow({ title, desc, cols, children }: { title: string; desc?
   );
 }
 
-/* A radio-style card. The accessible name is `label` plus the optional count,
-   so a card reads "Bookmarked 4" and its description is announced separately. */
+/* A radio-style card. Its name follows all visible text in reading order:
+   label, optional count, then description (WCAG Label in Name). */
 export function ChoiceCard({ icon, label, count, desc, on, onSelect }: {
   icon: string; label: string; count?: number; desc: string; on: boolean; onSelect: () => void;
 }) {
-  const descId = useId();
   return (
     <button
       type="button" className="st-choice" aria-pressed={on} onClick={onSelect} data-empty={count === 0 || undefined}
-      aria-label={count == null ? label : `${label} ${count}`} aria-describedby={descId}
     >
       <span className="st-choice-tile"><Icon d={icon} size={18} /></span>
       <span className="st-choice-main">
         <span className="st-choice-label">{label}{count != null && <span className="st-choice-count">{count}</span>}</span>
-        <span id={descId} className="st-choice-desc">{desc}</span>
+        <span className="st-choice-desc">{desc}</span>
       </span>
       <span className="st-radio" aria-hidden="true" />
     </button>
@@ -195,7 +193,7 @@ export function DifficultyPicker({ value, counts, onChange }: { value: Difficult
       {DIFF_OPTS.map((o) => {
         const level = DIFF_LEVEL[o.id];
         return (
-          <button key={o.id} type="button" className="st-diff" aria-pressed={value === o.id} aria-label={o.label} onClick={() => onChange(o.id)}>
+          <button key={o.id} type="button" className="st-diff" aria-pressed={value === o.id} onClick={() => onChange(o.id)}>
             <span className="st-diff-bars" aria-hidden="true">
               {[6, 10, 14].map((h, j) => <span key={h} style={{ height: h }} data-on={level === 0 || j < level} />)}
             </span>
@@ -277,7 +275,7 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
           {visible.map(({ name, count }) => (
             <button
               key={name} type="button" className="st-chip" aria-pressed={selected.includes(name)}
-              aria-label={`${name}, ${count} ${count === 1 ? "question" : "questions"}`}
+              aria-label={`${name} ${count} ${count === 1 ? "question" : "questions"}`}
               onClick={() => onToggle(name)}
             >
               <span className="st-chip-name">{name}</span>

@@ -68,7 +68,13 @@ versioned and migration chain authoritative.
 
 Target evergreen browsers, keyboard navigation and a 375px mobile viewport.
 Marks must remain legible across themes and not depend on color alone; labels and
-accessible names carry meaning. Learning and unanswered testing need visibly
+accessible names carry meaning. Setup choices include their visible counts and
+descriptions in their names; difficulty and tag filters include their counts.
+Exam selectors begin with the visible slug when expanded. Copy buttons use the
+visible outcome (Copy as prompt, Copied or Copy failed); compact icon-only buttons
+retain the Copy as prompt action name and announce outcomes separately
+([issue #129](https://github.com/YIzhongyue/PrepDeck/issues/129)).
+Learning and unanswered testing need visibly
 different presentation. Text meets WCAG 2.1 AA contrast (4.5:1) in every
 scheme. Answer options are radios in single choice and checkboxes in multiple
 choice, and graded options say in words which answer was chosen and which is

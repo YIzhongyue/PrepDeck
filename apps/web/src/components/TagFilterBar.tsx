@@ -81,7 +81,7 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
           return (
             <button
               key={facet.name} type="button" className="tag-filter__chip" aria-pressed={on}
-              aria-label={`${facet.name}, ${facet.count} ${facet.count === 1 ? "question" : "questions"}`}
+              aria-label={`${facet.name} ${facet.count} ${facet.count === 1 ? "question" : "questions"}`}
               onClick={() => onToggle(facet.name)}
             >
               <svg className="tag-filter__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
