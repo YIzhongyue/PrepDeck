@@ -109,6 +109,8 @@ test("unsupported, invalid, duplicate-key and malformed input stays exactly avai
     assert.throws(() => setMatch(raw, "same", "other"));
   }
   assert.match(inspect(fixtures.duplicate).reason, /duplicate keys/);
+  assert.match(inspect(fixtures.duplicate, { issues: [{ path: "$", message: "Duplicate object key" }] }).reason, /duplicate keys/,
+    "The independent raw-save validator may already reject duplicates before the controls gate runs");
 });
 
 test("missing references and incomplete/duplicate answers cannot enter the form", () => {

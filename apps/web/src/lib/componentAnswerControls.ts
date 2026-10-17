@@ -7,7 +7,7 @@ export function inspectAnswerControls(raw: string, checked?: ComponentQuestionDr
     return { reason: "Answer controls support packages up to the 5 MiB import limit. Keep this source in JSON." };
   }
   const draft = checked ?? inspectComponentQuestionDraft(raw);
-  if (!draft.preview) return { reason: "Answer controls require one valid schema 2.0 question. Correct the package errors in JSON." };
+  if (!draft.preview) return { reason: "Answer controls require one valid schema 2.0 question without duplicate keys. Correct the package errors in JSON." };
   try {
     // This gate protects answer token edits only. Duplicate-key raw saves are
     // deliberately owned by the independent #167 validation change.
