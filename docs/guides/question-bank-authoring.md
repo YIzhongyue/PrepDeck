@@ -94,8 +94,11 @@ property/array order in the raw draft. Package-validation errors do not prevent
 formatting; malformed JSON stays unchanged with its diagnostics. The action
 returns focus to the JSON field and maps its selection while retaining scroll.
 Repeated formatting is a no-op. Formatting does not save or change the saved
-baseline; ordinary **Save** still uses the existing parsing, validation and
-persistence normalization, so raw token preservation applies to formatting only.
+baseline. Native undo/redo includes formatting and retains earlier typed edits.
+If the browser cannot format while retaining edit history, the draft stays
+unchanged and the editor explains the failure. Ordinary **Save** still uses the
+existing parsing, validation and persistence normalization, so raw token
+preservation applies to formatting only.
 See [formatting verification](../screenshots/component-json-format.md).
 
 The tag selector (implementation)

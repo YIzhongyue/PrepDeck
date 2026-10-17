@@ -33,18 +33,12 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const feedback = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
   const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
-  const formatPosition = useRef<JsonPosition | null>(null);
   const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
   const lastValidPreview = useRef(preview);
   useLayoutEffect(() => { if (preview) lastValidPreview.current = preview; }, [preview]);
   const shownPreview = preview ?? lastValidPreview.current;
   const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
-  useLayoutEffect(() => {
-    const position = formatPosition.current;
-    formatPosition.current = null;
-    if (position && textarea.current) restoreJsonPosition(textarea.current, pane.current, position);
-  }, [text]);
   const formatText = () => {
     const field = textarea.current;
     if (saving.current || !field) return;
@@ -54,9 +48,22 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
     try {
       const result = formatJsonSource(text, selection);
       const position = { ...(result?.selection ?? selection), ...scroll };
-      if (result && result.text !== text) { formatPosition.current = position; setText(result.text); }
-      else restoreJsonPosition(field, pane.current, position);
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept."); }
+      if (result && result.text !== text) {
+        field.focus({ preventScroll: true });
+        field.setSelectionRange(0, field.value.length);
+        // A native text edit preserves undo/redo. Assigning the textarea value
+        // through React would clear that history. There is no value-setter fallback.
+        let applied = false;
+        try { applied = typeof document.execCommand === "function" && document.execCommand("insertText", false, result.text); } catch { /* Report unsupported native editing below. */ }
+        if (!applied) throw new Error("Could not format JSON while preserving undo history. Your source has been kept.");
+        setText(field.value);
+      }
+      restoreJsonPosition(field, pane.current, position);
+      if (result) setError("");
+    } catch (e) {
+      restoreJsonPosition(field, pane.current, { ...selection, ...scroll });
+      setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept.");
+    }
   };
   const close = async () => { if (await guard.requestDiscard()) onClose(); };
   useLayoutEffect(() => {
