@@ -497,15 +497,30 @@ header .exam-selector--compact .exam-selector__menu {
 .authoring-toolbar > .field { flex: 1 1 160px; min-width: 0; }
 .authoring-filters { padding: 16px; }
 .authoring-filters > .input { flex: 1 1 145px; width: 145px; }
-.authoring-option { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-.authoring-option textarea { flex: 1; min-width: 0; }
+.authoring-option { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; margin-bottom: 10px; }
+.authoring-option-label { overflow-wrap: anywhere; }
+.authoring-option textarea { grid-column: 1 / -1; min-width: 0; overflow-y: hidden; resize: none; }
+.authoring-correct-answer { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.authoring-correct-answer input { margin: 0; accent-color: var(--color-accent); }
+.authoring-remove-option { min-width: 44px; min-height: 44px; font-size: 22px; }
 .authoring-option-entry { margin-bottom: 10px; }
 .authoring-option-entry > .authoring-option { margin-bottom: 0; }
-.authoring-option-entry > .authoring-errors:not(:empty) { margin: 4px 0 0 52px; }
+.authoring-option-entry > .authoring-errors:not(:empty) { margin: 4px 0 0; }
+.authoring-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+.authoring-metadata > .field { min-width: 0; }
+.authoring-metadata > .field:first-child { grid-column: 1 / -1; }
+.authoring-question-status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 12px; }
+.authoring-question-status span { padding: 3px 8px; border: 1px solid var(--color-divider); border-radius: var(--pd-radius-md); }
+.authoring-review-field { padding-top: 12px; border-top: 1px solid var(--color-divider); }
+.authoring-review-field > .authoring-checkbox { display: flex; min-height: 44px; }
+.authoring-review-field p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--color-text-muted); }
 .authoring-undo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 13px; }
 .authoring-rebased { margin: 0; padding: 10px 12px; border-radius: var(--pd-radius-md); background: var(--color-neutral-100); font-size: 13px; }
 .question-drawer-footer [role=alert] p { margin: 0 0 8px; }
 .authoring-identifier { font-size: 11px; opacity: .7; overflow-wrap: anywhere; user-select: text; }
+/* External IDs have no length cap. Only this fixed-header copy is shortened;
+   the editable field and tooltip retain the full value. */
+.authoring-external-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The review flag is a single boolean, so it reads as one clickable row
    rather than a labelled control stacked above its input like the rest. */
 .authoring-checkbox { display: flex; gap: 8px; align-items: center; cursor: pointer; }

@@ -42,6 +42,7 @@ records the gaps between the original specification, current code and open issue
 | [Public/private repository workflow](guides/public-private-sync.md) | History-free export, readiness checks and one-way upstream synchronization. |
 | [Question authoring](guides/question-bank-authoring.md) | Drawer workflow, import review, historical grading and content extension. |
 | [Question editor preview](screenshots/question-editor-preview.md) | Read-only Learning card parity, unsaved draft rendering, responsive panes and lazy mounting. |
+| [Question editor fields](screenshots/question-editor-fields.md) | Growing options, answer labels, touch targets, responsive metadata and header context. |
 | [Component JSON diagnostics](screenshots/component-json-errors.md) | Syntax locations, original validation paths/messages and preserved save/draft behavior. |
 | [MCP and Skills](guides/mcp-and-skills.md) | Secure client setup, safe verification and shipped versus planned Skills. |
 | [MCP presentation examples](screenshots/mcp-presentation.md) | Synthetic quiz output, table/figure fidelity and text-only fallback verification. |
