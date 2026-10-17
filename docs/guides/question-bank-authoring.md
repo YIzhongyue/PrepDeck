@@ -23,7 +23,11 @@ Checking **Needs review** shows both Learning's header badge and its warning
 above the stem. The card uses Learning's phone and short-landscape presentation,
 including compact, keyboard-accessible scrolling tags.
 The official explanation uses the same Markdown presentation as Learning and
-is fully expanded. Stem, options, answers and explanation reflect the unsaved
+is fully expanded. Official explanations support Markdown pipe tables with
+column alignment, inline formatting and horizontally scrolling wide tables in
+preview, Learning and graded Practice. Stems, options and AI explanations keep
+their existing Markdown behavior. See [table examples and verification](../screenshots/official-explanation-tables.md).
+Stem, options, answers and explanation reflect the unsaved
 draft. Previewing does not answer a question, mark it viewed or studied, request
 an AI explanation, or change the draft. This is the approved first slice of
 [#148](https://github.com/YIzhongyue/PrepDeck/issues/148); interactive try-answer

@@ -36,6 +36,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/question-save-discard.browser.mjs", 7],
   ["apps/web/scripts/question-authoring-history.browser.mjs", 21],
   ["apps/web/scripts/question-draft-preview.browser.mjs", 50],
+  ["apps/web/scripts/official-explanation.browser.mjs", 8],
   ["apps/web/scripts/mcp-setup.browser.mjs", 4],
   ["apps/web/scripts/mcp-connect.browser.mjs", 3],
   ["apps/web/scripts/turnstile.browser.mjs", 5],
