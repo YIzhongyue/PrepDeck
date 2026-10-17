@@ -35,12 +35,15 @@ rich.interaction.right[0].body.push({id:'right-code',type:'code',text:'rightOnly
  {id:'right-table',type:'table',caption:'Right table',columns:['Side'],rows:[['Right']]},
  {id:'right-figure',type:'figure',assetId:'pixel',alt:'Right pixel'});
 const refs=structuredClone(row.content);delete refs.interaction.right[0].body;refs.interaction.right[0].memberRefs=['entry-b'];
+// Direct component props use frontend Annotation fields, not the API DTO.
+const annotationProps={qid:'matching',target:'opt:same',show:true,annotations:[{id:'left-mark',qid:'matching',target:'opt:same',start:0,end:5,style:'hl1',note:'Left source annotation'}]};
 createRoot(document.getElementById('root')).render(path==='/editor'?<ComponentQuestionEditor examId="exam" question={row} onClose={()=>{}} onSaved={()=>{}}/>:
  path==='/import'?<QuestionImportDialog examId="exam" onClose={()=>{}} onImported={()=>{}}/>:
  path==='/renderer'?<main style={{padding:24}}>
  <section aria-label="Default left"><QuestionContent src="First entry" content={row.content} optionId="same"/></section>
+ <section aria-label="Left annotated source"><QuestionContent src="First entry" content={row.content} optionId="same" matchingSide="left" {...annotationProps}/></section>
  <section aria-label="Right Markdown"><QuestionContent src="Shared category" content={row.content} optionId="same" matchingSide="right"/></section>
- <section aria-label="Right mismatched source"><QuestionContent src="First entry" content={row.content} optionId="same" matchingSide="right" qid="matching" target="opt:same" show={true} annotations={[{id:'left-mark',questionId:'matching',targetType:'option',targetRef:'same',rangeStart:0,rangeEnd:5,style:'hl1',note:'Left source annotation'}]}/></section>
+ <section aria-label="Right mismatched source"><QuestionContent src="First entry" content={row.content} optionId="same" matchingSide="right" {...annotationProps}/></section>
  <section aria-label="Missing right ID"><QuestionContent src="Second entry" content={row.content} optionId="second" matchingSide="right"/></section>
  <section aria-label="Explicit left"><ComponentOptionContent content={row.content} optionId="same" matchingSide="left"/></section>
  <section aria-label="Right rich"><QuestionContent src="Shared category" content={rich} optionId="same" matchingSide="right"/></section>
@@ -127,11 +130,16 @@ try {
   assert.equal(calls.slice(previewCallStart).some(c=>c.path.includes('/questions/')&&c.method==='PATCH'||c.path.endsWith('/import')),false,'previewing does not save or import');
   console.log(`PASS ${width}: editor and existing left-projection import preview are side-correct`);
   await page.goto(`${origin}/renderer`);await page.getByRole('region',{name:'Default left',exact:true}).getByText('First entry',{exact:true}).waitFor();await shot('renderer');
+  const annotatedLeft=page.getByRole('region',{name:'Left annotated source',exact:true}),leftMark=annotatedLeft.locator('[title="Left source annotation"]');
+  assert.equal(await leftMark.count(),1,'positive control: the same annotation must mark its matching left source');
+  assert.equal(await leftMark.textContent(),'First');assert.equal(await leftMark.getAttribute('data-off'),'0');
+  assert.equal(await leftMark.evaluate(el=>el.style.background),'var(--color-mark-1)');
   const right=page.getByRole('region',{name:'Right Markdown',exact:true});
   assert.equal(await right.textContent(),'Shared category','an explicit right-side render must not select the colliding left item');
   assert.ok(await right.locator('[data-off]').count(),'matching Markdown uses its own source coordinates');
   const mismatch=page.getByRole('region',{name:'Right mismatched source',exact:true});
   assert.equal(await mismatch.textContent(),'Shared category');assert.equal(await mismatch.locator('[title="Left source annotation"]').count(),0,'left Markdown offsets must not annotate the right item');
+  console.log(`PASS ${width}: annotation marks the matching left source and is absent on the mismatched right source`);
   assert.equal(await page.getByRole('region',{name:'Missing right ID',exact:true}).textContent(),'','a missing right ID must not fall back to the left side');
   assert.equal(await page.getByRole('region',{name:'Explicit left',exact:true}).textContent(),'First entry');
   const rich=page.getByRole('region',{name:'Right rich',exact:true});assert.equal(await rich.locator('pre code').textContent(),'rightOnly()');

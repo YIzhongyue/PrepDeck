@@ -42,9 +42,20 @@ expected: Shared category
 ```
 
 There was no side parameter before the repair; the regression supplies the
-proposed parameter, which the old component ignores. This is a component-level
-contract regression, not evidence of an existing production caller requesting
-the right side incorrectly.
+proposed parameter, which the old component ignores. The red-before result
+establishes the new shared-component contract; it is not a reproduction of a
+pre-existing live learner regression or evidence of an existing production
+caller requesting the right side incorrectly.
+
+Independent review found that the original negative annotation assertion used
+backend DTO fields directly in component props. Those annotations were filtered
+out before rendering, so that assertion was vacuous. The corrected fixture uses
+frontend `Annotation` fields (`qid`, `target`, `start`, `end`) and passes the same
+annotation to both a matching left-source positive control and the mismatched
+right source. The positive control failed with the old DTO shape (zero marks
+instead of one). It now requires exactly one highlighted `First` span at source
+offset zero; the right source must show `Shared category` without that mark.
+This correction changes test evidence, not production annotation behavior.
 
 The regression checks:
 
@@ -55,8 +66,9 @@ The regression checks:
 - Editor answer controls and editor/import previews remain correct without
   saving or executing an import.
 - Explicit sides, the default left projection, missing right IDs, Markdown
-  source matching, unrelated annotations, code, table, decoded figure and member
-  references resolve correctly without mutating the source data.
+  source matching, the positive/negative annotation controls, code, table,
+  decoded figure and member references resolve correctly without mutating the
+  source data.
 - Desktop (1280px) and phone-width (390px) browser viewports pass.
 
 Run with `node apps/web/scripts/matching-side-content.browser.mjs`, or the
@@ -76,10 +88,11 @@ The learner screen below is a preservation check, not a before/after UI change.
 
 ![Existing Practice matching behavior with cross-side ID reuse at 390px](matching-side-content/practice-390.png)
 
-The direct component harness below renders the left projection, right Markdown,
-right content with a mismatched source, a missing right ID (empty), explicit left,
-right rich blocks and right member references in that order. The pixel figure is
-deliberately one pixel; the test checks successful image decoding.
+The direct component harness below renders the left projection, the highlighted
+left positive control, right Markdown, right content with a mismatched source,
+a missing right ID (empty), explicit left, right rich blocks and right member
+references in that order. The pixel figure is deliberately one pixel; the test
+checks successful image decoding.
 
 ![Direct rich component side-selection fixture at 390px](matching-side-content/renderer-390.png)
 
