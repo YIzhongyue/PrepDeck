@@ -172,7 +172,7 @@ try {
     const diagnostics = await feedback.textContent(), retained = await currentPreview();
     await format.click(); await focusRetained();
     const semanticFormatted = await textarea.inputValue(); assert.notEqual(semanticFormatted,invalid);
-    assert.deepEqual(rawTokens(semanticFormatted),rawTokens(invalid)); assert.equal(await feedback.textContent(),diagnostics);
+    assert.deepEqual(rawTokens(semanticFormatted),rawTokens(invalid)); assert.match(await feedback.textContent(), /Duplicate object key/); assert.notEqual(await feedback.textContent(),diagnostics,"Duplicate locations update after formatting");
     assert.equal(await currentPreview(),retained); await preview.getByText(/Preview is out of date/).waitFor();
     await textarea.press("Control+s"); assert.equal(await feedback.evaluate(el=>el===document.activeElement),true);
     assert.equal(writes.length,initialWrites); await page.keyboard.press("Shift+Tab"); await focusRetained();
