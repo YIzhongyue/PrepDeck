@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { exportComponentPackage, formatAnswerText, normalizeImportFile, validateImportFile, type Question } from "@prepdeck/shared";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { exportComponentPackage, formatAnswerText, type Question } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
+import { inspectComponentQuestionDraft } from "../lib/componentQuestionDraft";
 import QuestionContent from "./QuestionContent";
 
 export default function ComponentQuestionEditor({ examId, question, onClose, onSaved }: {
@@ -10,6 +11,9 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
   const [text, setText] = useState(initial.current), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null), saving = useRef(false), saved = useRef(false);
   const backdropPress = useRef(false);
+  const feedbackId = useId();
+  const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
+  const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
   const canClose = useCallback(() => !saving.current && (saved.current || !dirty || window.confirm("Discard unsaved question changes?")), [dirty]);
   const close = () => { if (canClose()) onClose(); };
@@ -26,8 +30,6 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
     window.addEventListener("beforeunload", leave); window.addEventListener("prepdeck:before-navigate", navigate);
     return () => { window.removeEventListener("beforeunload", leave); window.removeEventListener("prepdeck:before-navigate", navigate); };
   }, [dirty, canClose]);
-  let preview: ReturnType<typeof normalizeImportFile>["questions"][number] | undefined;
-  try { const data = JSON.parse(text); if (data.schemaVersion === "2.0" && !validateImportFile(data).issues.length && data.questions.length === 1) preview = normalizeImportFile(data).questions[0]; } catch { /* Keep invalid drafts editable. */ }
   const save = async () => {
     if (saving.current) return;
     if (!preview) { setError("Enter a valid package with exactly one question. Check component IDs, references and scoring."); return; }
@@ -52,7 +54,11 @@ export default function ComponentQuestionEditor({ examId, question, onClose, onS
     }}>
     <div className="question-drawer question-editor"><div className="question-drawer-body">
       <h3>Edit component question</h3><p>Edit the structured package. The preview updates when the question is valid.</p>
-      <label>Question package JSON<textarea className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} onChange={e => setText(e.target.value)} /></label>
+      <label>Question package JSON<textarea className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId} onChange={e => setText(e.target.value)} /></label>
+      <div id={feedbackId} className="authoring-errors" aria-live="polite" hidden={!invalid}>
+        {syntaxError && <p>JSON syntax error{syntaxError.line !== undefined && syntaxError.column !== undefined ? ` at line ${syntaxError.line}, column ${syntaxError.column}` : ""}: {syntaxError.message}</p>}
+        {issues.length > 0 && <><p>Package validation errors:</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
+      </div>
       {error && <p role="alert">{error}</p>}
       {preview && <section aria-label="Component question preview"><QuestionContent src={preview.stem} content={preview.content} />{preview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={preview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(preview, preview.correctAnswers)}</p></section>}
     </div><div className="question-drawer-footer"><div className="dialog-actions"><button className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" disabled={busy || !preview} onClick={save}>Save</button></div></div></div>
