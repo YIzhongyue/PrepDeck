@@ -23,16 +23,44 @@ Checking **Needs review** shows both Learning's header badge and its warning
 above the stem. The card uses Learning's phone and short-landscape presentation,
 including compact, keyboard-accessible scrolling tags.
 The official explanation uses the same Markdown presentation as Learning and
-is fully expanded. Stem, options, answers and explanation reflect the unsaved
+is fully expanded. Official explanations support Markdown pipe tables with
+column alignment, inline formatting and horizontally scrolling wide tables in
+preview, Learning and graded Practice. Stems, options and AI explanations keep
+their existing Markdown behavior. See [table examples and verification](../screenshots/official-explanation-tables.md).
+Stem, options, answers and explanation reflect the unsaved
 draft. Previewing does not answer a question, mark it viewed or studied, request
 an AI explanation, or change the draft. This is the approved first slice of
 [#148](https://github.com/YIzhongyue/PrepDeck/issues/148); interactive try-answer
-is outside this slice. Component/JSON preview and diagnostics remain unchanged.
+is outside this slice. Component/JSON questions use the structured editor below.
 
-**Save** takes effect immediately. **Save & add next** opens an empty question in
-the same exam, retains only its type, and focuses the stem. Failed validation or
-server requests keep the current input. Dismissal and app/browser navigation
-protect unsaved edits. Imported questions use the same editor.
+Option textareas grow and shrink with their content and reflow when the editor
+changes width. Their correct-answer controls have visible labels, and removal
+buttons have 44-pixel touch targets. External ID has its own metadata row above
+Difficulty and Points; the review flag includes associated help text.
+The header retains the internal ID and revision, shows the draft External ID
+when present, and displays Archived / Needs review when applicable. Archived
+status comes from the loaded question; External ID and Needs review reflect
+unsaved edits. Long External IDs use a single line with an ellipsis in the
+header; the complete value stays in the editable field and header tooltip.
+See the [field layout examples](../screenshots/question-editor-fields.md).
+
+Both editors show whether the draft has unsaved changes. **Save** takes effect
+immediately; when editing an existing standard question, it keeps the editor
+open and shows the saved revision. Further edits become unsaved again, and the
+next save uses that revision. **Ctrl+S** / **Cmd+S** invoke the same Save action,
+including validation and pending-request guards. Failed validation or server
+requests keep the current input. Component saves retain their existing behavior
+of returning to the question list.
+
+**Save & add next** appears only when creating a standard question. It opens an
+empty question in the same exam, retains only its type, and focuses the stem.
+Normal Save during creation returns to the list. Dismissing a dirty editor or
+navigating within the app opens a keyboard-accessible **Keep editing** / **Discard
+changes** confirmation. Cancellation restores focus and keeps the draft; approval
+continues the requested action. Browser unload retains its native warning. Saving
+blocks dismissal and duplicate shortcut requests. Imported questions use the same
+editor. See the [save/discard verification](../screenshots/question-save-discard.md)
+for [#151](https://github.com/YIzhongyue/PrepDeck/issues/151).
 
 Validation errors appear next to the field they belong to, including the
 individual option, and editing a field clears its errors. Changing the type
@@ -42,8 +70,9 @@ options or answers are edited again. Existing option IDs are never relabelled;
 a new option takes the next free letter after the last one. Blank lines in
 fill-in-the-blank accepted answers are ignored. If someone saves the question
 while it is open, the save is rejected (HTTP 409) and the editor offers **Load
-latest and keep my edits** (the draft is saved against the new revision and the
-changed fields are listed) or **Discard my edits**.
+latest and keep my edits** (loads a new revision baseline and lists changed
+fields, without saving) or **Discard my edits**. Review the loaded revision and
+choose **Save** separately when ready.
 
 In the component editor, click or tap the dimmed area outside the drawer to
 cancel. Unsaved drafts use the same discard confirmation as **Cancel** and
@@ -51,6 +80,50 @@ Escape; saving blocks dismissal. Selecting text inside and releasing outside
 does not close the editor. Returning to the overview retains its page, filters,
 scroll position and opening control's focus.
 See the [component drawer and backdrop](../screenshots/component-backdrop-desktop.png).
+
+The component drawer's header identifies its sequence, internal ID and current
+revision, with **Close**, **Cancel** and **Save** always outside the scrolling
+body. Long internal IDs are shortened only in the header, with the full ID in
+its tooltip. A successful component Save returns focus to the stable Questions
+heading while the list refreshes, including when the saved row no longer matches
+the active filters. Closing without saving returns to the current Edit control.
+
+Component revision recovery appears only for HTTP 409 with `stale_question`;
+duplicate External IDs and other failures keep their ordinary error feedback.
+**Load latest and keep my edits** preserves the exact raw JSON, even when it is
+invalid, and updates the revision used by the next explicit Save. The loaded
+revision and remotely changed fields are shown for review. **Discard my edits**
+asks before replacing an unsaved draft with the latest exported package. Failed
+loads or exports leave the previous revision, raw draft and recovery actions
+intact. Another intervening edit produces another conflict rather than silently
+overwriting it. Loading disables editing, formatting, dismissal and duplicate
+save requests; it never saves automatically. See the
+[component recovery verification](../screenshots/component-stale-recovery.md).
+
+The component editor retains the most recent valid preview while the current
+JSON has syntax or package-validation errors. **Preview is out of date** marks
+that retained content; if no valid draft exists, the preview explains that it is
+unavailable. Correcting the JSON immediately refreshes the preview and removes
+the notice. **Save** stays available unless a request is pending. An invalid
+save, including Ctrl/Cmd+S, focuses the current error summary without sending a
+request; Shift+Tab returns to the JSON field with its selection and scroll intact.
+Only the current validated draft can be saved, never the retained preview. Raw
+text, the saved baseline and preview context belong to the same question/exam
+editing session. See [component JSON diagnostics and preview context](../screenshots/component-json-errors.md).
+
+**Format JSON** in the component editor applies two-space indentation to
+syntactically valid JSON. It changes only whitespace between tokens, retaining
+duplicate keys, original number and string spellings, IDs, unknown fields, and
+property/array order in the raw draft. Package-validation errors do not prevent
+formatting; malformed JSON stays unchanged with its diagnostics. The action
+returns focus to the JSON field and maps its selection while retaining scroll.
+Repeated formatting is a no-op. Formatting does not save or change the saved
+baseline. Native undo/redo includes formatting and retains earlier typed edits.
+If the browser cannot format while retaining edit history, the draft stays
+unchanged and the editor explains the failure. Ordinary **Save** still uses the
+existing parsing, validation and persistence normalization, so raw token
+preservation applies to formatting only.
+See [formatting verification](../screenshots/component-json-format.md).
 
 The tag selector (implementation)
 searches the existing question-bank catalog. Select a suggestion or choose
@@ -231,8 +304,8 @@ deep malformed document prevents locating the error, the editor reports that
 limitation without inventing a position. Package validation lists the existing
 paths and messages below the JSON field, including the editor's schema 2.0 and
 exactly-one-question requirements. Feedback does not move typing focus or rewrite
-the draft. Save stays disabled and the preview stays hidden until the draft is
-valid. See [verification examples](../screenshots/component-json-errors.md).
+the draft. Invalid Save focuses those errors, while the preview retains the last
+valid draft with a stale notice. See [verification examples](../screenshots/component-json-errors.md).
 
 Save the component source; changing only its derived flat stem
 or options is rejected. **Export this page** downloads a portable 2.0 package;

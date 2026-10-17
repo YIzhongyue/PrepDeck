@@ -43,7 +43,12 @@ records the gaps between the original specification, current code and open issue
 | [Public/private repository workflow](guides/public-private-sync.md) | History-free export, readiness checks and one-way upstream synchronization. |
 | [Question authoring](guides/question-bank-authoring.md) | Drawer workflow, import review, historical grading and content extension. |
 | [Question editor preview](screenshots/question-editor-preview.md) | Read-only Learning card parity, unsaved draft rendering, responsive panes and lazy mounting. |
-| [Component JSON diagnostics](screenshots/component-json-errors.md) | Syntax locations, original validation paths/messages and preserved save/draft behavior. |
+| [Official explanation tables](screenshots/official-explanation-tables.md) | Markdown tables in editor, Learning and Practice, with safe markup and narrow-screen scrolling. |
+| [Question editor fields](screenshots/question-editor-fields.md) | Growing options, answer labels, touch targets, responsive metadata and header context. |
+| [Question save and discard](screenshots/question-save-discard.md) | Dirty state, keyboard saves, accessible discard confirmation and navigation. |
+| [Component JSON diagnostics](screenshots/component-json-errors.md) | Syntax locations, validation messages, retained preview context and invalid-save error navigation. |
+| [Component JSON formatting](screenshots/component-json-format.md) | Token-preserving formatting, editing context, diagnostics and save/discard verification. |
+| [Component revision recovery](screenshots/component-stale-recovery.md) | Drawer identity, exact draft retention, explicit revision loading, conflict retries and list focus. |
 | [MCP and Skills](guides/mcp-and-skills.md) | Secure client setup, safe verification and shipped versus planned Skills. |
 | [MCP presentation examples](screenshots/mcp-presentation.md) | Synthetic quiz output, table/figure fidelity and text-only fallback verification. |
 | [Skill verification](guides/skill-verification.md) | Safe client verification and packaged User/Admin Skill checks. |

@@ -7,10 +7,32 @@ async function bundle(path) {
   const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "node", format: "esm" });
   return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
 }
-const { blankQuestion, formPayload, questionForm } = await bundle("../src/lib/questionAuthoring.ts");
+const { blankQuestion, formPayload, questionForm, allowAuthoringNavigation } = await bundle("../src/lib/questionAuthoring.ts");
 const { parseMarkdown } = await bundle("../src/lib/markdown.ts");
 const { mdSegsFor } = await bundle("../src/lib/annotations.ts");
 const { normalizeTagName } = await bundle("../../../packages/shared/src/questionTags.ts");
+
+test("authoring navigation waits for every decision and treats refusal/rejection as cancellation", async () => {
+  const previous = globalThis.window;
+  globalThis.window = new EventTarget();
+  try {
+    assert.equal(await allowAuthoringNavigation(), true);
+    const delayed = Promise.withResolvers();
+    const handler = event => event.detail.waitUntil(delayed.promise);
+    window.addEventListener("prepdeck:before-navigate", handler);
+    let completed = false;
+    const navigation = allowAuthoringNavigation().then(allowed => { completed = true; return allowed; });
+    await Promise.resolve(); assert.equal(completed, false);
+    delayed.resolve(true); assert.equal(await navigation, true);
+    window.removeEventListener("prepdeck:before-navigate", handler);
+    for (const decision of [Promise.resolve(false), Promise.reject(new Error("obsolete editor"))]) {
+      window.addEventListener("prepdeck:before-navigate", event => event.detail.waitUntil(decision), { once: true });
+      assert.equal(await allowAuthoringNavigation(), false);
+    }
+    window.addEventListener("prepdeck:before-navigate", event => event.preventDefault(), { once: true });
+    assert.equal(await allowAuthoringNavigation(), false);
+  } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
+});
 
 test("continuous authoring resets content, answers, IDs and metadata while retaining each type", () => {
   for (const type of ["single_choice", "multiple_choice", "true_false", "fill_blank"]) {

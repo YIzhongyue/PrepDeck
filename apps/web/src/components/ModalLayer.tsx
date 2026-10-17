@@ -24,7 +24,7 @@ const FOCUS_REGION = "[data-focus-region]";
 // QuestionEditorDialog drives its own `<dialog>` for the same reason; this is
 // that pattern lifted out for the dialogs that do not need a drawer's
 // animation or unsaved-changes guard.
-export default function ModalLayer({ label, labelledBy, describedBy, onClose, children }: {
+export default function ModalLayer({ label, labelledBy, describedBy, onClose, lockScroll = true, children }: {
   label?: string;
   labelledBy?: string;
   // The element whose text is announced after the name when the dialog opens,
@@ -33,6 +33,8 @@ export default function ModalLayer({ label, labelledBy, describedBy, onClose, ch
   // Omit to make the dialog dismissible only through its own controls — the
   // backdrop and Escape then do nothing.
   onClose?: () => void;
+  // A confirmation above an already locked drawer shares its existing lock.
+  lockScroll?: boolean;
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -43,13 +45,13 @@ export default function ModalLayer({ label, labelledBy, describedBy, onClose, ch
     const overflow = document.body.style.overflow;
     element?.showModal();
     // The top layer makes the page inert but not unscrollable.
-    document.body.style.overflow = "hidden";
+    if (lockScroll) document.body.style.overflow = "hidden";
     return () => {
       element?.close();
-      document.body.style.overflow = overflow;
+      if (lockScroll) document.body.style.overflow = overflow;
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
-  }, []);
+  }, [lockScroll]);
 
   return (
     <dialog

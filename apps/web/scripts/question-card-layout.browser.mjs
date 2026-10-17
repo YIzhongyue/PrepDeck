@@ -335,7 +335,11 @@ try {
     console.log(`PASS ${label}`);
 
     label = `Mock ${size}`;
-    await page.evaluate(() => { window.fixtureApp.go("mock"); window.fixtureApp.beginMock(); });
+    await page.evaluate(() => window.fixtureApp.go("mock"));
+    // Starting a session is a separate action after navigation clears its
+    // authoring/workspace guards, just as on the real Mock setup screen.
+    await page.waitForFunction(() => window.fixtureApp.state.screen === "mock" && window.fixtureApp.state.mStage === "setup");
+    await page.evaluate(() => window.fixtureApp.beginMock());
     await page.waitForFunction(() => window.fixtureApp.state.screen === "mock" && window.fixtureApp.state.mStage === "live");
     const order = await page.evaluate(() => window.fixtureApp.state.mQueue);
     await page.evaluate(i => window.fixtureApp.mockGoto(i), order.indexOf("Q1"));
