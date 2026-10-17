@@ -13,7 +13,9 @@ questions and a dedicated loopback fixture, without a deployed question bank.
 ![Phone metadata layout](question-editor-fields/phone-metadata.png)
 
 The header shows the loaded internal ID/revision and archive state, alongside
-the draft External ID and review flag. Option textareas resize without replacing
+the draft External ID and review flag. The header's External ID uses one line
+with an ellipsis so arbitrarily long values cannot displace the editable pane
+or footer; the complete value remains in its field and tooltip. Option textareas resize without replacing
 their DOM nodes, rewriting values or changing answer IDs. The metadata capture
 also retains the existing general alert from a synthetic rejected save after
 its option-specific error has been corrected.
@@ -33,6 +35,11 @@ visible associated answer labels, 44×44 removal targets, stable IDs and Undo,
 field-error association, long identifiers, draft header status, metadata reflow
 and saved payloads. Adjacent suites retain lazy preview mounting, component
 diagnostics and existing authoring/recovery coverage.
+
+Four further cases load or paste a 5,000-character External ID at phone and short
+landscape sizes. They verify the bounded header, visible internal ID/revision,
+usable editing area, actual Cancel/Save clicks, and an exact saved identifier
+without any validation or stored-data length limit.
 
 Local Chromium screenshots demonstrate visual layout and browser assertions
 check DOM accessibility relationships; they do not represent screen-reader

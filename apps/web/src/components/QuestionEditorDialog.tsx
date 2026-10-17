@@ -263,7 +263,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       <div className="authoring-toolbar"><h3 id="question-editor-title" className="dialog-title">{base ? "Edit question" : "Add question"}</h3>
         <button className="btn btn-ghost question-drawer-close" type="button" aria-label="Close question editor" disabled={busy} onClick={close}>×</button></div>
       {base && <p className="authoring-identifier">#{base.sequenceNumber} · {base.id} · revision {base.revision}</p>}
-      {form.externalId && <p className="authoring-identifier">External ID: {form.externalId}</p>}
+      {form.externalId && <p className="authoring-identifier authoring-external-id" title={form.externalId}>External ID: {form.externalId}</p>}
       {(base?.archivedAt || form.needsReview) && <div className="authoring-question-status">
         {base?.archivedAt && <span>Archived</span>}{form.needsReview && <span>Needs review</span>}
       </div>}

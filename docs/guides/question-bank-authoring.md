@@ -36,7 +36,9 @@ Difficulty and Points; the review flag includes associated help text.
 The header retains the internal ID and revision, shows the draft External ID
 when present, and displays Archived / Needs review when applicable. Archived
 status comes from the loaded question; External ID and Needs review reflect
-unsaved edits. See the [field layout examples](../screenshots/question-editor-fields.md).
+unsaved edits. Long External IDs use a single line with an ellipsis in the
+header; the complete value stays in the editable field and header tooltip.
+See the [field layout examples](../screenshots/question-editor-fields.md).
 
 **Save** takes effect immediately. **Save & add next** opens an empty question in
 the same exam, retains only its type, and focuses the stem. Failed validation or

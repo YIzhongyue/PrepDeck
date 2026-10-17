@@ -518,6 +518,9 @@ header .exam-selector--compact .exam-selector__menu {
 .authoring-rebased { margin: 0; padding: 10px 12px; border-radius: var(--pd-radius-md); background: var(--color-neutral-100); font-size: 13px; }
 .question-drawer-footer [role=alert] p { margin: 0 0 8px; }
 .authoring-identifier { font-size: 11px; opacity: .7; overflow-wrap: anywhere; user-select: text; }
+/* External IDs have no length cap. Only this fixed-header copy is shortened;
+   the editable field and tooltip retain the full value. */
+.authoring-external-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The review flag is a single boolean, so it reads as one clickable row
    rather than a labelled control stacked above its input like the rest. */
 .authoring-checkbox { display: flex; gap: 8px; align-items: center; cursor: pointer; }

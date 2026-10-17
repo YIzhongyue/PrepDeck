@@ -8,6 +8,7 @@ import { readBody } from "./browser-fixture.mjs";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const types = ["single_choice", "multiple_choice", "true_false", "fill_blank"];
+const longExternalId = "SYNTHETIC-".repeat(500);
 const fixtures = Object.fromEntries(types.map(type => [type, {
   id: `synthetic-internal-identifier-${"long-".repeat(9)}${type}`, examId: "exam", sequenceNumber: 7, revision: 3,
   type, stem: "Which synthetic answer fits this original layout fixture?",
@@ -24,7 +25,8 @@ const writes = [];
 const { outputFiles } = await build({ stdin: { contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionEditorDialog from './src/components/QuestionEditorDialog'; import './src/styles/tokens.css'; import './src/styles/app.css';
   const fixtures = ${JSON.stringify(fixtures)};
-  function Fixture() { const [open, setOpen] = useState(false); const q = fixtures[new URLSearchParams(location.search).get('type')];
+  function Fixture() { const [open, setOpen] = useState(false); const params = new URLSearchParams(location.search);
+    const q = {...fixtures[params.get('type')], ...(params.has('long') ? {externalId: ${JSON.stringify(longExternalId)}} : {})};
     return <><button onClick={() => setOpen(true)}>Open editor</button>{open && <QuestionEditorDialog examId="exam" question={q}
       initialType={q.type} onClose={() => setOpen(false)} onSaved={() => setOpen(false)}/>}</>; }
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
@@ -204,6 +206,58 @@ try {
       await page.close();
     }
   }
+  // External IDs intentionally have no validation length cap. Both a loaded
+  // identifier and live pasted text must remain editable without consuming the
+  // fixed header's available height or hiding either footer action.
+  for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    for (const mode of ["loaded", "pasted"]) {
+      const page = await browser.newPage({ viewport });
+      page.setDefaultTimeout(10000);
+      page.on("pageerror", error => errors.push(error.message));
+      await page.route("**/*", route => new URL(route.request().url()).hostname === "127.0.0.1" ? route.continue() : route.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/?type=single_choice${mode === "loaded" ? "&long=1" : ""}`);
+      await page.getByRole("button", { name: "Open editor" }).click();
+      await page.locator(".question-drawer").evaluate(async el => { await Promise.all(el.getAnimations().map(a => a.finished)); });
+      const external = page.getByLabel("External ID (optional, unique in this exam)");
+      if (mode === "pasted") {
+        await external.fill("");
+        await page.keyboard.insertText(longExternalId);
+        assert.equal(await external.evaluate(el => el.selectionStart), longExternalId.length, "Live entry retains the complete identifier and caret");
+      }
+      assert.equal(await external.inputValue(), longExternalId);
+      const headerId = page.locator(".authoring-external-id");
+      assert.equal(await headerId.getAttribute("title"), longExternalId, "Full identifier remains in the header tooltip");
+      assert.equal(await headerId.textContent(), `External ID: ${longExternalId}`, "Presentation does not truncate data");
+      assert.equal(await headerId.evaluate(el => el.clientHeight <= parseFloat(getComputedStyle(el).lineHeight) + 1 && el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis"), true, "Only the header copy is visually bounded to one line");
+      const pane = page.locator("#question-fields"), header = page.locator(".question-drawer-header");
+      assert.ok((await pane.boundingBox()).height >= 80, `${mode} ${viewport.width}: an editable pane remains`);
+      const identity = header.locator(".authoring-identifier").first();
+      assert.ok((await identity.innerText()).includes(`#7 · ${fixtures.single_choice.id} · revision 3`));
+      const identityBox = await identity.boundingBox(), headerBox = await header.boundingBox();
+      assert.ok(identityBox.y >= headerBox.y && identityBox.y + identityBox.height <= headerBox.y + headerBox.height, "Internal ID and revision stay visible");
+      for (const name of ["Save", "Cancel"]) {
+        const button = page.getByRole("button", { name, exact: true }), box = await button.boundingBox();
+        assert.ok(box.y >= 0 && box.y + box.height <= viewport.height, `${name} remains inside the viewport`);
+        assert.equal(await button.isEnabled(), true);
+      }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.querySelector(".question-drawer").scrollWidth <= innerWidth), true);
+      // Exercise real field editing and both footer buttons, preserving the
+      // exact identifier after cancelling the dirty-discard confirmation.
+      await page.getByLabel("Stem · Markdown", { exact: true }).fill(`Edited ${mode} long-identifier fixture`);
+      page.once("dialog", dialog => dialog.dismiss());
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      assert.equal(await page.getByRole("dialog").count(), 1);
+      assert.equal(await external.inputValue(), longExternalId);
+      const count = writes.length;
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("dialog").waitFor({ state: "detached" });
+      assert.equal(writes.length, count + 1);
+      assert.equal(writes.at(-1).externalId, longExternalId, "Saving retains all 5,000 identifier characters exactly");
+      assert.equal(writes.at(-1).expectedRevision, 3);
+      await page.close();
+    }
+  }
   assert.deepEqual(errors, []);
   console.log("Question editor fields: 16 viewport/type cases passed, including labels, growing/shrinking options, caret/scroll and bottom clamping, live reflow, Undo, validation, metadata, status and saved payloads.");
+  console.log("PASS unbounded External IDs: 5,000 characters loaded and pasted at phone/short-landscape sizes; visible identity/revision, editable pane, reachable Save/Cancel, and exact saved values.");
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
