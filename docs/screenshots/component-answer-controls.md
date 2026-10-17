@@ -19,9 +19,10 @@ redo. Unsupported/refused native edits fail without a value-setter fallback.
 The JSON selection and scroll, and the selected answer control, survive switches.
 
 Raw-save rejection of duplicate keys is deliberately separate: #167 / #168.
-This branch's visual eligibility gate rejects duplicates, but does not alter the
-existing raw-save parser. Review and integrate #168 as the companion change for
-the complete approved save policy. Both PRs independently target master.
+This PR's visual eligibility gate rejects duplicates; #168 owns the raw-save
+parser change. The owner approved sequential merge and combined validation on
+2026-10-17. #168 merged first as `2572641dc583facbf561e276ee22fa1e64c902d7`,
+then its master baseline was integrated into #170. The PRs retain separate scopes.
 
 Unknown fields remain intact in JSON; the current schema rejects them, so they
 do not become editable controls. Malformed, unsupported and multi-question input
@@ -79,3 +80,33 @@ engines and actual assistive-technology speech remain acceptance limitations.
 If a native edit cannot run, the source remains editable in JSON. Revert this
 PR to remove visual controls; no schema, migration, configuration or stored-data
 cleanup is needed. The independent duplicate-key validation PR can remain.
+
+## Approved combined integration
+
+After owner approval, #168 merged at `2572641dc583facbf561e276ee22fa1e64c902d7`.
+Integration commit `eff0487dfb032c2863efc8c175f1db99f5a403b8` combines that baseline
+with reviewed #170 head `5afda813fcae651c969af4e9fbd57d82e8dfb101` without conflicts.
+No product-source compatibility fix was needed: the stable patch ID of the
+`apps/web/src` delta against master remains
+`32cea2c7dd7ce49c6e9b0b2d5669219a6752536d`, identical to the reviewed change.
+
+Combined checks on this Windows computer, run sequentially with synthetic data:
+
+- Repository lint, workspace type checks and web build passed (same chunk advisory).
+- Web unit suite: 179 passed, only the two confirmed baseline Windows ESM-path
+  failures in `markdown-tables.test.mjs`; no new failure.
+- All 584 Worker and 67 shared tests passed with test concurrency 1.
+- Tracked-source safety check passed (833 files); all eight local configuration/
+  export tests passed using isolated synthetic fixtures.
+- All seven real Chromium suites passed together: `component-duplicate-keys`,
+  `component-answer-controls`, `component-json-format`, `component-preview-context`,
+  `component-stale-recovery`, `question-save-discard`, `question-editor-preview`.
+  The two new suites include 1440px/390px checks; adjacent suites also exercise
+  short landscape and responsive/zoom cases. The same native undo, exact raw
+  preservation, failed saves, revision conflicts and recovery paths were exercised
+  with both slices present.
+
+Logs remain local under `.worktrees/answer-controls/tmp/integration-155/`.
+The PR's refreshed CI must pass before its expected-head-guarded merge. This
+record does not claim a completed production deployment or screen-reader speech
+acceptance. The private downstream and its production services were not accessed.
