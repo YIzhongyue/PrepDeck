@@ -42,6 +42,7 @@ records the gaps between the original specification, current code and open issue
 | [Development and deployment](guides/development-and-deployment.md) | One-command local setup, simulated bindings, auth, scheduled jobs and deployment. |
 | [Public/private repository workflow](guides/public-private-sync.md) | History-free export, readiness checks and one-way upstream synchronization. |
 | [Question authoring](guides/question-bank-authoring.md) | Drawer workflow, import review, historical grading and content extension. |
+| [Admin question list](screenshots/admin-question-list.md) | Phone row/toolbar reflow, long metadata, list navigation and edit/return verification. |
 | [Question editor preview](screenshots/question-editor-preview.md) | Read-only Learning card parity, unsaved draft rendering, responsive panes and lazy mounting. |
 | [Official explanation tables](screenshots/official-explanation-tables.md) | Markdown tables in editor, Learning and Practice, with safe markup and narrow-screen scrolling. |
 | [Question editor fields](screenshots/question-editor-fields.md) | Growing options, answer labels, touch targets, responsive metadata and header context. |

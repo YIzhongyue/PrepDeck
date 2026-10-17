@@ -52,6 +52,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/settings.browser.mjs", 10],
   ["apps/web/scripts/statistics.browser.mjs", 18],
   ["apps/web/scripts/admin-console.browser.mjs", 13],
+  ["apps/web/scripts/admin-question-list.browser.mjs", 22],
   ["apps/web/scripts/mascot-settings.browser.mjs", 8],
   ["apps/web/scripts/component-annotations.browser.mjs", 3],
   ["apps/web/scripts/question-content.browser.mjs", 6],
