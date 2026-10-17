@@ -13,10 +13,20 @@ format and retain their diagnostics and most recent valid preview.
 The action is keyboard reachable immediately before the JSON field. It restores
 that same field's focus, maps UTF-16 selection offsets and direction, and restores
 field and pane scroll where their bounds allow. Repeated formatting is a no-op.
+Formatting is one native textarea edit: undo restores the exact pre-format draft,
+redo reapplies formatting, and earlier typed edits remain available. Malformed,
+unchanged and failed formatting attempts do not clear or consume edit history.
 Formatting changes dirty state through the existing raw-text comparison, never
 the saved baseline or revision. Pending saves disable formatting. The existing
 save shortcuts, current-draft validation, discard confirmation, failure recovery
 and preview identity isolation remain in effect.
+
+The action uses the browser's `insertText` editing command rather than assigning
+the textarea value. Although [`execCommand` is deprecated](https://developer.mozilla.org/en-US/docs/Web/API/Document/execCommand),
+it preserves native textarea history without adding a custom undo model. Missing,
+refused or throwing commands keep the draft intact and show an error; there is
+no value-setter fallback that would clear history. Browser support remains a
+compatibility boundary to recheck when changing this path.
 
 This preservation contract applies to **Format JSON only**. Ordinary **Save**
 continues through the existing parsing, validation and persistence normalization;
@@ -25,7 +35,8 @@ and string tokens in persisted data. There is no autosave or format-on-type.
 
 ## Verification
 
-Verified locally on Windows on 2026-10-17 with Node 24.19.0 and Chromium, using
+Verified locally on Windows on 2026-10-17 with Node 24.19.0, Chromium 153.0.8010.12
+and WebKit 26.6, using
 only original synthetic loopback fixtures. The dedicated `component-json-format`
 browser regression mounts the actual editor, parser, preview and draft guard at
 1440px and 390px. It checks:
@@ -34,6 +45,9 @@ browser regression mounts the actual editor, parser, preview and draft guard at
   malformed and semantically invalid drafts, unchanged diagnostics and retained preview.
 - Pointer and Enter/Space activation, backward selection containing an emoji,
   original textarea identity, focus, internal/pane scrolling, and repeated no-op.
+- Real keyboard typing, native Ctrl+Z/Ctrl+Shift+Z before and after Format,
+  older typed edits, exact dirty-baseline restoration, and unchanged native
+  history after malformed/no-op/unsupported/refused/throwing formatting attempts.
 - Clean/dirty baselines, keep-editing/discard/reopen, no formatting requests,
   pending request guards, failed save retention, retry and saved revision reuse.
 - Contained layout and no axe WCAG A/AA violations or browser exceptions.
@@ -49,7 +63,9 @@ Reproduce with `node --test apps/web/scripts/format-json-source.test.mjs` and
 `npm run test:browser -- component-json-format component-preview-context question-save-discard question-authoring`.
 Set `SCREENSHOT_DIR` to capture screenshots. External requests are blocked;
 captures use fallback fonts. These are DOM/browser and automated accessibility
-checks, not screen-reader speech verification.
+checks, not screen-reader speech verification. Set `PLAYWRIGHT_BROWSER=webkit`
+to run the same fixture in WebKit. macOS native Cmd+Z was not verified on this
+Windows host; dispatching a Meta key event here would not prove it.
 
 Both captures were visually inspected. They intentionally show the retained
 scroll position and selection after formatting an unsaved draft.

@@ -25,6 +25,12 @@ this dedicated fixture. It verifies:
 - Pending GET/PATCH blocks dismissal, navigation and duplicate keyboard saves.
   Pending requests and failure feedback retain focus inside the modal. The shared
   keyboard/discard behavior and formatter remain in use.
+- The inherited native Format undo/redo regression passed after integration in
+  Chromium 153.0.8010.12 and WebKit 26.6 at 1440px and 390px. This WebKit check
+  covers the formatter fixture; the dedicated recovery fixture uses Chromium.
+  Formatter failures keep textarea focus/history; GET/PATCH failures focus their
+  feedback. Rejected, successful and no-op formatting retain unresolved conflict
+  recovery actions and issue no reload or save request.
 - Actual panel focus after Save/list refresh, including a filtered-away row,
   current opening-control focus after a clean Close, and no later focus stealing
   when the user moves to another control during a delayed list refresh.

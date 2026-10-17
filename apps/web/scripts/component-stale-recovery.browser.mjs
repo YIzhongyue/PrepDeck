@@ -165,7 +165,21 @@ try {
   }
   failSave = null; remoteEdit(); await conflict();
   const validDraft = JSON.parse(raw); validDraft.questions[0].body[0].text = "Last valid draft context";
-  const validRaw = JSON.stringify(validDraft, null, 2); await field.fill(validRaw); await preview.getByText("Last valid draft context", { exact: true }).waitFor();
+  const validRaw = JSON.stringify(validDraft, null, 2); await field.fill(JSON.stringify(validDraft)); await preview.getByText("Last valid draft context", { exact: true }).waitFor();
+  const beforeFormatting = writes.length, readsBeforeFormatting = reads.length;
+  await page.evaluate(() => { window.nativeFormatCommand = document.execCommand; document.execCommand = () => false; });
+  await editor.getByRole("button", { name: "Format JSON" }).click();
+  assert.equal(await field.evaluate(el => el === document.activeElement), true, "formatter failure retains editing focus even during revision recovery");
+  assert.equal(await keepLatest.isVisible(), true);
+  await page.evaluate(() => { document.execCommand = window.nativeFormatCommand; });
+  await editor.getByRole("button", { name: "Format JSON" }).click();
+  assert.equal(await field.inputValue(), validRaw); assert.equal(await field.evaluate(el => el === document.activeElement), true);
+  assert.equal(await keepLatest.isVisible(), true, "successful formatting cannot hide unresolved revision recovery");
+  await editor.getByRole("button", { name: "Format JSON" }).click();
+  assert.equal(await field.inputValue(), validRaw);
+  assert.equal(await keepLatest.isVisible(), true, "no-op formatting cannot hide unresolved revision recovery");
+  assert.equal(reads.length, readsBeforeFormatting);
+  assert.equal(writes.length, beforeFormatting);
   const invalidRaw = validRaw + "\nINVALID"; await field.fill(invalidRaw);
   const beforeInvalid = writes.length; await save.click();
   assert.equal(await editor.getByRole("region", { name: "Question package errors" }).evaluate(el => el === document.activeElement), true);

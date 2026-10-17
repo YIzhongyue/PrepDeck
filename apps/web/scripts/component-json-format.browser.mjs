@@ -7,7 +7,8 @@ import { build } from "esbuild";
 import { createScanner, SyntaxKind } from "jsonc-parser";
 import { readBody } from "./browser-fixture.mjs";
 import { exportComponentPackage, normalizeImportFile } from "../../../packages/shared/src/question-components.ts";
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const playwright = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const engine = process.env.PLAYWRIGHT_BROWSER || "chromium";
 const standard = { id: "format-fixture", examId: "exam", externalId: "FORMAT-🦊", sequenceNumber: 1, type: "single_choice",
   stem: "Formatting fixture", options: [{ id: "A", text: "First answer" }, { id: "B", text: "Second answer" }], correctAnswers: ["A"],
   explanation: "Synthetic official explanation", difficulty: null, tags: [], points: 1, needsReview: false, archivedAt: null,
@@ -52,7 +53,8 @@ const rawTokens = text => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {
-  browser = await chromium.launch({ headless: true, ...(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : {}) });
+  browser = await playwright[engine].launch({ headless: true, ...(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : {}) });
+  console.log(`Component JSON format browser: ${engine} ${browser.version()}`);
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(10000); page.on("pageerror", error => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -71,11 +73,66 @@ try {
   const focusRetained = async () => assert.equal(await textarea.evaluate(el => el === document.activeElement && el === window.originalTextarea), true);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 }); await page.goto(origin); await textarea.waitFor();
-    await page.locator(".question-drawer").evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
+    // WebKit can cancel the opening animation during viewport/StrictMode setup.
+    await page.locator(".question-drawer").evaluate(el => Promise.allSettled(el.getAnimations().map(a => a.finished)));
     await textarea.evaluate(el => { window.originalTextarea = el; });
     await focusRetained();
     const original = await textarea.inputValue(), initialWrites = writes.length;
     await preview.getByText("Formatting fixture", { exact: true }).waitFor();
+    // Use real keyboard edits and the host's native undo binding. A dispatched
+    // Meta+Z event on Windows would only test a handler, not browser history.
+    const undo = process.platform === "darwin" ? "Meta+z" : "Control+z";
+    const redo = process.platform === "darwin" ? "Meta+Shift+z" : "Control+Shift+z";
+    await textarea.evaluate(el => { const at=el.value.indexOf("Formatting fixture"); el.setSelectionRange(at,at+"Formatting fixture".length); });
+    // One key per edit avoids assuming how an engine groups a typing burst.
+    await textarea.pressSequentially("Q");
+    const typed = await textarea.inputValue();
+    await textarea.press(undo); assert.equal(await textarea.inputValue(),original,"Native typing undo works before Format");
+    await textarea.press(redo); assert.equal(await textarea.inputValue(),typed,"Native typing redo works before Format");
+    // A real whitespace insertion makes Format change the draft without
+    // replacing its raw source through Playwright fill or a DOM value setter.
+    await textarea.evaluate(el=>el.setSelectionRange(0,0)); await textarea.pressSequentially(" ");
+    const beforeFormat = await textarea.inputValue();
+    await format.click(); await focusRetained();
+    assert.equal(await textarea.inputValue(),typed);
+    await format.click(); await focusRetained();
+    await textarea.press(undo);
+    assert.equal(await textarea.inputValue(),beforeFormat,"Undo restores the exact draft before Format");
+    await textarea.press(redo);
+    assert.equal(await textarea.inputValue(),typed,"Redo restores the formatted draft");
+    await textarea.press(undo); await textarea.press(undo);
+    assert.equal(await textarea.inputValue(),typed,"Typing before Format remains in native history");
+    await textarea.press(undo);
+    assert.equal(await textarea.inputValue(),original,"Older content edits remain undoable after Format");
+    assert.equal(await dirty.textContent(),"No unsaved changes"); assert.equal(writes.length,initialWrites);
+    await textarea.evaluate(el=>el.setSelectionRange(0,0)); await textarea.pressSequentially("}");
+    const malformedHistory = await textarea.inputValue();
+    await format.click(); await focusRetained();
+    assert.equal(await textarea.inputValue(),malformedHistory); await feedback.getByText(/JSON syntax error/).waitFor();
+    await textarea.press(undo); assert.equal(await textarea.inputValue(),original,"Malformed Format retains native undo");
+    await textarea.press(redo); assert.equal(await textarea.inputValue(),malformedHistory,"Malformed Format retains native redo");
+    await textarea.press(undo); assert.equal(await dirty.textContent(),"No unsaved changes");
+    for (const mode of ["unsupported","refused","throws"]) {
+      await textarea.evaluate(el=>el.setSelectionRange(0,0)); await textarea.pressSequentially(" ");
+      const rejected = await textarea.inputValue(), rejectedPosition = await position();
+      await page.evaluate(mode=>{ window.nativeFormatCommand=document.execCommand;
+        document.execCommand=mode==="unsupported" ? undefined : mode==="refused" ? ()=>false : ()=>{throw new Error("Synthetic native edit failure");}; },mode);
+      await format.click(); await focusRetained();
+      await editor.getByRole("alert").filter({hasText:"Could not format JSON while preserving undo history"}).waitFor();
+      assert.equal(await textarea.inputValue(),rejected); assert.deepEqual(await position(),rejectedPosition);
+      await textarea.press(undo); assert.equal(await textarea.inputValue(),original,`${mode} Format retains native undo`);
+      await textarea.press(redo); assert.equal(await textarea.inputValue(),rejected,`${mode} Format retains native redo`);
+      await page.evaluate(()=>{document.execCommand=window.nativeFormatCommand;});
+      await format.click(); assert.equal(await textarea.inputValue(),original); assert.equal(await editor.getByRole("alert").count(),0);
+      assert.equal(await dirty.textContent(),"No unsaved changes");
+      await textarea.press(undo); assert.equal(await textarea.inputValue(),rejected);
+      await textarea.press(undo); assert.equal(await textarea.inputValue(),original,"A refused format never adds or clears a history entry");
+    }
+    console.log(`PASS native history at ${width}px: typing, Format/no-op, undo/redo, older edits, malformed/unsupported/refused/throwing commands, exact dirty baseline; ${undo}/${redo}`);
+    // Start the existing state/selection scenarios with an independent session.
+    await page.goto(origin); await textarea.waitFor();
+    await page.locator(".question-drawer").evaluate(el => Promise.allSettled(el.getAnimations().map(a => a.finished)));
+    await textarea.evaluate(el => { window.originalTextarea = el; });
     await textarea.focus(); await textarea.press("Shift+Tab");
     assert.equal(await format.evaluate(el => el === document.activeElement), true, "Format JSON is keyboard reachable before the textarea");
     await page.keyboard.press("Enter"); await focusRetained();

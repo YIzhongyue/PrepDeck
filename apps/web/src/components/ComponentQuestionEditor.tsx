@@ -51,10 +51,10 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const backdropPress = useRef(false);
   const feedbackId = useId(), titleId = useId();
   const recovery = useRef<HTMLDivElement>(null), serverFeedback = useRef<HTMLDivElement>(null);
+  const requestFailed = useRef(false);
   const feedback = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
   const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
-  const formatPosition = useRef<JsonPosition | null>(null);
   const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
   const lastValidPreview = useRef(preview);
   useLayoutEffect(() => { if (preview) lastValidPreview.current = preview; }, [preview]);
@@ -63,16 +63,12 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const dirty = text !== initial.current;
   useLayoutEffect(() => {
     // Disabling the active control can move browser focus to the page body.
-    // Keep pending requests and their failure feedback inside this modal.
+    // Only request completion moves focus to failure feedback. Formatter errors
+    // keep the textarea's native history, selection and restored editing focus.
     if (busy) pane.current?.focus({ preventScroll: true });
-    else if (error) serverFeedback.current?.focus();
+    else if (requestFailed.current) { requestFailed.current = false; serverFeedback.current?.focus(); }
   }, [busy, error]);
   useLayoutEffect(() => { if (rebased) recovery.current?.focus(); }, [rebased]);
-  useLayoutEffect(() => {
-    const position = formatPosition.current;
-    formatPosition.current = null;
-    if (position && textarea.current) restoreJsonPosition(textarea.current, pane.current, position);
-  }, [text]);
   const formatText = () => {
     const field = textarea.current;
     if (saving.current || !field) return;
@@ -82,9 +78,22 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
     try {
       const result = formatJsonSource(text, selection);
       const position = { ...(result?.selection ?? selection), ...scroll };
-      if (result && result.text !== text) { formatPosition.current = position; setText(result.text); }
-      else restoreJsonPosition(field, pane.current, position);
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept."); }
+      if (result && result.text !== text) {
+        field.focus({ preventScroll: true });
+        field.setSelectionRange(0, field.value.length);
+        // A native text edit preserves undo/redo. Assigning the textarea value
+        // through React would clear that history. There is no value-setter fallback.
+        let applied = false;
+        try { applied = typeof document.execCommand === "function" && document.execCommand("insertText", false, result.text); } catch { /* Report unsupported native editing below. */ }
+        if (!applied) throw new Error("Could not format JSON while preserving undo history. Your source has been kept.");
+        setText(field.value);
+      }
+      restoreJsonPosition(field, pane.current, position);
+      if (result) setError("");
+    } catch (e) {
+      restoreJsonPosition(field, pane.current, { ...selection, ...scroll });
+      setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept.");
+    }
   };
   const close = async () => { if (await guard.requestDiscard()) onClose(); };
   useLayoutEffect(() => {
@@ -108,6 +117,7 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       if (!mounted.current) return;
       initial.current = text; onSaved(result.question, false);
     } catch (e) { if (mounted.current) {
+      requestFailed.current = true;
       setError(e instanceof Error ? e.message : "Could not save question");
       setStale(e instanceof ApiError && e.status === 409 && (e.body as { code?: string } | null)?.code === "stale_question");
     } }
@@ -128,7 +138,10 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       initial.current = latestText; setBase(latest); setError(""); setStale(false);
       if (!keepDraft) setText(latestText);
       setRebased(`Loaded revision ${latest.revision}. ${changed.length ? `Changed since revision ${base.revision}: ${changed.join(", ")}.` : `No content changes since revision ${base.revision}.`} ${keepDraft ? "Your raw JSON is kept." : "Your draft now matches the latest saved question."} Review the question, then Save when ready.`);
-    } catch (e) { if (mounted.current) setError(`Could not load the latest version: ${e instanceof Error ? e.message : "Please try again."}`); }
+    } catch (e) { if (mounted.current) {
+      requestFailed.current = true;
+      setError(`Could not load the latest version: ${e instanceof Error ? e.message : "Please try again."}`);
+    } }
     finally { saving.current = false; if (mounted.current) setBusy(false); }
   };
   return <><dialog ref={dialog} className="question-drawer-backdrop" aria-labelledby={titleId} aria-modal="true" aria-busy={busy} onKeyDown={guard.onKeyDown}
@@ -152,7 +165,7 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       <div ref={pane} className="question-drawer-body" tabIndex={-1}>
       <p>Edit the structured package. The preview updates when the question is valid.</p>
       <div ref={recovery} tabIndex={-1} hidden={!rebased}><p role="status" className="authoring-rebased">{rebased}</p></div>
-      {error && <div ref={serverFeedback} role="alert" className="authoring-errors" tabIndex={-1}><p>{error}{stale && " Your raw JSON is kept."}</p>
+      {(error || stale) && <div ref={serverFeedback} role="alert" className="authoring-errors" tabIndex={-1}><p>{error || "This question has changed."}{stale && " Your raw JSON is kept."}</p>
         {stale && <div className="authoring-toolbar">
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => loadLatest(true)}>Load latest and keep my edits</button>
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>Discard my edits</button>
