@@ -103,7 +103,12 @@ try {
   const capture = async name => { if (shots) { await mkdir(shots, { recursive: true }); await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/study-status-${name}.png`, fullPage: true }); } };
   const describe = () => ({ views, manual, detailRequests, statuses: Object.fromEntries(statuses) });
   const row = () => page.getByRole("region", { name: "Study status" });
-  const card = (label, count) => row().getByRole("button", { name: `${label} ${count}`, exact: true });
+  const cardDescriptions = {
+    "Any status": "Studied and unstudied questions alike",
+    "Unstudied only": "Never shown in Learning or answered, or marked unstudied",
+    "Studied only": "Shown in Learning, or answered in Practice or Mock",
+  };
+  const card = (label, count) => row().getByRole("button", { name: `${label} ${count} ${cardDescriptions[label]}`, exact: true });
   const summary = label => page.locator(".st-summary-row").filter({ hasText: label }).locator("span").last().textContent();
   const toggle = page.getByRole("button", { name: "Studied", exact: true });
   const shown = () => page.evaluate(() => window.store.state.lQueue[window.store.state.lIdx]);

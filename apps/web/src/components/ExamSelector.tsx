@@ -45,7 +45,9 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
       <button
         type="button"
         className="exam-selector__trigger"
-        aria-label={`Select exam${activeExam ? `, current exam: ${activeExam.name}` : ""}`}
+        aria-label={compact
+          ? `Select exam${activeExam ? `, current exam: ${activeExam.name}` : ""}`
+          : activeExam ? `${activeExam.slug} — Select exam, current exam: ${activeExam.name}` : "Select an exam"}
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-controls={menuId}

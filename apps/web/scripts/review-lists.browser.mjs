@@ -139,12 +139,12 @@ try {
   // A tag the collapsed bar holds back is found by searching, not by scrolling
   // a wall of chips — and selecting it drives the cards, the practice action
   // and the status line together.
-  assert.equal(await page.getByRole("button", { name: /^Storage, / }).count(), 0, "Storage starts out behind More");
+  assert.equal(await page.getByRole("button", { name: /^Storage / }).count(), 0, "Storage starts out behind More");
   await more.click();
   const search = page.getByRole("searchbox", { name: "Search tags" });
   await search.fill("sto");
   await page.waitForFunction(() => document.querySelectorAll(".tag-filter__chip").length === 1);
-  await page.getByRole("button", { name: "Storage, 1 question" }).click();
+  await page.getByRole("button", { name: "Storage 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 1", exact: true }).waitFor();
   assert.equal(await cards.count(), 1);
   await page.getByText("1 of 14 questions · 1 tag selected").waitFor();
@@ -153,7 +153,7 @@ try {
   // it is still filtering the page, and its chip is the only way to switch it
   // off. Selected chips are pinned ahead of the matches, search or no search.
   await search.fill("sec");
-  await page.getByRole("button", { name: "Security, 2 questions" }).waitFor();
+  await page.getByRole("button", { name: "Security 2 questions" }).waitFor();
   assert.deepEqual(await chipNames(), ["Storage", "Security"], "the active filter is pinned while the search narrows the rest");
   assert.equal(await page.locator('.tag-filter__chip[aria-pressed="true"]').count(), 1);
   assert.equal(await cards.count(), 1, "searching filters chips, never questions");
@@ -164,14 +164,14 @@ try {
   await search.fill("zzz");
   await page.getByText("No other tags match “zzz”.").waitFor();
   assert.deepEqual(await chipNames(), ["Storage"]);
-  await page.getByRole("button", { name: "Storage, 1 question" }).click();
+  await page.getByRole("button", { name: "Storage 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 14", exact: true }).waitFor();
   assert.equal(await page.locator(".tag-filter__clear").count(), 0, "the filter was switched off from where it stood, mid-search");
   // Nothing pinned now, so the same empty result speaks for the whole tag set.
   await page.getByText("No tags match “zzz”.").waitFor();
   assert.deepEqual(await chipNames(), []);
   await search.fill("sto");
-  await page.getByRole("button", { name: "Storage, 1 question" }).click();
+  await page.getByRole("button", { name: "Storage 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 1", exact: true }).waitFor();
   await search.fill("zzz");
 
@@ -184,7 +184,7 @@ try {
 
   // OR matching, stated in lib/tagFilter.ts and visible here: a second tag
   // widens the list rather than intersecting it away.
-  await page.getByRole("button", { name: "Security, 2 questions" }).click();
+  await page.getByRole("button", { name: "Security 2 questions" }).click();
   await page.getByRole("button", { name: "Practice these 3", exact: true }).waitFor();
   await page.getByText("3 of 14 questions · 2 tags selected").waitFor();
   assert.equal(await page.locator('.tag-filter__chip[aria-pressed="true"]').count(), 2);
@@ -198,21 +198,21 @@ try {
   // of the filter it was applying. The rest of the filter still holds.
   await page.locator(".card.elev-sm").filter({ hasText: "Wrong Storage" }).getByRole("button", { name: "Mark mastered" }).click();
   await page.getByRole("button", { name: "Practice these 2", exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: /^Storage, / }).count(), 0, "a tag with no questions left leaves the bar");
+  assert.equal(await page.getByRole("button", { name: /^Storage / }).count(), 0, "a tag with no questions left leaves the bar");
   await page.getByText("2 of 13 questions · 1 tag selected").waitFor();
 
   // Retiring the last question of the only active tag hands the whole list
   // back rather than leaving an invisible filter over an empty page.
-  await page.getByRole("button", { name: "Security, 2 questions" }).click();
-  await page.getByRole("button", { name: "Compute, 1 question" }).click();
+  await page.getByRole("button", { name: "Security 2 questions" }).click();
+  await page.getByRole("button", { name: "Compute 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 1", exact: true }).waitFor();
   await page.locator(".card.elev-sm").filter({ hasText: "Wrong Compute" }).getByRole("button", { name: "Mark mastered" }).click();
   await page.getByText("12 questions · all tags").waitFor();
   assert.equal(await cards.count(), 12);
 
   // Clearing is one control away, whatever is selected.
-  await page.getByRole("button", { name: "Security, 2 questions" }).click();
-  await page.getByRole("button", { name: "Databases, 1 question" }).click();
+  await page.getByRole("button", { name: "Security 2 questions" }).click();
+  await page.getByRole("button", { name: "Databases 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 3", exact: true }).waitFor();
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.getByRole("button", { name: "Practice these 12", exact: true }).waitFor();
@@ -241,7 +241,7 @@ try {
   assert.equal(await page.getByRole("button", { name: /^Show \d+ more$/ }).count(), 0, "a three-tag list has nothing to collapse");
   assert.equal(await page.getByRole("searchbox", { name: "Search tags" }).count(), 0);
   assert.equal(await page.locator(".tag-filter__clear").count(), 0, "clear appears only with something to clear");
-  await page.getByRole("button", { name: "Storage, 2 questions" }).click();
+  await page.getByRole("button", { name: "Storage 2 questions" }).click();
   await page.getByRole("button", { name: "Practice these 2", exact: true }).waitFor();
   await page.getByText("2 of 4 questions · 1 tag selected").waitFor();
   await capture("bookmarks-filtered");
@@ -258,7 +258,7 @@ try {
   await open("wrong");
   await page.getByRole("button", { name: /^Show \d+ more$/ }).click();
   await page.getByRole("searchbox", { name: "Search tags" }).fill("net");
-  await page.getByRole("button", { name: "Networking, 1 question" }).click();
+  await page.getByRole("button", { name: "Networking 1 question" }).click();
   await page.getByRole("button", { name: "Practice these 1", exact: true }).waitFor();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 0, `page overflows by ${overflow}px at 375px`);

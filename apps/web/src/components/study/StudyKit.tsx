@@ -111,7 +111,8 @@ export function StudiedToggle({ studied, onChange, compact = false }: { studied:
 export function CopyPromptButton({ status, onClick, compact = false }: { status: "idle" | "copied" | "error"; onClick: () => void; compact?: boolean }) {
   return (
     <>
-      <button type="button" className="st-btn st-btn--sm st-copy" data-status={status} onClick={onClick} aria-label="Copy question and answers as a Markdown prompt">
+      <button type="button" className="st-btn st-btn--sm st-copy" data-status={status} onClick={onClick}
+        aria-label={compact ? "Copy as prompt" : undefined} title="Copy question and answers as a Markdown prompt">
         <Icon d={status === "copied" ? IC.check : status === "error" && compact ? IC.circleX : IC.copy} style={status === "copied" ? { animation: "st-pop .35s cubic-bezier(.3,1.5,.5,1) both" } : undefined} />
         {!compact && (status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy as prompt")}
       </button>

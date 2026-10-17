@@ -169,6 +169,14 @@ and terms pages. Any serious or critical WCAG 2.1 A/AA violation fails the
 check. To accept one, add it to `KNOWN_EXCEPTIONS` in the script with the reason.
 The list is empty today.
 
+The locked axe-core version is 4.14.0, which includes the WCAG 2.5.3
+`label-content-name-mismatch` rule in the existing WCAG 2.1 A scan.
+`npm run test:browser -- visible-accessible-names` supplements the full scan
+with exact browser-computed names and keyboard/state checks for setup choices,
+difficulty and tag filters, desktop/compact copy outcomes, and expanded/compact
+exam selectors (including no exams). It uses synthetic loopback fixtures;
+it does not replace the full scan or establish screen-reader speech behavior.
+
 To run it against a running `npm run dev`, after `npm run build --workspace apps/web`:
 
 ```bash

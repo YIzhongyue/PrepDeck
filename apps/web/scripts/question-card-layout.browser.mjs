@@ -76,7 +76,7 @@ const rect = (page, selector) => page.locator(selector).first().evaluate(el => {
 const settle = page => page.evaluate(async () => {
   await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})));
 });
-const copyButton = page => page.getByRole("button", { name: "Copy question and answers as a Markdown prompt" });
+const copyButton = page => page.getByRole("button", { name: "Copy as prompt", exact: true });
 
 // First header row holds only the ID, type and (when present) Copy as prompt; tags start on their own row.
 async function checkHeader(page, label, { tags, copy }) {

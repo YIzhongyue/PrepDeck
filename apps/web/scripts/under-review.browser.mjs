@@ -112,7 +112,7 @@ try {
 
   // An empty source is not a dead end: Start is disabled with the reason on
   // it, and the notice offers the unattempted questions instead.
-  await page.getByRole("button", { name: "Wrong book 0", exact: true }).click();
+  await page.getByRole("button", { name: "Wrong book 0 Misses you have not mastered yet", exact: true }).click();
   await page.getByText("0 questions match your filters").waitFor();
   const start = page.getByRole("button", { name: "Start session" });
   assert.equal(await start.isDisabled(), true, "an empty source cannot start a session");
@@ -123,7 +123,7 @@ try {
   await page.getByText("6 questions match your filters").waitFor();
   assert.equal((await state()).source, "new");
   assert.equal(await start.isDisabled(), false);
-  await page.getByRole("button", { name: "All questions 6", exact: true }).click();
+  await page.getByRole("button", { name: "All questions 6 The full bank for this exam", exact: true }).click();
 
   await choose("Skip");
   await page.getByText("4 questions match your filters").waitFor();
@@ -185,7 +185,7 @@ try {
   // even once a copy reports back, which used to spell out "Copied" or
   // "Copy failed" in a row with no room left for it (PR #97 review).
   await page.setViewportSize({ width: 375, height: 800 });
-  const copy = page.getByRole("button", { name: "Copy question and answers as a Markdown prompt" });
+  const copy = page.getByRole("button", { name: "Copy as prompt", exact: true });
   await copy.waitFor();
   const headerFits = label => waitUntil(`the phone header to fit (${label})`, () => page.evaluate(() => {
     const row = document.querySelector(".st-q-head .st-badges-row");
