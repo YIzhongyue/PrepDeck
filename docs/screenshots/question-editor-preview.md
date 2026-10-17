@@ -19,9 +19,10 @@ body to scrollTop=1859; the fields and preview could not be reviewed together.
 
 The drawer uses two independently scrollable panes at 1100 CSS pixels and above.
 At that boundary each pane has roughly 494px of usable width. Below it, Edit and
-Preview buttons remain in the header while the current pane scrolls. Both panes
-stay mounted so draft values, textarea selection and scroll positions survive
-switching. Returning to Edit focuses the last edited control. Invalid saves
+Preview buttons remain in the header while the current pane scrolls. Both pane
+containers stay mounted; preview children first mount on Preview activation or
+wide layout, then stay mounted. Draft values, textarea selection and scroll
+positions survive switching. Returning to Edit focuses the last edited control. Invalid saves
 reveal the affected fields, and resizing keeps the focused pane available.
 
 The breakpoint is based on space for the existing fields and preview; it is
@@ -80,3 +81,82 @@ back to system fonts; this change does not alter the application's fonts.
 ![390px Preview](question-editor-preview/local-phone-preview.png)
 
 ![Actual 200% tab zoom](question-editor-preview/local-zoom-200.png)
+
+## Compact initial preview mounting (#156)
+
+[#156](https://github.com/YIzhongyue/PrepDeck/issues/156) corrects unnecessary
+hidden rendering introduced by #143. On a compact opening, the preview section
+and its ref remain stable but its children wait until first Preview activation or
+a wide layout. After that first use the children remain mounted, preserving
+preview scroll across switches and resizing. Markdown output, save workflow,
+validation, Undo and stale-save recovery are unchanged.
+
+The regression instruments the real `QuestionContent` and Markdown parser in the
+test bundle only. It failed on unchanged master `4ca4175`: a compact opening
+called each implementation four times instead of zero. With the correction it
+passes with zero calls and zero preview child elements on opening and edits
+before first use. First activation displays the latest stem, options and
+explanation. Fresh wide openings and widening before first Preview also pass,
+and child-node identity survives later switches and resizing.
+
+### Matched synthetic comparison
+
+The same synthetic inputs and instrumentation were run before and after the fix
+with Chromium 153.0.8010.12, Node 24.19.0 and production React 19.3.0. Each run
+covered three fixture shapes, two widths and three repetitions: 18 openings and
+135 measured phases. Fixtures passed the existing validator initially and after
+every measured edit. The earlier measured standard editor at `dfcff58` is
+identical to master `4ca4175`; the corrected product commit is `2e0c125`.
+Unchanged renderer source hashes and fixture dimensions were compared.
+
+For the fragmented near-limit fixture (19,992-character stem, twenty
+10,000-character options and a 50,000-character explanation), at 390px:
+
+| Phase | Markdown calls before → after | Preview elements before → after | Event-to-two-frames median, ms, before → after |
+| --- | --- | --- | --- |
+| Open (3 samples) | 22 → 0 | 36,079 → 0 | 489.00 → 202.50 |
+| Edit before Preview (12 samples) | 22 → 0 | 36,080 → 0 | 115.35 → 27.35 |
+| First Preview (3 samples) | 22 → 22 | 36,080 → 36,080 | 257.30 → 534.90 |
+| Edit after first Preview (6 samples) | 22 → 22 | 36,080 → 36,080 | 114.45 → 120.15 |
+
+The deterministic result is removal of work before compact activation. Rendering
+cost moves to first Preview. These sequential, instrumented, headless desktop
+timings are descriptive; they are not phone latency, production INP or a general
+speedup guarantee. Textarea/layout work, caches, run order and system load affect
+them. No timing threshold, rendering cache or scheduling redesign is included.
+
+### Verification of the correction
+
+- Lint, workspace types, web-only build, 584 Worker tests, 67 shared tests and
+  143 web tests passed sequentially. The web run used the same ignored Windows
+  file-URL resolve adapter described above, without changing test assertions.
+- `question-editor-preview`, `question-authoring` and `question-content` browser
+  suites passed. The preview regression exercises client/server validation,
+  Undo, stale recovery, interrupted save, dismissal protection and keyboard
+  navigation after compact first activation, as well as focus/caret/scroll and
+  1100/1099/390px layout transitions.
+- Full local smoke and the five-theme axe-core 4.14.0 scan passed. A separate
+  built-app check against local Worker/D1 verified the initially empty preview,
+  latest draft, stable section, repeated switching, real concurrent-edit
+  rejection/recovery, injected local save failure and successful fresh-revision
+  persistence. Its disposable synthetic question was deleted afterward.
+- Actual Chromium tab zoom verified a compact opening at 200% (720 CSS pixels)
+  with no preview children, first mounting when widened to 100% (1440px), and
+  subsequent 200%/100% transitions retaining child identity, draft, caret, focus
+  and preview scroll. Save remained inside the measured viewport. The temporary
+  extension/profile only affected the isolated test browser.
+- Independent read-only code review found no actionable issues. Screenshots and
+  the final diff were inspected. External requests were blocked, using configured
+  fallback fonts. These checks do not establish screen-reader speech behavior.
+
+![Compact Edit before preview mounting](compact-preview-lazy/compact-before-preview.png)
+
+![Compact Preview after first activation](compact-preview-lazy/compact-preview.png)
+
+![Wide layout retaining the activated preview](compact-preview-lazy/wide-after-activation.png)
+
+![Actual 200% zoom after activation](compact-preview-lazy/actual-zoom-200.png)
+
+This correction is independent of component JSON diagnostics in #147. It changes
+no API, schema, stored data or rendering output. Roll back with a reviewed revert
+of the eventual squash commit.
