@@ -534,9 +534,6 @@ header .exam-selector--compact .exam-selector__menu {
 }
 @media (max-width: 600px) {
   .question-editor-pane { padding: 20px 16px; }
-  .question-draft-preview .st-q-head { padding: 16px 16px 12px; }
-  .question-draft-preview .st-q-body { padding: 20px 16px; }
-  .question-draft-preview .st-stem { font-size: 16px; }
 }
 .question-editor [aria-invalid=true] { border-color: var(--color-danger, #b42318); }
 

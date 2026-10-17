@@ -12,6 +12,12 @@ The official explanation shares Learning's pure renderer and is expanded in the
 editor. All content comes from the unsaved form. Interactive try-answer and
 explanation-table support are outside this slice.
 
+**Needs review** displays the shared learner warning above the stem as well as
+the badge. Card spacing, typography and compact tags reuse Learning's
+`st-phone`/`st-flow`/`st-landscape` classes and shared `breakpointsFor` rules,
+including phones below 620px and landscape windows below 1100px and 500px high.
+The editor retains its own pane scrolling and fully expanded explanation.
+
 The editor does not mount `LearningLive`, a study provider, or the AI-backed
 `ExplanationPanel`. Component-question preview/diagnostics and the responsive
 pane lifecycle described below remain unchanged. The
@@ -21,17 +27,24 @@ Run the following to reproduce the local browser checks. The runner executes
 the scripts sequentially; `SCREENSHOT_DIR` retains captures.
 
 ```bash
-npm run test:browser -- question-draft-preview question-editor-preview question-authoring question-content question-card-layout answer-state component-annotations
+npm run test:browser -- question-draft-preview question-editor-preview question-authoring question-content question-card-layout answer-state component-annotations under-review
 ```
 
 The new `question-draft-preview` fixture runs the real editor without a study
 provider, against a loopback-only synthetic API. A separate browser page renders
-the real Learning screen with a frozen test snapshot and action spies for
-comparison. Across single choice, multiple choice, true/false and fill-in at
-390px and 1440px, it verifies:
+the real Learning screen with a frozen test snapshot and action spies. That
+reference responds to its actual viewport through the same breakpoint function
+as the application; it is not fixed to desktop. Across single choice, multiple
+choice, true/false and fill-in at 390×1000, 619×1000, 620×1000, 844×390 and
+1440×1000, it verifies:
 
-- Exact stem, option/accepted-answer and official-explanation markup parity,
-  plus computed answer styling parity with Learning.
+- Exact stem, option/accepted-answer and official-explanation title/prose markup
+  parity, plus computed answer, header/body spacing, typography and tag styling.
+- Needs-review badge and warning parity when toggling the unsaved flag both ways,
+  clean dismissal after reverting it, and saving/reopening the changed flag.
+- Long compact tags' markup, focus and horizontal scrolling, plus live resizing
+  across 619/620px, 499/500px height and 1099/1100px landscape boundaries without
+  remounting the card.
 - Unsaved edits to every displayed content/answer field, multiple correct
   answers, literal Unicode/Markdown fill-in alternatives and preserved whitespace.
 - Expanded long explanations, incomplete drafts, no horizontal overflow,
@@ -51,15 +64,21 @@ Node.js 24.19.0 on Windows using synthetic data only. External requests are
 blocked in the new fixture, so hosted fonts use system fallbacks. This evidence
 does not claim production verification or screen-reader speech testing.
 
-Local verification passed lint, all workspace type checks, the web build,
+Initial local verification passed lint, all workspace type checks, the web build,
 584 Worker tests, 67 shared tests, 150 web tests, the three browser-runner tests
-and the seven browser suites above. The unmodified web test command encounters
+and the original seven browser suites. The unmodified web test command encounters
 two existing Windows file-path import failures in `markdown-tables.test.mjs`;
 all 150 pass with a temporary, ignored Node resolver converting drive-letter
 imports to file URLs, without changing assertions. Linux CI runs the ordinary
 command. The new browser regression was also run against the original master
 editor and failed because the Learning card markup was absent; the implementation
 was restored afterward. There are no API, migration or deployment changes.
+
+The review correction reran lint, workspace type checks, all 150 web tests
+(with the same Windows resolver), the web build, and the expanded draft-preview,
+responsive-editor, question-card-layout and under-review browser suites. All
+passed. The refreshed screenshots include the unsaved Needs-review warning and
+long tags; the regression exercises all 20 viewport/type combinations above.
 
 ![Unsaved multiple-choice draft at 1440px](learning-card-preview/wide.png)
 

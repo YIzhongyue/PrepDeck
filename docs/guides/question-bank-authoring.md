@@ -19,6 +19,9 @@ from Preview reveals and focuses a field that needs correction.
 The preview uses Learning's read-only question card, with correct options
 identified by a checkmark and **Correct answer** text. Fill-in questions show
 every accepted answer; blank lines are ignored, and answer text stays literal.
+Checking **Needs review** shows both Learning's header badge and its warning
+above the stem. The card uses Learning's phone and short-landscape presentation,
+including compact, keyboard-accessible scrolling tags.
 The official explanation uses the same Markdown presentation as Learning and
 is fully expanded. Stem, options, answers and explanation reflect the unsaved
 draft. Previewing does not answer a question, mark it viewed or studied, request

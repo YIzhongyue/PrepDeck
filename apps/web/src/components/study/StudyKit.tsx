@@ -221,7 +221,7 @@ export function UnderReviewBadge() {
   return <span className="st-badge st-badge--warn" title={UNDER_REVIEW_NOTICE}><Icon d={IC.alert} size={12} />Under review</span>;
 }
 
-export function UnderReviewNotice({ question }: { question: Question }) {
+export function UnderReviewNotice({ question }: { question: Pick<Question, "needsReview"> }) {
   if (!question.needsReview) return null;
   return (
     <div className="st-review-note" role="note">
