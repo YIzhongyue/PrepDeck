@@ -3,6 +3,8 @@ import { exportComponentPackage, formatAnswerText, type Question } from "@prepde
 import { ApiError, apiFetch } from "../lib/api";
 import { inspectComponentQuestionDraft } from "../lib/componentQuestionDraft";
 import { formatJsonSource, type JsonSelection } from "../lib/formatJsonSource";
+import { inspectAnswerControls } from "../lib/componentAnswerControls";
+import ComponentAnswerControls, { AnswerOption } from "./ComponentAnswerControls";
 import QuestionContent from "./QuestionContent";
 import { useQuestionDraftGuard } from "./QuestionDraftGuard";
 
@@ -55,12 +57,71 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const feedback = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
   const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
-  const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
+  const [mode, setMode] = useState<"json" | "answers">("json");
+  const [answerMessage, setAnswerMessage] = useState("");
+  const jsonView = useRef<HTMLDivElement>(null), answersView = useRef<HTMLDivElement>(null);
+  const jsonPosition = useRef<JsonPosition | null>(null), answerFocus = useRef<HTMLElement | null>(null);
+  const draft = useMemo(() => inspectComponentQuestionDraft(text), [text]);
+  const controls = useMemo(() => inspectAnswerControls(text, draft), [text, draft]);
+  const showAnswers = mode === "answers" && Boolean(controls.preview);
+  useLayoutEffect(() => {
+    if (mode === "answers" && !controls.preview) {
+      setMode("json"); textarea.current?.focus({ preventScroll: true });
+    }
+  }, [mode, controls.preview]);
+  const { preview, issues, syntaxError } = draft;
   const lastValidPreview = useRef(preview);
   useLayoutEffect(() => { if (preview) lastValidPreview.current = preview; }, [preview]);
   const shownPreview = preview ?? lastValidPreview.current;
   const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
+  const switchMode = (next: "json" | "answers") => {
+    if (saving.current || next === mode) return;
+    const field = textarea.current;
+    if (next === "answers" && field) {
+      jsonPosition.current = { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection,
+        top: field.scrollTop, left: field.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 };
+    }
+    setMode(next);
+  };
+  useLayoutEffect(() => {
+    if (showAnswers) {
+      (answerFocus.current?.isConnected ? answerFocus.current : answersView.current)?.focus({ preventScroll: true });
+    } else if (jsonPosition.current && textarea.current) {
+      restoreJsonPosition(textarea.current, pane.current, jsonPosition.current);
+    }
+    // Restore only on a view change; typing must keep its native caret.
+  }, [showAnswers]);
+  const nativeAnswerEdit = (command: "insertText" | "undo" | "redo", next?: string) => {
+    const field = textarea.current, wrapper = jsonView.current;
+    if (saving.current || !field || !wrapper) return false;
+    if (command === "insertText" && next === text) return false;
+    const active = document.activeElement as HTMLElement | null;
+    const position = { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection,
+      top: field.scrollTop, left: field.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 };
+    // A display:none textarea cannot receive a native edit. Reveal synchronously
+    // for the command and restore before paint; never remount or assign value.
+    const hidden = wrapper.hidden;
+    wrapper.hidden = false;
+    try {
+      field.focus({ preventScroll: true });
+      if (command === "insertText") field.setSelectionRange(0, field.value.length);
+      const applied = typeof document.execCommand === "function" && document.execCommand(command, false, next);
+      if (!applied && command === "insertText") throw new Error("Could not change the answer while preserving undo history. Your source has been kept. Edit the answer in JSON.");
+      setText(field.value); setError("");
+      if (applied && command !== "insertText") setAnswerMessage(command === "undo" ? "Previous draft restored." : "Next draft restored.");
+      return applied;
+    } catch {
+      setError("Could not change the answer while preserving undo history. Your source has been kept. Edit the answer in JSON.");
+      return false;
+    } finally {
+      field.setSelectionRange(position.start, position.end, position.direction);
+      field.scrollTop = position.top; field.scrollLeft = position.left;
+      wrapper.hidden = hidden;
+      active?.focus({ preventScroll: true });
+      if (pane.current) pane.current.scrollTop = position.paneTop;
+    }
+  };
   useLayoutEffect(() => {
     // Disabling the active control can move browser focus to the page body.
     // Only request completion moves focus to failure feedback. Formatter errors
@@ -170,17 +231,31 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => loadLatest(true)}>Load latest and keep my edits</button>
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>Discard my edits</button>
         </div>}</div>}
+      <div role="group" aria-label="Editing view" className="authoring-toolbar component-view-toggle">
+        <button type="button" className="btn btn-secondary" aria-pressed={!showAnswers} disabled={busy} onClick={() => switchMode("json")}>JSON</button>
+        <button type="button" className="btn btn-secondary" aria-pressed={showAnswers} disabled={busy || !controls.preview} onClick={() => switchMode("answers")}>Answer controls</button>
+      </div>
+      {!controls.preview && <p>{controls.reason}</p>}
+      <div ref={answersView} hidden={!showAnswers} tabIndex={-1} onBlurCapture={event => { answerFocus.current = event.target as HTMLElement; }} onKeyDown={event => {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
+          event.preventDefault(); nativeAnswerEdit(event.shiftKey || event.key.toLowerCase() === "y" ? "redo" : "undo");
+        }
+      }}><ComponentAnswerControls state={controls} raw={text} disabled={busy} change={next => nativeAnswerEdit("insertText", next)} message={answerMessage} announce={setAnswerMessage} /></div>
+      <div ref={jsonView} hidden={showAnswers}>
       <div><button type="button" className="btn btn-secondary" disabled={busy} onClick={formatText}>Format JSON</button></div>
       <label>Question package JSON<textarea ref={textarea} className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId}
         onBlur={e => { editScroll.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 }; }}
-        onChange={e => setText(e.target.value)} /></label>
+        onChange={e => { setText(e.target.value); setAnswerMessage(""); }} /></label>
+      </div>
       <div ref={feedback} id={feedbackId} className="authoring-errors" role="region" aria-label="Question package errors" tabIndex={-1} aria-live="polite" hidden={!invalid}>
         {syntaxError && <p>JSON syntax error{syntaxError.line !== undefined && syntaxError.column !== undefined ? ` at line ${syntaxError.line}, column ${syntaxError.column}` : ""}: {syntaxError.message}</p>}
         {issues.length > 0 && <><p>Package validation errors:</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
       </div>
-      <section aria-label="Component question preview">
+      <section className="component-editor-preview" aria-label="Component question preview">
         <p role="status" hidden={Boolean(preview)}>{shownPreview ? "Preview is out of date. Showing the most recent valid draft." : "No valid preview yet. Correct the package errors to see a preview."}</p>
-        {shownPreview && <><QuestionContent src={shownPreview.stem} content={shownPreview.content} />{shownPreview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={shownPreview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(shownPreview, shownPreview.correctAnswers)}</p></>}
+        {shownPreview && <><QuestionContent src={shownPreview.stem} content={shownPreview.content} />{shownPreview.content?.interaction.type === "match" ?
+          ([["Left", shownPreview.content.interaction.left], ["Right", shownPreview.content.interaction.right]] as const).map(([side, options]) => <section key={side} aria-label={`${side} preview items`}>{options.map(option => <div key={option.id}><strong>{side} ID: {option.id}</strong><AnswerOption option={option} content={shownPreview.content!} /></div>)}</section>) :
+          shownPreview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={shownPreview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(shownPreview, shownPreview.correctAnswers)}</p></>}
       </section>
     </div><footer className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : "No unsaved changes"}</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button type="button" className="btn btn-primary" disabled={busy} onClick={save}>Save</button></div></footer></div>
   </dialog>{guard.confirmation}</>;

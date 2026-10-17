@@ -2,7 +2,14 @@
 
 [Documentation index](../README.md) · [Issue #155](https://github.com/YIzhongyue/PrepDeck/issues/155)
 
-**Status: discovery only, awaiting owner scope review.** The owner authorized
+**Status: discovery approved on 2026-10-17; product slice tracked in #166 and #167.**
+The original prototype below remains an isolated discovery artifact. The owner
+approved existing-item answer controls and separate duplicate-key raw-save
+rejection. See the [current authoring guide](../guides/question-bank-authoring.md)
+for implemented behavior. Historical discovery statements below describe the
+proposal before that decision.
+
+**Original discovery status:** The owner authorized
 discovery after #158 merged. This document and its isolated synthetic prototype
 do not add a graphical editor to PrepDeck. PRs #143, #147 and #158 are merged;
 #151–#154 separately own save/discard, component preview, formatting and recovery.
