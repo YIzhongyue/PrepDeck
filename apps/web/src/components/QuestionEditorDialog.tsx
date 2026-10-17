@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { IMPORT_LIMITS, normalizeTagKey, validateQuestionRow, type Question, type QuestionType, type ValidationIssue } from "@prepdeck/shared";
 import { apiFetch, ApiError } from "../lib/api";
 import { blankQuestion, formPayload, questionForm, type QuestionForm } from "../lib/questionAuthoring";
-import QuestionContent from "./QuestionContent";
+import QuestionDraftPreview from "./QuestionDraftPreview";
 import QuestionTagPicker from "./QuestionTagPicker";
 
 // Undo for a type change or option removal. It is offered only while the
@@ -277,9 +277,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
       </fieldset>
       </div>
       <section ref={previewPane} id="question-preview" className="authoring-preview question-editor-pane" aria-label="Markdown preview" tabIndex={0} hidden={!wide && !preview}>
-        {(wide || previewMounted) && <><h4>Preview</h4><QuestionContent src={form.stem} />
-        {form.type !== "fill_blank" && form.options.map(o => <div key={o.id}><strong>{o.id}{form.correctAnswers.includes(o.id) ? " ✓" : ""}</strong><QuestionContent src={o.text} /></div>)}
-        <p>Correct answers: {formPayload(form).correctAnswers.join(", ") || "Not selected"}</p><QuestionContent src={form.explanation} /></>}
+        {(wide || previewMounted) && <><h4>Preview</h4><QuestionDraftPreview form={form} /></>}
       </section>
       </div>
       <footer className="question-drawer-footer">

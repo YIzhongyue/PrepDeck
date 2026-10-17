@@ -1,5 +1,72 @@
 # Question editor preview proximity
 
+[Documentation index](../README.md)
+
+## Learning card presentation (#148)
+
+The approved first slice of [#148](https://github.com/YIzhongyue/PrepDeck/issues/148)
+replaces the standard editor's plain preview with Learning's read-only question
+card. Correct options use the shared `OptionGroup`/`OptionRow` list semantics and
+visible **Correct answer** text. Fill-in questions display every accepted answer.
+The official explanation shares Learning's pure renderer and is expanded in the
+editor. All content comes from the unsaved form. Interactive try-answer and
+explanation-table support are outside this slice.
+
+The editor does not mount `LearningLive`, a study provider, or the AI-backed
+`ExplanationPanel`. Component-question preview/diagnostics and the responsive
+pane lifecycle described below remain unchanged. The
+[authoring guide](../guides/question-bank-authoring.md) owns the user workflow.
+
+Run the following to reproduce the local browser checks. The runner executes
+the scripts sequentially; `SCREENSHOT_DIR` retains captures.
+
+```bash
+npm run test:browser -- question-draft-preview question-editor-preview question-authoring question-content question-card-layout answer-state component-annotations
+```
+
+The new `question-draft-preview` fixture runs the real editor without a study
+provider, against a loopback-only synthetic API. A separate browser page renders
+the real Learning screen with a frozen test snapshot and action spies for
+comparison. Across single choice, multiple choice, true/false and fill-in at
+390px and 1440px, it verifies:
+
+- Exact stem, option/accepted-answer and official-explanation markup parity,
+  plus computed answer styling parity with Learning.
+- Unsaved edits to every displayed content/answer field, multiple correct
+  answers, literal Unicode/Markdown fill-in alternatives and preserved whitespace.
+- Expanded long explanations, incomplete drafts, no horizontal overflow,
+  successful explicit save and clean reopen.
+- No study context use, AI/learning requests, extra writes, source-question
+  mutation, local-storage changes or dirty state from preview interactions.
+
+The unchanged responsive suite covers lazy first mount, retained subtree,
+focus/caret/edit and preview scroll, keyboard switching, 1100/1099px boundaries,
+390px and 720px zoom-equivalent reflow, client/server validation, Undo, stale
+recovery, interrupted saves and cancellation. Adjacent suites cover component
+JSON diagnostics and import preview, Learning/Practice/Mock presentation, answer
+state, annotations and content loading.
+
+These screenshots were captured and inspected with Chromium 153.0.8010.12 and
+Node.js 24.19.0 on Windows using synthetic data only. External requests are
+blocked in the new fixture, so hosted fonts use system fallbacks. This evidence
+does not claim production verification or screen-reader speech testing.
+
+Local verification passed lint, all workspace type checks, the web build,
+584 Worker tests, 67 shared tests, 150 web tests, the three browser-runner tests
+and the seven browser suites above. The unmodified web test command encounters
+two existing Windows file-path import failures in `markdown-tables.test.mjs`;
+all 150 pass with a temporary, ignored Node resolver converting drive-letter
+imports to file URLs, without changing assertions. Linux CI runs the ordinary
+command. The new browser regression was also run against the original master
+editor and failed because the Learning card markup was absent; the implementation
+was restored afterward. There are no API, migration or deployment changes.
+
+![Unsaved multiple-choice draft at 1440px](learning-card-preview/wide.png)
+
+![Read-only preview at 390px](learning-card-preview/phone.png)
+
+## Earlier pane layout and lazy mounting
+
 Partial progress on [#138](https://github.com/YIzhongyue/PrepDeck/issues/138).
 This change only moves the existing Markdown preview beside the fields or behind
 an explicit view switch. It does not change the component/JSON editor, learner

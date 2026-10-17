@@ -523,6 +523,7 @@ header .exam-selector--compact .exam-selector__menu {
 .question-editor-pane[hidden], .question-editor-view-switch[hidden] { display: none; }
 .question-editor-workspace > .authoring-preview { margin: 0; border: 0; border-radius: 0; }
 .question-editor-workspace > .authoring-preview h4 { margin-top: 0; }
+.pd-study.question-draft-preview { gap: 16px; animation: none; }
 .question-editor-view-switch { display: flex; gap: 8px; margin-top: 16px; }
 .question-editor-view-switch .btn { flex: 1; min-height: 44px; }
 .question-editor-view-switch [aria-pressed=true] { background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent); }
@@ -533,6 +534,9 @@ header .exam-selector--compact .exam-selector__menu {
 }
 @media (max-width: 600px) {
   .question-editor-pane { padding: 20px 16px; }
+  .question-draft-preview .st-q-head { padding: 16px 16px 12px; }
+  .question-draft-preview .st-q-body { padding: 20px 16px; }
+  .question-draft-preview .st-stem { font-size: 16px; }
 }
 .question-editor [aria-invalid=true] { border-color: var(--color-danger, #b42318); }
 
