@@ -87,6 +87,17 @@ Only the current validated draft can be saved, never the retained preview. Raw
 text, the saved baseline and preview context belong to the same question/exam
 editing session. See [component JSON diagnostics and preview context](../screenshots/component-json-errors.md).
 
+**Format JSON** in the component editor applies two-space indentation to
+syntactically valid JSON. It changes only whitespace between tokens, retaining
+duplicate keys, original number and string spellings, IDs, unknown fields, and
+property/array order in the raw draft. Package-validation errors do not prevent
+formatting; malformed JSON stays unchanged with its diagnostics. The action
+returns focus to the JSON field and maps its selection while retaining scroll.
+Repeated formatting is a no-op. Formatting does not save or change the saved
+baseline; ordinary **Save** still uses the existing parsing, validation and
+persistence normalization, so raw token preservation applies to formatting only.
+See [formatting verification](../screenshots/component-json-format.md).
+
 The tag selector (implementation)
 searches the existing question-bank catalog. Select a suggestion or choose
 **Create** to add a new name. Selected tags appear as rounded chips with remove
@@ -266,8 +277,8 @@ deep malformed document prevents locating the error, the editor reports that
 limitation without inventing a position. Package validation lists the existing
 paths and messages below the JSON field, including the editor's schema 2.0 and
 exactly-one-question requirements. Feedback does not move typing focus or rewrite
-the draft. Save stays disabled and the preview stays hidden until the draft is
-valid. See [verification examples](../screenshots/component-json-errors.md).
+the draft. Invalid Save focuses those errors, while the preview retains the last
+valid draft with a stale notice. See [verification examples](../screenshots/component-json-errors.md).
 
 Save the component source; changing only its derived flat stem
 or options is rejected. **Export this page** downloads a portable 2.0 package;

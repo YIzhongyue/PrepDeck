@@ -2,12 +2,21 @@ import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { exportComponentPackage, formatAnswerText, type Question } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
 import { inspectComponentQuestionDraft } from "../lib/componentQuestionDraft";
+import { formatJsonSource, type JsonSelection } from "../lib/formatJsonSource";
 import QuestionContent from "./QuestionContent";
 import { useQuestionDraftGuard } from "./QuestionDraftGuard";
 
 type ComponentQuestionEditorProps = {
   examId: string; question: Question; onClose: () => void; onSaved: (q: Question, next: boolean) => void;
 };
+
+type JsonPosition = JsonSelection & { top: number; left: number; paneTop: number };
+function restoreJsonPosition(field: HTMLTextAreaElement, pane: HTMLDivElement | null, position: JsonPosition) {
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(position.start, position.end, position.direction);
+  field.scrollTop = position.top; field.scrollLeft = position.left;
+  if (pane) pane.scrollTop = position.paneTop;
+}
 
 export default function ComponentQuestionEditor(props: ComponentQuestionEditorProps) {
   // A new identity starts a new editing session, including its raw text,
@@ -22,12 +31,33 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const backdropPress = useRef(false);
   const feedbackId = useId();
   const feedback = useRef<HTMLDivElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
+  const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
+  const formatPosition = useRef<JsonPosition | null>(null);
   const { preview, issues, syntaxError } = useMemo(() => inspectComponentQuestionDraft(text), [text]);
   const lastValidPreview = useRef(preview);
   useLayoutEffect(() => { if (preview) lastValidPreview.current = preview; }, [preview]);
   const shownPreview = preview ?? lastValidPreview.current;
   const invalid = Boolean(syntaxError || issues.length);
   const dirty = text !== initial.current;
+  useLayoutEffect(() => {
+    const position = formatPosition.current;
+    formatPosition.current = null;
+    if (position && textarea.current) restoreJsonPosition(textarea.current, pane.current, position);
+  }, [text]);
+  const formatText = () => {
+    const field = textarea.current;
+    if (saving.current || !field) return;
+    const selection: JsonSelection = { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection };
+    const scroll = document.activeElement !== field && editScroll.current
+      ? editScroll.current : { top: field.scrollTop, left: field.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 };
+    try {
+      const result = formatJsonSource(text, selection);
+      const position = { ...(result?.selection ?? selection), ...scroll };
+      if (result && result.text !== text) { formatPosition.current = position; setText(result.text); }
+      else restoreJsonPosition(field, pane.current, position);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept."); }
+  };
   const close = async () => { if (await guard.requestDiscard()) onClose(); };
   useLayoutEffect(() => {
     mounted.current = true;
@@ -35,6 +65,8 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
     const element = dialog.current;
     const overflow = document.body.style.overflow;
     element?.showModal(); document.body.style.overflow = "hidden";
+    // Keep the initial editing focus now that a toolbar action precedes the field.
+    textarea.current?.focus({ preventScroll: true });
     return () => { mounted.current = false; element?.close(); document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
   const save = async () => {
@@ -63,9 +95,12 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       // editor and ends outside it. Only a press that began on the wash closes.
       if (startedOutside) close();
     }}>
-    <div className="question-drawer question-editor"><div className="question-drawer-body">
+    <div className="question-drawer question-editor"><div ref={pane} className="question-drawer-body">
       <h3>Edit component question</h3><p>Edit the structured package. The preview updates when the question is valid.</p>
-      <label>Question package JSON<textarea className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId} onChange={e => setText(e.target.value)} /></label>
+      <div><button type="button" className="btn btn-secondary" disabled={busy} onClick={formatText}>Format JSON</button></div>
+      <label>Question package JSON<textarea ref={textarea} className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId}
+        onBlur={e => { editScroll.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 }; }}
+        onChange={e => setText(e.target.value)} /></label>
       <div ref={feedback} id={feedbackId} className="authoring-errors" role="region" aria-label="Question package errors" tabIndex={-1} aria-live="polite" hidden={!invalid}>
         {syntaxError && <p>JSON syntax error{syntaxError.line !== undefined && syntaxError.column !== undefined ? ` at line ${syntaxError.line}, column ${syntaxError.column}` : ""}: {syntaxError.message}</p>}
         {issues.length > 0 && <><p>Package validation errors:</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
