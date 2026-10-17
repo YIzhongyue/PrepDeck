@@ -28,6 +28,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/url-routing.browser.mjs", 5],
   ["apps/web/scripts/knowledge-points.browser.mjs", 85],
   ["apps/web/scripts/question-authoring.browser.mjs", 12],
+  ["apps/web/scripts/component-preview-context.browser.mjs", 12],
   ["apps/web/scripts/question-editor-preview.browser.mjs", 8],
   ["apps/web/scripts/question-editor-fields.browser.mjs", 14],
   ["apps/web/scripts/question-save-discard.browser.mjs", 7],
