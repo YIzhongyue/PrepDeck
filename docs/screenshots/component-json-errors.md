@@ -25,8 +25,9 @@ or question identity changes; an obsolete session's delayed save response cannot
 close the new editor.
 
 The existing component save/close behavior and shared discard/keyboard guards
-are preserved. Explicit formatting, shell changes and new conflict recovery are
-separate issues.
+are preserved. See [explicit JSON formatting](component-json-format.md) for its
+separate token-preservation contract. Shell changes and new conflict recovery
+remain separate issues.
 
 ## Verification
 
