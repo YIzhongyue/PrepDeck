@@ -116,6 +116,31 @@ Only the current validated draft can be saved, never the retained preview. Raw
 text, the saved baseline and preview context belong to the same question/exam
 editing session. See [component JSON diagnostics and preview context](../screenshots/component-json-errors.md).
 
+For one valid schema 2.0 sorting or matching question, **Answer controls** changes
+only the correct response in the same raw draft. Sorting has **Up** and **Down**
+buttons; declaration order and IDs stay intact. Matching shows the actual rich
+left and right content plus side-specific IDs, with a right-item selector for
+each left item. Multiple left items may share a right item. The editor preview
+also resolves matching content by side; learner rendering is unchanged.
+
+**JSON** returns to the mounted field and its editing position. View switches and
+no-op selections do not save or create unsaved changes. Native undo/redo includes
+answer changes and earlier typing; Ctrl/Cmd+Z and redo also work while an answer
+control has focus. If a browser cannot preserve native history, the attempted
+change is refused with an explanation and JSON remains available. Existing save,
+discard and revision recovery use this same draft, without an automatic merge.
+
+Only the targeted answer string tokens change. Sorting carries original token
+escapes with each answer; matching rewrites only the intentionally changed pair.
+Unknown/unsupported fields, invalid packages, duplicate keys, multiple questions
+and packages above the existing 5 MiB import limit stay in JSON with an
+explanation. Source text remains intact. Existing normalization on Save/export
+still applies; this is draft fidelity, not original import-file persistence.
+Content, ID and structure editing remain in JSON. There is no creation, add/delete,
+drag-and-drop, scoring or learning change. See [answer-controls evidence](../screenshots/component-answer-controls.md)
+for #166 under #155. Duplicate-key raw-save rejection is independently owned by
+[#167](https://github.com/YIzhongyue/PrepDeck/issues/167).
+
 **Format JSON** in the component editor applies two-space indentation to
 syntactically valid JSON. It changes only whitespace between tokens, retaining
 duplicate keys, original number and string spellings, IDs, unknown fields, and

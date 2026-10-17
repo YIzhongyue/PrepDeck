@@ -29,6 +29,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/knowledge-points.browser.mjs", 85],
   ["apps/web/scripts/question-authoring.browser.mjs", 12],
   ["apps/web/scripts/component-preview-context.browser.mjs", 12],
+  ["apps/web/scripts/component-answer-controls.browser.mjs", 10],
   ["apps/web/scripts/component-json-format.browser.mjs", 10],
   ["apps/web/scripts/component-duplicate-keys.browser.mjs", 5],
   ["apps/web/scripts/component-stale-recovery.browser.mjs", 15],
