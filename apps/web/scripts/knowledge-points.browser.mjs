@@ -145,6 +145,98 @@ const wait = async (predicate, label) => { for (let i = 0; i < 160; i++) { if (p
 const saved = () => page.getByText(/^Saved ·/).waitFor();
 const openDeleteDialog = async () => { await page.getByRole("button", { name: "More actions", exact: true }).click(); await page.getByRole("menuitem", { name: "Delete note…", exact: true }).click(); };
 const openA = async () => { await page.getByRole("link", { name: "Access policies", exact: true }).click(); await page.getByRole("textbox", { name: "Knowledge point body", exact: true }).waitFor(); };
+
+// Issue #127: an unresolved variable in a border shorthand silently removes
+// its width/style. Inspect the rendered controls in their real theme scope;
+// focus colours must not conceal a missing resting border.
+async function controlBorder(control, label, style = "solid", token = "--color-divider", blur = true) {
+  assert.ok(await control.count(), `${label}: the control must exist`);
+  const borders = await control.evaluateAll((elements, { token, blur }) => elements.map(el => {
+    if (blur) el.blur();
+    const probe = document.createElement("span");
+    probe.style.borderColor = `var(${token})`;
+    el.parentElement.append(probe);
+    const expected = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+    const css = getComputedStyle(el);
+    return { expected, text: css.color, sides: ["Top", "Right", "Bottom", "Left"].map(side => ({
+      style: css[`border${side}Style`], width: parseFloat(css[`border${side}Width`]), color: css[`border${side}Color`],
+    })) };
+  }), { token, blur });
+  for (const border of borders) {
+    assert.notEqual(border.expected, border.text, `${label}: the resolved border colour must differ from text`);
+    for (const side of border.sides) {
+      assert.equal(side.style, style, `${label}: border style`);
+      assert.ok(side.width > 0, `${label}: border width must be nonzero`);
+      assert.equal(side.color, border.expected, `${label}: border colour follows ${token}`);
+    }
+  }
+}
+async function controlMatrix(check) {
+  const previous = { theme: await page.evaluate(() => window.fixtureApp.state.theme), viewport: page.viewportSize() };
+  try {
+    for (const theme of ["light", "cream", "sage", "clay", "dusk"]) {
+      await page.evaluate(theme => window.fixtureApp.setTheme(theme), theme);
+      for (const width of [1280, 375]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.waitForFunction(({ theme, width }) => window.fixtureApp.state.theme === theme && window.fixtureApp.width === width, { theme, width });
+        await check(`${theme} ${width}px`, theme, width);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${theme} ${width}px controls must not overflow`);
+      }
+    }
+  } finally {
+    await page.evaluate(theme => window.fixtureApp.setTheme(theme), previous.theme);
+    await page.setViewportSize(previous.viewport);
+  }
+}
+async function controlScreenshot(name, theme, width, control) {
+  if (!process.env.KP_SCREENSHOTS) return;
+  await mkdir(process.env.KP_SCREENSHOTS, { recursive: true });
+  await control.screenshot({ path: resolve(process.env.KP_SCREENSHOTS, `kp-control-${name}-${theme}-${width}.png`) });
+}
+async function checkEditorControlBorders() {
+  const visual = page.getByRole("textbox", { name: "Knowledge point body", exact: true });
+  await controlMatrix(async (label, theme, width) => {
+    await controlBorder(page.getByRole("textbox", { name: "Code language", exact: true }), `${label} code language`);
+    await controlBorder(page.getByRole("textbox", { name: "Image alt text", exact: true }), `${label} image alt text`);
+    const tag = page.getByPlaceholder("Add tag…");
+    await controlBorder(tag, `${label} Add tag`, "dashed");
+    await tag.focus();
+    await controlBorder(tag, `${label} focused Add tag`, "solid", "--color-accent", false);
+    await controlScreenshot("visual", theme, width, page.locator(".kp-screen"));
+
+    await visual.press("Control+Home");
+    await visual.press("Control+k");
+    const link = page.getByRole("textbox", { name: "Link URL", exact: true });
+    await link.waitFor();
+    await controlBorder(link, `${label} Link URL`);
+    await controlScreenshot("link", theme, width, page.getByRole("group", { name: "Edit link", exact: true }));
+    await link.focus();
+    await controlBorder(link, `${label} focused Link URL`, "solid", "--color-accent", false);
+    await link.fill("javascript:alert(1)");
+    await page.getByRole("group", { name: "Edit link", exact: true }).getByRole("button", { name: "Apply", exact: true }).click();
+    await controlBorder(link, `${label} invalid Link URL`, "solid", "--color-danger");
+    await page.getByRole("group", { name: "Edit link", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
+
+    await page.getByRole("button", { name: "Group: Cloud fundamentals", exact: true }).click();
+    await page.getByRole("menuitem", { name: "New group…", exact: true }).click();
+    const group = page.getByRole("textbox", { name: "New group", exact: true });
+    await controlBorder(group, `${label} New group`);
+    await controlScreenshot("group", theme, width, page.getByRole("form", { name: "New group", exact: true }));
+    await group.focus();
+    await controlBorder(group, `${label} focused New group`, "solid", "--color-accent", false);
+    await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Markdown", exact: true }).click();
+    const source = page.getByRole("textbox", { name: "Markdown source", exact: true });
+    await controlBorder(source, `${label} Markdown source`);
+    await controlScreenshot("source", theme, width, source);
+    await source.focus();
+    await controlBorder(source, `${label} focused Markdown source`, "solid", "--color-accent", false);
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+  });
+  console.log("PASS Knowledge Point control borders: language, image alt, source, link/group, tags and focus/error colours in all five themes at 1280px/375px");
+}
 async function checkDeletionRecovery() {
   for (const scenario of ["validation", "upload", "pending-save"]) {
     await page.goto(url);
@@ -216,6 +308,7 @@ try {
   await page.goto(url); await openA();
   const visual = page.getByRole("textbox", { name: "Knowledge point body", exact: true });
   await saved(); assert.equal(writes.length, beforeOpening, "Opening must not autosave or normalize stored source");
+  await checkEditorControlBorders();
   assert.equal(await visual.locator("strong").filter({ hasText: "Bold concept" }).count(), 1);
   assert.equal(await visual.locator("table tr").count(), 2);
   assert.equal(await page.getByText("Unsupported Markdown — editable source").count(), 1);
@@ -296,6 +389,12 @@ try {
   uploadGate = Promise.withResolvers();
   await page.locator('input[type="file"]').setInputFiles({ name: "screen.png", mimeType: "image/png", buffer: png });
   await page.getByText("Uploading image…", { exact: true }).waitFor();
+  await controlMatrix(async (label, theme, width) => {
+    const placeholder = page.locator(".kp-upload-placeholder");
+    await controlBorder(placeholder, `${label} pending upload`, "dashed");
+    await controlScreenshot("upload", theme, width, placeholder);
+  });
+  console.log("PASS pending-upload dashed border in all five themes at 1280px/375px");
   assert.equal(await page.getByRole("button", { name: "Markdown", exact: true }).isDisabled(), true, "Pending uploads cannot publish into a stale hidden visual document");
   await page.getByRole("button", { name: "Insert", exact: true }).click();
   assert.equal(await page.getByRole("menuitem", { name: /^Image/ }).isDisabled(), true, "Finish one upload before adding another");

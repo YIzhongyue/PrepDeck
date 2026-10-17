@@ -36,7 +36,7 @@ button.kp-chip:hover { background: color-mix(in srgb, var(--color-text) 7%, tran
 .kp-chip-tag { padding: 4px 4px 4px 12px; border-color: transparent; background: var(--color-accent-100); color: var(--color-accent-800); cursor: default; }
 .kp-chip-x { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
 .kp-chip-x:hover { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
-input.kp-chip-add { width: 116px; border-style: dashed; border-color: var(--color-control-border); background: transparent; font-weight: 600; cursor: text; }
+input.kp-chip-add { width: 116px; border-style: dashed; border-color: var(--color-divider); background: transparent; font-weight: 600; cursor: text; }
 input.kp-chip-add::placeholder { color: var(--color-text-muted); opacity: 1; }
 input.kp-chip-add:focus-visible { outline: none; border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-100); }
 .kp-group-create { display: flex; flex-direction: column; gap: 6px; padding: 8px; }

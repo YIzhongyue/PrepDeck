@@ -50,7 +50,7 @@
 .kp-popover { position: absolute; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(380px, calc(100% - 8px)); padding: 14px; border: 1px solid var(--color-divider); border-radius: 22px; background: var(--color-bg); box-shadow: var(--pd-shadow-md); }
 .kp-popover-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .kp-field-label { font-size: 13px; font-weight: 600; }
-.kp-input { width: 100%; min-height: 40px; padding: 9px 16px; border: 1px solid var(--color-control-border, var(--color-divider)); border-radius: 999px; background: var(--color-bg); font-size: 14px; caret-color: var(--color-accent); }
+.kp-input { width: 100%; min-height: 40px; padding: 9px 16px; border: 1px solid var(--color-divider); border-radius: 999px; background: var(--color-bg); font-size: 14px; caret-color: var(--color-accent); }
 .kp-input:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 5px var(--color-accent-100); }
 .kp-input[aria-invalid=true] { border-color: var(--color-danger); }
 .kp-field-hint { font-size: 12px; color: var(--color-text-muted); }
@@ -108,7 +108,7 @@
 .kp-source-block .kp-block-controls { border-bottom: 1px solid var(--color-divider); }
 .kp-block-controls strong { font-weight: 600; }
 .kp-block-controls label { white-space: nowrap; display: flex; align-items: center; flex: 1; min-width: 0; gap: 8px; font-weight: 600; }
-.kp-block-controls input { width: 100%; max-width: 360px; min-width: 0; min-height: 30px; padding: 4px 12px; border: 1px solid var(--color-control-border); border-radius: 999px; background: var(--color-bg); font-size: 13px; font-weight: 400; }
+.kp-block-controls input { width: 100%; max-width: 360px; min-width: 0; min-height: 30px; padding: 4px 12px; border: 1px solid var(--color-divider); border-radius: 999px; background: var(--color-bg); font-size: 13px; font-weight: 400; }
 .kp-block-controls button, .kp-image-dialog button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--color-accent); font-size: 13px; font-weight: 600; cursor: pointer; }
 .kp-block-controls button:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .kp-image-open { display: block; width: 100%; border: 0; padding: 0; cursor: zoom-in; background: var(--color-bg); }
@@ -118,7 +118,7 @@
 .kp-image-dialog img { display: block; max-width: 100%; max-height: calc(100% - 50px); margin: 12px auto; object-fit: contain; }
 
 /* Uploads, drops and pastes: feedback where it happens */
-.kp-upload-placeholder { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 16px; border: 1.5px dashed var(--color-control-border); border-radius: 18px; background: var(--color-surface); font-size: 14px; font-weight: 600; color: var(--color-text-muted); }
+.kp-upload-placeholder { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 16px; border: 1.5px dashed var(--color-divider); border-radius: 18px; background: var(--color-surface); font-size: 14px; font-weight: 600; color: var(--color-text-muted); }
 .kp-upload-placeholder::before { content: ""; flex: none; width: 16px; height: 16px; border: 2px solid var(--color-accent-200); border-top-color: var(--color-accent); border-radius: 50%; animation: kp-spin .8s linear infinite; }
 @keyframes kp-spin { to { transform: rotate(360deg); } }
 .kp-upload-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 0 0 18px; padding: 12px 12px 12px 14px; border: 1px solid var(--color-danger-border); border-radius: 18px; background: var(--color-danger-bg); color: var(--color-danger-text); font-size: 13.5px; line-height: 1.45; }
@@ -139,7 +139,7 @@
 
 /* Markdown mode */
 .kp-source-hint { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--color-text-muted); }
-.kp-source-mode { display: block; width: 100%; min-height: 420px; resize: vertical; padding: 16px 18px; border: 1px solid var(--color-control-border); border-radius: 18px; background: var(--color-bg); font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.8; caret-color: var(--color-accent); }
+.kp-source-mode { display: block; width: 100%; min-height: 420px; resize: vertical; padding: 16px 18px; border: 1px solid var(--color-divider); border-radius: 18px; background: var(--color-bg); font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.8; caret-color: var(--color-accent); }
 .kp-source-mode:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 5px var(--color-accent-100); }
 
 /* Footer */

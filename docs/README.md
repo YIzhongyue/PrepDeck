@@ -49,6 +49,7 @@ records the gaps between the original specification, current code and open issue
 | [Settings layout](screenshots/settings.md) | Desktop/mobile screenshots of the grouped Settings page and its section index. |
 | [Provider assignment accessibility](screenshots/provider-assignment.md) | Toggle-state, keyboard and failure-path verification, local screenshots and the screen-reader testing boundary. |
 | [Visible labels and accessible names](screenshots/visible-accessible-names.md) | Setup, tag, exam and copy-control naming, keyboard/state regressions and accessibility verification. |
+| [Knowledge Point control borders](screenshots/knowledge-point-borders.md) | Restored input/upload boundaries, all-theme browser checks and desktop/phone screenshots. |
 | [Phone question layout](screenshots/mobile-question-viewport.md) | Before/after phone screenshots of Learning and Practice, with the sticky session header and actions. |
 | [Page breadcrumbs](screenshots/breadcrumbs.md) | Before/after headers of the Study and Resources pages, with the shared Section › Page breadcrumb. |
 | [Human verification](screenshots/turnstile.md) | Before/after login and MCP token screens with the Turnstile check, rotation, the sign-in-again dialog and a refused check. |
