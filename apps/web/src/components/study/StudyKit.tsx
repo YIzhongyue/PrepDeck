@@ -221,7 +221,7 @@ export function UnderReviewBadge() {
   return <span className="st-badge st-badge--warn" title={UNDER_REVIEW_NOTICE}><Icon d={IC.alert} size={12} />Under review</span>;
 }
 
-export function UnderReviewNotice({ question }: { question: Question }) {
+export function UnderReviewNotice({ question }: { question: Pick<Question, "needsReview"> }) {
   if (!question.needsReview) return null;
   return (
     <div className="st-review-note" role="note">
@@ -366,6 +366,20 @@ export function ReviewTabs({ tabs, active, onChange, children }: { tabs: ReviewT
   );
 }
 
+/* Shared official content only: safe to render from an unsaved authoring draft
+   without reading study state or offering AI/cache actions. */
+export function OfficialExplanation({ explanation, collapsible = false }: { explanation?: string | null; collapsible?: boolean }) {
+  if (!explanation) return null;
+  return (
+    <div className="st-official">
+      <div className="st-official-title"><Icon d={IC.badgeCheck} size={14} />Official explanation</div>
+      <Collapsible cap={110} enabled={collapsible}>
+        <div className="st-prose"><QuestionContent src={explanation} /></div>
+      </Collapsible>
+    </div>
+  );
+}
+
 /* Official explanation, then the AI explanation with its cache / generate states. */
 export function ExplanationPanel({ q, explanation, collapsible }: { q: Question; explanation?: string | null; collapsible: boolean }) {
   const { state, go, genAi, showAlternateAi, capture, removeMark } = usePrepDeck();
@@ -379,14 +393,7 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
 
   return (
     <div className="st-panel">
-      {!!explanation && (
-        <div className="st-official">
-          <div className="st-official-title"><Icon d={IC.badgeCheck} size={14} />Official explanation</div>
-          <Collapsible cap={110} enabled={collapsible}>
-            <div className="st-prose"><QuestionContent src={explanation} /></div>
-          </Collapsible>
-        </div>
-      )}
+      <OfficialExplanation explanation={explanation} collapsible={collapsible} />
 
       <div className="st-ai-head">
         <span className="st-ai-title"><Icon d={IC.sparkles} />AI explanation</span>

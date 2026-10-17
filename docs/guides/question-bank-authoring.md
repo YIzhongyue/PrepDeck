@@ -8,7 +8,7 @@ editing and Markdown preview. The editor supports single choice,
 multiple choice, true/false and fill in the blank, including Markdown stems,
 options, official explanations, accepted answers and existing metadata.
 
-For Markdown questions, the fields and existing live preview sit side by side
+For Markdown questions, the fields and live preview sit side by side
 at viewport widths of 1100 CSS pixels or more, with independent scrolling.
 Below that width, **Edit** and **Preview** switch the visible pane. A compact
 opening prepares the preview only when first requested or when the layout becomes
@@ -16,7 +16,18 @@ wide; later switches retain its scroll position. Returning to
 Edit restores the last field's focus, selection and scroll position without
 recreating the draft. Browser zoom can switch to this compact layout. Saving
 from Preview reveals and focuses a field that needs correction.
-The component/JSON editor and preview rendering rules are unchanged.
+The preview uses Learning's read-only question card, with correct options
+identified by a checkmark and **Correct answer** text. Fill-in questions show
+every accepted answer; blank lines are ignored, and answer text stays literal.
+Checking **Needs review** shows both Learning's header badge and its warning
+above the stem. The card uses Learning's phone and short-landscape presentation,
+including compact, keyboard-accessible scrolling tags.
+The official explanation uses the same Markdown presentation as Learning and
+is fully expanded. Stem, options, answers and explanation reflect the unsaved
+draft. Previewing does not answer a question, mark it viewed or studied, request
+an AI explanation, or change the draft. This is the approved first slice of
+[#148](https://github.com/YIzhongyue/PrepDeck/issues/148); interactive try-answer
+is outside this slice. Component/JSON preview and diagnostics remain unchanged.
 
 **Save** takes effect immediately. **Save & add next** opens an empty question in
 the same exam, retains only its type, and focuses the stem. Failed validation or
