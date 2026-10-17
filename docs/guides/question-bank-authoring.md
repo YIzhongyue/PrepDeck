@@ -10,7 +10,9 @@ options, official explanations, accepted answers and existing metadata.
 
 For Markdown questions, the fields and existing live preview sit side by side
 at viewport widths of 1100 CSS pixels or more, with independent scrolling.
-Below that width, **Edit** and **Preview** switch the visible pane. Returning to
+Below that width, **Edit** and **Preview** switch the visible pane. A compact
+opening prepares the preview only when first requested or when the layout becomes
+wide; later switches retain its scroll position. Returning to
 Edit restores the last field's focus, selection and scroll position without
 recreating the draft. Browser zoom can switch to this compact layout. Saving
 from Preview reveals and focuses a field that needs correction.
@@ -353,7 +355,8 @@ protection, phone layout and pagination beyond 200 questions.
 
 `npm run test:browser -- question-editor-preview` checks the responsive Markdown
 editor at wide, breakpoint and 390px widths, plus zoom-equivalent reflow, long
-content, repeated keyboard/pointer switching, draft/caret/scroll retention,
+content, zero preview rendering before first compact use, repeated
+keyboard/pointer switching, draft/caret/scroll retention,
 validation, Undo, stale recovery and interrupted saves. It uses original
 synthetic content and a loopback fixture; no deployed bank is accessed.
 See the [preview layout evidence](../screenshots/question-editor-preview.md)

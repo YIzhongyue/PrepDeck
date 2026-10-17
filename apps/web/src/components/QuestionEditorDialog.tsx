@@ -34,6 +34,8 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   const [preview, setPreview] = useState(false);
   // Keep this query in step with the workspace layout in app.css.
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  // Avoid hidden Markdown work before first use, then retain preview scroll.
+  const [previewMounted, setPreviewMounted] = useState(wide);
   const previousWide = useRef(wide);
   const fields = useRef<HTMLDivElement>(null), previewPane = useRef<HTMLElement>(null), viewSwitch = useRef<HTMLDivElement>(null);
   const lastField = useRef<HTMLElement | null>(null), editScroll = useRef(0);
@@ -72,6 +74,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
         if (fields.current && !fields.current.hidden) editScroll.current = fields.current.scrollTop;
         restorePaneFocus.current = active?.getAttribute("aria-controls") === "question-preview" ? "preview" : "edit";
       }
+      if (media.matches) setPreviewMounted(true);
       setWide(media.matches);
     };
     media.addEventListener("change", resize);
@@ -95,7 +98,7 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
   }, [preview, wide]);
   const switchView = (next: boolean) => {
     if (next === preview) return;
-    if (next) editScroll.current = fields.current?.scrollTop ?? 0;
+    if (next) { setPreviewMounted(true); editScroll.current = fields.current?.scrollTop ?? 0; }
     else restorePaneFocus.current = "edit";
     setPreview(next);
   };
@@ -273,9 +276,10 @@ function LegacyQuestionEditorDialog({ examId, question, initialType, onClose, on
           <p className="authoring-identifier">Review state is stored on the question itself, not as a tag. Imports set it; clear it once the question has been checked.</p>{errors("needsReview")}</div>
       </fieldset>
       </div>
-      <section ref={previewPane} id="question-preview" className="authoring-preview question-editor-pane" aria-label="Markdown preview" tabIndex={0} hidden={!wide && !preview}><h4>Preview</h4><QuestionContent src={form.stem} />
+      <section ref={previewPane} id="question-preview" className="authoring-preview question-editor-pane" aria-label="Markdown preview" tabIndex={0} hidden={!wide && !preview}>
+        {(wide || previewMounted) && <><h4>Preview</h4><QuestionContent src={form.stem} />
         {form.type !== "fill_blank" && form.options.map(o => <div key={o.id}><strong>{o.id}{form.correctAnswers.includes(o.id) ? " ✓" : ""}</strong><QuestionContent src={o.text} /></div>)}
-        <p>Correct answers: {formPayload(form).correctAnswers.join(", ") || "Not selected"}</p><QuestionContent src={form.explanation} />
+        <p>Correct answers: {formPayload(form).correctAnswers.join(", ") || "Not selected"}</p><QuestionContent src={form.explanation} /></>}
       </section>
       </div>
       <footer className="question-drawer-footer">

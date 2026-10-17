@@ -1,7 +1,7 @@
 // The real editor with synthetic content and a loopback-only API fixture.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { readBody } from "./browser-fixture.mjs";
@@ -13,12 +13,29 @@ const question = { id: "preview-fixture", examId: "exam", sequenceNumber: 1, rev
   correctAnswers: ["A"], explanation: "## Explanation\n\n" + "A synthetic explanation.\n\n".repeat(35),
   externalId: "SYNTHETIC-1", difficulty: "easy", points: 1, tags: [], needsReview: false };
 let latest = structuredClone(question), failSave = false, holdSave = null, serverIssues = null, writes = 0;
+// Count real rendering/parsing work without changing application source or
+// replacing either implementation. No wall-clock threshold belongs in this test.
+const instrumented = new Set();
+const previewWorkPlugin = { name: "preview-work-regression", setup(buildApi) {
+  for (const [name, filter, anchor, loader] of [
+    ["questionContent", /[\\/]QuestionContent\.tsx$/, "  if (content) {", "tsx"],
+    ["markdown", /[\\/]lib[\\/]markdown\.ts$/, "export function parseMarkdown(src: string, sourceCoordinates = false, reflowProse = false, tables = false): ParsedMarkdown {", "ts"]
+  ]) buildApi.onLoad({ filter }, args => {
+    const source = readFileSync(args.path, "utf8");
+    assert.equal(source.split(anchor).length, 2, `Expected one ${name} instrumentation anchor`);
+    instrumented.add(name);
+    const counter = `window.__previewWork.${name}++;`;
+    return { loader, contents: source.replace(anchor, name === "markdown" ? `${anchor}\n  ${counter}` : `  ${counter}\n${anchor}`) };
+  });
+} };
 const { outputFiles } = await build({ stdin: { contents: `import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionEditorDialog from './src/components/QuestionEditorDialog'; import './src/styles/tokens.css'; import './src/styles/app.css';
+  window.__previewWork = { questionContent: 0, markdown: 0 };
   function Fixture() { const [open, setOpen] = useState(false); return <><button onClick={() => setOpen(true)}>Open editor</button>
     {open && <QuestionEditorDialog examId="exam" question={${JSON.stringify(question)}} initialType="single_choice" onClose={() => setOpen(false)} onSaved={() => setOpen(false)}/>}</>; }
   createRoot(document.getElementById('root')).render(<Fixture/>);`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
-  bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
+  bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", plugins: [previewWorkPlugin], define: { "process.env.NODE_ENV": '"development"' } });
+assert.deepEqual([...instrumented].sort(), ["markdown", "questionContent"], "Both real implementations must be instrumented");
 const server = createServer(async (req, res) => {
   const json = (status, data) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data)); };
   if (req.url === "/api/admin/question-tags") return json(200, { tags: [] });
@@ -45,7 +62,7 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true, ...(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : {}) });
   console.log(`Editor preview browser: Chromium ${browser.version()}`);
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.setDefaultTimeout(10000);
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -62,6 +79,17 @@ try {
   const stem = page.getByLabel("Stem · Markdown", { exact: true });
   const explanation = page.getByLabel("Official explanation · Markdown", { exact: true });
   const save = page.getByRole("button", { name: "Save", exact: true });
+  const previewPane = page.locator("#question-preview");
+  const work = target => target.evaluate(() => ({ ...window.__previewWork }));
+  const assertNoPreviewWork = async target => {
+    assert.deepEqual(await work(target), { questionContent: 0, markdown: 0 }, "Compact editing before first Preview must not render or parse preview content");
+    assert.equal(await target.locator("#question-preview *").count(), 0, "Compact preview has no child DOM before first use");
+  };
+  const assertPreviewWork = async target => {
+    const counts = await work(target);
+    assert.ok(counts.questionContent >= question.options.length + 2, "Visible preview renders the stem, options and explanation");
+    assert.ok(counts.markdown >= question.options.length + 2, "Actual Markdown parsing runs when preview is used");
+  };
   const resize = async (width, height = 844) => {
     await page.setViewportSize({ width, height });
     // matchMedia changes reach React asynchronously after the viewport update.
@@ -76,6 +104,35 @@ try {
     assert.ok(Math.abs(previewBox.y - fieldsBox.y) < 2, "Both panes start together");
     await assertNoOverflow();
   };
+  // Open compact and edit all preview content before its first use. These
+  // assertions fail against the former eager-but-hidden preview implementation.
+  assert.equal(await previewPane.evaluate(el => el.hidden), true);
+  await assertNoPreviewWork(page);
+  const optionA = page.getByLabel("Option A · Markdown", { exact: true });
+  await stem.fill(question.stem + "\n\nLatest compact stem");
+  await optionA.fill("Latest compact option");
+  await explanation.fill(question.explanation + "\n\nLatest compact explanation");
+  await assertNoPreviewWork(page);
+  await stem.focus(); await stem.evaluate(el => el.setSelectionRange(12, 20));
+  await showPreview.click();
+  await preview.getByText("Latest compact stem", { exact: true }).waitFor();
+  await preview.getByText("Latest compact option", { exact: true }).waitFor();
+  await preview.getByText("Latest compact explanation", { exact: true }).waitFor();
+  await assertPreviewWork(page);
+  const retainedContent = await previewPane.locator(":scope > div").first().elementHandle();
+  assert.ok(retainedContent);
+  const firstPreviewScroll = await previewPane.evaluate(el => { el.scrollTop = 325; return el.scrollTop; });
+  assert.ok(firstPreviewScroll > 0);
+  await edit.click();
+  assert.equal(await retainedContent.evaluate(el => el.isConnected), true, "Used preview content stays mounted while Edit is selected");
+  assert.deepEqual(await stem.evaluate(el => [document.activeElement === el, el.selectionStart, el.selectionEnd]), [true, 12, 20]);
+  await showPreview.click();
+  assert.equal(await previewPane.evaluate(el => el.scrollTop), firstPreviewScroll, "First lazy activation retains preview scroll on return");
+  await edit.click();
+  // Reuse the established editing/recovery flow after this compact activation.
+  await stem.fill(question.stem); await optionA.fill(question.options[0].text); await explanation.fill(question.explanation);
+  await resize(1440, 1000);
+  assert.equal(await retainedContent.evaluate(el => el.isConnected), true, "Widening retains the existing preview subtree");
   await assertWide();
   await screenshot("wide");
   await stem.fill(question.stem + "\nLive preview update");
@@ -202,6 +259,33 @@ try {
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.equal(writes, 1); assert.equal(latest.stem, "Recovered draft");
   assert.equal(await page.getByRole("button", { name: "Open editor" }).evaluate(el => document.activeElement === el), true);
+  // Separate fresh openings cover both remaining ways to activate a preview:
+  // an initially wide viewport, and widening before ever pressing Preview.
+  for (const initialWidth of [1440, 1099]) {
+    const activationPage = await browser.newPage({ viewport: { width: initialWidth, height: 844 } });
+    activationPage.on("pageerror", error => errors.push(error.message));
+    await activationPage.goto(`http://127.0.0.1:${server.address().port}`);
+    await activationPage.getByRole("button", { name: "Open editor" }).click();
+    if (initialWidth < 1100) {
+      await assertNoPreviewWork(activationPage);
+      await activationPage.getByLabel("Stem · Markdown", { exact: true }).fill("Latest draft before widening");
+      await assertNoPreviewWork(activationPage);
+      await activationPage.setViewportSize({ width: 1100, height: 844 });
+      await activationPage.locator(".question-editor-view-switch").waitFor({ state: "hidden" });
+      await activationPage.getByRole("region", { name: "Markdown preview", exact: true }).getByText("Latest draft before widening", { exact: true }).waitFor();
+    }
+    await assertPreviewWork(activationPage);
+    const child = await activationPage.locator("#question-preview > div").first().elementHandle();
+    assert.ok(child);
+    await activationPage.getByLabel("Stem · Markdown", { exact: true }).focus();
+    await activationPage.setViewportSize({ width: 390, height: 844 });
+    await activationPage.locator(".question-editor-view-switch").waitFor({ state: "visible" });
+    assert.equal(await activationPage.locator("#question-preview").evaluate(el => el.hidden), true);
+    assert.equal(await child.evaluate(el => el.isConnected), true, "Preview activated by wide display stays mounted after narrowing");
+    await activationPage.getByRole("button", { name: "Preview", exact: true }).click();
+    assert.equal(await child.evaluate(el => el.isConnected), true, "Compact Preview reuses the subtree first shown wide");
+    await activationPage.close({ runBeforeUnload: false });
+  }
   assert.deepEqual(errors, []);
-  console.log("PASS responsive preview: long content, 1100/1099/390px, zoom reflow, live rendering, independent scrolling and preview scroll retention, draft/caret/focus retention, keyboard, client/server validation from Preview, Undo, conflict recovery, interrupted save and close");
+  console.log("PASS responsive preview: zero child rendering/parsing before compact first use, latest draft on activation, retained subtree after use and resize, wide initial and first widening, long content, 1100/1099/390px, zoom reflow, live rendering, independent scrolling and preview scroll retention, draft/caret/focus retention, keyboard, client/server validation from Preview, Undo, conflict recovery, interrupted save and close");
 } finally { holdSave?.gate.resolve(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
