@@ -107,6 +107,11 @@ unavailable. Correcting the JSON immediately refreshes the preview and removes
 the notice. **Save** stays available unless a request is pending. An invalid
 save, including Ctrl/Cmd+S, focuses the current error summary without sending a
 request; Shift+Tab returns to the JSON field with its selection and scroll intact.
+Duplicate object keys, including escaped spellings of the same key, prevent
+saving. The errors identify the key path and both declaration locations. Correct
+the raw JSON without losing its source or retained preview. Repeated keys in
+separate objects remain valid. This check is local to the component editor; other
+import/API formats are unchanged.
 Only the current validated draft can be saved, never the retained preview. Raw
 text, the saved baseline and preview context belong to the same question/exam
 editing session. See [component JSON diagnostics and preview context](../screenshots/component-json-errors.md).

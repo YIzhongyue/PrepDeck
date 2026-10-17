@@ -80,13 +80,43 @@ test("valid component drafts retain native JSON semantics and their existing pre
     data.questions = [data.questions[0]];
     assert.deepEqual(validateImportFile(data).issues, [], name);
     const source = JSON.stringify(data, null, 2);
-    for (const text of [source, ` \n${source}\t`, source.replace('"schemaVersion": "2.0"', '"schemaVersion": "ignored", "schemaVersion": "2.0"')]) {
+    for (const text of [source, ` \n${source}\t`]) {
       const result = inspectComponentQuestionDraft(text);
       assert.deepEqual(result.issues, [], name);
       assert.equal(result.syntaxError, undefined, name);
       assert.deepEqual(result.preview, normalizeImportFile(JSON.parse(text)).questions[0], name);
     }
   }
+});
+
+test("duplicate raw keys reject saves with decoded identity, paths and both locations", () => {
+  const valid = JSON.stringify(fixture("code"));
+  const cases = [
+    ['{\r\n "a":1,\r\n "\\u0061":2}', '$["a"]', 'line 3, column 2', 'line 2, column 2'],
+    ['{"outer":[{"key":1,"key":2}]}', '$["outer"][0]["key"]', 'line 1, column 20', 'line 1, column 12'],
+    ['{"__proto__":1,"__proto__":2}', '$["__proto__"]', 'line 1, column 16', 'line 1, column 2']
+  ];
+  for (const [text, path, repeated, first] of cases) {
+    const result = inspectComponentQuestionDraft(text);
+    assert.equal(result.preview, undefined);
+    assert.equal(result.syntaxError, undefined);
+    assert.equal(result.issues[0].path, path);
+    assert.ok(result.issues[0].message.includes(repeated));
+    assert.ok(result.issues[0].message.includes(first));
+  }
+  const duplicate = valid.replace('"schemaVersion":"2.0"', '"schemaVersion":"ignored","schemaVersion":"2.0"');
+  assert.deepEqual(validateImportFile(JSON.parse(duplicate)).issues, [], "Other import/API parsed-object behavior is unchanged");
+  assert.match(inspectComponentQuestionDraft(duplicate).issues[0].message, /Duplicate object key/);
+  assert.ok(inspectComponentQuestionDraft(valid).preview, "Corrected source is saveable");
+  const unknown = valid.replace(/}$/, ',"unknown":{"first":{"x":1},"second":{"x":2}}}');
+  assert.ok(!inspectComponentQuestionDraft(unknown).issues.some(issue => /Duplicate object key/.test(issue.message)), "Same keys in separate objects are legal");
+  const nested = unknown.replace('"x":2', '"x":2,"x":3');
+  assert.equal(inspectComponentQuestionDraft(nested).issues[0].path, '$["unknown"]["second"]["x"]');
+  const many = '{' + Array.from({length:100}, ()=>'"a":1').join(',') + '}';
+  assert.equal(inspectComponentQuestionDraft(many).issues.length, 51);
+  const deep = '['.repeat(20000) + '{}' + ']'.repeat(20000);
+  assert.equal(inspectComponentQuestionDraft(deep).preview, undefined);
+  assert.ok(inspectComponentQuestionDraft(deep).issues.length);
 });
 
 test("shared structural and semantic validation paths and messages stay verbatim", () => {

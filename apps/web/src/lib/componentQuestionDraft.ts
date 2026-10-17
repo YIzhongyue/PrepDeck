@@ -1,5 +1,6 @@
 import { normalizeImportFile, validateImportFile, type ValidationIssue } from "@prepdeck/shared";
 import { printParseErrorCode, visit } from "jsonc-parser";
+import { duplicateJsonKeyIssues } from "./jsonDuplicateKeys";
 
 export interface JsonSyntaxDiagnostic {
   message: string;
@@ -56,6 +57,9 @@ export function inspectComponentQuestionDraft(text: string): ComponentQuestionDr
   let data: unknown;
   try { data = JSON.parse(text); }
   catch { return { issues: [], syntaxError: locateSyntaxError(text) }; }
+
+  const duplicateIssues = duplicateJsonKeyIssues(text);
+  if (duplicateIssues.length) return { issues: duplicateIssues };
 
   try {
     if (typeof data !== "object" || data === null || Array.isArray(data)) {
