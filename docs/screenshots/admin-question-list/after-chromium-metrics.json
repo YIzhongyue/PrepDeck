@@ -1,0 +1,37 @@
+[
+  {
+    "width": 360,
+    "stemWidth": 302,
+    "rowHeight": 672.703125,
+    "filterHeight": 299.25,
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "stemWidth": 332,
+    "rowHeight": 630.703125,
+    "filterHeight": 299.25,
+    "overflow": false
+  },
+  {
+    "width": 430,
+    "stemWidth": 372,
+    "rowHeight": 609.703125,
+    "filterHeight": 299.25,
+    "overflow": false
+  },
+  {
+    "width": 768,
+    "stemWidth": 372.796875,
+    "rowHeight": 484.15625,
+    "filterHeight": 137.25,
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "stemWidth": 784.796875,
+    "rowHeight": 232.875,
+    "filterHeight": 137.640625,
+    "overflow": false
+  }
+]

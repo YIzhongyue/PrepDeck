@@ -200,6 +200,15 @@ The search also matches an exact internal or external ID. Both IDs and the
 sequence number are visible. Mutations refresh Admin counts, the selected exam's
 practice catalog, learning details and client AI caches.
 
+On phones (below 620 CSS pixels), each row stacks its sequence number, full
+summary/metadata and a separate Edit / Archive or Restore / Delete action area.
+Long IDs and tags wrap within the row. Search occupies a full row above the
+two-column filters; the existing controls remain visible and use 44-pixel touch
+targets. Desktop keeps its number / summary / actions arrangement. Archived
+text uses the readable muted-text color and retains its Archived badge.
+See the [responsive list evidence](../screenshots/admin-question-list.md) for
+[#169](https://github.com/YIzhongyue/PrepDeck/issues/169).
+
 When no questions match, the list distinguishes filtered zero results from a
 truly empty bank. **Clear filters** clears the search (including unsubmitted
 text), type, difficulty, tag, review state, archive state and classifications,
