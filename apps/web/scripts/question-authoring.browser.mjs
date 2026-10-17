@@ -244,8 +244,8 @@ try {
   await page.getByLabel("Type", { exact: true }).selectOption("fill_blank");
   await page.getByLabel("Stem · Markdown", { exact: true }).fill("Fill **this** blank");
   await page.getByLabel("Accepted answers (one per line)").fill("first\nsecond");
-  page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Fill **this** blank");
   const longTag = "Long tag ".repeat(22).trim();
   await createTag(longTag);
@@ -280,13 +280,14 @@ try {
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();
   await tagChip("Cloud, data").waitFor();
   await tagChip("tag-one").click();
-  page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   assert.equal(await page.getByRole("dialog").count(), 1);
   assert.deepEqual(rows[0].tags, ["tag-one", "Cloud, data"]);
-  page.once("dialog", dialog => dialog.dismiss());
   assert.equal(await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:before-navigate", { cancelable: true }))), false);
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.deepEqual(rows[0].tags, ["Cloud, data"]);
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();
@@ -294,6 +295,8 @@ try {
   assert.equal(await tagChip("tag-one").count(), 0);
   await tagChip("Cloud, data").click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.deepEqual(rows[0].tags, []);
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();
@@ -307,6 +310,8 @@ try {
   await page.getByRole("status").filter({ hasText: `Loaded revision ${rows[0].revision}. Your edits are kept` }).waitFor();
   assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Stale local edit");
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   assert.equal(rows[0].stem, "Stale local edit");
   // Imported questions at the limit can remove a tag and replace it without losing others.
@@ -322,7 +327,8 @@ try {
   await page.getByRole("option", { name: "Create “Overflow”", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: /^Remove tag / }).count(), 50);
   await tagChip("Overflow").waitFor();
-  page.once("dialog", dialog => dialog.accept()); await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   rows[0].tags = [];
   // The admin API supplies correctAnswers rather than the public chooseCount.
   rows[0].type = "multiple_choice"; rows[0].correctAnswers = ["A", "B"];
@@ -468,6 +474,8 @@ try {
   const clearedPage = questionPageResponse(0);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   assert.equal((await clearedPage).status(), 200);
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(rows[151].needsReview, false);
   assert.deepEqual(rows[151].tags, ["tag-one"], "clearing the review flag must not disturb the question's tags");
   await page.getByText("No questions match the current filters.", { exact: true }).waitFor();
@@ -530,8 +538,9 @@ try {
   const assertInvalidDraft = async source => {
     assert.equal(await jsonEditor.inputValue(), source, "diagnostics do not rewrite raw JSON");
     assert.equal(await jsonEditor.getAttribute("aria-invalid"), "true");
-    assert.equal(await structuredSave.isDisabled(), true);
-    assert.equal(await structuredPreview.count(), 0, "invalid drafts retain the existing hidden-preview behavior");
+    assert.equal(await structuredSave.isEnabled(), true, "invalid Save remains reachable for error navigation");
+    await structuredPreview.getByRole("status").filter({ hasText: "Preview is out of date" }).waitFor();
+    await structuredPreview.getByRole("img", { name: "After is twice as high as Before." }).waitFor();
     assert.equal(await jsonEditor.evaluate(el => el === document.activeElement), true, "feedback never steals typing focus");
     const description = await jsonEditor.getAttribute("aria-describedby");
     assert.ok(description);
@@ -594,8 +603,8 @@ try {
   await structuredPreview.waitFor();
   assert.equal(componentPatchRequests.length, 1);
   assert.equal(componentPatchRequests[0].expectedRevision, 1);
-  page.once("dialog", dialog => dialog.accept());
   await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await structuredDialog.waitFor({ state: "detached" });
   // The existing component editor has no in-place revision recovery. Refresh
   // the list before reopening rather than changing that behavior in this slice.
@@ -670,10 +679,12 @@ try {
   await openComponent();
   const originalJson = await jsonEditor.inputValue(), draftJson = `${originalJson}\n`;
   await jsonEditor.fill(draftJson);
-  page.once("dialog", dialog => dialog.dismiss()); await page.mouse.click(20, 20);
+  await page.mouse.click(20, 20);
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   assert.equal(await jsonEditor.inputValue(), draftJson);
   assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden");
-  page.once("dialog", dialog => dialog.accept()); await page.mouse.click(20, 20); await assertOverview();
+  await page.mouse.click(20, 20);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click(); await assertOverview();
   await openComponent(); assert.equal(await jsonEditor.inputValue(), originalJson);
   await page.keyboard.press("Escape"); await assertOverview();
   await openComponent(); await jsonEditor.fill(draftJson);
@@ -684,7 +695,8 @@ try {
   assert.equal(await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
   heldComponentSave.gate.resolve();
   await structuredDialog.getByRole("alert").filter({ hasText: "Save temporarily unavailable" }).waitFor();
-  page.once("dialog", dialog => dialog.accept()); await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click(); await assertOverview();
+  await structuredDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click(); await assertOverview();
   await page.setViewportSize({ width: 1024, height: 768 });
   await openComponent(); await page.touchscreen.tap(12, 100); await structuredDialog.waitFor({ state: "detached" });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -761,7 +773,7 @@ try {
   assert.equal(await optionText("A").inputValue(), "First");
   assert.equal(await correct("A").isChecked(), true);
   assert.equal(await page.locator(".authoring-option textarea").first().getAttribute("id"), "option-0");
-  assert.equal(await page.locator(".authoring-option > label").first().textContent(), "A");
+  assert.equal(await page.locator(".authoring-option-label").first().textContent(), "Option A");
   await page.getByRole("button", { name: "Add option", exact: true }).click();
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Option C · Markdown");
   await page.getByRole("button", { name: "Remove option B", exact: true }).click();
@@ -769,7 +781,7 @@ try {
   await optionText("C").fill("Third");
   assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Add option", exact: true }).click();
-  assert.deepEqual(await page.locator(".authoring-option > label").allTextContents(), ["A", "C", "D"]);
+  assert.deepEqual(await page.locator(".authoring-option-label").allTextContents(), ["Option A", "Option C", "Option D"]);
   await typeSelect.selectOption("fill_blank");
   await page.getByRole("status").filter({ hasText: "Changed to fill in the blank. Options and correct answers were cleared." }).waitFor();
   await page.getByLabel("Accepted answers (one per line)").fill("alpha\n\nbeta\n");
@@ -789,8 +801,8 @@ try {
   await optionText("A").pressSequentially("One");
   assert.equal(await optionText("A").inputValue(), "One");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "option-0");
-  page.once("dialog", dialog => dialog.accept());
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   // A duplicate external ID (also HTTP 409) is a field error, not a stale save.
   await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
@@ -802,14 +814,16 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "external-id");
   await page.getByLabel(/^External ID/).fill("A-0");
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Saved revision" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   await archiveRow().getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Stem · Markdown", { exact: true }).fill("My stale edit");
   Object.assign(rows[0], { stem: "Changed elsewhere", difficulty: "hard", revision: rows[0].revision + 1 });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Discard my edits", exact: true }).waitFor();
-  page.once("dialog", dialog => dialog.accept());
   await page.getByRole("button", { name: "Discard my edits", exact: true }).click();
+  await page.getByRole("button", { name: "Discard and load latest", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Changed since you opened it: Stem, Difficulty." }).waitFor();
   assert.equal(await page.getByLabel("Stem · Markdown", { exact: true }).inputValue(), "Changed elsewhere");
   await page.getByText(`#1 · archive-0 · revision ${rows[0].revision}`, { exact: true }).waitFor();
