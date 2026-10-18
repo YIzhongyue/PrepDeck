@@ -2,6 +2,8 @@
 // Worker's responses and the web client's fetch calls.
 
 import type { NoteVisibility } from "./types";
+import type { z } from "zod";
+import type { createNoteRequestSchema, updateNoteRequestSchema } from "./notes.schema.ts";
 
 export interface NoteAuthor {
   id: string;
@@ -25,15 +27,9 @@ export interface NoteWithAuthor {
   isMine: boolean;
 }
 
-export interface CreateNoteRequest {
-  content: string;
-  visibility: NoteVisibility;
-}
+export type CreateNoteRequest = z.input<typeof createNoteRequestSchema>;
 
-export interface UpdateNoteRequest {
-  content?: string;
-  visibility?: NoteVisibility;
-}
+export type UpdateNoteRequest = z.input<typeof updateNoteRequestSchema>;
 
 export interface NoteResponse {
   note: NoteWithAuthor;

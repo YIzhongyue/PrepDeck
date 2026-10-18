@@ -14,7 +14,9 @@
 
 import { createRouter } from "../context";
 import { renderExplanationPrompt } from "../lib/prompts";
+import { readBody, validateBody } from "../lib/requestBody";
 import { allContentBlocks, continueListItem, labelledListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
+import { generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "@prepdeck/shared/schemas";
 
 // Request guard; see docs/requirements/ai-explanations.md for byte-count limitations.
 const MAX_BODY_BYTES = 32 * 1024;
@@ -156,14 +158,6 @@ async function callUpstream(provider: AiProvider, model: string, apiKey: string,
   return content.trim();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
-function validateProviderModel(body: any): string | null {
-  if (!body || typeof body !== "object") return "Invalid JSON body";
-  if (body.provider !== "openai" && body.provider !== "anthropic") return "provider must be 'openai' or 'anthropic'";
-  if (typeof body.model !== "string" || !body.model.trim() || body.model.length > 100) return "model is required";
-  return null;
-}
-
 // Mounted at /api/questions/:questionId/ai-explanations — FR-7.2/FR-7.3:
 // lets the client check for a cached explanation (any provider/model) before
 // ever asking the user for a key, at no cost.
@@ -196,16 +190,14 @@ questionAiExplanationsRouter.patch("/:provider/:model", async (c) => {
   if (!existing) return c.json({ error: "Cached explanation not found" }, 404);
   if (user.role !== "admin" && existing.created_by !== user.id) return c.json({ error: "Forbidden" }, 403);
 
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body.content !== "string" || !body.content.trim()) {
-    return c.json({ error: "content is required" }, 400);
-  }
+  const parsed = await readBody(c, updateAiExplanationRequestSchema);
+  if (!parsed.ok) return parsed.response;
 
   const now = new Date().toISOString();
   await c.env.DB.prepare(
     "UPDATE ai_explanations SET content = ?, updated_at = ? WHERE question_id = ? AND provider = ? AND model = ?"
   )
-    .bind(body.content.trim(), now, questionId, provider, model)
+    .bind(parsed.data.content, now, questionId, provider, model)
     .run();
 
   const row = await c.env.DB.prepare(
@@ -228,23 +220,17 @@ aiGenerateRouter.post("/", async (c) => {
   const raw = await c.req.text();
   if (raw.length > MAX_BODY_BYTES) return c.json({ error: "Request too large" }, 413);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field below
-  let body: any;
+  let json: unknown;
   try {
-    body = JSON.parse(raw);
+    json = JSON.parse(raw);
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
 
-  if (typeof body?.questionId !== "string") return c.json({ error: "questionId is required" }, 400);
-  const providerModelError = validateProviderModel(body);
-  if (providerModelError) {
-    return c.json({ error: providerModelError }, 400);
-  }
-
-  const questionId: string = body.questionId;
-  const provider: AiProvider = body.provider;
-  const model: string = body.model.trim();
+  const parsed = validateBody(c, generateAiExplanationRequestSchema, json);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
+  const { questionId, provider, model } = body;
   const force = body.force === true;
   const user = c.get("user");
 
@@ -275,10 +261,8 @@ aiGenerateRouter.post("/", async (c) => {
     return c.json({ explanation: toDto(existing, user.id, user.role), cached: true } satisfies { explanation: AiExplanationDto; cached: boolean });
   }
 
-  if (typeof body.apiKey !== "string" || !body.apiKey.trim()) {
-    return c.json({ error: "apiKey is required" }, 400);
-  }
-  const apiKey: string = body.apiKey;
+  const apiKey = body.apiKey;
+  if (!apiKey?.trim()) return c.json({ error: "apiKey is required" }, 400);
 
   let content: string;
   try {

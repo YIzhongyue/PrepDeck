@@ -8,38 +8,9 @@
 // this router only enforces per-user ownership.
 
 import { createRouter } from "../context";
-import { MAX_ANNOTATION_NOTE_LENGTH, MAX_ANNOTATION_STYLE_LENGTH, type AnnotationTargetType } from "@prepdeck/shared";
+import { createAnnotationRequestSchema, updateAnnotationRequestSchema } from "@prepdeck/shared/schemas";
 import { buildAnnotationsListQuery, toAnnotation, type AnnotationRow } from "../lib/annotationsQuery";
-
-const TARGET_TYPES: AnnotationTargetType[] = ["stem", "option", "ai_explanation"];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
-function validateCreate(body: any): string | null {
-  if (!body || typeof body !== "object") return "Invalid JSON body";
-  if (!TARGET_TYPES.includes(body.targetType)) return "targetType must be one of stem, option, ai_explanation";
-  if (body.targetType === "option") {
-    if (typeof body.targetRef !== "string" || !body.targetRef) return "targetRef is required when targetType is option";
-  } else if (body.targetRef != null) {
-    return "targetRef must be omitted unless targetType is option";
-  }
-  if (!Number.isInteger(body.rangeStart) || body.rangeStart < 0) return "rangeStart must be a non-negative integer";
-  if (!Number.isInteger(body.rangeEnd) || body.rangeEnd <= body.rangeStart) return "rangeEnd must be an integer greater than rangeStart";
-  if (typeof body.style !== "string" || !body.style) return "style is required";
-  return lengthProblem(body);
-}
-
-// Issue #45: both strings used to be unbounded; an oversized one reached D1
-// and came back as an unhandled SQLITE_TOOBIG 500.
-function lengthProblem(body: { style?: unknown; note?: unknown }): string | null {
-  if (body.note != null && typeof body.note !== "string") return "note must be a string";
-  if (typeof body.note === "string" && body.note.length > MAX_ANNOTATION_NOTE_LENGTH) {
-    return `note must be ${MAX_ANNOTATION_NOTE_LENGTH.toLocaleString("en")} characters or fewer`;
-  }
-  if (typeof body.style === "string" && body.style.length > MAX_ANNOTATION_STYLE_LENGTH) {
-    return `style must be ${MAX_ANNOTATION_STYLE_LENGTH} characters or fewer`;
-  }
-  return null;
-}
+import { readBody } from "../lib/requestBody";
 
 // Mounted at /api/questions/:questionId/annotations — FR-8.1: create an
 // annotation while reviewing a question; also lists this user's existing
@@ -64,9 +35,9 @@ questionAnnotationsRouter.post("/", async (c) => {
   const question = await c.env.DB.prepare("SELECT id FROM questions WHERE id = ?").bind(questionId).first();
   if (!question) return c.json({ error: "Question not found" }, 404);
 
-  const body = await c.req.json().catch(() => null);
-  const error = validateCreate(body);
-  if (error) return c.json({ error }, 400);
+  const parsed = await readBody(c, createAnnotationRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -122,13 +93,9 @@ annotationsRouter.patch("/:id", async (c) => {
     .first<AnnotationRow>();
   if (!existing) return c.json({ error: "Annotation not found" }, 404);
 
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-  if (body.style != null && (typeof body.style !== "string" || !body.style)) {
-    return c.json({ error: "style must be a non-empty string" }, 400);
-  }
-  const tooLong = lengthProblem(body);
-  if (tooLong) return c.json({ error: tooLong }, 400);
+  const parsed = await readBody(c, updateAnnotationRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const style = body.style ?? existing.style;
   const note = body.note !== undefined ? body.note : existing.note;

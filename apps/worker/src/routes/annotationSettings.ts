@@ -7,7 +7,9 @@
 
 import { createRouter } from "../context";
 import { DEFAULT_MARK_ALIASES } from "@prepdeck/shared";
-import { aliasValidationError, resolveMarkAlias } from "../lib/annotationSettings";
+import { updateAnnotationSettingsRequestSchema } from "@prepdeck/shared/schemas";
+import { resolveMarkAlias } from "../lib/annotationSettings";
+import { readBody } from "../lib/requestBody";
 
 interface AnnotationSettingsRow {
   hl1_alias: string;
@@ -38,17 +40,9 @@ annotationSettingsRouter.get("/", async (c) => {
 
 annotationSettingsRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-
-  if (body.hl1Alias === undefined && body.hl2Alias === undefined && body.hl3Alias === undefined) {
-    return c.json({ error: "Provide at least one of hl1Alias, hl2Alias, hl3Alias" }, 400);
-  }
-
-  for (const [field, value] of [["hl1Alias", body.hl1Alias], ["hl2Alias", body.hl2Alias], ["hl3Alias", body.hl3Alias]] as const) {
-    const error = aliasValidationError(field, value);
-    if (error) return c.json({ error }, 400);
-  }
+  const parsed = await readBody(c, updateAnnotationSettingsRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const existing = await c.env.DB.prepare(
     "SELECT hl1_alias, hl2_alias, hl3_alias FROM user_annotation_settings WHERE user_id = ?"

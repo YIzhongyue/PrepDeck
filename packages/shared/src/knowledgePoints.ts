@@ -3,6 +3,12 @@
 // optionally shared) and docs/requirements/review-notes-and-annotations.md `annotations` (span-anchored). Always
 // private to the owner — no visibility/sharing concept here.
 
+import type { z } from "zod";
+import type {
+  autosaveKnowledgePointRequestSchema, createKnowledgePointRequestSchema, linkKnowledgePointQuestionRequestSchema,
+  reorderKnowledgePointRequestSchema, setKnowledgePointGroupRequestSchema,
+} from "./knowledgePoints.schema.ts";
+
 export type KnowledgePointSort = "updated" | "title" | "created" | "custom";
 
 export interface KnowledgePointTagRef {
@@ -76,37 +82,24 @@ export interface KnowledgePointsListResponse {
   orderRevision: number | null;
 }
 
-export interface CreateKnowledgePointRequest {
-  groupId?: string | null;
-}
+export type CreateKnowledgePointRequest = z.input<typeof createKnowledgePointRequestSchema>;
 
-export interface AutosaveKnowledgePointRequest {
-  baseRevision: number;
-  title: string;
-  bodyMarkdown: string;
-}
+export type AutosaveKnowledgePointRequest = z.input<typeof autosaveKnowledgePointRequestSchema>;
 
 export interface AutosaveConflictResponse {
   error: "revision_conflict";
   latest: KnowledgePointDetail;
 }
 
-export interface ReorderKnowledgePointRequest {
-  beforeId: string | null;
-  expectedOrderRevision: number;
-}
+export type ReorderKnowledgePointRequest = z.input<typeof reorderKnowledgePointRequestSchema>;
 
-export interface SetKnowledgePointGroupRequest {
-  groupId: string | null;
-}
+export type SetKnowledgePointGroupRequest = z.input<typeof setKnowledgePointGroupRequestSchema>;
 
 export interface AddKnowledgePointTagRequest {
   name: string;
 }
 
-export interface LinkKnowledgePointQuestionRequest {
-  questionId: string;
-}
+export type LinkKnowledgePointQuestionRequest = z.input<typeof linkKnowledgePointQuestionRequestSchema>;
 
 export interface KnowledgePointGroup {
   id: string;
