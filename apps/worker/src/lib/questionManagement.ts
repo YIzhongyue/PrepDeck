@@ -135,7 +135,7 @@ export function updateStatement(
 
 // A plain interface (not Record<string, ...>) so both Hono's c.req.query()
 // (Record<string, string>, used by routes/questions.ts) and a parsed MCP
-// tool input object (a concrete zod-inferred type, used by mcp/adapter.ts)
+// tool input object (a concrete zod-inferred type, used by mcp/adapters/admin/)
 // are structurally assignable without a cast.
 export interface SearchQuestionsQuery {
   classifications?: string;
@@ -249,7 +249,7 @@ export interface QuestionTagCount {
 // Derived from question_tag_links/question_bank_tags (implementation) — counts
 // actual associations, one row per catalog tag with at least one link in
 // scope. A catalog tag with zero current links never appears here (that's
-// exactly the "registered but unused" case mcp/adapter.ts's listTags
+// exactly the "registered but unused" case mcp/adapters/admin/questionReads.ts's listTags
 // annotates separately via listTagCatalogNames).
 // `activeOnly` is for learner-facing callers; the admin taxonomy view still
 // counts archived questions, which keep their tags.

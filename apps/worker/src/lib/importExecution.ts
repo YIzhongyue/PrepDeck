@@ -1,5 +1,5 @@
 // implementation — import-execution helpers shared between the REST import routes
-// (routes/imports.ts) and Admin MCP's import tools (mcp/adapter.ts), per
+// (routes/imports.ts) and Admin MCP's import tools (mcp/adapters/admin/imports.ts), per
 // implementation's "share management logic with the future Admin MCP". Extracted
 // unchanged from routes/imports.ts except where noted.
 import { canonical, questionSelectColumns, toQuestion, type QuestionPayload, type QuestionRow } from "./questionManagement";

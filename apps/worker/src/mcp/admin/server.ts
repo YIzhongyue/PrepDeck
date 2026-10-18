@@ -3,7 +3,7 @@ import { getImportSchemas } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
-import { createAdminMcpAdapter } from "../adapter";
+import { createAdminMcpAdapter } from "../adapters/admin";
 import { createCatalogServer, defineMcpTool, type McpTool, type McpToolPolicy } from "../catalog";
 import { paginationSchema } from "../conventions";
 import { MAX_BATCH_MUTATION_ITEMS } from "../../lib/questionManagement";

@@ -76,7 +76,7 @@ export async function createNote(db: D1Database, input: CreateNoteInput): Promis
   }
   if (linkedQuestionIds.length > 0) {
     // D1 parameter-budget convention: one JSON-array bind, not one bound
-    // parameter per id (see mcp/adapter.ts's getLearningOverview).
+    // parameter per id (see mcp/adapters/user/study.ts's getLearningOverview).
     const { results } = await db
       .prepare("SELECT id FROM questions WHERE id IN (SELECT value FROM json_each(?))")
       .bind(JSON.stringify(linkedQuestionIds))
@@ -289,7 +289,7 @@ export async function applyNoteEdit(db: D1Database, input: ApplyNoteEditInput): 
   const knownImages = await db.prepare("SELECT id, status FROM knowledge_point_images WHERE knowledge_point_id = ?").bind(id).all<KnownKnowledgePointImage>();
   const { toAttach, toOrphan } = reconcileImageStatuses(finalBody, knownImages.results ?? []);
   const gateGuard = `EXISTS (SELECT 1 FROM knowledge_points WHERE id = ? AND revision = ?)`;
-  // D1 parameter-budget convention (see mcp/adapter.ts's getLearningOverview):
+  // D1 parameter-budget convention (see mcp/adapters/user/study.ts's getLearningOverview):
   // one JSON-array bind, not one bound parameter per image id — a note can
   // carry far more than ~95 images via REST (which has no cap), and one
   // parameter per id would otherwise blow past D1's 100-bound-parameter

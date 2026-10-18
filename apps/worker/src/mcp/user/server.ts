@@ -3,7 +3,7 @@ import { getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
-import { createUserMcpAdapter } from "../adapter";
+import { createUserMcpAdapter } from "../adapters/user";
 import { createCatalogServer, defineMcpTool, type McpTool, type McpToolPolicy } from "../catalog";
 import { paginationSchema } from "../conventions";
 import { STUDY_PRESENTATION_INSTRUCTIONS } from "../questionPresentation";
@@ -35,7 +35,7 @@ const knowledgePointListFilters = {
   groupId: knowledgePointGroupIdSchema.optional(),
   ungrouped: z.boolean().optional(),
   // Bounds the *query filter* — a different, smaller concern from how many
-  // tags one note may carry (see MAX_TAGS_PER_NOTE in mcp/adapter.ts).
+  // tags one note may carry (see MAX_TAGS_PER_NOTE in mcp/adapters/user/knowledgePoints.ts).
   tagIds: z.array(knowledgePointTagIdSchema).max(20).optional(),
   sort: knowledgePointSortSchema.optional(),
   linkedQuestionId: questionIdSchema.optional(),

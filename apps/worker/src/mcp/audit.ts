@@ -80,7 +80,7 @@ export interface ConditionalAdminMutationAuditEntry {
 // benign skip. A resumed import row that intentionally re-applies an
 // already-committed update and expects zero changes is instead audited via
 // the plain (non-conditional) buildAdminMutationAuditStatement with an
-// explicit outcome:'skipped' — see adapter.ts's import execute path.
+// explicit outcome:'skipped' — see adapters/admin/imports.ts's import execute path.
 export function buildConditionalAdminMutationAuditStatement(
   db: D1Database,
   principal: McpPrincipal,
