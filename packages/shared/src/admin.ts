@@ -2,31 +2,21 @@
 // (FR-1.2/FR-1.4, surfaced under /admin/users) and the usage overview panel
 // (FR-13.4, surfaced under /admin/overview). Admin-only on the Worker side.
 
-import type { Role, User, UserStatus } from "./types";
+import type { User } from "./types";
+import type { z } from "zod";
+import type { inviteUserRequestSchema, updateUserRequestSchema } from "./admin.schema.ts";
 
 export interface AdminUsersListResponse {
   users: User[];
 }
 
-export interface InviteUserRequest {
-  email: string;
-  role: Role;
-  // Optional initial password, meaningful only while the Worker's
-  // explicit development password-login bindings are enabled (see
-  // apps/worker/src/routes/auth.ts) — lets an
-  // invited account sign in locally before Cloudflare Access is wired up.
-  // Ignored in production and whenever the fail-closed feature flag is off.
-  password?: string;
-}
+export type InviteUserRequest = z.input<typeof inviteUserRequestSchema>;
 
 export interface InviteUserResponse {
   user: User;
 }
 
-export interface UpdateUserRequest {
-  role?: Role;
-  status?: Extract<UserStatus, "active" | "revoked">;
-}
+export type UpdateUserRequest = z.input<typeof updateUserRequestSchema>;
 
 export interface UpdateUserResponse {
   user: User;

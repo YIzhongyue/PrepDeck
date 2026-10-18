@@ -19,7 +19,7 @@ const proposalIdSchema = z.string().uuid();
 
 // implementation — exam lifecycle, import workflow, and taxonomy schemas.
 // Cross-field limits (pass count <= question count) are checked by the shared
-// officialFormatError in the service, like REST.
+// officialFormatSchema (@prepdeck/shared/schemas) in the service, like REST.
 const officialFormatSchema = z.strictObject({
   questionCount: z.number().int().min(1).describe("Number of questions in the real exam"),
   timeLimitMinutes: z.number().int().min(1).describe("Time limit of the real exam, in minutes"),

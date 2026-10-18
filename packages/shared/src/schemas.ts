@@ -9,12 +9,15 @@
 // first issue's message (apps/worker/src/lib/requestBody.ts), and these are
 // the messages the routes returned before the schemas existed, which the web
 // client and the browser tests show and assert.
+export * from "./admin.schema.ts";
 export * from "./ai.schema.ts";
 export * from "./annotations.schema.ts";
 export * from "./annotationSettings.schema.ts";
+export * from "./appearance.schema.ts";
 export * from "./attempts.schema.ts";
 export * from "./dailyEmailSettings.schema.ts";
 export * from "./examPreferences.schema.ts";
+export * from "./exams.schema.ts";
 export * from "./knowledgePoints.schema.ts";
 export * from "./mcp.schema.ts";
 export * from "./notes.schema.ts";

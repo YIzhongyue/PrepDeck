@@ -7,8 +7,6 @@
 // as many correct answers, rounded up. Exams without it keep the older
 // percentage rule (`passMarkPct`), and exams with neither have no pass mark.
 
-import { MAX_ATTEMPT_QUESTIONS } from "./attempts.ts";
-
 export interface OfficialMockFormat {
   questionCount: number;
   timeLimitMinutes: number;
@@ -21,24 +19,6 @@ export interface ExamPassRule {
 }
 
 export const MAX_MOCK_MINUTES = 600;
-
-/** Admin input check; returns a message for the first problem, or null. */
-export function officialFormatError(value: unknown): string | null {
-  if (value === null) return null;
-  if (typeof value !== "object") return "officialFormat must be an object or null";
-  const v = value as Partial<Record<keyof OfficialMockFormat, unknown>>;
-  const isInt = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n);
-  if (!isInt(v.questionCount) || v.questionCount < 1 || v.questionCount > MAX_ATTEMPT_QUESTIONS) {
-    return `officialFormat.questionCount must be a whole number from 1 to ${MAX_ATTEMPT_QUESTIONS}`;
-  }
-  if (!isInt(v.timeLimitMinutes) || v.timeLimitMinutes < 1 || v.timeLimitMinutes > MAX_MOCK_MINUTES) {
-    return `officialFormat.timeLimitMinutes must be a whole number from 1 to ${MAX_MOCK_MINUTES}`;
-  }
-  if (!isInt(v.passCorrectCount) || v.passCorrectCount < 1 || v.passCorrectCount > v.questionCount) {
-    return "officialFormat.passCorrectCount must be a whole number from 1 to questionCount";
-  }
-  return null;
-}
 
 /** Correct answers needed to pass a mock of `totalQuestions`, or null without a count-based rule. */
 export function requiredCorrectFor(format: OfficialMockFormat | null, totalQuestions: number): number | null {
