@@ -4,16 +4,14 @@
 // routes/attempts.ts), so these routes serve only the Learning screen's
 // automatic mark, its manual toggle, and the setup screens' filters.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import type { LearningViewRequest, SetStudyStatusRequest, StudyStatusListResponse } from "@prepdeck/shared";
 import { examExists } from "../lib/examManagement";
 import { listStudyStatuses, recordLearningView, setStudyStatus } from "../lib/studyStatus";
 import { studyMutationStatus } from "../lib/studyMutationResult";
 
 // Mounted at /api/exams/:examId/study-status
-export const studyStatusRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const studyStatusRouter = createRouter();
 
 studyStatusRouter.get("/", async (c) => {
   const examId = c.req.param("examId")!;

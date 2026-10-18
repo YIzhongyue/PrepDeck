@@ -5,9 +5,7 @@
 // `timezone` is the account's zone (users.timezone, issue #47), shared with
 // the statistics; user_email_settings.timezone is no longer used.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { resolveTimeZone, type DailyEmailSource } from "@prepdeck/shared";
 import { dailyEmailSettingsValidationError } from "../lib/dailyEmailSettings";
 import { loadStoredTimeZone, saveUserTimeZone } from "../lib/userTimeZone";
@@ -41,7 +39,7 @@ function toResponse(row: DailyEmailSettingsRow | null, timezone: string | null) 
 const SELECT_COLUMNS = "enabled, questions_per_email, source, send_hour_local, unsubscribed_at";
 
 // Mounted at /api/daily-email-settings.
-export const dailyEmailSettingsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const dailyEmailSettingsRouter = createRouter();
 
 dailyEmailSettingsRouter.get("/", async (c) => {
   const userId = c.get("user").id;

@@ -1,7 +1,5 @@
-import { Hono } from "hono";
 import { z } from "zod";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { hasValidImageContent, ICON_CONTENT_TYPES, type IconContentType } from "../lib/imageValidation";
 
@@ -19,7 +17,7 @@ const providerFields = z.object({
 }).strict();
 const providerPatch = providerFields.partial().refine((value) => Object.keys(value).length > 0, "No fields to update");
 
-export const providersRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const providersRouter = createRouter();
 
 providersRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
@@ -123,7 +121,7 @@ providersRouter.post("/:id/icon", requireAdmin, async (c) => {
   return c.json({ iconUrl });
 });
 
-export const providerIconsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const providerIconsRouter = createRouter();
 providerIconsRouter.get("/:id", async (c) => {
   const object = await c.env.BUCKET.get(`provider-icons/${c.req.param("id")}`); if (!object) return c.json({ error: "Not found" }, 404);
   const storedType = object.httpMetadata?.contentType ?? "";

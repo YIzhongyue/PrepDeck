@@ -1,6 +1,5 @@
-import { Hono } from "hono";
 import type { Env } from "./bindings";
-import type { Variables } from "./context";
+import { createRouter } from "./context";
 import { requireAccessUser } from "./middleware/access";
 import { authRouter } from "./routes/auth";
 import { examBadgesRouter, examsRouter } from "./routes/exams";
@@ -49,7 +48,7 @@ import { runMcpOAuthPrune } from "./scheduled/pruneMcpOAuth";
 import { observeMcp } from "./mcp/observability";
 export { RateLimiterObject } from "./rateLimiterObject";
 
-const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+const app = createRouter();
 
 // Every unhandled error answers in JSON (issue #45); see lib/unexpectedError.ts.
 app.onError(handleUnexpectedError);
@@ -95,7 +94,7 @@ app.route("/admin-mcp", adminMcpRouter);
 // Protected API routes below require the configured cookie/Access session;
 // public auth, health and unsubscribe routes are mounted above.
 // (FR-1.1) and the app-layer authorized-users check (FR-1.3).
-const api = new Hono<{ Bindings: Env; Variables: Variables }>();
+const api = createRouter();
 api.use("*", requireAccessUser);
 api.use("*", authenticatedRateLimit);
 // Small JSON bodies only; see lib/bodyLimit.ts. After authentication, so an

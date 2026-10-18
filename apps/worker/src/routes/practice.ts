@@ -8,9 +8,7 @@
 // prototype did against its hardcoded mock array, and never sees an answer
 // key before it grades a specific question through the attempts API.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { getCachedPracticeQuestions, setCachedPracticeQuestions } from "../lib/practiceCache";
 import { tagsJsonExpr } from "../lib/questionManagement";
 import type { PracticeCatalogQuestion, PracticeCatalogResponse, PracticeQuestionContentResponse } from "@prepdeck/shared";
@@ -52,7 +50,7 @@ function toCatalogQuestion(row: QuestionRow): PracticeCatalogQuestion {
   };
 }
 
-export const practiceCatalogRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const practiceCatalogRouter = createRouter();
 
 practiceCatalogRouter.get("/", async (c) => {
   const examId = c.req.param("examId")!;

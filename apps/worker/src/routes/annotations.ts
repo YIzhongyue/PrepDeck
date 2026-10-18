@@ -7,9 +7,7 @@
 // entirely a front-end concern (see apps/web's `graded`/review-mode checks);
 // this router only enforces per-user ownership.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { MAX_ANNOTATION_NOTE_LENGTH, MAX_ANNOTATION_STYLE_LENGTH, type AnnotationTargetType } from "@prepdeck/shared";
 import { buildAnnotationsListQuery, toAnnotation, type AnnotationRow } from "../lib/annotationsQuery";
 
@@ -46,7 +44,7 @@ function lengthProblem(body: { style?: unknown; note?: unknown }): string | null
 // Mounted at /api/questions/:questionId/annotations — FR-8.1: create an
 // annotation while reviewing a question; also lists this user's existing
 // annotations for that one question.
-export const questionAnnotationsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionAnnotationsRouter = createRouter();
 
 questionAnnotationsRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
@@ -98,7 +96,7 @@ questionAnnotationsRouter.post("/", async (c) => {
 // Mounted at /api/annotations — FR-8.4: "My Annotations" needs every
 // annotation belonging to the current user, across questions; also FR-8.5
 // edit/remove by the annotation's own id (question id not needed for that).
-export const annotationsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const annotationsRouter = createRouter();
 
 // implementation: optional ?markType=hl1,hl2&sort=asc|desc for the "My
 // Annotations" filter/sort UI. Omitting both reproduces the original

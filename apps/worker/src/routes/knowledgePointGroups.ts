@@ -6,9 +6,7 @@
 // implementation — CRUD now lives in lib/knowledgePointGroupMutations.ts, shared
 // with the User MCP adapter.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { listGroups, createGroup, renameGroup, deleteGroup } from "../lib/knowledgePointGroupMutations";
 
 // REST's GET / has never paginated — every group for the user, in one
@@ -17,7 +15,7 @@ import { listGroups, createGroup, renameGroup, deleteGroup } from "../lib/knowle
 // than duplicating the query with a second code path.
 const UNPAGINATED_LIMIT = 100_000;
 
-export const knowledgePointGroupsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointGroupsRouter = createRouter();
 
 knowledgePointGroupsRouter.get("/", async (c) => {
   const { groups, ungroupedCount } = await listGroups(c.env.DB, c.get("user").id, { limit: UNPAGINATED_LIMIT, offset: 0 });

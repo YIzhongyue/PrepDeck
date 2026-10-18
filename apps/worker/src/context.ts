@@ -1,3 +1,5 @@
+import { Hono } from "hono";
+import type { Env } from "./bindings";
 import type { McpObservation } from "./mcp/observability";
 
 // Hono `Variables` set by middleware/access.ts once a request's identity has
@@ -15,3 +17,9 @@ export interface Variables {
   user: AuthUser;
   mcpObservation?: McpObservation;
 }
+
+// The one Hono environment every router, middleware and handler context in
+// this Worker shares.
+export type AppEnv = { Bindings: Env; Variables: Variables };
+
+export const createRouter = () => new Hono<AppEnv>();

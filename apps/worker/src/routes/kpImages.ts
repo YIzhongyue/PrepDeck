@@ -6,9 +6,7 @@
 // (no sharing), so the GET route is session-gated, not just signed-in-gated.
 // Mounted at /api/kp-images.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { ICON_CONTENT_TYPES, hasValidImageContent, type IconContentType } from "../lib/imageValidation";
 import { enqueueImageRetirementStatement, flushRetiredImages } from "../lib/knowledgePointImageRetirement";
 
@@ -21,7 +19,7 @@ interface ImageRow {
   content_type: string;
 }
 
-export const kpImagesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const kpImagesRouter = createRouter();
 
 kpImagesRouter.post("/:knowledgePointId", async (c) => {
   const userId = c.get("user").id;

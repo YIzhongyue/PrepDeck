@@ -8,11 +8,10 @@
 // Cloudflare Turnstile (issue #82, lib/turnstile.ts), starting Google sign-in
 // requires a verified token; /turnstile tells the login screen whether it does.
 
-import { Hono, type Context } from "hono";
+import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { TURNSTILE_ACTIONS, TURNSTILE_FORM_FIELD, type TurnstileConfigResponse } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter, type AppEnv } from "../context";
 import { requireAccessUser } from "../middleware/access";
 import { turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken, type TurnstileFailure } from "../lib/turnstile";
 import { verifyPassword } from "../lib/password";
@@ -41,7 +40,7 @@ interface UserRow {
   password_hash: string | null;
 }
 
-export const authRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const authRouter = createRouter();
 
 function googleRedirectUri(c: { req: { url: string } }): string {
   return `${new URL(c.req.url).origin}/api/auth/google/callback`;
@@ -81,7 +80,7 @@ function withAuthFlag(returnTo: string | null, reason: string): string {
 // passed the check. GET remains for deployments without Turnstile; with it,
 // a GET (an old tab, a bookmarked link) is sent back to the login screen.
 async function startGoogleSignIn(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
+  c: Context<AppEnv>,
   input: { returnTo: unknown; turnstileToken: unknown },
 ) {
   // The direct OAuth callback creates a PrepDeck session cookie. Access mode

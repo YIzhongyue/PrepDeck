@@ -1,11 +1,9 @@
-import { Hono } from "hono";
 import type { QuestionTagsResponse } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { listTagCatalogNames } from "../lib/questionBankTags";
 import { requireAdmin } from "../middleware/admin";
 
-export const questionTagsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionTagsRouter = createRouter();
 questionTagsRouter.use("*", requireAdmin);
 
 questionTagsRouter.get("/", async (c) => {

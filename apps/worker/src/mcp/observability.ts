@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { AppEnv } from "../context";
 import type { McpAudience } from "./credentials";
 import { MCP_ERRORS, type McpErrorCode } from "./errors";
 
@@ -158,7 +158,7 @@ export class McpObservation {
   }
 }
 
-export const observeMcp: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
+export const observeMcp: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.env.MCP_METRICS_ENABLED !== "true" || !c.env.MCP_METRICS) return next();
   const observation = new McpObservation(c.env, c.req.path.startsWith("/admin-mcp") ? "admin" : "user");
   c.set("mcpObservation", observation);

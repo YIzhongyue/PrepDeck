@@ -10,10 +10,8 @@
 // thin: parse the request, call the lib function, map its result to the
 // same HTTP status/body this route has always returned.
 
-import { Hono } from "hono";
 import { KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { buildKnowledgePointsListQuery } from "../lib/knowledgePointsQuery";
 import { loadDetail, toSummary, LIST_SELECT, type KnowledgePointRow } from "../lib/knowledgePointDetail";
 import { createNote, applyNoteUpdate, applyGroupMove, reorderNote, deleteNote, linkQuestion, unlinkQuestion, attachTag, detachTag } from "../lib/knowledgePointMutations";
@@ -25,7 +23,7 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_TITLE_LENGTH = KNOWLEDGE_POINT_MAX_TITLE_LENGTH;
 const MAX_BODY_LENGTH = KNOWLEDGE_POINT_MAX_BODY_LENGTH;
 
-export const knowledgePointsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointsRouter = createRouter();
 
 knowledgePointsRouter.get("/", async (c) => {
   const userId = c.get("user").id;

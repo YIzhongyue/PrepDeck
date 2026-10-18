@@ -4,9 +4,7 @@
 // minimal and separate from the richer profile settings docs/requirements/authentication-and-users.md owns
 // (display name, avatar — see routes/profile.ts).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { canonicalTimeZone, type ThemeId } from "@prepdeck/shared";
 
 const THEME_IDS: ThemeId[] = ["cream", "sage", "clay", "dusk"];
@@ -17,7 +15,7 @@ interface SettingsRow {
   timezone: string | null;
 }
 
-export const settingsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const settingsRouter = createRouter();
 
 settingsRouter.get("/", async (c) => {
   const userId = c.get("user").id;

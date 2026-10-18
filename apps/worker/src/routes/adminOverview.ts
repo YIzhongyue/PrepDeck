@@ -2,13 +2,11 @@
 // landing page: at-a-glance counts, read live from D1 at request time. No
 // new table; this is a convenience view, not an analytics/reporting feature.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import type { AdminOverviewResponse } from "@prepdeck/shared";
 
-export const adminOverviewRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const adminOverviewRouter = createRouter();
 
 adminOverviewRouter.use("*", requireAdmin);
 

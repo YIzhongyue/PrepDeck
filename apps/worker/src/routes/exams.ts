@@ -2,9 +2,7 @@
 // Listing is available to any authenticated user (needed to pick an exam for
 // practice, per FR-3.1); mutations are Admin-only.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { officialFormatError } from "@prepdeck/shared";
 import {
@@ -13,7 +11,7 @@ import {
   type ExamMutableFields,
 } from "../lib/examManagement";
 
-export const examsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examsRouter = createRouter();
 
 examsRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
@@ -135,7 +133,7 @@ examsRouter.post("/:id/badge", requireAdmin, async (c) => {
   return c.json({ badgeIconUrl });
 });
 
-export const examBadgesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examBadgesRouter = createRouter();
 
 examBadgesRouter.get("/:examId", async (c) => {
   const object = await c.env.BUCKET.get(`exam-badges/${c.req.param("examId")}`);

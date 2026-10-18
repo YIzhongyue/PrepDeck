@@ -1,6 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { AppEnv } from "../context";
 // Explicit extension: this module is imported directly by Node's native TS
 // runtime in scripts/circuit-breaker.test.mjs (no bundler resolving bare
 // specifiers there), unlike every other relative import in src/.
@@ -67,7 +66,7 @@ function exactAdminSource(request: Request, configured: string | undefined): boo
  * only the bounded MCP metrics observer may precede it; rejected requests
  * must not authenticate or touch D1, KV, or R2.
  */
-export const circuitBreaker: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
+export const circuitBreaker: MiddlewareHandler<AppEnv> = async (c, next) => {
   const mode = configuredMode(c.env.CIRCUIT_MODE);
   if (mode === "normal") return next();
 

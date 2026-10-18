@@ -1,6 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { AppEnv } from "../context";
 import { fetchAccessProfile, verifyAccessJwt } from "../lib/access-jwt";
 import { authorizeIdentity } from "../lib/authorizeIdentity";
 import { readSessionCookie, verifySessionToken } from "../lib/session";
@@ -16,7 +15,7 @@ interface UserRow {
   session_version: number;
 }
 
-type Handler = MiddlewareHandler<{ Bindings: Env; Variables: Variables }>;
+type Handler = MiddlewareHandler<AppEnv>;
 
 // Validates the Cloudflare Access JWT, then applies the same FR-1.3
 // authorization check as the primary Google OAuth path (lib/authorizeIdentity).

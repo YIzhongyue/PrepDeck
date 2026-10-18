@@ -5,10 +5,8 @@
 // credentials for that audience — an admin's Admin MCP tokens are personal
 // access tokens bound to their own account, not a shared service credential.
 
-import { Hono } from "hono";
 import { MCP_TOKEN_MAX_EXPIRES_IN_DAYS, MCP_TOKEN_NAME_MAX_LENGTH, TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { requireTurnstile } from "../middleware/turnstile";
 import {
@@ -41,7 +39,7 @@ function freshSummary(issued: { id: string; name: string; createdAt: number; exp
 }
 
 export function createMcpTokensRouter(audience: McpAudience) {
-  const router = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const router = createRouter();
   if (audience === "admin") router.use("*", requireAdmin);
   // Both issue a working bearer token, so both ask for human verification
   // when the deployment uses it (issue #82). Revoking only takes access away.

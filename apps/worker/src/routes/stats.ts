@@ -4,15 +4,13 @@
 // get_learning_stats tool, implementation); this file is just the cached HTTP
 // wrapper around it.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { getOrComputeExamStats } from "../lib/statsCache";
 import { computeStudyActivity } from "../lib/learningStats";
 import { loadUserTimeZone } from "../lib/userTimeZone";
 
 // Mounted at /api/exams/:examId/stats
-export const examStatsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examStatsRouter = createRouter();
 
 examStatsRouter.get("/", async (c) => {
   const examId = c.req.param("examId")!;
@@ -24,7 +22,7 @@ examStatsRouter.get("/", async (c) => {
 });
 
 // Mounted at /api/stats/activity
-export const studyActivityRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const studyActivityRouter = createRouter();
 
 studyActivityRouter.get("/", async (c) => {
   const userId = c.get("user").id;

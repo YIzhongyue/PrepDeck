@@ -3,9 +3,7 @@
 // FR-12.5 (showing name/avatar wherever identity is surfaced) live
 // elsewhere — see middleware/access.ts and routes/notes.ts respectively.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { invalidateCachedUser } from "../lib/userCache";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // FR-12.4
@@ -25,7 +23,7 @@ function toProfile(row: ProfileRow) {
 }
 
 // Mounted at /api/me.
-export const profileRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const profileRouter = createRouter();
 
 // FR-12.2: edit one's own display name.
 profileRouter.patch("/", async (c) => {
@@ -80,7 +78,7 @@ profileRouter.post("/avatar", async (c) => {
 // Authorized Users list, etc.), not just their own. R2 objects aren't
 // publicly readable by default (docs/architecture/system-overview.md#storage-and-services), so this streams them through
 // the Worker instead.
-export const avatarsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const avatarsRouter = createRouter();
 
 avatarsRouter.get("/:userId", async (c) => {
   const userId = c.req.param("userId");

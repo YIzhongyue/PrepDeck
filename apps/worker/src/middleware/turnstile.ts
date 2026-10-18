@@ -1,7 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { TURNSTILE_ERROR_CODE, TURNSTILE_TOKEN_HEADER, type TurnstileAction } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { AppEnv } from "../context";
 import { turnstileRefusal, turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken } from "../lib/turnstile";
 
 /**
@@ -10,7 +9,7 @@ import { turnstileRefusal, turnstileRemoteIp, turnstileSiteKey, verifyTurnstileT
  * `action` in the X-Turnstile-Token header, or it is refused before the
  * handler runs. Mount it on the specific routes that need it, never globally.
  */
-export function requireTurnstile(action: TurnstileAction): MiddlewareHandler<{ Bindings: Env; Variables: Variables }> {
+export function requireTurnstile(action: TurnstileAction): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     if (!turnstileSiteKey(c.env)) return next();
     const verdict = await verifyTurnstileToken(c.env, c.req.header(TURNSTILE_TOKEN_HEADER), action, turnstileRemoteIp(c.req.raw.headers));

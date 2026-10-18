@@ -9,9 +9,7 @@
 // attempt_answers rows, whose is_correct column is NOT NULL) is what makes
 // resume-on-reload possible via GET /active.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import {
   startAttempt, submitPracticeAnswer, completeAttempt, loadOwnAttempt, readMockDraft,
   isPastDeadline, answerable, invalidAnswer, ANSWERABLE_COLUMNS,
@@ -28,7 +26,7 @@ import {
 } from "@prepdeck/shared";
 
 // Mounted at /api/exams/:examId/attempts
-export const examAttemptsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examAttemptsRouter = createRouter();
 
 examAttemptsRouter.post("/", async (c) => {
   const result = await startAttempt(c.env, c.get("user").id, c.req.param("examId")!, await c.req.json<StartAttemptRequest>().catch(() => null));
@@ -36,7 +34,7 @@ examAttemptsRouter.post("/", async (c) => {
 });
 
 // Mounted at /api/attempts
-export const attemptsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const attemptsRouter = createRouter();
 
 attemptsRouter.get("/active", async (c) => {
   const examId = c.req.query("examId");

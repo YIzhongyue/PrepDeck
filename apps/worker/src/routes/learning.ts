@@ -7,9 +7,7 @@
 // provides: the full answer-key'd question + history (FR-14.4), and the
 // per-user/per-exam resume position (FR-14.9).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import type {
   AttemptMode,
   LearningHistoryEntry,
@@ -23,7 +21,7 @@ import { setLearningProgress } from "../lib/learningProgressMutation";
 import { studyMutationStatus } from "../lib/studyMutationResult";
 
 // Mounted at /api/questions/:questionId/learning-detail — FR-14.3/FR-14.4.
-export const learningDetailRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const learningDetailRouter = createRouter();
 
 learningDetailRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
@@ -69,7 +67,7 @@ interface ProgressRow {
 }
 
 // Mounted at /api/exams/:examId/learning/progress — FR-14.9.
-export const learningProgressRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const learningProgressRouter = createRouter();
 
 learningProgressRouter.get("/", async (c) => {
   const examId = c.req.param("examId")!;

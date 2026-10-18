@@ -6,9 +6,7 @@
 // router's own "/:id" in index.ts so this static path is never captured as
 // a knowledge point id).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 
 const MAX_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 20;
@@ -28,7 +26,7 @@ function excerptOf(stem: string, max = STEM_EXCERPT_LENGTH): string {
   return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
 }
 
-export const knowledgePointQuestionSearchRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointQuestionSearchRouter = createRouter();
 
 knowledgePointQuestionSearchRouter.get("/", async (c) => {
   const userId = c.get("user").id;

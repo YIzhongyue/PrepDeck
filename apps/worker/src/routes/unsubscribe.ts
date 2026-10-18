@@ -7,12 +7,11 @@
 // present, and must return a bare success with no page (see lib/email.ts for
 // the headers). Both are idempotent: repeating either is always safe.
 
-import { Hono, type Context } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { Context } from "hono";
+import { createRouter, type AppEnv } from "../context";
 import { verifyUnsubscribeToken } from "../lib/unsubscribeToken";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type AppContext = Context<AppEnv>;
 
 function page(title: string, body: string, status: 200 | 400): Response {
   const html = `<!DOCTYPE html>
@@ -52,7 +51,7 @@ async function unsubscribe(c: AppContext): Promise<{ ok: boolean }> {
 }
 
 // Mounted at /api/email/unsubscribe.
-export const unsubscribeRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const unsubscribeRouter = createRouter();
 
 unsubscribeRouter.get("/", async (c) => {
   const result = await unsubscribe(c);

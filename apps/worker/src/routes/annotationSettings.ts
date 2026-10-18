@@ -5,9 +5,7 @@
 // same way as every other per-user table in this codebase (annotations.ts,
 // notes.ts, settings.ts).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { DEFAULT_MARK_ALIASES } from "@prepdeck/shared";
 import { aliasValidationError, resolveMarkAlias } from "../lib/annotationSettings";
 
@@ -26,7 +24,7 @@ function toResponse(row: AnnotationSettingsRow | null) {
 }
 
 // Mounted at /api/annotation-settings.
-export const annotationSettingsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const annotationSettingsRouter = createRouter();
 
 annotationSettingsRouter.get("/", async (c) => {
   const userId = c.get("user").id;

@@ -2,9 +2,7 @@
 // invites a Google email with an initial role, and can later change an
 // account's role or revoke/restore its access. Admin-only (requireAdmin).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { hashPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
@@ -43,7 +41,7 @@ function toUser(row: UserRow): User {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const adminUsersRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const adminUsersRouter = createRouter();
 
 adminUsersRouter.use("*", requireAdmin);
 

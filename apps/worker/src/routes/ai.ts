@@ -12,9 +12,7 @@
 // the shared `ai_explanations` cache keyed by (question_id, provider, model)
 // (FR-7.3).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { renderExplanationPrompt } from "../lib/prompts";
 import { allContentBlocks, continueListItem, labelledListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
 
@@ -169,7 +167,7 @@ function validateProviderModel(body: any): string | null {
 // Mounted at /api/questions/:questionId/ai-explanations — FR-7.2/FR-7.3:
 // lets the client check for a cached explanation (any provider/model) before
 // ever asking the user for a key, at no cost.
-export const questionAiExplanationsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionAiExplanationsRouter = createRouter();
 
 questionAiExplanationsRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
@@ -220,7 +218,7 @@ questionAiExplanationsRouter.patch("/:provider/:model", async (c) => {
 
 // Mounted at /api/ai/generate — FR-7.4: the fixed, same-origin AI-proxy
 // endpoint. Rate-limited and size-capped per docs/requirements/non-functional-requirements.md#security-and-privacy.
-export const aiGenerateRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const aiGenerateRouter = createRouter();
 
 
 aiGenerateRouter.post("/", async (c) => {

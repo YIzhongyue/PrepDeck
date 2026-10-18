@@ -1,13 +1,10 @@
-import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { DEFAULT_MASCOT_STYLE, isMascotStyle } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 
-type Context = { Bindings: Env; Variables: Variables };
-export const appearanceRouter = new Hono<Context>();
-export const adminAppearanceRouter = new Hono<Context>();
+export const appearanceRouter = createRouter();
+export const adminAppearanceRouter = createRouter();
 
 // No cookies or user data in this public response. Read the primary D1
 // binding directly (no replicas/KV/cache), so a refresh sees the last save.

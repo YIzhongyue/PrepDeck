@@ -6,9 +6,7 @@
 // never rendered during live, untimed practice or timed mock answering
 // (FR-11.6); that gating is a front-end concern.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { MAX_NOTE_LENGTH, type NoteVisibility, type NoteWithAuthor } from "@prepdeck/shared";
 
 interface NoteRow {
@@ -59,7 +57,7 @@ function validateCreate(body: any): string | null {
 
 // Mounted at /api/questions/:questionId/notes — FR-11.1: add a note to a
 // question; also lists the notes visible to this user for that one question.
-export const questionNotesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionNotesRouter = createRouter();
 
 questionNotesRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
@@ -98,7 +96,7 @@ questionNotesRouter.post("/", async (c) => {
 // Mounted at /api/notes — bulk fetch of every note visible to this user
 // (own + visible shared, across questions), and edit/delete by note id
 // (FR-11.3/FR-11.8), independent of question id.
-export const notesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const notesRouter = createRouter();
 
 notesRouter.get("/", async (c) => {
   const userId = c.get("user").id;

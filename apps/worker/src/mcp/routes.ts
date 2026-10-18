@@ -1,7 +1,6 @@
-import { Hono } from "hono";
 import type { Server } from "@modelcontextprotocol/server";
 import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { consumeRateLimit, configuredLimit } from "../middleware/rateLimit";
 import { authenticateMcp, touchMcpCredentialLastUsed, type McpAudience, type McpPrincipal } from "./credentials";
 import { createUserMcpServer, userMcpTools } from "./user/server";
@@ -57,7 +56,7 @@ function endpoint(
   catalog: Catalog,
   opts?: { maxBodyBytes?: number },
 ) {
-  const router = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const router = createRouter();
   router.onError((error, c) => httpError(error, (code) => {
     c.get("mcpObservation")?.rejected(code);
     return bearerChallenge(c.env, audience, code, c.req.raw.headers.has("Authorization"));

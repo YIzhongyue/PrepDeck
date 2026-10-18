@@ -7,9 +7,8 @@
 // Deliberately not folded into routes/settings.ts, which owns account-wide
 // preferences (theme, shared notes) with no exam scope.
 
-import { Hono } from "hono";
 import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import type { ExamStudyPreferencesResponse } from "@prepdeck/shared";
 import { isValidTargetDate, isValidWeeklyGoalMinutes, WEEKLY_GOAL_MAX_MINUTES, WEEKLY_GOAL_MIN_MINUTES } from "@prepdeck/shared";
 
@@ -19,7 +18,7 @@ interface PreferencesRow {
 }
 
 // Mounted at /api/exams/:examId/preferences
-export const examPreferencesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examPreferencesRouter = createRouter();
 
 async function readRow(c: { env: Env }, userId: string, examId: string): Promise<PreferencesRow | null> {
   return await c.env.DB.prepare(
