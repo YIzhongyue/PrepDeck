@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { applyMigrations, openDatabase } from "../../../tests/support/migrations.mjs";
+import { createBucket } from "../../../tests/support/r2.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const { providersRouter } = await bundle("../src/routes/providers.ts");
@@ -18,13 +19,11 @@ function fixture(t) {
   db.exec("INSERT INTO providers(id,name,short_name,website_url,created_at) VALUES ('p','Provider','P','https://example.test','now')");
   db.exec("INSERT INTO exams(id,slug,name,created_at) VALUES ('e','exam','Exam','now')");
   db.exec("INSERT INTO questions(id,exam_id,type,stem,correct_answers_json,created_at,updated_at,sequence_number) VALUES ('q','e','fill_blank','Question','[\"answer\"]','now','now',1)");
-  const objects = new Map();
   let beforeDelete;
   const DB = createD1(db, { onQuery({ sql, method }) {
     if (method === "run" && sql.startsWith("DELETE FROM providers ") && beforeDelete) { beforeDelete(); beforeDelete = null; }
   } });
-  let failBucketDelete = false;
-  const BUCKET = { async put(key, value) { objects.set(key, value); }, async delete(key) { if (failBucketDelete) throw new Error("R2 unavailable"); objects.delete(key); } };
+  const BUCKET = createBucket();
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: "u", role: c.req.header("x-role") ?? "admin" }); await next(); });
   app.route("/providers", providersRouter);
@@ -36,7 +35,7 @@ function fixture(t) {
     }, { DB, BUCKET });
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
-  return { db, request, objects, raceDelete: (fn) => { beforeDelete = fn; }, failBucketDelete: () => { failBucketDelete = true; } };
+  return { db, request, bucket: BUCKET, raceDelete: (fn) => { beforeDelete = fn; }, failBucketDelete: () => { BUCKET.failures.delete = new Error("R2 unavailable"); } };
 }
 
 test("create and partial edit validate and normalize metadata without overwriting omitted fields", async t => {
@@ -115,8 +114,8 @@ test("assignment is idempotent and reports why nothing was linked", async t => {
 });
 
 test("a failed icon cleanup does not turn a completed delete into an error", async t => {
-  const { request, db, objects, failBucketDelete } = fixture(t);
-  objects.set("provider-icons/p", png);
+  const { request, db, bucket, failBucketDelete } = fixture(t);
+  bucket.seed("provider-icons/p", png);
   failBucketDelete();
   const warn = t.mock.method(console, "warn", () => {});
   assert.equal((await request("/providers/p", "DELETE")).status, 204);
@@ -125,8 +124,8 @@ test("a failed icon cleanup does not turn a completed delete into an error", asy
 });
 
 test("delete refuses active and archived exam references, including a reference added at deletion time", async t => {
-  const { request, db, objects, raceDelete } = fixture(t);
-  objects.set("provider-icons/p", png);
+  const { request, db, bucket, raceDelete } = fixture(t);
+  bucket.seed("provider-icons/p", png);
   raceDelete(() => db.exec("INSERT INTO provider_exams VALUES ('p','e')"));
   assert.equal((await request("/providers/p", "DELETE")).status, 409);
   db.exec("UPDATE exams SET archived_at='now' WHERE id='e'");
@@ -134,27 +133,27 @@ test("delete refuses active and archived exam references, including a reference 
   const blocked = await request("/providers/p", "DELETE");
   assert.equal(blocked.status, 409);
   assert.match(blocked.body.error, /Archive.*instead/i);
-  assert.ok(objects.has("provider-icons/p"));
+  assert.ok(bucket.objects.has("provider-icons/p"));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM provider_exams").get().n, 1);
   await request("/providers/p/exams/e", "DELETE");
   assert.equal((await request("/providers/p", "DELETE")).status, 204);
-  assert.equal(objects.has("provider-icons/p"), false);
+  assert.equal(bucket.objects.has("provider-icons/p"), false);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM providers").get().n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM questions WHERE id='q'").get().n, 1);
   assert.equal((await request("/providers/p", "DELETE")).status, 404);
 });
 
 test("icon replacement/removal use validated uploads and reject missing providers", async t => {
-  const { request, objects } = fixture(t);
+  const { request, bucket } = fixture(t);
   const upload = await request("/providers/p/icon", "POST", png, "admin", "image/png");
   assert.equal(upload.status, 200);
   assert.match(upload.body.iconUrl, /^\/api\/provider-icons\/p\?v=/);
-  assert.ok(objects.has("provider-icons/p"));
+  assert.ok(bucket.objects.has("provider-icons/p"));
   assert.equal((await request("/providers/p/icon", "POST", "fake", "admin", "image/png")).status, 400);
   assert.equal((await request("/providers/p/icon", "POST", "<svg/>", "admin", "image/svg+xml")).status, 400);
   assert.equal((await request("/providers/p/icon", "DELETE")).status, 204);
   assert.equal((await request("/providers")).body.providers[0].iconUrl, null);
-  assert.equal(objects.has("provider-icons/p"), false);
+  assert.equal(bucket.objects.has("provider-icons/p"), false);
   assert.equal((await request("/providers/missing/icon", "POST", png, "admin", "image/png")).status, 404);
   assert.equal((await request("/providers/missing/icon", "DELETE")).status, 404);
   assert.equal((await request("/providers/missing/exams/e", "PUT")).status, 404);

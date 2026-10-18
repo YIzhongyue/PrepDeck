@@ -16,6 +16,8 @@ import { auth, Client, StreamableHTTPClientTransport, UnauthorizedError } from "
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
+import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
 const { worker, issueSessionToken, issueMcpCredential } = await importTs({
   contents: `export { default as worker } from './src/index.ts';
@@ -31,11 +33,9 @@ function setup(t) {
   const db = openDatabase(t);
   db.exec("INSERT INTO users (id, email, role, status, created_at) VALUES ('alice', 'alice@example.test', 'user', 'active', '2026-09-09')");
   const DB = createD1(db);
-  const kv = new Map();
   const env = {
     DB, ENVIRONMENT: "production", AUTH_MODE: "cookie", APP_BASE_URL: BASE, SESSION_SECRET: "synthetic-test-session-key", MCP_OAUTH_ENABLED: "true",
-    KV: { get: async (k, type) => (kv.has(k) ? (type === "json" ? JSON.parse(kv.get(k)) : kv.get(k)) : null), put: async (k, v) => { kv.set(k, v); }, delete: async (k) => { kv.delete(k); } },
-    RATE_LIMITER: { idFromName: (key) => key, get: () => ({ fetch: async () => Response.json({ allowed: true, retryAfter: 60 }) }) },
+    KV: createKv(), RATE_LIMITER: createRateLimiter(),
   };
   const requests = [];
   const workerFetch = async (input, init) => {

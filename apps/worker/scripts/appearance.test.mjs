@@ -3,6 +3,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
 
 const { appearanceRouter, adminAppearanceRouter, requireAccessUser, createSessionToken } = await importTs({
@@ -16,7 +17,7 @@ function fixture(t) {
     db.prepare("INSERT INTO users(id,email,role,status,created_at) VALUES (?,?,?,?,?)").run(id, `${id}@test`, role, status, "2026-10-01");
   }
   const faults = { read: false, write: false };
-  const env = { AUTH_MODE: "cookie", SESSION_SECRET: "test-session-secret-for-appearance", KV: { get: async () => null, put: async () => {} },
+  const env = { AUTH_MODE: "cookie", SESSION_SECRET: "test-session-secret-for-appearance", KV: createKv(),
     DB: createD1(db, { onQuery({ sql, method }) {
       if (faults.read && method === "first" && sql.includes("site_appearance")) throw new Error("unavailable");
       if (faults.write && method === "run") throw new Error("unavailable");

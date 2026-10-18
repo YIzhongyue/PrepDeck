@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
+import { createBucket } from "../../../tests/support/r2.mjs";
 
 const {
   applyNoteUpdate, knowledgePointsRouter, runKnowledgePointImageCleanup, deleteNote, MAX_DELETE_ATTEMPTS,
@@ -28,13 +30,7 @@ function fixture(t) {
   const DB = createD1(sqlite, {
     afterBatch: async () => { if (batchHook) { const hook = batchHook; batchHook = null; await hook(); } },
   });
-  const values = new Map();
-  const deletedKeys = [];
-  const env = {
-    DB, AUTH_MODE: "cookie", SESSION_SECRET: "synthetic-test-session-key",
-    KV: { get: async (k) => values.has(k) ? JSON.parse(values.get(k)) : null, put: async (k,v) => values.set(k,v), delete: async (k) => values.delete(k) },
-    BUCKET: { delete: async (key) => { deletedKeys.push(...(Array.isArray(key) ? key : [key])); } },
-  };
+  const env = { DB, AUTH_MODE: "cookie", SESSION_SECRET: "synthetic-test-session-key", KV: createKv(), BUCKET: createBucket() };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: c.req.header("x-user") ?? "alice", role: "user" }); await next(); });
   app.route("/api/knowledge-points", knowledgePointsRouter);
@@ -49,7 +45,7 @@ function fixture(t) {
     sqlite.prepare("INSERT INTO knowledge_points(id,user_id,title,body_markdown,position,created_at,updated_at) VALUES (?,'alice','Note',?,1024,'2026-01-01','2026-01-01')").run(id, body);
     sqlite.prepare("INSERT INTO knowledge_point_images(id,user_id,knowledge_point_id,r2_object_key,content_type,byte_size,status,created_at,updated_at) VALUES (?,'alice',?,?,'image/png',1,?,'2026-01-01','2026-01-01')").run(id === "note" ? "image" : id, id, `key-${id}`, status);
   };
-  return { sqlite, DB, env, request, values, deletedKeys, insertNote,
+  return { sqlite, DB, env, request, deletedKeys: env.BUCKET.deleted, insertNote,
     afterBatch: (hook) => { batchHook = hook; } };
 }
 
@@ -70,11 +66,11 @@ test("cleanup preserves referenced images and durably retries failed object dele
   const f = fixture(t);
   f.insertNote("note", "![image](/api/kp-images/image)", "orphaned");
   f.insertNote("unused", "unused", "pending");
-  f.env.BUCKET.delete = async () => { throw new Error("temporary object-store failure"); };
+  f.env.BUCKET.failures.delete = new Error("temporary object-store failure");
   assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 0);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_point_images").get().n, 1);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_point_image_deletions").get().n, 1);
-  f.env.BUCKET.delete = async (key) => { f.deletedKeys.push(...(Array.isArray(key) ? key : [key])); };
+  f.env.BUCKET.failures.delete = null;
   assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 1);
   assert.deepEqual(f.deletedKeys, ["key-unused"]);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_point_image_deletions").get().n, 0);
@@ -103,7 +99,7 @@ test("REST ordering returns snapshot tokens and rejects missing or stale revisio
 test("a permanently failing object cannot wedge the retirement queue", async (t) => {
   const f = fixture(t);
   f.insertNote("stuck", "unused", "pending");
-  f.env.BUCKET.delete = async () => { throw new Error("permanent object-store failure"); };
+  f.env.BUCKET.failures.delete = new Error("permanent object-store failure");
   // Exhaust the retry budget for the one object that can never be deleted.
   for (let attempt = 0; attempt < MAX_DELETE_ATTEMPTS; attempt++) {
     assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 0);
@@ -112,7 +108,7 @@ test("a permanently failing object cannot wedge the retirement queue", async (t)
 
   // A newly abandoned upload must still be collected, not queue behind it.
   f.insertNote("fresh", "unused", "pending");
-  f.env.BUCKET.delete = async (key) => { f.deletedKeys.push(...(Array.isArray(key) ? key : [key])); };
+  f.env.BUCKET.failures.delete = null;
   assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 1);
   assert.deepEqual(f.deletedKeys, ["key-fresh"]);
   // The exhausted tombstone is left behind for an operator, not silently lost.
@@ -124,7 +120,7 @@ test("every retirement path enqueues before dropping the row it describes", asyn
   f.insertNote("note", "![image](/api/kp-images/image)", "attached");
   // Deleting a note cascades its image rows away, so the tombstone has to be
   // written in the same batch or nothing remembers the R2 object afterwards.
-  f.env.BUCKET.delete = async () => { throw new Error("temporary object-store failure"); };
+  f.env.BUCKET.failures.delete = new Error("temporary object-store failure");
   assert.equal(await deleteNote(f.DB, f.env.BUCKET, { id: "note", userId: "alice" }), true);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_points").get().n, 0);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_point_images").get().n, 0);
@@ -132,7 +128,7 @@ test("every retirement path enqueues before dropping the row it describes", asyn
     .map(r => [r.id, r.r2_object_key]), [["image", "key-note"]]);
 
   // The sweep is what retries it; nothing about the note is needed any more.
-  f.env.BUCKET.delete = async (key) => { f.deletedKeys.push(...(Array.isArray(key) ? key : [key])); };
+  f.env.BUCKET.failures.delete = null;
   assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 1);
   assert.deepEqual(f.deletedKeys, ["key-note"]);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM knowledge_point_image_deletions").get().n, 0);
@@ -141,9 +137,7 @@ test("every retirement path enqueues before dropping the row it describes", asyn
 test("draining a page costs one object-store call, not one per image", async (t) => {
   const f = fixture(t);
   for (let i = 0; i < 25; i++) f.insertNote(`abandoned-${i}`, "unused", "pending");
-  let calls = 0;
-  f.env.BUCKET.delete = async (key) => { calls++; f.deletedKeys.push(...(Array.isArray(key) ? key : [key])); };
   assert.equal((await runKnowledgePointImageCleanup(f.env)).deleted, 25);
-  assert.equal(calls, 1, "R2 takes the whole key list in one call");
+  assert.equal(f.env.BUCKET.deleteCalls.length, 1, "R2 takes the whole key list in one call");
   assert.equal(f.deletedKeys.length, 25);
 });

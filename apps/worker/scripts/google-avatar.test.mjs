@@ -6,19 +6,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const { authorizeIdentity } = await bundle("../src/lib/authorizeIdentity.ts");
 
-function kv() {
-  const store = new Map();
-  return { get: async (key) => (store.has(key) ? JSON.parse(store.get(key)) : null), put: async (key, value) => store.set(key, value), delete: async (key) => store.delete(key) };
-}
-
 function fixture(t) {
   const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
-  const env = { DB: createD1(sqlite), KV: kv() };
+  const env = { DB: createD1(sqlite), KV: createKv() };
   return { sqlite, env };
 }
 

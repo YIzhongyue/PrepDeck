@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
+import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
 // implementation — User MCP Knowledge Points tools. Same harness shape as
 // mcp-user-learning.test.mjs (real worker entry + MCP SDK, bundled for Node
@@ -49,38 +51,11 @@ async function fixture(t) {
       .run(id, `${id}@example.test`, role, new Date().toISOString());
   }
   const DB = createD1(sqlite);
-  const r2Objects = new Map();
-  const BUCKET = {
-    put: async (key, value) => { r2Objects.set(key, value); },
-    get: async (key) => (r2Objects.has(key) ? { body: r2Objects.get(key) } : null),
-    delete: async (key) => { r2Objects.delete(key); },
-    list: async () => ({ objects: [], truncated: false }),
-  };
-  const env = {
-    DB, BUCKET, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie",
-    KV: { get: async () => null, put: async () => {}, delete: async () => {} },
-    RATE_LIMITER: { idFromName: (key) => key, get: () => ({ fetch: async () => Response.json({ allowed: true, retryAfter: 60 }) }) },
-    IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-  };
+  const env = { ...createBindings(), DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie" };
   const expiresAt = Date.now() + 60_000;
   const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "alice's token", expiresAt });
   const bob = await issueMcpCredential(DB, { userId: "bob", audience: "user", name: "bob's token", expiresAt });
-  return { sqlite, DB, env, r2Objects, alice, bob };
-}
-
-// A stateful rate-limiter stub that actually counts per key (unlike the
-// fixture's default always-allow stub) — used only by the rate-limit test.
-function statefulRateLimiter() {
-  const counts = new Map();
-  return { idFromName: (key) => key, get: (key) => ({
-    fetch: async (_url, init) => {
-      const { max } = JSON.parse(init.body);
-      const count = (counts.get(key) ?? 0) + 1;
-      counts.set(key, count);
-      return Response.json({ allowed: count <= max, retryAfter: 60 });
-    },
-  }) };
+  return { sqlite, DB, env, alice, bob };
 }
 
 function rpc(env, token, method, params) {
@@ -177,7 +152,7 @@ function insertImage(f, { id, userId, knowledgePointId, r2ObjectKey, status = "a
     `INSERT INTO knowledge_point_images (id, user_id, knowledge_point_id, r2_object_key, content_type, byte_size, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'image/png', 100, ?, ?, ?)`
   ).run(id, userId, knowledgePointId, r2ObjectKey, status, now, now);
-  f.r2Objects.set(r2ObjectKey, "fake-bytes");
+  f.env.BUCKET.seed(r2ObjectKey, "fake-bytes");
 }
 
 function dumpTables(f) {
@@ -659,7 +634,8 @@ test("implementation: a ~200,000-character CJK-heavy body round-trips through th
 
 test("implementation: KP mutations are rate-limited separately from the blanket account quota, and a rejected write never lands", async (t) => {
   const f = await fixture(t);
-  f.env.RATE_LIMITER = statefulRateLimiter();
+  // A limiter that really counts per key, unlike the fixture's always-allow one.
+  f.env.RATE_LIMITER = createRateLimiter({ counting: true });
 
   for (let i = 0; i < 30; i++) {
     await callTool(f, f.alice.token, "user_create_knowledge_point_group", { name: `Group ${i}` });
@@ -679,10 +655,9 @@ test("implementation: an unreachable KP-write limiter reports \"unavailable\", n
   // gate in mcp/routes.ts (a different key) must stay healthy, since this
   // test is about the operation-level limiter's own error contract, not
   // about the pre-dispatch account gate (already covered elsewhere).
-  const baseGet = f.env.RATE_LIMITER.get;
-  f.env.RATE_LIMITER.get = (key) => key === "mcp:user:alice:kp-write"
-    ? { fetch: async () => { throw new Error("simulated KP-write-limiter outage"); } }
-    : baseGet(key);
+  f.env.RATE_LIMITER.respond = ({ key }) => {
+    if (key === "mcp:user:alice:kp-write") throw new Error("simulated KP-write-limiter outage");
+  };
 
   const err = await callToolExpectingError(f, f.alice.token, "user_create_knowledge_point_group", { name: "Group during outage" });
   assert.equal(err.code, "unavailable");

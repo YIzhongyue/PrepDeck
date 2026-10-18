@@ -11,6 +11,8 @@ import test from "node:test";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
+import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
 const { worker, issueSessionToken, issueMcpCredential, runMcpOAuthPrune, validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } =
   await importTs({
@@ -32,28 +34,20 @@ function setup(t, overrides = {}) {
   }
   const queries = [];
   const DB = createD1(db, { onQuery: ({ sql }) => { queries.push(sql); } });
-  const kv = new Map();
-  const KV = {
-    async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
-    async put(key, value) { kv.set(key, value); },
-    async delete(key) { kv.delete(key); },
-  };
-  const limits = [];
+  const KV = createKv();
+  const RATE_LIMITER = createRateLimiter();
   const metrics = [];
   const env = {
     MCP_METRICS_ENABLED: "true", MCP_METRICS: { writeDataPoint: (point) => metrics.push(structuredClone(point)) },
     DB, KV, ENVIRONMENT: "production", AUTH_MODE: "cookie", APP_BASE_URL: BASE, SESSION_SECRET: "synthetic-test-session-key",
     MCP_OAUTH_ENABLED: "true",
-    RATE_LIMITER: { idFromName: (key) => key, get: (key) => ({ fetch: async () => {
-      limits.push(key);
-      return Response.json({ allowed: true, retryAfter: 60 });
-    } }) },
+    RATE_LIMITER,
     ...overrides,
   };
   const fetchWorker = (path, init = {}) => worker.fetch(new Request(path.startsWith("http") ? path : `${BASE}${path}`, {
     ...init, headers: { "CF-Connecting-IP": "192.0.2.1", ...(init.headers ?? {}) },
   }), env);
-  return { db, env, queries, limits, metrics, kv, fetchWorker };
+  return { db, env, queries, limits: RATE_LIMITER.calls, metrics, fetchWorker };
 }
 
 const b64url = (bytes) => Buffer.from(bytes).toString("base64url");
@@ -650,15 +644,14 @@ test("a refresh token is single-use: duplicates within seconds get the same pair
 test("dynamic registration has a deployment-wide budget on top of the per-IP one", async (t) => {
   const f = setup(t);
   const limited = new Set(["oauth:register:global"]);
-  const original = f.env.RATE_LIMITER;
-  f.env.RATE_LIMITER = { idFromName: (key) => key, get: (key) => ({ fetch: async () => Response.json({ allowed: !limited.has(key), retryAfter: 42 }) }) };
+  f.env.RATE_LIMITER.respond = ({ key }) => ({ allowed: !limited.has(key), retryAfter: 42 });
   const refused = await register(f);
   assert.equal(refused.response.status, 429);
   assert.equal(refused.response.headers.get("Retry-After"), "42");
   assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_clients").get().n, 0);
-  f.env.RATE_LIMITER = { idFromName: (key) => key, get: () => ({ fetch: async () => { throw new Error("down"); } }) };
+  f.env.RATE_LIMITER.respond = () => { throw new Error("down"); };
   assert.equal((await register(f)).response.status, 503, "fails closed when the limiter is unavailable");
-  f.env.RATE_LIMITER = original;
+  f.env.RATE_LIMITER.respond = undefined;
   assert.equal((await register(f)).response.status, 201);
 });
 
@@ -743,7 +736,7 @@ test("PATs keep working beside OAuth, and both credential types share one accoun
   f.limits.length = 0;
   assert.equal((await rpc(f, "user", pat.token)).status, 200);
   assert.equal((await rpc(f, "user", tokens.access_token)).status, 200);
-  const accountKeys = f.limits.filter((key) => key.startsWith("mcp:"));
+  const accountKeys = f.limits.map(({ key }) => key).filter((key) => key.startsWith("mcp:"));
   assert.deepEqual(accountKeys, ["mcp:user:user:alice", "mcp:user:user:alice"]);
   // A PAT row is untouched by OAuth activity.
   const row = f.db.prepare("SELECT name, revoked_at FROM mcp_credentials WHERE id = ?").get(pat.id);

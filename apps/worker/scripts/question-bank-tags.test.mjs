@@ -3,7 +3,7 @@
 // migration backfill from the old tags_json column. Everything else about
 // the refactor (rename/merge atomicity, revision guards, cache
 // invalidation, admin_list_tags shape) is already covered end-to-end
-// through the Admin MCP tools in mcp-foundation.test.mjs; this file exists
+// through the Admin MCP tools in mcp-admin-mutations.test.mjs; this file exists
 // because those pure-ish catalog functions had no direct unit coverage at
 // all before implementation.
 import assert from "node:assert/strict";

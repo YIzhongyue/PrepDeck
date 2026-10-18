@@ -9,7 +9,7 @@ import { openDatabase } from "../../../tests/support/migrations.mjs";
 // for both /api/mcp-tokens (User MCP) and /api/admin/mcp-tokens (Admin MCP).
 // Exercises the real route module against an in-memory D1-shaped SQLite DB,
 // same lightweight harness as exam-scope.test.mjs — the MCP protocol/auth
-// boundary itself is covered separately in mcp-foundation.test.mjs.
+// boundary itself is covered separately in mcp-auth-gates.test.mjs.
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 

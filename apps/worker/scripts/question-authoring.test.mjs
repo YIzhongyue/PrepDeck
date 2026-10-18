@@ -6,6 +6,7 @@ import { normalizeImportFile } from "../../../packages/shared/src/question-compo
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { applyMigrations, openDatabase } from "../../../tests/support/migrations.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ questionsRouter }, { importsRouter }, { attemptsRouter, examAttemptsRouter }, { learningDetailRouter }, { questionTagsRouter },
@@ -69,11 +70,10 @@ test("another configured exam exposes different categories without leaking SG va
 function setup(t) {
   const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,created_at) VALUES ('admin','admin@test','admin','2026-09-09'); INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09')");
-  const invalidations = [], pending = [];
+  const pending = [];
   const DB = createD1(db);
-  const env = { DB, KV: { delete: async key => invalidations.push(key) },
-    IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) }, IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    BUCKET: { put: async () => {}, list: async () => ({ objects: [], truncated: false }) } };
+  const env = { ...createBindings(), DB };
+  const invalidations = env.KV.deletes;
   const app = new Hono();
   app.onError((err) => { throw new Error(err.message); });
   app.use("*", async (c, next) => { c.set("user", { id: "admin", role: c.req.header("x-role") ?? "admin" }); await next(); });

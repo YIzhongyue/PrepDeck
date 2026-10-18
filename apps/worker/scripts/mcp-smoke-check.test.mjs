@@ -9,6 +9,7 @@ import {
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
 
 // implementation review — this suite exists specifically to prevent regressions
 // on the two defects a PR review found by actually running the script:
@@ -191,11 +192,7 @@ test("end-to-end against a real bundled Worker: every check passes for a healthy
   const baseUrl = "https://prepdeck.smoke-e2e.test";
   const env = {
     DB, ENVIRONMENT: "production", APP_BASE_URL: baseUrl, AUTH_MODE: "cookie",
-    KV: { get: async () => null, put: async () => {}, delete: async () => {} },
-    RATE_LIMITER: { idFromName: (key) => key, get: () => ({ fetch: async () => Response.json({ allowed: true, retryAfter: 60 }) }) },
-    BUCKET: { get: async () => null, put: async () => {}, delete: async () => {}, list: async () => ({ objects: [], truncated: false }) },
-    IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    ...createBindings(),
   };
   const expiresAt = Date.now() + 60_000;
   const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "smoke", expiresAt });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
 
 const { importsRouter } = await importTs(new URL("../src/routes/imports.ts", import.meta.url));
 const app = new Hono();
@@ -9,18 +10,14 @@ app.use("*", async (c, next) => { c.set("user", { id: "admin", role: "admin" });
 app.route("/exams/:examId/import", importsRouter);
 
 function environment(existing = []) {
-  const writes = [], archives = [], pending = [];
+  const writes = [], pending = [];
+  const fakes = createBindings();
   return {
-    writes, archives, pending,
+    writes, pending,
+    get archives() { return [...fakes.BUCKET.objects.keys()]; },
     context: { waitUntil: (promise) => pending.push(promise), passThroughOnException() {} },
     bindings: {
-      IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-      IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-      KV: { delete: async () => {} },
-      BUCKET: {
-        put: async (...args) => archives.push(args),
-        list: async () => ({ objects: [], truncated: false }),
-      },
+      ...fakes,
       DB: {
         prepare(sql) {
           return {

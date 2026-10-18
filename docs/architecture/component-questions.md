@@ -173,7 +173,7 @@ Reproduce reviewed local API verification (only when the local imports exist):
 COMPONENT_SOURCE_FILES=/absolute/native/reviewed.json,/absolute/scanned/reviewed.json \
   node --test apps/worker/scripts/question-authoring.test.mjs
 COMPONENT_SOURCE_FILES=/absolute/native/reviewed.json,/absolute/scanned/reviewed.json \
-  node --test --test-name-pattern="component " apps/worker/scripts/mcp-foundation.test.mjs
+  node --test --test-name-pattern="component " apps/worker/scripts/mcp-admin-imports.test.mjs apps/worker/scripts/mcp-admin-mutations.test.mjs
 ```
 
 The same test always runs the four committed synthetic fixtures without this

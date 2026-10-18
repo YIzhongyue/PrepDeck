@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ authRouter }, { adminUsersRouter }, { requireAccessUser }, session] = await Promise.all([
@@ -17,13 +18,8 @@ const SECRET = "synthetic-test-session-key";
 function setup(t) {
   const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,status,created_at) VALUES ('alice','alice@test','user','active','2026-09-09'), ('root','root@test','admin','active','2026-09-09')`);
-  const kv = new Map();
   const DB = createD1(db);
-  const KV = {
-    async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
-    async put(key, value) { kv.set(key, value); },
-    async delete(key) { kv.delete(key); },
-  };
+  const KV = createKv();
   const env = { DB, KV, AUTH_MODE: "cookie", SESSION_SECRET: SECRET };
   const app = new Hono();
   app.route("/auth", authRouter);
@@ -34,7 +30,7 @@ function setup(t) {
   app.route("/api", api);
   const call = (path, token, init = {}) => app.request(`https://test${path}`, { ...init, headers: { ...(token ? { Cookie: `pd_session=${encodeURIComponent(token)}` } : {}), ...(init.headers ?? {}) } }, env);
   const version = id => db.prepare("SELECT session_version AS v FROM users WHERE id = ?").get(id).v;
-  return { db, env, kv, call, version };
+  return { db, env, kv: KV.store, call, version };
 }
 
 test("signing out ends the token, and every other session of the account", async t => {
