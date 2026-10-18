@@ -2,7 +2,6 @@
 
 <p align="center">
   <a href="https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/YIzhongyue/PrepDeck/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://m8ven.ai/mcp/yizhongyue-prepdeck-0kh85z"><img alt="M8ven Score" src="https://m8ven.ai/badge/mcp/yizhongyue-prepdeck-0kh85z"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 </p>
 
