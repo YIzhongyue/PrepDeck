@@ -1,7 +1,8 @@
 // docs/requirements/question-bank-management.md — Question Import (FR-2.2): validate a Question Import JSON file
 // against the schema, preview it (count, duplicates, per-row errors), and on
 // confirmation upsert into D1 while archiving the original file in R2 (FR-2.2.3)
-// plus an import_logs audit row (FR-2.5). Admin-only.
+// plus an import_logs audit row (FR-2.5). Admin-only. The pipeline itself is
+// lib/questionImport.ts, shared with Admin MCP's import tools.
 
 import { Hono, type Context } from "hono";
 import type { Env } from "../bindings";
@@ -9,24 +10,28 @@ import type { Variables } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody, runD1Batches } from "../lib/importSecurity";
-import { normalizeImportFile, validateImportFile } from "@prepdeck/shared";
-
-import { canonical, createStatement, toQuestion, updateStatement, type QuestionRow } from "../lib/questionManagement";
-import { importConflict, type ImportConflict } from "../lib/importConflicts";
-import { findQuestionRows as findQuestionRowsByExternalId, cleanOldImportArchives } from "../lib/importExecution";
-import { buildTagLinkStatements, buildTagNameResolver, fetchTagIdsForQuestions } from "../lib/questionBankTags";
+import type { ImportConflict } from "../lib/importConflicts";
+import {
+  archiveImportFile, changedRowConflicts, cleanOldImportArchives, commitImportWrites, countImportOutcomes, decideImportRows,
+  findImportTargets, limitImportRequest, planImportWrites, recordImportLog, resolutionMatches, validateImport,
+  type ImportConflictResolution, type ImportOutcomeStatus,
+} from "../lib/questionImport";
 import { aggregateQuestionMutationAuditStatements, questionMutationAuditStatement } from "../lib/questionMutationAudit";
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
 
+// Planned writes per atomic D1 batch. Admin MCP uses smaller batches; see
+// mcp/adapters/admin/imports.ts.
+const IMPORT_ITEMS_PER_BATCH = 50;
+
 async function enforceImportRateLimit(c: AppContext, kind: "validate" | "execute"): Promise<Response | null> {
-  const limiter = kind === "validate" ? c.env.IMPORT_VALIDATE_RATE_LIMITER : c.env.IMPORT_EXECUTE_RATE_LIMITER;
-  const result = await limiter.limit({ key: `${c.get("user").id}:${c.req.param("examId")}` });
-  return result.success ? null : c.json({ error: `Too many import ${kind} requests — please try again later.` }, 429);
+  const allowed = await limitImportRequest(c.env, kind, c.get("user").id, c.req.param("examId")!);
+  return allowed ? null : c.json({ error: `Too many import ${kind} requests — please try again later.` }, 429);
 }
 
-async function findQuestionRows(c: AppContext, examId: string, externalIds: string[]): Promise<QuestionRow[]> {
-  return findQuestionRowsByExternalId(c.env.DB, examId, externalIds);
+function isConflictResolutionList(value: unknown): value is ImportConflictResolution[] {
+  return Array.isArray(value) && value.every((r) => r && typeof r.questionId === "string" && Number.isInteger(r.expectedRevision)
+    && typeof r.incomingToken === "string" && ["keep", "apply"].includes(r.action));
 }
 
 export const importsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -43,23 +48,17 @@ importsRouter.post("/validate", async (c) => {
   const parsed = await parseJsonBody(c.req.raw);
   if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-  const { issues, duplicateExternalIdsInFile, questionCount } = validateImportFile(parsed.data);
+  const { issues, duplicateExternalIdsInFile, questionCount, file } = validateImport(parsed.data);
 
   let duplicateExternalIdsInDb: string[] = [];
-  const conflicts: ImportConflict[] = [];
-  if (issues.length === 0) {
-    const file = normalizeImportFile(parsed.data);
-    const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
-    if (externalIds.length > 0) {
-      const existing = await findQuestionRows(c, examId, externalIds);
-      duplicateExternalIdsInDb = existing.map(r => r.external_id!).filter(Boolean);
-      for (const q of file.questions) {
-        const matches = existing.filter(r => r.external_id === q.externalId);
-        for (const row of matches) if (matches.length > 1 || canonical(toQuestion(row)) !== canonical(q)) {
-          conflicts.push(await importConflict(c.env.DB, row, q, matches.length > 1));
-        }
-      }
-    }
+  let conflicts: ImportConflict[] = [];
+  if (file) {
+    const existing = await findImportTargets(c.env.DB, examId, file.questions);
+    // One entry per matching stored row (Admin MCP's preview de-duplicates),
+    // so an ambiguous externalId is listed once per match.
+    duplicateExternalIdsInDb = existing.map(r => r.external_id!).filter(Boolean);
+    // Every differing row, clean updates included: each needs a resolution.
+    conflicts = changedRowConflicts(await decideImportRows(c.env.DB, existing, file.questions));
   }
 
   return c.json({
@@ -83,87 +82,49 @@ importsRouter.post("/", async (c) => {
   const exam = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first();
   if (!exam) return c.json({ error: "Exam not found" }, 404);
 
-
   const parsed = await parseJsonBody(c.req.raw);
   if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-  const { issues, duplicateExternalIdsInFile } = validateImportFile(parsed.data);
-  if (issues.length > 0) {
+  const { issues, duplicateExternalIdsInFile, file } = validateImport(parsed.data);
+  if (!file) {
     await audit(undefined, "create", "failure", "validation").run();
     return c.json({ error: "Validation failed", issues, duplicateExternalIdsInFile }, 422);
   }
 
-  const file = normalizeImportFile(parsed.data);
-
-  const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
-  const existing = externalIds.length ? await findQuestionRows(c, examId, externalIds) : [];
-  const now = new Date().toISOString();
-  // Bulk-resolve every distinct tag name in the file, and batch-fetch every
-  // matched existing question's CURRENT tag links, before building any
-  // write statement — see resolveFileTagIds's own comment and
-  // lib/questionBankTags.ts's buildTagLinkStatements.
-  const resolveTagIds = await buildTagNameResolver(c.env.DB, file.questions.flatMap((q) => q.tags ?? []), now);
-  const currentTagIdsByQuestion = await fetchTagIdsForQuestions(c.env.DB, existing.map((r) => r.id));
   // Resolutions are scoped to the exact previewed ID, revision and incoming content.
   // A broad legacy duplicateStrategy=overwrite never authorizes a conflicting write.
+  // Checked before anything is written: planning creates the file's new tags.
   const rawResolutions = (parsed.data as Record<string, unknown>).conflictResolutions;
-  type Resolution = { questionId: string; expectedRevision: number; incomingToken: string; action: "keep" | "apply" };
-  if (rawResolutions !== undefined && (!Array.isArray(rawResolutions) || rawResolutions.some(r => !r || typeof r.questionId !== "string" || !Number.isInteger(r.expectedRevision) || typeof r.incomingToken !== "string" || !["keep", "apply"].includes(r.action)))) {
+  if (rawResolutions !== undefined && !isConflictResolutionList(rawResolutions)) {
     return c.json({ error: "Invalid conflictResolutions" }, 422);
   }
-  const resolutions = (rawResolutions ?? []) as Resolution[];
+  const resolutions = rawResolutions ?? [];
+
+  const now = new Date().toISOString();
+  const existing = await findImportTargets(c.env.DB, examId, file.questions);
+  const decisions = await decideImportRows(c.env.DB, existing, file.questions);
+  const plan = await planImportWrites(c.env.DB, {
+    examId, questions: file.questions, decisions, now,
+    // Any resolution that matches the row exactly, if several name it.
+    resolutionFor: (d) => resolutions.find((r) => resolutionMatches(r, d)),
+    chainedStatements: (w) => [audit(w.questionId, w.kind, "conditional")],
+  });
+
   const conflicts: ImportConflict[] = [];
-  const outcomes: { questionId: string; externalId: string | null; status: "created" | "updated" | "skipped" | "conflict" | "failed"; reason?: string }[] = [];
+  const outcomes: { questionId: string; externalId: string | null; status: ImportOutcomeStatus; reason?: string }[] = [];
   const unchangedAudits: D1PreparedStatement[] = [];
   // Collected rather than audited one row at a time: an unchanged row carries
   // no information the next one does not, and a re-imported catalog is almost
   // entirely unchanged rows. See aggregateQuestionMutationAuditStatements.
   const identicalIds: string[] = [];
-  // Each item's tag-link statements travel WITH its row statement in
-  // `statements` (an update's are guarded on its own post-write revision;
-  // a create's are unconditional) so both commit or roll back together as
-  // one atomic unit — implementation review: question_tag_links is
-  // authoritative content, not a best-effort side effect.
-  const pending: {
-    statements: D1PreparedStatement[]; id: string; externalId: string | null; status: "created" | "updated";
-  }[] = [];
-  for (const q of file.questions) {
-    const matches = q.externalId ? existing.filter(r => r.external_id === q.externalId) : [];
-    const desiredTagIds = resolveTagIds(q.tags);
-    if (!matches.length) {
-      const id = crypto.randomUUID();
-      pending.push({
-        statements: [createStatement(c.env.DB, examId, id, q, now, true, desiredTagIds), audit(id, "create", "conditional"), ...buildTagLinkStatements(c.env.DB, id, desiredTagIds, [])],
-        id, externalId: q.externalId ?? null, status: "created",
-      });
-      continue;
-    }
-    for (const row of matches) {
-      if (matches.length === 1 && canonical(toQuestion(row)) === canonical(q)) {
-        identicalIds.push(row.id);
-        outcomes.push({ questionId: row.id, externalId: row.external_id, status: "skipped", reason: "identical" }); continue;
-      }
-      const conflict = await importConflict(c.env.DB, row, q, matches.length > 1);
-      const resolution = resolutions.find(r => r.questionId === row.id && r.expectedRevision === row.revision && r.incomingToken === conflict.incomingToken);
-      if (matches.length > 1 || !resolution) {
-        unchangedAudits.push(audit(row.id, "update", "failure", conflict.reason));
-        conflicts.push(conflict);
-        outcomes.push({ questionId: row.id, externalId: row.external_id, status: "conflict", reason: conflict.reason });
-      } else if (resolution.action === "keep") {
-        unchangedAudits.push(audit(row.id, "update", "skipped", "kept_current"));
-        outcomes.push({ questionId: row.id, externalId: row.external_id, status: "skipped", reason: "kept_current" });
-      } else {
-        // Guarded on BOTH the row's post-write revision and `now` — revision
-        // alone isn't enough (see buildTagLinkStatements: a different
-        // concurrent writer could legitimately reach the same revision
-        // value).
-        const linkStatements = buildTagLinkStatements(
-          c.env.DB, row.id, desiredTagIds, currentTagIdsByQuestion.get(row.id) ?? [],
-          { questionId: row.id, revision: row.revision + 1, updatedAt: now },
-        );
-        pending.push({ statements: [updateStatement(c.env.DB, row, q, now, true, desiredTagIds), audit(row.id, "update", "conditional"), ...linkStatements], id: row.id, externalId: row.external_id, status: "updated" });
-      }
-    }
+  for (const { decision, status, reason } of plan.unchanged) {
+    const { row } = decision;
+    outcomes.push({ questionId: row.id, externalId: row.external_id, status, reason });
+    if (decision.kind === "identical") identicalIds.push(row.id);
+    else if (status === "conflict") {
+      conflicts.push(decision.conflict);
+      unchangedAudits.push(audit(row.id, "update", "failure", reason));
+    } else unchangedAudits.push(audit(row.id, "update", "skipped", reason));
   }
   // Unchanged rows need no content transaction. These land BEFORE the content
   // batches below, so a run that later rolls a batch back still records the
@@ -175,33 +136,19 @@ importsRouter.post("/", async (c) => {
   ]);
   // Each bounded D1 batch is atomic. Report rolled-back items instead of hiding
   // partial completion across batches. Retry only failed/conflicting items.
-  for (let start = 0; start < pending.length; start += 50) {
-    const batch = pending.slice(start, start + 50);
-    // Each item's own primary (row) statement's position within the
-    // flattened batch — needed to read back its changes() since items now
-    // carry a variable number of trailing tag-link statements.
-    const primaryIndexOf: number[] = [];
-    const flatStatements: D1PreparedStatement[] = [];
-    for (const p of batch) {
-      primaryIndexOf.push(flatStatements.length);
-      flatStatements.push(...p.statements);
-    }
-    try {
-      const results = await c.env.DB.batch(flatStatements);
-      batch.forEach((p, i) => {
-        const changed = results[primaryIndexOf[i]!]!.meta.changes > 0;
-        outcomes.push({ questionId: p.id, externalId: p.externalId,
-          status: changed ? p.status : "conflict", reason: changed ? undefined : "stale_question; refresh preview" });
-      });
-    } catch {
-      await c.env.DB.batch(batch.map((p) => audit(p.id, p.status === "created" ? "create" : "update", "failure", "batch_rolled_back")));
-      batch.forEach(p => outcomes.push({ questionId: p.id, externalId: p.externalId, status: "failed", reason: "Batch rolled back; refresh preview to check identity conflicts before retrying." }));
-    }
+  const results = await commitImportWrites(c.env.DB, plan.writes, {
+    itemsPerBatch: IMPORT_ITEMS_PER_BATCH,
+    onRollback: async (writes) => {
+      await c.env.DB.batch(writes.map((w) => audit(w.questionId, w.kind, "failure", "batch_rolled_back")));
+    },
+  });
+  for (const { write, status } of results) {
+    const base = { questionId: write.questionId, externalId: write.externalId };
+    if (status === "committed") outcomes.push({ ...base, status: write.kind === "create" ? "created" : "updated" });
+    else if (status === "stale") outcomes.push({ ...base, status: "conflict", reason: "stale_question; refresh preview" });
+    else outcomes.push({ ...base, status: "failed", reason: "Batch rolled back; refresh preview to check identity conflicts before retrying." });
   }
-  const created = outcomes.filter(o => o.status === "created").length;
-  const updated = outcomes.filter(o => o.status === "updated").length;
-  const skipped = outcomes.filter(o => o.status === "skipped" || o.status === "conflict").length;
-  const failed = outcomes.filter(o => o.status === "failed").length;
+  const { created, updated, skipped, failed } = countImportOutcomes(outcomes);
   if (created || updated) await invalidatePracticeQuestions(c.env, examId);
 
   // parseJsonBody already rejected anything over IMPORT_BODY_MAX_BYTES before
@@ -209,18 +156,11 @@ importsRouter.post("/", async (c) => {
   // budget here — no second size check needed (and doing one this late,
   // after questions are already committed to D1, would leave an import
   // partially applied with no matching archive/log row).
-  const r2Key = `imports/${examId}/${Date.now()}-${crypto.randomUUID()}.json`;
-  await c.env.BUCKET.put(r2Key, parsed.raw, { httpMetadata: { contentType: "application/json" } });
+  const r2Key = await archiveImportFile(c.env.BUCKET, examId, parsed.raw);
+  const importLogId = await recordImportLog(c.env.DB, {
+    examId, uploadedBy: c.get("user").id, r2ObjectKey: r2Key, questionCount: file.questions.length, createdAt: now,
+  });
 
-  const importLogId = crypto.randomUUID();
-  await c.env.DB.prepare(
-    "INSERT INTO import_logs (id, exam_id, uploaded_by, r2_object_key, question_count, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-  )
-    .bind(importLogId, examId, c.get("user").id, r2Key, file.questions.length, now)
-    .run();
-
-  // Keep the audit log indefinitely but bound raw source retention. Old log
-  // downloads intentionally return 404 once their archived object expires.
   // Retention is maintenance, not part of the committed import. Running it
   // in the background prevents a transient list/delete failure from making a
   // successful import look failed (and encouraging an unsafe retry).

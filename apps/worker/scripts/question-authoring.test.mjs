@@ -250,6 +250,13 @@ test("re-import preserves edited and legacy content, returns diffs, and applies 
   imported = await request("/exams/exam/import", "POST", file([{ ...incoming, stem: "Unreviewed" }], { conflictResolutions: [{ ...fresh, action: "apply" }] }));
   assert.equal(imported.data.updated, 0);
 });
+test("malformed conflictResolutions are rejected before the import writes anything, new tags included", async t => {
+  const { db, request, file } = setup(t);
+  const rejected = await request("/exams/exam/import", "POST", file([{ ...choice, externalId: "Q1", tags: ["Brand new tag"] }], { conflictResolutions: [{ questionId: "q", action: "apply" }] }));
+  assert.equal(rejected.status, 422); assert.equal(rejected.data.error, "Invalid conflictResolutions");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM question_bank_tags").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM questions").get().n, 0);
+});
 test("import creates with provenance; keep resolution and imported edits use the same records", async t => {
   const { request, file, db, update } = setup(t);
   const imported = await request("/exams/exam/import", "POST", file([{ ...choice, externalId: "Q1" }, { ...choice, externalId: "Q2" }]));
