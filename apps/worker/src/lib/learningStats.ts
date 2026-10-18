@@ -1,6 +1,6 @@
 // Extracted out of routes/stats.ts so the per-user stats computations can be
 // shared verbatim between the REST dashboard (routes/stats.ts, KV-cached via
-// lib/statsCache.ts) and the User MCP's read-only tools (mcp/adapter.ts), per
+// lib/statsCache.ts) and the User MCP's read-only tools (mcp/adapters/user/), per
 // implementation's "reuse existing application/service/query logic where
 // practical". Every query here scopes to `attempts.user_id = userId`.
 //
@@ -44,7 +44,7 @@ const LAST_ACTIVITY_SQL = `SELECT MAX(at) AS last_at FROM (
   WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}
 )`;
 
-// Exported for reuse by mcp/adapter.ts's get_learning_overview, which
+// Exported for reuse by mcp/adapters/user/study.ts's get_learning_overview, which
 // computes its own per-exam accuracy percentages outside computeExamStats.
 export function pct(correct: number, total: number): number {
   return total > 0 ? Math.round((correct / total) * 100) : 0;

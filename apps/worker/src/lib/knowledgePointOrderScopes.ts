@@ -67,6 +67,6 @@ export function casOrderScopeStatement(
 // same starting value `ensureOrderScopeStatement` lazily inserts). Exposed
 // as a plain SELECT string/param pair (not a helper that runs it) so a
 // caller that also needs the scope's note rows — e.g.
-// mcp/adapter.ts's listNotes — can batch it atomically alongside that read
+// mcp/adapters/user/knowledgePoints.ts's listNotes — can batch it atomically alongside that read
 // instead of issuing it as a separate, independently-racing round trip.
 export const SELECT_ORDER_REVISION_SQL = `SELECT revision FROM ${SCOPE_TABLE} WHERE user_id = ? AND scope_key = ?`;

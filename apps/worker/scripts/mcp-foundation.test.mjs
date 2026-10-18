@@ -18,7 +18,8 @@ const {
       export * from './src/mcp/conventions.ts';
       export * from './src/mcp/catalog.ts';
       export * from './src/mcp/errors.ts';
-      export * from './src/mcp/adapter.ts';
+      export * from './src/mcp/adapters/user/index.ts';
+      export * from './src/mcp/adapters/admin/index.ts';
       export * from './src/mcp/runtime.ts';
       export * from './src/mcp/observability.ts';`,
   resolveDir: new URL("..", import.meta.url),

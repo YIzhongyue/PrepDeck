@@ -182,7 +182,9 @@ credential type authenticated the request.
 
 ## Adapter and tool conventions
 
-`src/mcp/adapter.ts` binds service operations to the authenticated principal.
+`src/mcp/adapters/` binds service operations to the authenticated principal:
+`user/` and `admin/` each build one context (principal, existence checks,
+write quotas) and compose per-domain operation modules from it.
 The initial operation reports `{ userId, server }`, without email, token ID,
 raw token, or account role. Both adapters reject the wrong audience.
 
@@ -602,7 +604,7 @@ messages and parameters map to `invalid_input`; other SDK failures map to
 ## User MCP: learning, history, and question discovery (implementation)
 
 The query tools below are read-only. Registered in `src/mcp/user/server.ts`, implemented in
-`src/mcp/adapter.ts`'s `createUserMcpAdapter`. Every operation is scoped
+`src/mcp/adapters/user/`'s `createUserMcpAdapter`. Every operation is scoped
 exclusively to `principal.userId` (never a caller-supplied id) and reuses
 the same service-layer logic as the REST routes/UI where it already
 existed, adding new extracted/pure query modules
@@ -749,7 +751,7 @@ Tests: `apps/worker/scripts/mcp-user-knowledge-points.test.mjs`.
 ## Question-bank read tools (implementation)
 
 Admin MCP's first business catalog, registered in `src/mcp/admin/server.ts`
-and implemented in `src/mcp/adapter.ts`'s `createAdminMcpAdapter`. Every
+and implemented in `src/mcp/adapters/admin/`'s `createAdminMcpAdapter`. Every
 operation is read-only (no tool here may mutate `db`) and reuses the same
 service-layer logic as the Admin REST routes/UI rather than duplicating
 query logic: `src/lib/examManagement.ts` (extracted from `routes/exams.ts`

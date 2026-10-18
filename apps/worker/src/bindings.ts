@@ -56,7 +56,7 @@ export interface Env {
   // implementation — MCP per-account request quotas (requests per 60s window),
   // deployment-configurable without a code change. String-valued like every
   // other Wrangler var; missing/non-numeric values fall back to the defaults
-  // in src/mcp/routes.ts and src/mcp/adapter.ts (see configuredLimit()).
+  // in src/mcp/routes.ts and src/mcp/adapters/*/context.ts (see configuredLimit()).
   MCP_USER_RATE_LIMIT_PER_MINUTE?: string;
   MCP_ADMIN_RATE_LIMIT_PER_MINUTE?: string;
   MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE?: string;

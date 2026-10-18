@@ -8,7 +8,7 @@
 // only touches the question-bank side.
 //
 // Tool inputs at the MCP/REST boundary stay name-addressed (see
-// mcp/adapter.ts) — everything in here resolves a name to a catalog id
+// mcp/adapters/admin/) — everything in here resolves a name to a catalog id
 // before doing anything else, so a rename/merge only ever has to touch the
 // catalog + join rows, never any question's own content.
 import { normalizeTagKey, normalizeTagName } from "@prepdeck/shared";
@@ -58,7 +58,7 @@ export async function findTagCatalogRowById(db: D1Database, id: string): Promise
 // tag's id, or `null` for a name with no current match (would be newly
 // created on commit). Never mutates the catalog (unlike resolveOrCreateTags)
 // — this exists purely so admin_preview_import/admin_execute_import
-// (mcp/adapter.ts) can bind "what these names would resolve to" into the
+// (mcp/adapters/admin/imports.ts) can bind "what these names would resolve to" into the
 // same fileToken that already binds the reviewed file content, so a
 // taxonomy change between preview and execute (a rename or merge that
 // changes what an unchanged name would now resolve to) invalidates the
@@ -250,7 +250,7 @@ export function buildTagLinkStatements(
 // against the question's current links, and applies the diff in its own
 // batch. Callers on an UPDATE path must only call this after confirming the
 // row mutation itself actually committed (changes() > 0) — see
-// routes/questions.ts and mcp/adapter.ts's updateQuestion for why a stale
+// routes/questions.ts and mcp/adapters/admin/questionMutations.ts's updateQuestion for why a stale
 // write must never reach this at all. This intentionally runs as a second,
 // separate statement/batch from the question row write rather than one
 // bigger atomic transaction with it: the row write's own success is checked

@@ -1,5 +1,5 @@
 // Shared exam-read service logic reused by both the Admin UI's REST routes
-// (routes/exams.ts) and Admin MCP's read-only tools (mcp/adapter.ts), per
+// (routes/exams.ts) and Admin MCP's exam tools (mcp/adapters/admin/), per
 // implementation's "share management logic with the future Admin MCP" and implementation's
 // "reuse existing admin/service-layer query logic where practical".
 
