@@ -45,6 +45,14 @@ may be Worker-first; `apps/web/scripts/routes.test.mjs` checks them against
 `wrangler.toml`. The Admin screen is role-gated; `/admin-mcp` is a protocol
 endpoint and must not be confused with Admin UI navigation.
 
+The store is one state object in
+[`PrepDeckProvider`](../../apps/web/src/store/PrepDeckContext.tsx), read through
+slice contexts ([`store/storeSlices.tsx`](../../apps/web/src/store/storeSlices.tsx)):
+one per slice of state and one per group of actions, whose callbacks never change,
+so a component renders again only when a slice it reads changes.
+`apps/web/scripts/render-counts.browser.mjs` checks that answering a question,
+typing a note and the mock countdown render only the parts that show them.
+
 ## Storage and services
 
 D1 owns relational state. [Migrations](../../migrations) and

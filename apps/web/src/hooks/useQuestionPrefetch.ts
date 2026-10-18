@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type PointerEvent } from "react";
 import { prefetchWindow, type PrefetchMode } from "../lib/questionPrefetch";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogActions, useCatalogState, useLearningState } from "../store/PrepDeckContext";
 
 // Issue #106: keeps the next few questions of a live session loading in the
 // background while the user reads the open one. It follows the queue position
@@ -10,12 +10,13 @@ import { usePrepDeck } from "../store/PrepDeckContext";
 // that when called, after the open question's own request has started; the
 // status read here only runs the effect again once that request settles.
 export function useQuestionPrefetch(mode: PrefetchMode, queue: readonly string[], index: number) {
-  const { state, prefetchQuestions } = usePrepDeck();
+  const { lDetail } = useLearningState();
+  const { questionContent, catalogRevision } = useCatalogState();
+  const { prefetchQuestions } = useCatalogActions();
   const current = queue[index];
-  const status = current ? (mode === "learning" ? state.lDetail[current] : state.questionContent[current])?.status : undefined;
+  const status = current ? (mode === "learning" ? lDetail[current] : questionContent[current])?.status : undefined;
   const currentLoading = status === "loading";
   // A refreshed catalogue drops loaded content, so the window is fetched again.
-  const { catalogRevision } = state;
   useEffect(() => {
     if (!currentLoading) prefetchQuestions(mode, prefetchWindow(queue, index), { after: current });
   }, [mode, queue, index, current, currentLoading, catalogRevision, prefetchQuestions]);
@@ -27,7 +28,8 @@ export function useQuestionPrefetch(mode: PrefetchMode, queue: readonly string[]
 const HOVER_INTENT_MS = 150;
 
 export function usePrefetchIntent(mode: PrefetchMode) {
-  const { prefetchQuestions } = usePrepDeck();
+  const { prefetchQuestions } = useCatalogActions();
+
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   return useCallback((questionId: string) => ({

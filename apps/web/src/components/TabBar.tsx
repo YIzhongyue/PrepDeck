@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { MORE_ICON_D, NAV } from "../data/constants";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import type { ScreenId } from "../types";
 
@@ -21,7 +21,8 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
     observer.observe(nav, { box: "border-box" });
     return () => observer.disconnect();
   }, [onHeightChange]);
-  const { state, go, openMore } = usePrepDeck();
+  const state = useWorkspaceState();
+  const { go, openMore } = useWorkspaceActions();
   const hrefFor = useScreenHref();
   // The screens without a tab of their own live behind More, so it stands in
   // for them while one is open.
@@ -83,7 +84,9 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
 }
 
 export function MoreSheet() {
-  const { state, go, closeMore } = usePrepDeck();
+  const state = useWorkspaceState();
+  const { go, closeMore } = useWorkspaceActions();
+
   const hrefFor = useScreenHref();
   if (!state.more) return null;
   // FR-13.1: the Admin entry is visible only to admin-role accounts.

@@ -4,7 +4,10 @@ import { formatAnswerText } from "@prepdeck/shared";
 import RelatedKnowledgePoints from "../components/knowledgePoints/RelatedKnowledgePoints";
 import { IC, Icon, UnderReviewBadge } from "../components/study/StudyKit";
 import { breakpointsFor } from "../lib/responsive";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import {
+  useCatalogActions, useCatalogState, useMockExamActions, useMockExamState, useReviewListsActions, useReviewListsState,
+  useViewport, useWorkspaceActions, useWorkspaceState,
+} from "../store/PrepDeckContext";
 
 const RING_R = 52;
 const RING_C = 2 * Math.PI * RING_R;
@@ -12,7 +15,16 @@ const RING_C = 2 * Math.PI * RING_R;
 type Filter = "all" | "missed" | "correct";
 
 export default function MockResults() {
-  const { state, width, practiceWrong, go, toggleBookmark, loadQuestionContent } = usePrepDeck();
+  const { mockResult } = useMockExamState();
+  const { exams, examId } = useWorkspaceState();
+  const { bookmarks } = useReviewListsState();
+  const state = { ...useCatalogState(), mockResult, exams, examId, bookmarks };
+  const { width } = useViewport();
+  const { practiceWrong } = useMockExamActions();
+  const { go } = useWorkspaceActions();
+  const { toggleBookmark } = useReviewListsActions();
+  const { loadQuestionContent } = useCatalogActions();
+
   const result = state.mockResult;
   const [reviewQuestionId, setReviewQuestionId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");

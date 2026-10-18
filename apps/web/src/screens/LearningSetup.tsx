@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, useLearningActions, useLearningState, useStudyProgressState, useViewport } from "../store/PrepDeckContext";
 import { underReviewCount } from "../lib/underReview";
 import { STUDY_FILTERS, studyFilterCounts } from "../lib/studyStatus";
 import { IC, Icon } from "../components/study/StudyKit";
@@ -15,9 +15,14 @@ const DIFF_LABEL: Record<DifficultyChoice, string> = { all: "Any", easy: "Easy",
 // (optionally resuming last position), and optional tag/difficulty filters,
 // then walk the exam's questions in order with the answer already revealed.
 export default function LearningSetup({ bp }: { bp: Breakpoints }) {
+  // learningPool() filters the catalog on these, so they are all read here.
+  const { catalog } = useCatalogState();
+  const state = { ...useLearningState(), ...useStudyProgressState(), catalog };
+  const { width } = useViewport();
   const {
-    state, width, learningPool, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff, setLearningSkipReview, setLearningStudyFilter, beginLearning
-  } = usePrepDeck();
+    learningPool, setLearningStartInput, toggleLearningTag, clearLearningTags, setLearningDiff, setLearningSkipReview, setLearningStudyFilter, beginLearning
+  } = useLearningActions();
+
   const layout = setupLayout(width, bp.phone);
   const [startText, setStartText] = useState(String(state.lStartInput));
   const pool = learningPool();

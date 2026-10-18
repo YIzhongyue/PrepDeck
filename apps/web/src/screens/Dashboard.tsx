@@ -18,7 +18,10 @@ import { DEFAULT_TIME_ZONE, MAX_ATTEMPT_QUESTIONS, addDaysToDateKey, zonedDateKe
 import { Badge } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
 import { ProgressBarBase } from "@/components/base/progress-indicators/progress-indicators";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import {
+  useAccountState, useCatalogState, usePracticeActions, usePracticeState, useReviewListsActions, useReviewListsState,
+  useStudyProgressState, useWorkspaceActions, useWorkspaceState,
+} from "../store/PrepDeckContext";
 import { apiFetch } from "../lib/api";
 import { useStatisticsResource } from "../hooks/useStatisticsResource";
 import {
@@ -111,7 +114,17 @@ function Sparkline({ values }: { values: number[] }) {
 // (components/statistics/statistics.css), so it also reflows correctly inside a
 // content column narrower than the window, which a window-width breakpoint cannot see.
 export default function Dashboard() {
-  const { state, go, openPracticeWithFilters, practiceList } = usePrepDeck();
+  const { examId, exams, me, activityRevision } = useWorkspaceState();
+  const { catalog } = useCatalogState();
+  const { wrong, mastered } = useReviewListsState();
+  const { attempted } = useStudyProgressState();
+  const { skipReview } = usePracticeState();
+  const { timeZone } = useAccountState();
+  const state = { examId, exams, me, activityRevision, catalog, wrong, mastered, attempted, skipReview, timeZone };
+  const { go } = useWorkspaceActions();
+  const { openPracticeWithFilters } = usePracticeActions();
+  const { practiceList } = useReviewListsActions();
+
 
   const examUrl = state.examId ? `/api/exams/${state.examId}` : null;
   const statsRequest = useStatisticsResource<ExamStatsResponse>(examUrl && `${examUrl}/stats`, state.activityRevision);

@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useAccountActions } from "../store/PrepDeckContext";
 
 // FR-7.9: shown wherever a "Generate explanation" action needs the API key
 // but only its encrypted-in-IndexedDB form survived the refresh — lets the
 // user unlock right there instead of routing back to Settings.
 export default function UnlockKeyPrompt({ onUnlock }: { onUnlock: () => void }) {
-  const { unlockSessionKey } = usePrepDeck();
+  const { unlockSessionKey } = useAccountActions();
+
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

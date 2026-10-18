@@ -14,9 +14,9 @@ import type { StoreCore } from "./useStoreCore";
 // submission (including the deadline's automatic one).
 export type MockExam = ReturnType<typeof useMockExam>;
 
-export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applyStudyStatus" | "mockQ" | "refreshStudyStatuses">) {
+export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applyStudyStatus" | "refreshStudyStatuses">) {
   const { dirtyMock, requests, scopedState, setState, stateRef } = core;
-  const { applyStudyStatus, mockQ, refreshStudyStatuses } = deps;
+  const { applyStudyStatus, refreshStudyStatuses } = deps;
 
   const setMockFormat = useCallback((format: MockFormatId) => setState({ mockFormat: format }), [setState]);
   const setMockCount = useCallback((n: number) => setState({ mockCount: n }), [setState]);
@@ -130,8 +130,11 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
   const mockNext = useCallback(() => setState((s) => ({ mIdx: Math.min(s.mQueue.length - 1, s.mIdx + 1) })), [setState]);
   const mockGoto = useCallback((i: number) => setState({ mIdx: i }), [setState]);
 
+  // The question on screen, read through the ref so the action keeps one
+  // identity across renders.
   const toggleFlag = useCallback(() => {
-    const q = mockQ();
+    const { mQueue, mIdx, catalogBy } = stateRef.current;
+    const q = mQueue[mIdx] ? catalogBy[mQueue[mIdx]] : undefined;
     const attemptId = stateRef.current.mockAttemptId;
     if (!q || !attemptId) return;
     if (stateRef.current.switching) return;
@@ -146,7 +149,7 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
       }
       update({ actionError: "Mock flag is not saved yet. It will be retried before switching or submitting." });
     });
-  }, [mockQ, stateRef, scopedState, setState, saveMockChange]);
+  }, [stateRef, scopedState, setState, saveMockChange]);
 
   const askSubmit = useCallback(() => setState({ mConfirm: true }), [setState]);
   const cancelSubmit = useCallback(() => setState({ mConfirm: false }), [setState]);

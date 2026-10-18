@@ -4,11 +4,15 @@ import { UNDER_REVIEW_NOTICE } from "../lib/underReview";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import TagFilterBar from "../components/TagFilterBar";
 import { useEffect, useState } from "react";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, usePracticeActions, useReviewListsActions, useReviewListsState } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
 
 export default function ListScreen({ bp }: { bp: Breakpoints }) {
-  const { state, begin, practiceList, removeBookmark, markMastered } = usePrepDeck();
+  const { catalogBy } = useCatalogState();
+  const state = { ...useReviewListsState(), catalogBy };
+  const { begin } = usePracticeActions();
+  const { practiceList, removeBookmark, markMastered } = useReviewListsActions();
+
   const isBookmarks = state.listMode === "bm";
   const wrongIds = reviewIds(state, "wrong");
   const bmIds = reviewIds(state, "bm");

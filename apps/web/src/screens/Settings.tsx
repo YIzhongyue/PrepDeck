@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MARK_ALIAS_MAX_LENGTH, MARK_STYLES, type MarkStyle } from "@prepdeck/shared";
 import { HL, THEMES } from "../data/constants";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useAccountActions, useAccountState, useNotesActions, useNotesState, useWorkspaceState } from "../store/PrepDeckContext";
 import { ApiError, isSessionExpired } from "../lib/api";
 import { AvatarValidationError, prepareAvatarUpload } from "../lib/avatar";
 import ProfileAvatar from "../components/ProfileAvatar";
@@ -55,9 +55,12 @@ function Row({ id, title, desc, children, inline = false, anchor }: {
 }
 
 export default function Settings({ bp }: { bp: Breakpoints }) {
-  const {
-    state, setTheme, signOut, toggleShared, updateTimeZone, updateDisplayName, uploadAvatar, updateMarkAlias
-  } = usePrepDeck();
+  const { markAliases, showShared } = useNotesState();
+  const state = { ...useAccountState(), me: useWorkspaceState().me, markAliases, showShared };
+
+  const { setTheme, signOut, updateTimeZone, updateDisplayName, uploadAvatar } = useAccountActions();
+  const { toggleShared, updateMarkAlias } = useNotesActions();
+
   const theme = state.theme || DEFAULT_THEME;
   const [removeSavedKey, setRemoveSavedKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);

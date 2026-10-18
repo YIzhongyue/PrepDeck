@@ -3,13 +3,14 @@ import { useCallback, useEffect, useState } from "react";
 import { MAX_NOTE_LENGTH } from "@prepdeck/shared";
 import LengthHint from "./LengthHint";
 import MarkdownHighlightedText from "./MarkdownHighlightedText";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useNotesActions } from "../store/PrepDeckContext";
 import type { Note } from "../types";
 
 // FR-11.7: always show the author's display name and avatar (falling back to
 // initials when avatarUrl is unavailable). FR-11.3: only the author (n.me) gets edit/delete controls.
 export default function NoteCard({ note }: { note: Note }) {
-  const { updateNote, removeNote } = usePrepDeck();
+  const { updateNote, removeNote } = useNotesActions();
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.text);
   const [draftVis, setDraftVis] = useState(note.vis);

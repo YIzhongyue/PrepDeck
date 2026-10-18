@@ -5,12 +5,12 @@
 import { useEffect, useState } from "react";
 import ModalLayer from "../ModalLayer";
 import type { LinkableQuestionSummary } from "@prepdeck/shared";
-import { usePrepDeck } from "../../store/PrepDeckContext";
+import { useWorkspaceState } from "../../store/PrepDeckContext";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
 import { searchLinkableQuestions } from "../../lib/knowledgePoints";
 
 export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowledgePointId: string; onClose: () => void }) {
-  const { state: appState } = usePrepDeck();
+  const { exams } = useWorkspaceState();
   const { linkQuestion, unlinkQuestion } = useKnowledgePoints();
   const [q, setQ] = useState("");
   const [examId, setExamId] = useState<string | null>(null);
@@ -73,7 +73,8 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
           >
             All exams
           </button>
-          {appState.exams.map((exam) => (
+          {exams.map((exam) => (
+
             <button
               key={exam.id}
               type="button"

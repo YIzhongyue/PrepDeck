@@ -18,7 +18,7 @@ const { outputFiles } = await build({ stdin: { contents: `
   import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionEditorDialog from './src/components/QuestionEditorDialog';
   import LearningLive from './src/screens/LearningLive'; import PracticeLive from './src/screens/PracticeLive';
-  import {__TestStudyContext} from './src/store/PrepDeckContext'; import {breakpointsFor} from './src/lib/responsive';
+  import {__TestStore} from './src/store/PrepDeckContext'; import {breakpointsFor} from './src/lib/responsive';
   import './src/styles/tokens.css'; import './src/styles/app.css';
   window.studyActions = []; const action = name => (...args) => window.studyActions.push({name,args});
   function freeze(value) { if(value && typeof value === 'object') {Object.values(value).forEach(freeze);Object.freeze(value);} return value; }
@@ -31,14 +31,14 @@ const { outputFiles } = await build({ stdin: { contents: `
       lQueue:[q.id],lIdx:0,lVisit:1,lDetail:{[q.id]:{status:'ready',correctAnswers:q.correctAnswers,explanation:q.explanation,history:[]}},
       catalogBy:{[q.id]:q},questionContent:{},notes:[],anns,ai:{[q.id]:{status:'ready',content:${JSON.stringify(plainTable)},provider:'openai',model:'fixture',cached:true}},
       provider:'openai',model:'fixture',studyStatus:{},bookmarks:{}});
-    const store = {state,width:innerWidth,height:innerHeight,learningQ:()=>q,curQ:()=>q,
+    const store = {state,width:innerWidth,height:innerHeight,learningQ:()=>q,curQ:()=>q,mockQ:()=>undefined,
       markLearningViewed:action('view'),prefetchQuestions:action('prefetch'),capture:action('capture'),checkAiCache:action('cache')};
     const Screen = location.pathname === '/learning' ? LearningLive : PracticeLive;
-    return <__TestStudyContext.Provider value={store}><Screen bp={breakpointsFor(innerWidth,innerHeight)}/></__TestStudyContext.Provider>;
+    return <__TestStore store={store}><Screen bp={breakpointsFor(innerWidth,innerHeight)}/></__TestStore>;
   }
   fetch('/fixture-question').then(r=>r.json()).then(initial=>createRoot(document.getElementById('root')).render(<Fixture initial={initial}/>));
 `, loader:"tsx", resolveDir:fileURLToPath(new URL("../", import.meta.url)) }, plugins:[{name:"reference-context",setup(api) {
-    api.onLoad({filter:/[\\/]PrepDeckContext\.tsx$/}, args=>({loader:"tsx",contents:readFileSync(args.path,"utf8")+"\nexport const __TestStudyContext = PrepDeckCtx;"}));
+    api.onLoad({filter:/[\\/]PrepDeckContext\.tsx$/}, args=>({loader:"tsx",contents:readFileSync(args.path,"utf8")+"\nexport { StoreProviders as __TestStore };"}));
   }}], bundle:true, write:false, outfile:"fixture.js", platform:"browser", jsx:"automatic", define:{"process.env.NODE_ENV":'"development"'} });
 const server = createServer(async (req,res) => {
   const url = new URL(req.url,"http://fixture");

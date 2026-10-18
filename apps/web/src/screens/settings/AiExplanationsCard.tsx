@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CURATED_MODELS } from "@prepdeck/shared";
-import { usePrepDeck, type AppState } from "../../store/PrepDeckContext";
+import { useAccountActions, useAccountState, type AccountState } from "../../store/PrepDeckContext";
 import type { KeyMode } from "../../types";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
@@ -13,7 +13,7 @@ import { sectionAnchor } from "./SettingsNav";
 // (encrypted storage, browser refreshed) is "locked"; anything else needs setup.
 export type AiKeyStatus = "done" | "locked" | "empty";
 
-export function aiKeyStatus(state: Pick<AppState, "hasSessionKey" | "hasStoredKey" | "keyMode">): AiKeyStatus {
+export function aiKeyStatus(state: Pick<AccountState, "hasSessionKey" | "hasStoredKey" | "keyMode">): AiKeyStatus {
   if (state.hasSessionKey) return "done";
   return state.keyMode === "encrypted" && state.hasStoredKey ? "locked" : "empty";
 }
@@ -33,10 +33,12 @@ function StepDot({ n, on }: { n: number; on: boolean }) {
 }
 
 export default function AiExplanationsCard() {
+  const state = useAccountState();
   const {
-    state, setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
+    setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey
-  } = usePrepDeck();
+  } = useAccountActions();
+
   const curatedModels = CURATED_MODELS[state.provider];
   const isCustomModel = !curatedModels.some((m) => m.id === state.model);
   const modelOptions = useMemo(

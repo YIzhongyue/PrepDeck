@@ -3,7 +3,9 @@ import { reviewIds } from "../lib/reviewLists";
 import { needsFocusedPractice } from "../lib/practiceEligibility";
 import { underReviewCount } from "../lib/underReview";
 import { STUDY_FILTERS, studyFilterCounts } from "../lib/studyStatus";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import {
+  useCatalogState, usePracticeActions, usePracticeState, useReviewListsState, useStudyProgressState, useViewport,
+} from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
 import {
   ChoiceCard, DifficultyPicker, DomainPicker, EmptyPoolNotice, MoreOptions, SetupHeader, SetupRow, StudyStatusRow, SummaryRow, UnderReviewRow, domainSummary, setupLayout,
@@ -41,7 +43,11 @@ const COUNT_PRESETS = [5, 10, 20, 40] as const;
 const MINUTES_PER_QUESTION = 1.5;
 
 export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, setStudyFilter, startPractice, pool } = usePrepDeck();
+  // pool() filters the catalog on all of these, so they are all read here.
+  const state = { ...usePracticeState(), ...useCatalogState(), ...useReviewListsState(), ...useStudyProgressState() };
+  const { width } = useViewport();
+  const { setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, setStudyFilter, startPractice, pool } = usePracticeActions();
+
   const layout = setupLayout(width, bp.phone);
   const emptyId = useId();
   const attemptedCount = Object.keys(state.attempted).length;

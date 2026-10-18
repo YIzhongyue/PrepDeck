@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import {
   DAILY_EMAIL_MAX_QUESTIONS, DAILY_EMAIL_MIN_QUESTIONS, DAILY_EMAIL_SOURCES, type DailyEmailSource
 } from "@prepdeck/shared";
-import { usePrepDeck } from "../../store/PrepDeckContext";
+import { useAccountActions, useAccountState } from "../../store/PrepDeckContext";
 import { RadioButton, RadioGroup } from "@/components/base/radio-buttons/radio-buttons";
 import { Select } from "@/components/base/select/select";
 import { Toggle } from "@/components/base/toggle/toggle";
@@ -25,8 +25,9 @@ const QUESTION_COUNTS = Array.from(
 // state.emailSettings directly (no controlled draft): every control here is a
 // discrete picker, applied on change with no separate Save step.
 export default function DailyEmailCard({ clock }: { clock: ZoneClock | null }) {
-  const { state, updateEmailSettings } = usePrepDeck();
-  const emailSettings = state.emailSettings;
+  const { emailSettings } = useAccountState();
+  const { updateEmailSettings } = useAccountActions();
+
   const enabled = !!emailSettings?.enabled;
   const deliveryHourOptions = useMemo(
     () => Array.from({ length: 24 }, (_, h) => ({ id: String(h), label: hourLabel(h) })),

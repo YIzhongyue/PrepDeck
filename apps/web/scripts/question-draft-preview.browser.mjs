@@ -22,13 +22,13 @@ const questions = Object.fromEntries(types.map(type => [type, makeQuestion(type)
 const calls = [], errors = [];
 let saved;
 
-// Expose the real context in this test bundle only. Learning uses a frozen
+// Expose the store's slice providers in this test bundle only. Learning uses a frozen
 // snapshot and action spies for reference; the editor is outside this context.
 const { outputFiles } = await build({ stdin: { contents: `
   import React, {useEffect, useState} from 'react'; import {createRoot} from 'react-dom/client';
   import QuestionEditorDialog from './src/components/QuestionEditorDialog';
   import LearningLive from './src/screens/LearningLive';
-  import {__TestStudyContext} from './src/store/PrepDeckContext';
+  import {__TestStore} from './src/store/PrepDeckContext';
   import {breakpointsFor} from './src/lib/responsive';
   import './src/styles/tokens.css'; import './src/styles/app.css';
   const questions = ${JSON.stringify(questions)};
@@ -47,8 +47,8 @@ const { outputFiles } = await build({ stdin: { contents: `
     window.showLearning = setQ; window.learningQuestion = q;
     const state = freeze({lQueue:[q.id], lIdx:0, lVisit:1, lDetail:{[q.id]:{status:'ready', correctAnswers:q.correctAnswers, explanation:q.explanation, history:[]}},
       notes:[], anns:[], ai:{[q.id]:{status:'idle'}}, provider:'openai', model:'fixture', studyStatus:{}, bookmarks:{}});
-    const store = {state, ...viewport, learningQ:()=>q, markLearningViewed:action('markLearningViewed'), prefetchQuestions:action('prefetchQuestions')};
-    return <__TestStudyContext.Provider value={store}><LearningLive bp={breakpointsFor(viewport.width, viewport.height)}/></__TestStudyContext.Provider>;
+    const store = {state, ...viewport, learningQ:()=>q, curQ:()=>undefined, mockQ:()=>undefined, markLearningViewed:action('markLearningViewed'), prefetchQuestions:action('prefetchQuestions')};
+    return <__TestStore store={store}><LearningLive bp={breakpointsFor(viewport.width, viewport.height)}/></__TestStore>;
   }
   function Editor() {
     const [question, setQuestion] = useState(() => freeze(questions[new URLSearchParams(location.search).get('type') || 'single_choice']));
@@ -59,7 +59,7 @@ const { outputFiles } = await build({ stdin: { contents: `
   createRoot(document.getElementById('root')).render(location.pathname === '/learning' ? <Reference/> : <Editor/>);
 `, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   plugins: [{ name: "reference-context", setup(api) {
-    api.onLoad({ filter: /[\\/]PrepDeckContext\.tsx$/ }, args => ({ loader: "tsx", contents: readFileSync(args.path, "utf8") + "\nexport const __TestStudyContext = PrepDeckCtx;" }));
+    api.onLoad({ filter: /[\\/]PrepDeckContext\.tsx$/ }, args => ({ loader: "tsx", contents: readFileSync(args.path, "utf8") + "\nexport { StoreProviders as __TestStore };" }));
   } }], bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");

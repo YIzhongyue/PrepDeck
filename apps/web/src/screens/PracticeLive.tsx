@@ -1,7 +1,10 @@
 import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useState } from "react";
 import { formatAnswerText } from "@prepdeck/shared";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import {
+  useAiActions, useAiState, useNotesActions, useNotesState, usePracticeActions, usePracticeState, useReviewListsActions,
+  useReviewListsState, useWorkspaceState, type NotesActions, type NotesState, type PracticeActions, type PracticeState,
+} from "../store/PrepDeckContext";
 import { useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import { SHOW_KEYBOARD_HINTS } from "../data/constants";
 import { buildPracticePrompt, copyText } from "../lib/practicePrompt";
@@ -23,10 +26,16 @@ import type { GradedAnswer, Question } from "../types";
 const MAX_SEGMENTS = 60;
 
 export default function PracticeLive({ bp }: { bp: Breakpoints }) {
-  const {
-    state, curQ, pick, submit, next, prevQ, endSession, toggleBookmark, capture, checkAiCache, removeMark
-  } = usePrepDeck();
-  const q = curQ();
+  const practice = usePracticeState();
+  const { ai } = useAiState();
+  const { workspaceNotice, actionError } = useWorkspaceState();
+  const { bookmarks } = useReviewListsState();
+  const state = { ...practice, ...useNotesState(), ai, workspaceNotice, actionError, bookmarks };
+  const { pick, submit, next, prevQ, endSession } = usePracticeActions();
+  const { toggleBookmark } = useReviewListsActions();
+  const { capture, removeMark } = useNotesActions();
+  const { checkAiCache } = useAiActions();
+  const q = practice.curQ();
   useQuestionPrefetch("practice", state.queue, state.idx);
 
   const graded = q ? state.done[q.id] : undefined;
@@ -238,12 +247,13 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
 
 function optionRows(
   q: Question,
-  state: ReturnType<typeof usePrepDeck>["state"],
+  state: Pick<PracticeState, "sel"> & Pick<NotesState, "anns">,
   graded: "ok" | "no" | undefined,
   gradedAnswer: GradedAnswer | undefined,
-  pick: ReturnType<typeof usePrepDeck>["pick"],
-  capture: ReturnType<typeof usePrepDeck>["capture"],
-  removeMark: ReturnType<typeof usePrepDeck>["removeMark"],
+  pick: PracticeActions["pick"],
+  capture: NotesActions["capture"],
+  removeMark: NotesActions["removeMark"],
+
   showKeys: boolean
 ) {
   const chosen = state.sel[q.id] || [];

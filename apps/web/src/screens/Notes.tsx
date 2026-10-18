@@ -4,7 +4,7 @@ import { HL } from "../data/constants";
 import { segsFor } from "../lib/annotations";
 import { annotationsQueryString, isDefaultView, type MarkSortOrder } from "../lib/annotationFilters";
 import { apiFetch } from "../lib/api";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, useNotesActions, useNotesState, useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import HighlightedText from "../components/HighlightedText";
 import NoteCard from "../components/NoteCard";
 import PageBreadcrumb from "../components/PageBreadcrumb";
@@ -14,7 +14,12 @@ import PageBreadcrumb from "../components/PageBreadcrumb";
 const AI_PLACEHOLDER = "AI explanations aren't wired up yet — this is a placeholder.";
 
 export default function Notes() {
-  const { state, go, capture, setMarkNote, saveMarkNote, removeMark } = usePrepDeck();
+  const { examId } = useWorkspaceState();
+  const { catalogBy } = useCatalogState();
+  const state = { ...useNotesState(), examId, catalogBy };
+  const { go } = useWorkspaceActions();
+  const { capture, setMarkNote, saveMarkNote, removeMark } = useNotesActions();
+
 
   const [markFilter, setMarkFilter] = useState<MarkStyle[]>([]);
   const [markSort, setMarkSort] = useState<MarkSortOrder>("asc");

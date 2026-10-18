@@ -1,7 +1,10 @@
 import StructuredResponse from "../components/StructuredResponse";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { buildLearningPrompt, copyText } from "../lib/practicePrompt";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import {
+  useLearningActions, useLearningState, useNotesActions, useNotesState, useReviewListsActions, useReviewListsState,
+  useStudyProgressState, useViewport, useWorkspaceActions, useWorkspaceState, type NotesActions, type NotesState,
+} from "../store/PrepDeckContext";
 import { useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import QuestionContent from "../components/QuestionContent";
 import QuestionContentGate from "../components/QuestionContentGate";
@@ -24,10 +27,17 @@ import type { Question } from "../types";
 // below are the same actions PracticeLive uses, since Learning Mode is a
 // "review context" per FR-8.3/FR-11.6.
 export default function LearningLive({ bp }: { bp: Breakpoints }) {
-  const {
-    state, width, learningQ, learningNext, learningPrev, learningGotoSequence, go, toggleBookmark, capture, removeMark, markLearningViewed, setQuestionStudied
-  } = usePrepDeck();
-  const q = learningQ();
+  const learning = useLearningState();
+  const { exams, examId } = useWorkspaceState();
+  const { studyStatus } = useStudyProgressState();
+  const { bookmarks } = useReviewListsState();
+  const state = { ...learning, ...useNotesState(), exams, examId, studyStatus, bookmarks };
+  const { width } = useViewport();
+  const { learningNext, learningPrev, learningGotoSequence, markLearningViewed, setQuestionStudied } = useLearningActions();
+  const { go } = useWorkspaceActions();
+  const { toggleBookmark } = useReviewListsActions();
+  const { capture, removeMark } = useNotesActions();
+  const q = learning.learningQ();
   useQuestionPrefetch("learning", state.lQueue, state.lIdx);
   const detail = q ? state.lDetail[q.id] : undefined;
   const ready = detail?.status === "ready";
@@ -192,11 +202,12 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
 
 function optionRows(
   q: Question,
-  state: ReturnType<typeof usePrepDeck>["state"],
+  state: Pick<NotesState, "anns">,
   correctAnswers: string[],
   ready: boolean,
-  capture: ReturnType<typeof usePrepDeck>["capture"],
-  removeMark: ReturnType<typeof usePrepDeck>["removeMark"]
+  capture: NotesActions["capture"],
+  removeMark: NotesActions["removeMark"]
+
 ) {
   return (q.options ?? []).map((o) => {
     const right = ready && correctAnswers.includes(o.id);

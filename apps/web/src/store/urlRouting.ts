@@ -17,7 +17,13 @@
 import { useCallback, useEffect, useReducer, useRef, type MouseEvent } from "react";
 import { parseRoute, routePath, routeTitle, type Route } from "../lib/routes";
 import type { ScreenId } from "../types";
-import { usePrepDeck, type AppState } from "./PrepDeckContext";
+import {
+  useCatalogState, useLearningState, useWorkspaceActions, useWorkspaceState,
+  type CatalogState, type LearningState, type WorkspaceState,
+} from "./PrepDeckContext";
+
+/** What the route is made of: the workspace, and Learning's open question. */
+type RouteState = WorkspaceState & Pick<LearningState, "lStage" | "lQueue" | "lIdx"> & Pick<CatalogState, "catalogBy">;
 
 interface EntryState {
   prepdeckIndex: number;
@@ -28,12 +34,12 @@ function indexOf(historyState: unknown): number | null {
   return typeof index === "number" && Number.isInteger(index) ? index : null;
 }
 
-function examSlugOf(state: AppState): string | null {
+function examSlugOf(state: Pick<WorkspaceState, "exams" | "examId">): string | null {
   return state.exams.find((e) => e.id === state.examId)?.slug ?? null;
 }
 
 /** Where the store is, as a route. */
-export function currentRoute(state: AppState): Route {
+export function currentRoute(state: RouteState): Route {
   const learningQuestion = state.screen === "learning" && state.lStage === "live" ? state.catalogBy[state.lQueue[state.lIdx] ?? ""] : undefined;
   return {
     screen: state.screen,
@@ -50,14 +56,24 @@ function isMoveWithinScreen(from: Route, to: Route): boolean {
 }
 
 /** The URL can only be written once the store knows where it is. */
-function isSettled(state: AppState): boolean {
+function isSettled(state: WorkspaceState): boolean {
   if (state.switching) return false;
   if (state.pendingLearningSequence != null || state.pendingQuestionJump || state.pendingSlugQuestionJump) return false;
   return state.examId != null || state.workspaceStatus === "empty";
 }
 
-export function useUrlRouting(): void {
-  const { state, navigateTo } = usePrepDeck();
+/** Renders nothing; keeps the URL in step (see above). */
+export function UrlRouting(): null {
+  useUrlRouting();
+  return null;
+}
+
+function useUrlRouting(): void {
+  const workspace = useWorkspaceState();
+  const { lStage, lQueue, lIdx } = useLearningState();
+  const { catalogBy } = useCatalogState();
+  const { navigateTo } = useWorkspaceActions();
+  const state: RouteState = { ...workspace, lStage, lQueue, lIdx, catalogBy };
   const index = useRef(indexOf(window.history.state) ?? 0);
   const written = useRef<Route | null>(null);
   const pendingPop = useRef<{ destination: number | null } | null>(null);
@@ -144,8 +160,8 @@ export function useUrlRouting(): void {
  * click still goes through go() and its save gate.
  */
 export function useScreenHref(): (screen: ScreenId) => string {
-  const { state } = usePrepDeck();
-  const examSlug = examSlugOf(state);
+  const examSlug = examSlugOf(useWorkspaceState());
+
   return useCallback((screen: ScreenId) => routePath({ screen, examSlug, learningSequence: null, knowledgePointId: null }), [examSlug]);
 }
 

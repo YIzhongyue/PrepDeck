@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { MAX_ATTEMPT_QUESTIONS, mockFormatOptions, type MockFormatId } from "@prepdeck/shared";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, useMockExamActions, useMockExamState, useViewport, useWorkspaceState } from "../store/PrepDeckContext";
 import { IC, Icon } from "../components/study/StudyKit";
 import { ChoiceCard, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, setupLayout } from "../components/study/SetupKit";
 import { MAX_CUSTOM_MINUTES, MIN_CUSTOM_MINUTES, mockPlan, officialFormatOf, wholeNumberInRange } from "../lib/mockFormat";
@@ -17,7 +17,12 @@ const RULES = [
 ];
 
 export default function MockSetup({ bp }: { bp: Breakpoints }) {
-  const { state, width, setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock } = usePrepDeck();
+  const { exams, examId } = useWorkspaceState();
+  const { catalog } = useCatalogState();
+  const state = { ...useMockExamState(), exams, examId, catalog };
+  const { width } = useViewport();
+  const { setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock } = useMockExamActions();
+
   const layout = setupLayout(width, bp.phone);
   const exam = state.exams.find((e) => e.id === state.examId);
   const official = officialFormatOf(state.exams, state.examId);

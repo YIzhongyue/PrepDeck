@@ -3,7 +3,7 @@ import { AdminIcon } from "../components/AdminModal";
 import MascotSettingsPanel from "../components/MascotSettingsPanel";
 import McpTokensCard from "../components/McpTokensCard";
 import McpConnectionsCard from "../components/McpConnectionsCard";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
 import { ExamsPanel } from "./admin/ExamsPanel";
 import { useAdminOverview, StatusPill, OverviewPanel } from "./admin/OverviewPanel";
@@ -18,7 +18,9 @@ import type { Tab } from "./admin/shared";
 // here. Every mutating call below is independently re-checked server-side
 // (requireAdmin) regardless of this guard, per FR-1.6/FR-1.7.
 export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
-  const { state, go } = usePrepDeck();
+  const state = useWorkspaceState();
+  const { go } = useWorkspaceActions();
+
   const [tab, setTab] = useState<Tab>("overview");
   const [userCount, setUserCount] = useState<number | null>(null);
   const [examCount, setExamCount] = useState<number | null>(null);

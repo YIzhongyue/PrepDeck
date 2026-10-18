@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 
 export default function ExamSelector({ compact = false }: { compact?: boolean }) {
-  const { state, setExamId } = usePrepDeck();
+  const state = useWorkspaceState();
+  const { setExamId } = useWorkspaceActions();
+
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();

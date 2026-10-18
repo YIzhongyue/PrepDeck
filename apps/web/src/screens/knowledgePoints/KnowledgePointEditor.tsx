@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { marked, type Token, type Tokens } from "marked";
 import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Copy01, DotsHorizontal, Download01, InfoCircle, Maximize01, Plus, Trash01, XClose } from "@untitledui/icons";
 import type { Breakpoints } from "../../lib/responsive";
-import { usePrepDeck } from "../../store/PrepDeckContext";
+import { useWorkspaceActions } from "../../store/PrepDeckContext";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
 import MarkdownEditor from "../../components/knowledgePoints/MarkdownEditor";
 import GroupPicker from "../../components/knowledgePoints/GroupPicker";
@@ -52,7 +52,8 @@ export default function KnowledgePointEditor({
   onDeleted: () => void;
 }) {
   const kp = useKnowledgePoints();
-  const { goToQuestionForReview } = usePrepDeck();
+  const { goToQuestionForReview } = useWorkspaceActions();
+
   const { state, openNote } = kp;
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
