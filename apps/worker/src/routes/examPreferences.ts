@@ -10,7 +10,8 @@
 import type { Env } from "../bindings";
 import { createRouter } from "../context";
 import type { ExamStudyPreferencesResponse } from "@prepdeck/shared";
-import { isValidTargetDate, isValidWeeklyGoalMinutes, WEEKLY_GOAL_MAX_MINUTES, WEEKLY_GOAL_MIN_MINUTES } from "@prepdeck/shared";
+import { updateExamStudyPreferencesRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 
 interface PreferencesRow {
   target_date: string | null;
@@ -51,29 +52,15 @@ examPreferencesRouter.patch("/", async (c) => {
   const exam = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first<{ id: string }>();
   if (!exam) return c.json({ error: "Exam not found" }, 404);
 
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
+  const parsed = await readBody(c, updateExamStudyPreferencesRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   // `undefined` (field omitted) and `null` (clear this value) are different
   // requests, so the two are kept apart rather than collapsed by `??`.
-  const hasTargetDate = body.targetDate !== undefined;
-  const hasWeeklyGoal = body.weeklyGoalMinutes !== undefined;
-  if (!hasTargetDate && !hasWeeklyGoal) {
-    return c.json({ error: "Provide targetDate and/or weeklyGoalMinutes" }, 400);
-  }
-  if (hasTargetDate && body.targetDate !== null && !isValidTargetDate(body.targetDate)) {
-    return c.json({ error: "targetDate must be a calendar date in YYYY-MM-DD form, or null" }, 400);
-  }
-  if (hasWeeklyGoal && body.weeklyGoalMinutes !== null && !isValidWeeklyGoalMinutes(body.weeklyGoalMinutes)) {
-    return c.json(
-      { error: `weeklyGoalMinutes must be a whole number of minutes between ${WEEKLY_GOAL_MIN_MINUTES} and ${WEEKLY_GOAL_MAX_MINUTES}, or null` },
-      400,
-    );
-  }
-
   const current = await readRow(c, userId, examId);
-  const targetDate = hasTargetDate ? (body.targetDate as string | null) : (current?.target_date ?? null);
-  const weeklyGoalMinutes = hasWeeklyGoal ? (body.weeklyGoalMinutes as number | null) : (current?.weekly_goal_minutes ?? null);
+  const targetDate = body.targetDate !== undefined ? body.targetDate : (current?.target_date ?? null);
+  const weeklyGoalMinutes = body.weeklyGoalMinutes !== undefined ? body.weeklyGoalMinutes : (current?.weekly_goal_minutes ?? null);
   const now = new Date().toISOString();
 
   await c.env.DB.prepare(

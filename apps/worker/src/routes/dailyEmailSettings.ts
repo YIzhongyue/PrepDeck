@@ -7,7 +7,8 @@
 
 import { createRouter } from "../context";
 import { resolveTimeZone, type DailyEmailSource } from "@prepdeck/shared";
-import { dailyEmailSettingsValidationError } from "../lib/dailyEmailSettings";
+import { updateDailyEmailSettingsRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 import { loadStoredTimeZone, saveUserTimeZone } from "../lib/userTimeZone";
 
 interface DailyEmailSettingsRow {
@@ -54,17 +55,9 @@ dailyEmailSettingsRouter.get("/", async (c) => {
 
 dailyEmailSettingsRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-
-  const fields = ["enabled", "questionsPerEmail", "source", "timezone", "sendHourLocal"] as const;
-  if (fields.every((field) => body[field] === undefined)) {
-    return c.json({ error: `Provide at least one of ${fields.join(", ")}` }, 400);
-  }
-  for (const field of fields) {
-    const error = dailyEmailSettingsValidationError(field, body[field]);
-    if (error) return c.json({ error }, 400);
-  }
+  const parsed = await readBody(c, updateDailyEmailSettingsRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const existing = await c.env.DB.prepare(`SELECT ${SELECT_COLUMNS} FROM user_email_settings WHERE user_id = ?`)
     .bind(userId)

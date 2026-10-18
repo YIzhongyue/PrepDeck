@@ -3,6 +3,8 @@
 // rather than inventing a fourth spelling: 'wrong' = Wrong Question Book,
 // 'bm' = Bookmarks, 'new' = Unattempted.
 
+import type { z } from "zod";
+import type { updateDailyEmailSettingsRequestSchema } from "./dailyEmailSettings.schema.ts";
 export type DailyEmailSource = "wrong" | "bm" | "new";
 
 export const DAILY_EMAIL_SOURCES: readonly DailyEmailSource[] = ["wrong", "bm", "new"];
@@ -21,11 +23,4 @@ export interface DailyEmailSettingsResponse {
   unsubscribedAt: string | null;
 }
 
-// Partial: Settings PATCHes one or more fields at a time.
-export interface UpdateDailyEmailSettingsRequest {
-  enabled?: boolean;
-  questionsPerEmail?: number;
-  source?: DailyEmailSource;
-  timezone?: string;
-  sendHourLocal?: number;
-}
+export type UpdateDailyEmailSettingsRequest = z.input<typeof updateDailyEmailSettingsRequestSchema>;

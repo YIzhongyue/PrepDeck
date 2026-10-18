@@ -2,6 +2,8 @@
 // responses and the web client's fetch calls.
 
 import type { Role } from "./types";
+import type { z } from "zod";
+import type { updateProfileRequestSchema } from "./profile.schema.ts";
 
 export interface UserProfile {
   id: string;
@@ -11,9 +13,9 @@ export interface UserProfile {
   avatarUrl: string | null;
 }
 
-export interface UpdateProfileRequest {
-  displayName: string;
-}
+export const MAX_DISPLAY_NAME_LENGTH = 100;
+
+export type UpdateProfileRequest = z.input<typeof updateProfileRequestSchema>;
 
 export interface ProfileResponse {
   user: UserProfile;

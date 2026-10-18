@@ -5,10 +5,11 @@
 
 import { createRouter } from "../context";
 import { invalidateCachedUser } from "../lib/userCache";
+import { readBody } from "../lib/requestBody";
+import { updateProfileRequestSchema } from "@prepdeck/shared/schemas";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // FR-12.4
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_DISPLAY_NAME_LENGTH = 100;
 
 interface ProfileRow {
   id: string;
@@ -28,12 +29,9 @@ export const profileRouter = createRouter();
 // FR-12.2: edit one's own display name.
 profileRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
-  if (!displayName) return c.json({ error: "displayName is required" }, 400);
-  if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
-    return c.json({ error: `displayName must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer` }, 400);
-  }
+  const parsed = await readBody(c, updateProfileRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { displayName } = parsed.data;
 
   await c.env.DB.prepare("UPDATE users SET display_name = ? WHERE id = ?").bind(displayName, userId).run();
   await invalidateCachedUser(c.env, userId, c.get("user").email);
