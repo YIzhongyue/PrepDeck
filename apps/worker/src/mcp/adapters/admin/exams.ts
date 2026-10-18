@@ -2,9 +2,9 @@ import { McpApplicationError } from "../../errors";
 import { buildAdminMutationAuditStatement, buildConditionalAdminMutationAuditStatement, recordAdminMutationAudit } from "../../audit";
 import {
   examExists, getExam as getExamRecord, createExamStatement, updateExamStatement, archiveExamStatement,
-  EXAM_SLUG_PATTERN, type ExamCreateFields, type ExamMutableFields,
+  type ExamCreateFields, type ExamMutableFields,
 } from "../../../lib/examManagement";
-import { officialFormatError } from "@prepdeck/shared";
+import { EXAM_SLUG_PATTERN, officialFormatError } from "@prepdeck/shared";
 import type { AdminAdapterContext } from "./context";
 
 // Admin MCP exam lifecycle: create, update and archive.

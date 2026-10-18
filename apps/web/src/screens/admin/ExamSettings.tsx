@@ -1,15 +1,11 @@
 import { useId, useState } from "react";
-import type { Exam, OfficialMockFormat } from "@prepdeck/shared";
+import { EXAM_SLUG_PATTERN, type Exam, type OfficialMockFormat } from "@prepdeck/shared";
 import { AdminModal } from "../../components/AdminModal";
 import { apiFetch, ApiError } from "../../lib/api";
 import { questionBankChanged } from "../../lib/questionAuthoring";
 import { type ExamRow, DANGER } from "./shared";
 
 // Per-exam settings edited from the Content tab's exam detail.
-
-// Mirrors the worker's EXAM_SLUG_PATTERN (apps/worker/src/lib/examManagement.ts),
-// which PATCH /api/exams/:id enforces whatever this form lets through.
-const EXAM_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 type ExamMetadataPatch = Partial<Pick<Exam, "name" | "slug" | "subject" | "language" | "description" | "passMarkPct">>;
 

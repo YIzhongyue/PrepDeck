@@ -3,7 +3,7 @@
 // implementation's "share management logic with the future Admin MCP" and implementation's
 // "reuse existing admin/service-layer query logic where practical".
 
-import type { Exam, ExamPassRule, OfficialMockFormat } from "@prepdeck/shared";
+import { EXAM_SLUG_PATTERN, type Exam, type ExamPassRule, type OfficialMockFormat } from "@prepdeck/shared";
 
 export interface ExamRow {
   id: string;
@@ -127,8 +127,6 @@ export async function getExamAttemptCounts(db: D1Database, examId: string): Prom
 // inside), the same shape as lib/questionManagement.ts's createStatement/
 // updateStatement — the caller decides whether to execute immediately (REST)
 // or batch atomically with an audit statement (MCP).
-
-export const EXAM_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export interface ExamCreateFields {
   slug: string;
