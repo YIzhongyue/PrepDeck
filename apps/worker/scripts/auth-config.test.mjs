@@ -1,20 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const entry = fileURLToPath(new URL("../src/routes/auth.ts", import.meta.url));
-const [{ text: bundledWorker }] = (await build({
-  entryPoints: [entry],
-  bundle: true,
-  format: "esm",
-  platform: "neutral",
-  // auth.ts imports @prepdeck/shared (Turnstile constants), resolved via "main".
-  mainFields: ["module", "main"],
-  write: false,
-})).outputFiles;
-const { authRouter: app } = await import(`data:text/javascript;base64,${Buffer.from(bundledWorker).toString("base64")}`);
+const { authRouter: app } = await importTs(new URL("../src/routes/auth.ts", import.meta.url));
 
 function databaseThatMustNotBeQueried() {
   return new Proxy({}, {

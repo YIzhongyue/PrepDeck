@@ -1,37 +1,29 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
 
-const { outputFiles } = await build({
-  stdin: {
-    contents: `export * from './src/routes/attempts.ts';
-      export * from './src/lib/authorizeIdentity.ts';
-      export * from './src/lib/session.ts';
-      export * from './src/routes/auth.ts';
-      export * from './src/routes/ai.ts';
-      export * from './src/routes/questions.ts';
-      export * from './src/routes/imports.ts';
-      export * from './src/lib/questionMutationAudit.ts';
-      export * from './src/scheduled/pruneContentMutationAudit.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, write: false, platform: "browser", format: "esm", mainFields: ["browser", "module", "main"],
-});
 const {
   attemptsRouter, examAttemptsRouter, authorizeIdentity, authRouter,
   createSessionToken, verifySessionToken, aiGenerateRouter, questionAiExplanationsRouter,
   questionsRouter, importsRouter, AUDIT_TARGETS_PER_ROW,
   runContentMutationAuditPrune, AUDIT_RETENTION_MS,
-} = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+} = await importTs([
+  new URL("../src/routes/attempts.ts", import.meta.url),
+  new URL("../src/lib/authorizeIdentity.ts", import.meta.url),
+  new URL("../src/lib/session.ts", import.meta.url),
+  new URL("../src/routes/auth.ts", import.meta.url),
+  new URL("../src/routes/ai.ts", import.meta.url),
+  new URL("../src/routes/questions.ts", import.meta.url),
+  new URL("../src/routes/imports.ts", import.meta.url),
+  new URL("../src/lib/questionMutationAudit.ts", import.meta.url),
+  new URL("../src/scheduled/pruneContentMutationAudit.ts", import.meta.url),
+], { platform: "browser" });
 questionsRouter.onError((_error, c) => c.json({ error: "Fixture write failed" }, 500));
 
-const migrations = new URL("../../../migrations/", import.meta.url);
-const schema = readdirSync(migrations).filter((n) => n.endsWith(".sql") && !n.startsWith("0002_"))
-  .sort().map((n) => readFileSync(new URL(n, migrations), "utf8")).join("\n");
+const schema = migrationSql({ filter: (n) => n !== SEED_MIGRATION });
 
 function deferred() {
   let resolve;
@@ -40,8 +32,7 @@ function deferred() {
 }
 
 function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const id of ["alice", "bob"]) {
     sqlite.prepare("INSERT INTO users(id,email,role,status,created_at) VALUES (?,?,'user','active','2026-01-01')").run(id, `${id}@example.test`);
@@ -51,41 +42,10 @@ function fixture(t) {
     sqlite.prepare("INSERT INTO questions(id,exam_id,type,stem,correct_answers_json,sequence_number,created_at,updated_at) VALUES (?,'exam','fill_blank','Synthetic question','[\"yes\"]',?,'2026-01-01','2026-01-01')").run(`q${i}`, i + 1);
   }
   let readHook, batchHook;
-  const DB = {
-    prepare(sql) {
-      const methods = (args) => {
-        assert.ok(args.length <= 100, "D1 permits at most 100 bound parameters per statement");
-        const select = /^\s*SELECT\b/i.test(sql);
-        const execute = () => select
-          ? { results: sqlite.prepare(sql).all(...args), meta: { changes: 0 } }
-          : { results: [], meta: { changes: Number(sqlite.prepare(sql).run(...args).changes) } };
-        return {
-          execute,
-          first: async () => {
-            const row = sqlite.prepare(sql).get(...args) ?? null;
-            if (readHook) await readHook(sql, row);
-            return row;
-          },
-          run: async () => execute(),
-          all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-        };
-      };
-      return { bind: (...args) => methods(args), ...methods([]) };
-    },
-    async batch(statements) {
-      sqlite.exec("BEGIN");
-      let results;
-      try {
-        results = statements.map((s) => s.execute());
-        sqlite.exec("COMMIT");
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
-      if (batchHook) { const hook = batchHook; batchHook = null; await hook(); }
-      return results;
-    },
-  };
+  const DB = createD1(sqlite, {
+    afterQuery: async ({ sql, method, result }) => { if (method === "first" && readHook) await readHook(sql, result); },
+    afterBatch: async () => { if (batchHook) { const hook = batchHook; batchHook = null; await hook(); } },
+  });
   const values = new Map();
   const deletedKeys = [];
   const env = {

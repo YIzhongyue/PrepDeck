@@ -3,15 +3,10 @@
 // into 55, because each intermediate digit was replaced before the next one.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("../src/lib/mockFormat.ts", import.meta.url))],
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-});
 const { MAX_CUSTOM_MINUTES, MIN_CUSTOM_MINUTES, mockPlan, wholeNumberInRange } =
-  await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+  await importTs(new URL("../src/lib/mockFormat.ts", import.meta.url));
 
 test("every intermediate value of an ordinary entry is kept, not clamped", () => {
   const minutes = text => wholeNumberInRange(text, MIN_CUSTOM_MINUTES, MAX_CUSTOM_MINUTES);

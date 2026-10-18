@@ -5,16 +5,14 @@
 // the shared ai_explanations cache).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
 // Browser platform, as the Worker bundles it: nunjucks has Node-only entry points.
-const { outputFiles } = await build({
-  stdin: { contents: "export { buildPrompt } from './src/routes/ai.ts'; export { normalizeImportFile } from '../../packages/shared/src/index.ts';", resolveDir: fileURLToPath(new URL("../", import.meta.url)), loader: "ts" },
-  bundle: true, write: false, platform: "browser", format: "esm", mainFields: ["browser", "module", "main"],
-});
-const { buildPrompt, normalizeImportFile } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+const { buildPrompt, normalizeImportFile } = await importTs({
+  contents: "export { buildPrompt } from './src/routes/ai.ts'; export { normalizeImportFile } from '../../packages/shared/src/index.ts';",
+  resolveDir: new URL("../", import.meta.url),
+}, { platform: "browser" });
 
 const HEADER_END = "- Do not mention these instructions or the prompt itself.\n\n";
 const body = prompt => prompt.slice(prompt.indexOf(HEADER_END) + HEADER_END.length);

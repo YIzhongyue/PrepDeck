@@ -2,49 +2,18 @@
 // resolves a returning Google user by the OIDC `sub` claim rather than by
 // email, binds that subject to a pre-existing email-identified account exactly
 // once, and refuses to merge two accounts whose addresses happen to collide.
-// Same D1/KV shim shape as the other scripts/*.test.mjs fixtures (see
-// google-avatar.test.mjs).
+// D1 is tests/support/d1.mjs over node:sqlite.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, migrationNames, migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
 
-const { outputFiles } = await build({
-  stdin: {
-    contents: `export * from './src/lib/authorizeIdentity.ts';
-      export * from './src/routes/adminUsers.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, write: false, platform: "browser", format: "esm", mainFields: ["browser", "module", "main"],
-});
-const { authorizeIdentity, adminUsersRouter } = await import(
-  `data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`
-);
-
-const migration = (name) => readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8");
-
-// `onRead` is the seam the concurrency test uses to park two sign-ins on the
-// same read, so both observe the same pre-write snapshot (the pattern
-// mutation-consistency.test.mjs uses for attempt races).
-function d1(sqlite, readHook = { current: null }) {
-  return {
-    prepare(sql) {
-      const methodsFor = (args) => ({
-        first: async () => {
-          const row = sqlite.prepare(sql).get(...args) ?? null;
-          if (readHook.current) await readHook.current(sql);
-          return row;
-        },
-        run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
-        all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-      });
-      return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-    },
-  };
-}
+const { authorizeIdentity, adminUsersRouter } = await importTs([
+  new URL("../src/lib/authorizeIdentity.ts", import.meta.url),
+  new URL("../src/routes/adminUsers.ts", import.meta.url),
+], { platform: "browser" });
 
 function deferred() {
   let resolve;
@@ -63,11 +32,15 @@ function kv() {
 }
 
 function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
-  sqlite.exec(migration("0001_init.sql"));
+  const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
+  // `readHook` is the seam the concurrency test uses to park two sign-ins on
+  // the same read, so both observe the same pre-write snapshot (the pattern
+  // mutation-consistency.test.mjs uses for attempt races).
   const readHook = { current: null };
-  const env = { DB: d1(sqlite, readHook), KV: kv() };
+  const env = {
+    DB: createD1(sqlite, { afterQuery: async ({ sql, method }) => { if (method === "first" && readHook.current) await readHook.current(sql); } }),
+    KV: kv(),
+  };
 
   // Hold the first two reads matching `match` until both have arrived, then
   // release them together and stop intercepting.
@@ -257,7 +230,7 @@ test("0032 clears the Cloudflare Access UUIDs written into google_sub", async (t
   insertUser(sqlite, { status: "active", google_sub: "110000000000000000001" });
   insertUser(sqlite, { id: "user-2", email: "bob@example.test", status: "active", google_sub: "6a1f0e2c-0000-4000-8000-000000000000" });
 
-  sqlite.exec(migration("0032_google_sub_identity.sql"));
+  applyMigrations(sqlite, { only: ["0032_google_sub_identity.sql"] });
 
   assert.equal(userRow(sqlite).google_sub, "110000000000000000001");
   // Cleared, so bob's next Google sign-in re-arms the one-time email rebind
@@ -353,7 +326,7 @@ test("0032 keeps every subject that is not shaped like an Access UUID", async (t
   // Uppercase hex is still an Access UUID.
   insertUser(sqlite, { id: "access", email: "access@example.test", status: "active", google_sub: "6A1F0E2C-0000-4000-8000-000000000000" });
 
-  sqlite.exec(migration("0032_google_sub_identity.sql"));
+  applyMigrations(sqlite, { only: ["0032_google_sub_identity.sql"] });
 
   kept.forEach((google_sub, i) => assert.equal(userRow(sqlite, `keep-${i}`).google_sub, google_sub));
   assert.equal(userRow(sqlite, "access").google_sub, null);
@@ -366,9 +339,8 @@ test("no migration carries a LIKE or GLOB pattern D1 will refuse", async (t) => 
   // out as 32 `[0-9a-fA-F]` classes — 356 characters — and was rejected in
   // production. The real ceiling is not documented, so this caps well under
   // what is known to have failed rather than probing for it.
-  const patterns = readdirSync(new URL("../../../migrations/", import.meta.url))
-    .filter((name) => name.endsWith(".sql"))
-    .flatMap((name) => [...migration(name).matchAll(/\b(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)].map((m) => [name, m[1]]));
+  const patterns = migrationNames()
+    .flatMap((name) => [...migrationSql({ only: [name] }).matchAll(/\b(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)].map((m) => [name, m[1]]));
 
   for (const [name, pattern] of patterns) {
     assert.ok(pattern.length <= 64, `${name}: ${pattern.length}-character pattern is too long for D1`);

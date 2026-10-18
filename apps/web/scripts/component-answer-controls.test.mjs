@@ -4,10 +4,8 @@ import { findNodeAtLocation, parseTree } from "jsonc-parser";
 import { exportComponentPackage, normalizeImportFile, validateComponentPackage } from "../../../packages/shared/src/question-components.ts";
 import { formatAnswerText } from "../../../packages/shared/src/answerFormat.ts";
 import { fixtures, matchPackage, orderPackage } from "../../../docs/proposals/component-authoring/fixtures.mjs";
-import { build } from "esbuild";
-import { fileURLToPath } from "node:url";
-const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL("../src/lib/componentAnswerControls.ts", import.meta.url))], bundle: true, write: false, platform: "node", format: "esm", mainFields: ["module", "main"] });
-const { inspectAnswerControls: inspect, moveAnswer, setMatch } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+import { importTs } from "../../../tests/support/bundle.mjs";
+const { inspectAnswerControls: inspect, moveAnswer, setMatch } = await importTs(new URL("../src/lib/componentAnswerControls.ts", import.meta.url), { platform: "node", mainFields: ["module", "main"] });
 
 const withoutAnswers = raw => {
   const tree = parseTree(raw);

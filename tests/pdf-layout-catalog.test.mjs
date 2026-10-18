@@ -3,10 +3,9 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { Hono } from 'hono';
-import { build } from 'esbuild';
 import { validateImportFile } from '../packages/shared/src/import-validate.ts';
-const { outputFiles } = await build({ entryPoints: ['apps/worker/src/routes/importSchemas.ts'], bundle: true, write: false, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'] });
-const { importSchemasRouter } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
+import { importTs } from './support/bundle.mjs';
+const { importSchemasRouter } = await importTs(new URL('../apps/worker/src/routes/importSchemas.ts', import.meta.url));
 test('discovery publishes provider-independent content and interaction schemas', async () => {
   const app=new Hono();app.route('/schemas',importSchemasRouter);
   const data=await (await app.request('/schemas')).json();

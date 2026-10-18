@@ -1,32 +1,23 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
 
-const { outputFiles } = await build({
-  stdin: {
-    contents: `export * from './src/lib/knowledgePointMutations.ts';
-      export * from './src/routes/knowledgePoints.ts';
-      export * from './src/scheduled/cleanupKnowledgePointImages.ts';
-      export * from './src/lib/knowledgePointImageRetirement.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, write: false, platform: "browser", format: "esm", mainFields: ["browser", "module", "main"],
-});
 const {
   applyNoteUpdate, knowledgePointsRouter, runKnowledgePointImageCleanup, deleteNote, MAX_DELETE_ATTEMPTS,
-} = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+} = await importTs([
+  new URL("../src/lib/knowledgePointMutations.ts", import.meta.url),
+  new URL("../src/routes/knowledgePoints.ts", import.meta.url),
+  new URL("../src/scheduled/cleanupKnowledgePointImages.ts", import.meta.url),
+  new URL("../src/lib/knowledgePointImageRetirement.ts", import.meta.url),
+], { platform: "browser" });
 
-const migrations = new URL("../../../migrations/", import.meta.url);
-const schema = readdirSync(migrations).filter((n) => n.endsWith(".sql") && !n.startsWith("0002_"))
-  .sort().map((n) => readFileSync(new URL(n, migrations), "utf8")).join("\n");
+const schema = migrationSql({ filter: (n) => n !== SEED_MIGRATION });
 
 function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const id of ["alice", "bob"]) {
     sqlite.prepare("INSERT INTO users(id,email,role,status,created_at) VALUES (?,?,'user','active','2026-01-01')").run(id, `${id}@example.test`);
@@ -34,40 +25,9 @@ function fixture(t) {
   sqlite.exec("INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','exam','Exam','2026-01-01')");
 
   let batchHook;
-  const DB = {
-    prepare(sql) {
-      const methods = (args) => {
-        assert.ok(args.length <= 100, "D1 permits at most 100 bound parameters per statement");
-        const select = /^\s*SELECT\b/i.test(sql);
-        const execute = () => select
-          ? { results: sqlite.prepare(sql).all(...args), meta: { changes: 0 } }
-          : { results: [], meta: { changes: Number(sqlite.prepare(sql).run(...args).changes) } };
-        return {
-          execute,
-          first: async () => {
-            const row = sqlite.prepare(sql).get(...args) ?? null;
-            return row;
-          },
-          run: async () => execute(),
-          all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-        };
-      };
-      return { bind: (...args) => methods(args), ...methods([]) };
-    },
-    async batch(statements) {
-      sqlite.exec("BEGIN");
-      let results;
-      try {
-        results = statements.map((s) => s.execute());
-        sqlite.exec("COMMIT");
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
-      if (batchHook) { const hook = batchHook; batchHook = null; await hook(); }
-      return results;
-    },
-  };
+  const DB = createD1(sqlite, {
+    afterBatch: async () => { if (batchHook) { const hook = batchHook; batchHook = null; await hook(); } },
+  });
   const values = new Map();
   const deletedKeys = [];
   const env = {

@@ -4,38 +4,25 @@
 // mock, how a mock's time limit came to be enforced only by the browser, and
 // how a malformed draft could leave an attempt permanently unsubmittable.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, migrationNames, openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ questionsRouter }, { attemptsRouter, examAttemptsRouter }] = await Promise.all([
   bundle("../src/routes/questions.ts"), bundle("../src/routes/attempts.ts")]);
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,created_at) VALUES ('admin','admin@test','admin','2026-09-09'); INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09')");
   const pending = [];
   let beforeRun;
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { if (beforeRun) await beforeRun(sql); const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  }, async batch(statements) {
-    db.exec("BEGIN");
-    try { const result = []; for (const statement of statements) result.push(await statement.run()); db.exec("COMMIT"); return result; }
-    catch (err) { db.exec("ROLLBACK"); throw err; }
-  } };
+  const DB = createD1(db, { async onQuery({ sql, method }) {
+    if (beforeRun && (method === "run" || method === "batch")) await beforeRun(sql);
+  } });
   const env = { DB, KV: { delete: async () => {} } };
   const app = new Hono();
   // Surface a 500 as a thrown error: an unhandled exception in grading is
@@ -417,11 +404,8 @@ test("a replayed practice answer still recovers its feedback after the question 
 });
 
 test("migration 0036 clears only time_spent_seconds values the API would now refuse", t => {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  const names = readdirSync(directory).filter(n => n.endsWith(".sql")).sort();
-  const cleanup = names.find(n => n.startsWith("0036_"));
-  for (const name of names.filter(n => n < cleanup)) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const cleanup = migrationNames().find(n => n.startsWith("0036_"));
+  const db = openDatabase(t, { filter: n => n < cleanup });
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-09-09');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('e','e','E','2026-09-09');
     INSERT INTO questions (id, exam_id, sequence_number, type, stem, correct_answers_json, created_at, updated_at) VALUES ('q','e',1,'fill_blank','S','["x"]','2026-09-09','2026-09-09')`);
@@ -432,7 +416,7 @@ test("migration 0036 clears only time_spent_seconds values the API would now ref
     db.prepare("INSERT INTO attempt_answers (id, attempt_id, question_id, selected_answer_json, is_correct, time_spent_seconds, answered_at) VALUES (?, ?, 'q', '[\"x\"]', 1, ?, '2026-09-09')")
       .run(id, `a-${id}`, value);
   }
-  db.exec(readFileSync(new URL(cleanup, directory), "utf8"));
+  applyMigrations(db, { only: [cleanup] });
   const after = Object.fromEntries(db.prepare("SELECT id, time_spent_seconds FROM attempt_answers").all().map(row => [row.id, row.time_spent_seconds]));
   assert.deepEqual(after, { ok: 42, zero: 0, day: 86400, none: null, text: null, real: null, negative: null, late: null });
 });

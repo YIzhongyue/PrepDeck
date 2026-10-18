@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { build } from 'esbuild';
-import { fileURLToPath } from 'node:url';
+import { importTs } from './support/bundle.mjs';
 
 // Bundle dependencies so this test covers the actual shared validator.
-async function loadTypeScript(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
-}
+const loadTypeScript = path => importTs(new URL(path, import.meta.url));
 const { validateImportFile, IMPORT_LIMITS } = await loadTypeScript('../packages/shared/src/import-validate.ts');
 const { IMPORT_BODY_MAX_BYTES, IMPORT_JSON_MAX_DEPTH } = await loadTypeScript('../apps/worker/src/lib/importSecurity.ts');
 const fixtures = JSON.parse(readFileSync(new URL('./fixtures/import-contract.json', import.meta.url), 'utf8'));

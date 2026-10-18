@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const [{ text }] = (await build({
-  entryPoints: [fileURLToPath(new URL("../src/routes/imports.ts", import.meta.url))],
-  bundle: true, format: "esm", platform: "neutral", mainFields: ["module", "main"], write: false,
-})).outputFiles;
-const { importsRouter } = await import(`data:text/javascript;base64,${Buffer.from(text).toString("base64")}`);
+const { importsRouter } = await importTs(new URL("../src/routes/imports.ts", import.meta.url));
 const app = new Hono();
 app.use("*", async (c, next) => { c.set("user", { id: "admin", role: "admin" }); await next(); });
 app.route("/exams/:examId/import", importsRouter);

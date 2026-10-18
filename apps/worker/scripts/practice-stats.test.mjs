@@ -4,26 +4,20 @@
 // After a reload, Statistics said "Answered 0" while the Wrong book listed the
 // same answers. These drive the real routes and statistics on node:sqlite.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ attemptsRouter, examAttemptsRouter }, stats, cache, sessions, sweep] = await Promise.all([
   bundle("../src/routes/attempts.ts"), bundle("../src/lib/learningStats.ts"), bundle("../src/lib/statsCache.ts"),
   bundle("../src/lib/practiceSessions.ts"), bundle("../src/scheduled/closeStalePracticeAttempts.ts"),
 ]);
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-09-09'), ('other','o@test','user','2026-09-09');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('e','e','E','2026-09-09'), ('e2','e2','E2','2026-09-09')`);
   for (const [n, exam] of [[1, "e"], [2, "e"], [3, "e"], [4, "e2"]]) {
@@ -31,17 +25,7 @@ function setup(t) {
       VALUES (?, ?, ?, 'single_choice', 'S', '[{"id":"A","text":"a"},{"id":"B","text":"b"}]', '["A"]', '2026-09-09', '2026-09-09')`).run(`q${n}`, exam, n);
   }
   const kv = new Map(), kvWrites = [];
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  }, async batch(statements) {
-    db.exec("BEGIN");
-    try { const out = []; for (const s of statements) out.push(await s.run()); db.exec("COMMIT"); return out; }
-    catch (err) { db.exec("ROLLBACK"); throw err; }
-  } };
+  const DB = createD1(db);
   const KV = {
     async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
     async put(key, value) { kvWrites.push(key); kv.set(key, value); },

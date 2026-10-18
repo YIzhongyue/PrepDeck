@@ -1,47 +1,23 @@
 // Issue #119 — per-user, per-question studied status: what marks a question
 // studied, what may not undo a manual reset, and what the backfill infers.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ questionsRouter }, { attemptsRouter, examAttemptsRouter }, { studyStatusRouter }, { learningDetailRouter }] = await Promise.all([
   bundle("../src/routes/questions.ts"), bundle("../src/routes/attempts.ts"), bundle("../src/routes/studyStatus.ts"), bundle("../src/routes/learning.ts")]);
 
-const migrationsDir = new URL("../../../migrations/", import.meta.url);
-const migrations = readdirSync(migrationsDir).filter(n => n.endsWith(".sql")).sort();
 const STUDY_MIGRATION = "0046_question_study_status.sql";
-const applyMigrations = (db, filter) => {
-  for (const name of migrations.filter(filter)) db.exec(readFileSync(new URL(name, migrationsDir), "utf8"));
-};
-
-function wrap(db) {
-  return { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  }, async batch(statements) {
-    db.exec("BEGIN");
-    try { const result = []; for (const statement of statements) result.push(await statement.run()); db.exec("COMMIT"); return result; }
-    catch (err) { db.exec("ROLLBACK"); throw err; }
-  } };
-}
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  applyMigrations(db, () => true);
+  const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('admin','admin@test','admin','2026-09-09'), ('other','other@test','user','2026-09-09');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09'), ('exam2','test2','Second exam','2026-09-09')`);
-  const env = { DB: wrap(db), KV: { delete: async () => {}, get: async () => null, put: async () => {} } };
+  const env = { DB: createD1(db), KV: { delete: async () => {}, get: async () => null, put: async () => {} } };
   let user = "admin";
   const app = new Hono();
   app.onError((err) => { throw new Error(err.message); });
@@ -228,8 +204,7 @@ test("deleting an unanswered question drops its statuses instead of blocking the
 });
 
 test("the backfill covers genuine answers and open drafts, never skipped questions or the resume pointer", t => {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  applyMigrations(db, name => name < STUDY_MIGRATION);
+  const db = openDatabase(t, { filter: name => name < STUDY_MIGRATION });
   db.exec(`
     INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-01-01');
     INSERT INTO exams (id,slug,name,created_at) VALUES ('e','e','E','2026-01-01');
@@ -250,7 +225,7 @@ test("the backfill covers genuine answers and open drafts, never skipped questio
     UPDATE attempts SET draft_answers_json = '{"drafted":["A"],"draft-blank":[""],"stray":["A"]}' WHERE id = 'open';
     INSERT INTO learning_progress (user_id, exam_id, last_sequence_number, updated_at) VALUES ('u', 'e', 7, '2026-03-02');
   `);
-  applyMigrations(db, name => name === STUDY_MIGRATION);
+  applyMigrations(db, { only: [STUDY_MIGRATION] });
 
   const rows = db.prepare("SELECT question_id, status, source FROM user_question_study_status ORDER BY question_id").all().map(r => ({ ...r }));
   assert.deepEqual(rows, [
@@ -262,7 +237,7 @@ test("the backfill covers genuine answers and open drafts, never skipped questio
 
   // Rerunning the backfill must not overwrite a reset made since.
   db.exec("UPDATE user_question_study_status SET status = 'unstudied', source = 'manual', revision = 2 WHERE question_id = 'answered'");
-  const sql = readFileSync(new URL(STUDY_MIGRATION, migrationsDir), "utf8");
+  const sql = migrationSql({ only: [STUDY_MIGRATION] });
   db.exec(sql.slice(sql.indexOf("INSERT INTO user_question_study_status")));
   assert.equal(db.prepare("SELECT status FROM user_question_study_status WHERE question_id = 'answered'").get().status, "unstudied");
 });

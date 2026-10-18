@@ -1,35 +1,21 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("../src/routes/examPreferences.ts", import.meta.url))],
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-});
-const { examPreferencesRouter } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+const { examPreferencesRouter } = await importTs(new URL("../src/routes/examPreferences.ts", import.meta.url));
 
 function fixture(t) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
-  const migrations = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(migrations).filter(name => name.endsWith(".sql")).sort()) {
-    db.exec(readFileSync(new URL(name, migrations), "utf8"));
-  }
+  const db = openDatabase(t);
   for (const id of ["alice", "bob"]) {
     db.prepare("INSERT INTO users(id,email,created_at) VALUES (?,?,?)").run(id, `${id}@test`, "2026-09-20");
   }
   for (const id of ["A", "B"]) {
     db.prepare("INSERT INTO exams(id,slug,name,created_at) VALUES (?,?,?,?)").run(id, id, id, "2026-09-20");
   }
-  const DB = { prepare(sql) { let values = []; return {
-    bind(...args) { values = args; return this; },
-    async first() { return db.prepare(sql).get(...values) ?? null; },
-    async run() { return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } }; },
-  }; } };
+  const DB = createD1(db);
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: c.req.header("x-user") ?? "alice" }); await next(); });
   app.route("/exams/:examId/preferences", examPreferencesRouter);

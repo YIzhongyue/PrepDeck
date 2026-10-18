@@ -2,35 +2,23 @@
 // token itself stayed valid for its whole 7-day life. These drive the real
 // auth routes and middleware on node:sqlite with an in-memory KV.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ authRouter }, { adminUsersRouter }, { requireAccessUser }, session] = await Promise.all([
   bundle("../src/routes/auth.ts"), bundle("../src/routes/adminUsers.ts"), bundle("../src/middleware/access.ts"), bundle("../src/lib/session.ts"),
 ]);
 const SECRET = "synthetic-test-session-key";
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,status,created_at) VALUES ('alice','alice@test','user','active','2026-09-09'), ('root','root@test','admin','active','2026-09-09')`);
   const kv = new Map();
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  } };
+  const DB = createD1(db);
   const KV = {
     async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
     async put(key, value) { kv.set(key, value); },

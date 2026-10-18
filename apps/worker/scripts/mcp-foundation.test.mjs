@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
-import { build } from "esbuild";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
 import { componentQuestion } from "../../../tests/fixtures/mcp-presentation/question.mjs";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
 
 // Exercise the real Worker entry and SDK (Workers export conditions), not
 // a hand-written JSON-RPC imitation or a mock token verifier.
-const [{ text }] = (await build({
-  stdin: {
-    contents: `export { default as worker } from './src/index.ts';
+const {
+  worker, issueMcpCredential, hashMcpToken, paginationSchema, pageResult,
+  defineMcpTool, McpApplicationError, createUserMcpAdapter, createAdminMcpAdapter,
+  McpObservation, MAX_MCP_TOOL_METRICS, toolResult,
+} = await importTs({
+  contents: `export { default as worker } from './src/index.ts';
       export * from './src/mcp/credentials.ts';
       export * from './src/mcp/conventions.ts';
       export * from './src/mcp/catalog.ts';
@@ -20,20 +21,8 @@ const [{ text }] = (await build({
       export * from './src/mcp/adapter.ts';
       export * from './src/mcp/runtime.ts';
       export * from './src/mcp/observability.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-})).outputFiles;
-const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-test-"));
-after(() => rm(buildDir, { recursive: true, force: true }));
-const bundlePath = join(buildDir, "worker.mjs");
-await writeFile(bundlePath, text);
-const {
-  worker, issueMcpCredential, hashMcpToken, paginationSchema, pageResult,
-  defineMcpTool, McpApplicationError, createUserMcpAdapter, createAdminMcpAdapter,
-  McpObservation, MAX_MCP_TOOL_METRICS, toolResult,
-} = await import(pathToFileURL(bundlePath).href);
+  resolveDir: new URL("..", import.meta.url),
+}, { platform: "workerd" });
 const { z } = await import("zod");
 
 // Only the migrations implementation's Admin MCP read tools actually query
@@ -51,45 +40,17 @@ const schemaFiles = [
 ];
 // implementation's import tools write import_logs (0002 predates schemaFiles'
 // question-authoring cut, but import_logs itself is defined in 0001).
-const schema = (await Promise.all(schemaFiles.map((name) =>
-  readFile(new URL(`../../../migrations/${name}`, import.meta.url), "utf8")))).join("\n");
+const schema = migrationSql({ only: schemaFiles });
 
 async function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const [id, role] of [["alice", "user"], ["bob", "user"], ["admin", "admin"]]) {
     sqlite.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, ?, 'active', ?)")
       .run(id, `${id}@example.test`, role, new Date().toISOString());
   }
   const queries = [];
-  const DB = { prepare(sql) {
-    // Real D1's PreparedStatement exposes first()/run()/all() directly (a
-    // parameterless query never needs bind()), in addition to after bind().
-    // `queries` is only appended when a method actually runs, not when the
-    // statement is merely prepared/bound, matching the assertions below
-    // that count executed queries.
-    const methodsFor = (args) => ({
-      first: async () => { queries.push({ sql, args }); return sqlite.prepare(sql).get(...args) ?? null; },
-      run: async () => { queries.push({ sql, args }); return { meta: { changes: sqlite.prepare(sql).run(...args).changes } }; },
-      all: async () => { queries.push({ sql, args }); return { results: sqlite.prepare(sql).all(...args) }; },
-    });
-    return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-  } };
-  // implementation — D1's real batch() is one implicit transaction: all-or-nothing
-  // on a throw, not "run whatever succeeded." Mirrors question-authoring.test.mjs's shim.
-  DB.batch = async (statements) => {
-    sqlite.exec("BEGIN");
-    try {
-      const results = [];
-      for (const statement of statements) results.push(await statement.run());
-      sqlite.exec("COMMIT");
-      return results;
-    } catch (error) {
-      sqlite.exec("ROLLBACK");
-      throw error;
-    }
-  };
+  const DB = createD1(sqlite, { onQuery: ({ sql, args }) => { queries.push({ sql, args }); } });
   const limits = [];
   const kvInvalidations = [];
   const importRateLimitCalls = [];

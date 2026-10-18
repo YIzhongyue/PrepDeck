@@ -1,39 +1,28 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const { providersRouter } = await bundle("../src/routes/providers.ts");
 const { examsRouter } = await bundle("../src/routes/exams.ts");
 const png = readFileSync(new URL("../../../tests/fixtures/mcp-presentation/response-flow.png", import.meta.url));
 
 function fixture(t) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
+  const db = openDatabase(t, false);
   db.exec("PRAGMA foreign_keys = ON");
-  const migrations = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(migrations).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, migrations), "utf8"));
+  applyMigrations(db);
   db.exec("INSERT INTO providers(id,name,short_name,website_url,created_at) VALUES ('p','Provider','P','https://example.test','now')");
   db.exec("INSERT INTO exams(id,slug,name,created_at) VALUES ('e','exam','Exam','now')");
   db.exec("INSERT INTO questions(id,exam_id,type,stem,correct_answers_json,created_at,updated_at,sequence_number) VALUES ('q','e','fill_blank','Question','[\"answer\"]','now','now',1)");
   const objects = new Map();
   let beforeDelete;
-  const DB = { prepare(sql) { let values = []; return {
-    bind(...args) { values = args; return this; },
-    async first() { return db.prepare(sql).get(...values) ?? null; },
-    async all() { return { results: db.prepare(sql).all(...values) }; },
-    async run() {
-      if (sql.startsWith("DELETE FROM providers ") && beforeDelete) { beforeDelete(); beforeDelete = null; }
-      return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } };
-    },
-  }; } };
+  const DB = createD1(db, { onQuery({ sql, method }) {
+    if (method === "run" && sql.startsWith("DELETE FROM providers ") && beforeDelete) { beforeDelete(); beforeDelete = null; }
+  } });
   let failBucketDelete = false;
   const BUCKET = { async put(key, value) { objects.set(key, value); }, async delete(key) { if (failBucketDelete) throw new Error("R2 unavailable"); objects.delete(key); } };
   const app = new Hono();

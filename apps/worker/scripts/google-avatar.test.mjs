@@ -1,36 +1,15 @@
 // implementation — dedicated coverage for lib/authorizeIdentity.ts's handling of
 // the Google `picture` claim: populated on first activation, backfilled on a
 // later sign-in if still unset, and never clobbered once set (Google-sourced
-// or a custom upload). Same D1/KV shim shape as the other scripts/*.test.mjs
-// fixtures (see question-bank-tags.test.mjs's d1()).
+// or a custom upload). D1 is tests/support/d1.mjs over node:sqlite.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({
-    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
-    bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const { authorizeIdentity } = await bundle("../src/lib/authorizeIdentity.ts");
-
-function d1(sqlite) {
-  return {
-    prepare(sql) {
-      const methodsFor = (args) => ({
-        first: async () => sqlite.prepare(sql).get(...args) ?? null,
-        run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
-        all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-      });
-      return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-    },
-  };
-}
 
 function kv() {
   const store = new Map();
@@ -38,10 +17,8 @@ function kv() {
 }
 
 function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
-  sqlite.exec(readFileSync(new URL("../../../migrations/0001_init.sql", import.meta.url), "utf8"));
-  const env = { DB: d1(sqlite), KV: kv() };
+  const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
+  const env = { DB: createD1(sqlite), KV: kv() };
   return { sqlite, env };
 }
 

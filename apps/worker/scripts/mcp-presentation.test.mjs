@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { build } from "esbuild";
-import { fileURLToPath } from "node:url";
 import { componentQuestion, presentationRow, paragraph } from "../../../tests/fixtures/mcp-presentation/question.mjs";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL("../src/mcp/questionPresentation.ts", import.meta.url))], bundle: true, write: false, platform: "node", format: "esm" });
-const { presentQuestion } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+const { presentQuestion } = await importTs(new URL("../src/mcp/questionPresentation.ts", import.meta.url), { platform: "node" });
 const text = result => result.content.filter(c => c.type === "text").slice(1).map(c => c.text).join("\n\n");
 
 test("full shared material retains tables, original pixels, code, source omissions and combination labels without grading fields", () => {

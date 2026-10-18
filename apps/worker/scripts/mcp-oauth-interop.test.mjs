@@ -11,49 +11,26 @@
 // authorization URL with an already signed-in session and clicks Allow,
 // through the same endpoints the consent screen calls.
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
-import { build } from "esbuild";
+import test from "node:test";
 import { auth, Client, StreamableHTTPClientTransport, UnauthorizedError } from "@modelcontextprotocol/client";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-const [{ text }] = (await build({
-  stdin: {
-    contents: `export { default as worker } from './src/index.ts';
+const { worker, issueSessionToken, issueMcpCredential } = await importTs({
+  contents: `export { default as worker } from './src/index.ts';
       export { issueSessionToken } from './src/lib/session.ts';
       export { issueMcpCredential } from './src/mcp/credentials.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-})).outputFiles;
-const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-interop-test-"));
-after(() => rm(buildDir, { recursive: true, force: true }));
-await writeFile(join(buildDir, "worker.mjs"), text);
-const { worker, issueSessionToken, issueMcpCredential } = await import(pathToFileURL(join(buildDir, "worker.mjs")).href);
+  resolveDir: new URL("..", import.meta.url),
+}, { platform: "workerd" });
 
 const BASE = "https://prepdeck.test";
 const CALLBACK = "http://127.0.0.1:33418/callback";
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter((n) => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec("INSERT INTO users (id, email, role, status, created_at) VALUES ('alice', 'alice@example.test', 'user', 'active', '2026-09-09')");
-  const methods = (sql, values) => ({
-    async first() { return db.prepare(sql).get(...values) ?? null; },
-    async all() { return { results: db.prepare(sql).all(...values) }; },
-    async run() { return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } }; },
-  });
-  const DB = {
-    prepare: (sql) => ({ bind: (...values) => methods(sql, values), ...methods(sql, []) }),
-    async batch(statements) { const results = []; for (const s of statements) results.push(await s.run()); return results; },
-  };
+  const DB = createD1(db);
   const kv = new Map();
   const env = {
     DB, ENVIRONMENT: "production", AUTH_MODE: "cookie", APP_BASE_URL: BASE, SESSION_SECRET: "synthetic-test-session-key", MCP_OAUTH_ENABLED: "true",

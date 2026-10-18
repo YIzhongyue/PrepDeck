@@ -1,14 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { transformSync } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { code } = transformSync(readFileSync(new URL("../src/lib/mcpSetupPrompt.ts", import.meta.url), "utf8"), {
-  loader: "ts", format: "esm", target: "es2022",
-});
-const { buildUserMcpSetupPrompt, isFreshMcpSecretUsable, USER_MCP_TOKEN_PLACEHOLDER } = await import(
-  `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`,
-);
+const { buildUserMcpSetupPrompt, isFreshMcpSecretUsable, USER_MCP_TOKEN_PLACEHOLDER } = await importTs(new URL("../src/lib/mcpSetupPrompt.ts", import.meta.url), { target: "es2022" });
 
 test("setup endpoint uses only the active HTTP origin, including a local port", () => {
   for (const [input, origin] of [["https://staging.example.test", "https://staging.example.test"], ["http://localhost:5173/settings?tab=mcp#tokens", "http://localhost:5173"]]) {

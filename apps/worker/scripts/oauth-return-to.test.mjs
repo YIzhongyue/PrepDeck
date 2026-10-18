@@ -4,16 +4,12 @@
 // a same-origin `returnTo`, carries it in the state cookie, and the callback
 // lands there. It must never become an open redirect.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ authRouter }, { safeReturnTo }, { buildOAuthStateCookie }] = await Promise.all([bundle("../src/routes/auth.ts"), bundle("../src/lib/returnTo.ts"), bundle("../src/lib/google-oauth.ts")]);
 
 test("returnTo accepts same-origin paths only", () => {
@@ -42,18 +38,10 @@ async function signingKey() {
 }
 
 function environment(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,status,created_at) VALUES ('alice','alice@example.test','user','invited','2026-09-09')");
   const kv = new Map();
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  }, async batch(statements) { const out = []; for (const s of statements) out.push(await s.run()); return out; } };
+  const DB = createD1(db);
   const KV = {
     async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
     async put(key, value) { kv.set(key, value); },

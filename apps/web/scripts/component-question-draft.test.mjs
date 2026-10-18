@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-async function bundle(path) {
-  // Match the web build's ESM dependency entry points, including jsonc-parser.
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "node", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+// Match the web build's ESM dependency entry points, including jsonc-parser.
+const bundle = path => importTs(new URL(path, import.meta.url), { platform: "node", mainFields: ["module", "main"] });
 const { inspectComponentQuestionDraft } = await bundle("../src/lib/componentQuestionDraft.ts");
 const { normalizeImportFile, validateImportFile } = await bundle("../../../packages/shared/src/index.ts");
 const fixture = name => JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"));

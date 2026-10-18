@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import {
   runSmokeCheck, parseArgs,
   REQUIRED_USER_TOOLS, REQUIRED_ADMIN_TOOLS,
 } from "./mcp-smoke-check.mjs";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
 
 // implementation review — this suite exists specifically to prevent regressions
 // on the two defects a PR review found by actually running the script:
@@ -163,21 +161,11 @@ test("CLI: a malformed token supplied on the command line never appears in stdou
 // --- End-to-end against a real bundled Worker --------------------------------------
 
 test("end-to-end against a real bundled Worker: every check passes for a healthy deployment, and fails for a wrong token", async (t) => {
-  const workerRoot = fileURLToPath(new URL("..", import.meta.url));
-  const [{ text }] = (await build({
-    stdin: {
-      contents: `export { default as worker } from './src/index.ts';
+  const { worker, issueMcpCredential } = await importTs({
+    contents: `export { default as worker } from './src/index.ts';
         export * from './src/mcp/credentials.ts';`,
-      resolveDir: workerRoot,
-    },
-    bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-    banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-  })).outputFiles;
-  const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-smoke-e2e-"));
-  t.after(() => rm(buildDir, { recursive: true, force: true }));
-  const bundlePath = join(buildDir, "worker.mjs");
-  await writeFile(bundlePath, text);
-  const { worker, issueMcpCredential } = await import(pathToFileURL(bundlePath).href);
+    resolveDir: new URL("..", import.meta.url),
+  }, { platform: "workerd" });
 
   const schemaFiles = [
     "0001_init.sql", "0003_exam_management_columns.sql", "0004_attempts_and_grading.sql",
@@ -190,38 +178,15 @@ test("end-to-end against a real bundled Worker: every check passes for a healthy
     "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
     "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql", "0045_mcp_oauth.sql",
   ];
-  const schema = (await Promise.all(schemaFiles.map((name) =>
-    readFile(new URL(`../../../migrations/${name}`, import.meta.url), "utf8")))).join("\n");
+  const schema = migrationSql({ only: schemaFiles });
 
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const [id, role] of [["alice", "user"], ["admin", "admin"]]) {
     sqlite.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, ?, 'active', ?)")
       .run(id, `${id}@example.test`, role, new Date().toISOString());
   }
-  const DB = { prepare(sql) {
-    const methodsFor = (args) => ({
-      first: async () => sqlite.prepare(sql).get(...args) ?? null,
-      run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
-      all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-      // Real D1's db.batch() returns populated `.results` for a SELECT the
-      // same way `.all()` does — the KP order-scope read batches two SELECTs
-      // together (rows + revision), so this fake must too (same technique as
-      // mcp-user-knowledge-points.test.mjs's fixture).
-      _isSelect: /^\s*select\b/i.test(sql),
-    });
-    return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-  } };
-  DB.batch = async (statements) => {
-    sqlite.exec("BEGIN");
-    try {
-      const results = [];
-      for (const statement of statements) results.push(await (statement._isSelect ? statement.all() : statement.run()));
-      sqlite.exec("COMMIT");
-      return results;
-    } catch (error) { sqlite.exec("ROLLBACK"); throw error; }
-  };
+  const DB = createD1(sqlite);
 
   const baseUrl = "https://prepdeck.smoke-e2e.test";
   const env = {

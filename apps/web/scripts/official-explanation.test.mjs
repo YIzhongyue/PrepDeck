@@ -1,11 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({
-  stdin: { contents: `
+const { render, parseMarkdown, mdSegsFor } = await importTs({ contents: `
     import {createElement} from 'react'; import {renderToStaticMarkup} from 'react-dom/server';
     import {OfficialExplanation} from './src/components/study/StudyKit';
     import QuestionContent from './src/components/QuestionContent';
@@ -14,15 +11,7 @@ const { outputFiles } = await build({
     export const render = (src, kind = 'official', tables) => renderToStaticMarkup(createElement(
       kind === 'official' ? OfficialExplanation : kind === 'question' ? QuestionContent : MarkdownHighlightedText,
       {src, explanation:src, tables, annotations:[], qid:'q', target:'ai', show:false}));
-  `, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
-  bundle: true, write: false, outfile: "official-explanation.mjs", platform: "node", format: "esm", jsx: "automatic",
-  banner: { js: 'import {createRequire} from "node:module"; const require = createRequire(import.meta.url);' }
-});
-const dir = fileURLToPath(new URL("../node_modules/.cache/", import.meta.url));
-mkdirSync(dir, { recursive: true });
-const file = `${dir}official-explanation.test.mjs`;
-writeFileSync(file, outputFiles.find(f => f.path.endsWith(".mjs")).text);
-const { render, parseMarkdown, mdSegsFor } = await import(pathToFileURL(file).href);
+  `, loader: "tsx", resolveDir: new URL("../", import.meta.url) }, { platform: "node", jsx: "automatic" });
 const table = "| Left | Center | Right |\n| :--- | :---: | ---: |\n| **Bold** | x \\| y | `code \\| pipe` |\n| short |";
 
 test("official explanations opt into semantic tables with alignment, inline markup and padded rows", () => {

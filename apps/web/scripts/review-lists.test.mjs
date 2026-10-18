@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { transformSync } from 'esbuild';
-const { code } = transformSync(readFileSync(new URL('../src/lib/reviewLists.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
-const { reviewIds, catalogQuestionIds } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+import { importTs } from '../../../tests/support/bundle.mjs';
+const { reviewIds, catalogQuestionIds } = await importTs(new URL('../src/lib/reviewLists.ts', import.meta.url), { target: 'es2022' });
 const state = { catalogBy: { A1: {}, A2: {} }, bookmarks: { A1: true, A2: false, B1: true }, wrong: { A1: {}, A2: {}, B1: {} }, mastered: { A2: true } };
 test('badges, cards and practice share catalog-scoped IDs with inactive entries removed', () => {
   assert.deepEqual(reviewIds(state, 'bm'), ['A1']);

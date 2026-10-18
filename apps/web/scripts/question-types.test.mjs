@@ -5,11 +5,9 @@
 // the same question. One table, checked here.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { transformSync } from 'esbuild';
+import { importTs } from '../../../tests/support/bundle.mjs';
 
-const { code } = transformSync(readFileSync(new URL('../src/lib/questionTypes.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
-const { questionTypeLabel } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const { questionTypeLabel } = await importTs(new URL('../src/lib/questionTypes.ts', import.meta.url), { target: 'es2022' });
 
 test('every question type has its own label', () => {
   assert.equal(questionTypeLabel({ type: 'single_choice' }), 'Single choice');
