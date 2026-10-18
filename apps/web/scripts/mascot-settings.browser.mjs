@@ -5,6 +5,14 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { readBody, waitUntil } from "./browser-fixture.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+// Admin reads only the workspace; the rest of its bundle (the question
+// preview's study components) imports these without calling them here.
+const UNUSED_STORE_HOOKS = [
+  "useAccountActions", "useAccountState", "useAiActions", "useAiState", "useCatalogActions", "useCatalogState",
+  "useLearningActions", "useLearningState", "useMockClock", "useMockExamActions", "useMockExamState", "useNoteDraftState",
+  "useNotesActions", "useNotesState", "usePracticeActions", "usePracticeState", "useReviewListsActions",
+  "useReviewListsState", "useSessionStages", "useStudyProgressState", "useTextSelection", "useViewport",
+];
 
 const { outputFiles } = await build({ stdin: { contents: `
   import React from 'react'; import {createRoot} from 'react-dom/client';
@@ -23,7 +31,10 @@ const { outputFiles } = await build({ stdin: { contents: `
   plugins: [{ name: "store-fixture", setup(stub) {
     stub.onResolve({ filter: /store\/PrepDeckContext$/ }, () => ({ path: "store", namespace: "stub" }));
     stub.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ loader: "js", contents:
-      `const go=screen=>{window.redirected=screen}; export function usePrepDeck(){return {state:{me:{id:'fixture',role:new URLSearchParams(location.search).get('role')??'admin'}},go};}` }));
+      `const go=screen=>{window.redirected=screen};
+      export function useWorkspaceState(){return {me:{id:'fixture',role:new URLSearchParams(location.search).get('role')??'admin'}};}
+      export function useWorkspaceActions(){return {go};}
+      ${UNUSED_STORE_HOOKS.map(name => `export function ${name}(){throw new Error('${name} is not stubbed');}`).join(" ")}` }));
   } }],
 });
 

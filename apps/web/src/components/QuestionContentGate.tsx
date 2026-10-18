@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogActions, useCatalogState, useLearningState, useWorkspaceActions } from "../store/PrepDeckContext";
 import type { Question } from "../types";
 
 // Leave the surrounding timer, palette and navigation available while only
@@ -7,8 +7,12 @@ import type { Question } from "../types";
 export default function QuestionContentGate({ question, learning = false, children }: {
   question: Question; learning?: boolean; children: ReactNode;
 }) {
-  const { state, loadQuestionContent, loadLearningDetail, retryWorkspace } = usePrepDeck();
-  const status = learning ? state.lDetail[question.id] : state.questionContent[question.id];
+  const { lDetail } = useLearningState();
+  const { questionContent } = useCatalogState();
+  const { loadQuestionContent, loadLearningDetail } = useCatalogActions();
+  const { retryWorkspace } = useWorkspaceActions();
+  const status = learning ? lDetail[question.id] : questionContent[question.id];
+
   const pending = !!question.hasContent && !question.content;
   useEffect(() => {
     if (status) return;

@@ -1,20 +1,23 @@
 import { MARK_STYLES } from "@prepdeck/shared";
 import { HL } from "../data/constants";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useNotesActions, useNotesState, useTextSelection } from "../store/PrepDeckContext";
 
 export default function AnnotationToolbar() {
-  const { state, apply } = usePrepDeck();
-  if (!state.tsel) return null;
+  const tsel = useTextSelection();
+  const { markAliases } = useNotesState();
+  const { apply } = useNotesActions();
+  if (!tsel) return null;
   return (
     <div
       style={{
-        position: "fixed", zIndex: 70, left: state.tsel.x, top: state.tsel.y, transform: "translate(-50%, -100%)",
+        position: "fixed", zIndex: 70, left: tsel.x, top: tsel.y, transform: "translate(-50%, -100%)",
         display: "flex", alignItems: "center", gap: 4, padding: 6, borderRadius: 999,
         background: "var(--pd-ink)", boxShadow: "var(--pd-shadow-lg)"
       }}
     >
       {MARK_STYLES.map((style) => {
-        const alias = state.markAliases[style];
+        const alias = markAliases[style];
+
         return (
           <button
             key={style}

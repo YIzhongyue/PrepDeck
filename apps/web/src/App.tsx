@@ -7,7 +7,7 @@ import "./styles/app.css";
 import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ACCESS_REVOKED_EVENT, apiFetch, ApiError } from "./lib/api";
 import { MascotProvider } from "./store/MascotContext";
-import { PrepDeckProvider, usePrepDeck } from "./store/PrepDeckContext";
+import { PrepDeckProvider, useAccountState, useSessionStages, useViewport, useWorkspaceActions, useWorkspaceState } from "./store/PrepDeckContext";
 import { breakpointsFor, contentInset } from "./lib/responsive";
 import Login from "./screens/Login";
 import Sidebar from "./components/Sidebar";
@@ -32,7 +32,7 @@ import PrivacyPolicy from "./screens/PrivacyPolicy";
 import McpConnect, { McpConnectError } from "./screens/McpConnect";
 import TermsOfService from "./screens/TermsOfService";
 import { DEFAULT_THEME } from "./lib/themeStorage";
-import { useUrlRouting } from "./store/urlRouting";
+import { UrlRouting } from "./store/urlRouting";
 
 // implementation — code-split: react-markdown, mermaid, and @dnd-kit are sizable
 // dependencies only this feature needs, so they load in their own chunk on
@@ -46,24 +46,37 @@ const KnowledgePoints = lazy(() => import("./screens/KnowledgePoints"));
 // same reasoning as Knowledge Points above.
 const Settings = lazy(() => import("./screens/Settings"));
 
+// The Shell reads only which screen shows and the workspace around it, so a
+// change inside a session renders that session's screen, not every screen.
 export function Shell() {
-  const { state, width, height, curQ, mockQ, learningQ, retryWorkspace, dismissActionError } = usePrepDeck();
-  useUrlRouting();
+  // UrlRouting comes last, so its effects run after the screens', as they did
+  // when the Shell called useUrlRouting() itself; it keeps its place whichever
+  // layout shows.
+  return <><ShellContent /><UrlRouting /></>;
+}
+
+function ShellContent() {
+  const state = useWorkspaceState();
+  const { pStage, mStage, lStage, practiceQuestion, mockQuestion, learningQuestion } = useSessionStages();
+  const { theme: themeChoice } = useAccountState();
+  const { width, height } = useViewport();
+  const { retryWorkspace, dismissActionError } = useWorkspaceActions();
   const bp = breakpointsFor(width, height);
   // Measured height includes the bottom safe-area padding and text scaling.
   const [tabBarHeight, setTabBarHeight] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
   const compactNavigation = bp.narrow && !(state.screen === "learning" && width >= 768);
-  const theme = state.theme || DEFAULT_THEME;
+  const theme = themeChoice || DEFAULT_THEME;
 
   const isDash = state.screen === "dash";
-  const isSetup = state.screen === "practice" && state.pStage === "setup";
-  const isLive = state.screen === "practice" && state.pStage === "live" && !!curQ();
-  const isMockSetup = state.screen === "mock" && state.mStage === "setup";
-  const isMockLive = state.screen === "mock" && state.mStage === "live" && !!mockQ();
-  const isMockResults = state.screen === "mock" && state.mStage === "results";
-  const isLearningSetup = state.screen === "learning" && state.lStage === "setup";
-  const isLearningLive = state.screen === "learning" && state.lStage === "live" && !!learningQ();
+  const isSetup = state.screen === "practice" && pStage === "setup";
+  const isLive = state.screen === "practice" && pStage === "live" && practiceQuestion;
+  const isMockSetup = state.screen === "mock" && mStage === "setup";
+  const isMockLive = state.screen === "mock" && mStage === "live" && mockQuestion;
+  const isMockResults = state.screen === "mock" && mStage === "results";
+  const isLearningSetup = state.screen === "learning" && lStage === "setup";
+  const isLearningLive = state.screen === "learning" && lStage === "live" && learningQuestion;
+
   const isList = state.screen === "wrong" || state.screen === "bookmarks";
   const isNotes = state.screen === "notes";
   const isKnowledgePoints = state.screen === "knowledgePoints";

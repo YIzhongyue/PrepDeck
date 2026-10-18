@@ -1,6 +1,9 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type CSSProperties, type DependencyList, type KeyboardEvent, type ReactNode } from "react";
 import { CURATED_MODELS, MAX_NOTE_LENGTH, formatAnswerText } from "@prepdeck/shared";
-import { usePrepDeck } from "../../store/PrepDeckContext";
+import {
+  useAccountState, useAiActions, useAiState, useNoteDraftState, useNotesActions, useNotesState, useWorkspaceActions,
+  type NotesState,
+} from "../../store/PrepDeckContext";
 import QuestionContent from "../QuestionContent";
 import MarkdownHighlightedText from "../MarkdownHighlightedText";
 import NoteCard from "../NoteCard";
@@ -382,8 +385,13 @@ export function OfficialExplanation({ explanation, collapsible = false }: { expl
 
 /* Official explanation, then the AI explanation with its cache / generate states. */
 export function ExplanationPanel({ q, explanation, collapsible }: { q: Question; explanation?: string | null; collapsible: boolean }) {
-  const { state, go, genAi, showAlternateAi, capture, removeMark } = usePrepDeck();
-  const aiRec = state.ai[q.id];
+  const { ai } = useAiState();
+  const state = useAccountState();
+  const { anns } = useNotesState();
+  const { go } = useWorkspaceActions();
+  const { genAi, showAlternateAi } = useAiActions();
+  const { capture, removeMark } = useNotesActions();
+  const aiRec = ai[q.id];
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
   const ready = aiRec?.status === "ready";
@@ -405,7 +413,7 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
           <Collapsible cap={198} enabled={collapsible}>
             <div className="st-prose">
               <MarkdownHighlightedText
-                src={aiRec.content ?? ""} annotations={state.anns} qid={q.id} target="ai" show
+                src={aiRec.content ?? ""} annotations={anns} qid={q.id} target="ai" show
                 onMouseUp={() => capture(q.id, "ai")}
                 onRemoveMark={removeMark}
               />
@@ -454,13 +462,15 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
   );
 }
 
-export function visibleNotes(state: ReturnType<typeof usePrepDeck>["state"], qid: string) {
+export function visibleNotes(state: Pick<NotesState, "notes" | "showShared">, qid: string) {
   return state.notes.filter((n) => n.qid === qid && (n.me || (n.vis === "shared" && state.showShared)));
 }
 
 export function NotesPanel({ qid }: { qid: string }) {
-  const { state, setNoteDraft, addNote, setNoteVis } = usePrepDeck();
-  const notes = visibleNotes(state, qid);
+  const notes = visibleNotes(useNotesState(), qid);
+  const state = useNoteDraftState();
+  const { setNoteDraft, addNote, setNoteVis } = useNotesActions();
+
   return (
     <div className="st-panel">
       {notes.length > 0 && <div className="st-notes">{notes.map((n) => <NoteCard key={n.id} note={n} />)}</div>}

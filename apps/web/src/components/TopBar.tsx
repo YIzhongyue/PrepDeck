@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { NAV } from "../data/constants";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useWorkspaceState } from "../store/PrepDeckContext";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
@@ -18,7 +18,8 @@ export default function TopBar({ onHeightChange, sticky = true }: { onHeightChan
     observer.observe(header, { box: "border-box" });
     return () => observer.disconnect();
   }, [onHeightChange]);
-  const { state } = usePrepDeck();
+  const state = useWorkspaceState();
+
   const title = NAV.find((n) => n.id === state.screen)?.label || "PrepDeck";
   return (
     <header

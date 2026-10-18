@@ -23,11 +23,13 @@ const { outputFiles } = await build({ stdin: { contents: `import React from 'rea
   createRoot(document.getElementById('root')).render((screens[location.pathname] ?? (() => <Login verification={params.get('verification') ?? undefined} />))());`,
   loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' },
-  // The session-expired dialog reads two things from the app store; this is all of it it needs.
+  // The session-expired dialog reads a few things from the app store; this is all of it it needs.
   plugins: [{ name: "store-stub", setup(stub) {
     stub.onResolve({ filter: /store\/PrepDeckContext$/ }, () => ({ path: "store", namespace: "stub" }));
     stub.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ loader: "js", contents:
-      "export function usePrepDeck() { return { state: { mStage: 'setup', mockAttemptId: null, exams: [], examId: null }, preserveForReauth() {} }; }" }));
+      "export function useMockExamState() { return { mStage: 'setup', mockAttemptId: null }; } " +
+      "export function useWorkspaceState() { return { exams: [], examId: null }; } " +
+      "export function useAccountActions() { return { preserveForReauth() {} }; }" }));
   } }] });
 
 // Stands in for https://challenges.cloudflare.com/turnstile/v0/api.js. The

@@ -1,16 +1,20 @@
 import { reviewIds } from "../lib/reviewLists";
 import { NAV, NAV_GROUPS } from "../data/constants";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, useReviewListsState, useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
 
 export default function Sidebar({ rail }: { rail: boolean }) {
-  const { state, go } = usePrepDeck();
+  const state = useWorkspaceState();
+  const { catalogBy } = useCatalogState();
+  const lists = { ...useReviewListsState(), catalogBy };
+  const { go } = useWorkspaceActions();
   const hrefFor = useScreenHref();
-  const wrongCount = reviewIds(state, "wrong").length;
-  const bmCount = reviewIds(state, "bm").length;
+  const wrongCount = reviewIds(lists, "wrong").length;
+  const bmCount = reviewIds(lists, "bm").length;
+
   // FR-13.1: the Admin nav entry is visible only to admin-role accounts.
   const items = NAV.filter((item) => item.id !== "admin" || state.me?.role === "admin");
 

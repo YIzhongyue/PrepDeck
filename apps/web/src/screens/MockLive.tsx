@@ -5,16 +5,36 @@ import PageBreadcrumb from "../components/PageBreadcrumb";
 import { IC, Icon, OptionGroup, OptionRow, QuestionBadges, UnderReviewNotice, usePinnedCard } from "../components/study/StudyKit";
 import { isMockAnswered, mockAnsweredCount } from "../lib/mockAnswers";
 import { questionTypeLabel } from "../lib/questionTypes";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useCatalogState, useMockClock, useMockExamActions, useMockExamState } from "../store/PrepDeckContext";
 import { usePrefetchIntent, useQuestionPrefetch } from "../hooks/useQuestionPrefetch";
 import type { Breakpoints } from "../lib/responsive";
 
 // Under five minutes the timer turns red and pulses.
 const LOW_TIME_SECONDS = 5 * 60;
 
+// The countdown reads the clock itself: it changes every second, and only
+// these two render for it, not the question card.
+function MockTimer() {
+  const left = useMockClock();
+  const mm = Math.floor(left / 60);
+  const ss = left % 60;
+  return (
+    <span className="st-timer" data-low={left < LOW_TIME_SECONDS} role="timer" aria-label={`${mm} minutes ${ss} seconds left`}>
+      <Icon d={IC.timer} size={20} />{mm}:{ss < 10 ? "0" : ""}{ss}
+    </span>
+  );
+}
+
+function MockTimeNote() {
+  const lowTime = useMockClock() < LOW_TIME_SECONDS;
+  return <span data-low={lowTime}>{lowTime ? "Under 5 minutes left" : "Server clock · answers save as you go"}</span>;
+}
+
 export default function MockLive({ bp }: { bp: Breakpoints }) {
-  const { state, mockQ, mockPick, mockPrev, mockNext, mockGoto, toggleFlag, askSubmit } = usePrepDeck();
-  const mq = mockQ();
+  const { catalogBy } = useCatalogState();
+  const state = { ...useMockExamState(), catalogBy };
+  const { mockPick, mockPrev, mockNext, mockGoto, toggleFlag, askSubmit } = useMockExamActions();
+  const mq = state.mockQ();
   // Only the card is sized to the viewport; the palette stays sticky beside it.
   const { gridRef, bodyRef, fitHeight } = usePinnedCard(mq?.id, bp.phone);
   useQuestionPrefetch("mock", state.mQueue, state.mIdx);
@@ -22,9 +42,6 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
   if (!mq) return null;
 
   const total = state.mQueue.length;
-  const mm = Math.floor(state.mLeft / 60);
-  const ss = state.mLeft % 60;
-  const lowTime = state.mLeft < LOW_TIME_SECONDS;
   const flagged = !!state.mFlag[mq.id];
   const answered = mockAnsweredCount(state);
   const flaggedCount = state.mQueue.filter((id) => state.mFlag[id]).length;
@@ -39,13 +56,12 @@ export default function MockLive({ bp }: { bp: Breakpoints }) {
       {/* Phones leave this to the top bar, as Learning and Practice do. */}
       {!bp.phone && <PageBreadcrumb screen="mock" />}
       <div className="st-card st-mockbar">
-        <span className="st-timer" data-low={lowTime} role="timer" aria-label={`${mm} minutes ${ss} seconds left`}>
-          <Icon d={IC.timer} size={20} />{mm}:{ss < 10 ? "0" : ""}{ss}
-        </span>
+        <MockTimer />
         <div className="st-mock-progress">
           <div className="st-mock-progress-row">
             <span>Answered {answered} of {total}</span>
-            <span data-low={lowTime}>{lowTime ? "Under 5 minutes left" : "Server clock · answers save as you go"}</span>
+            <MockTimeNote />
+
           </div>
           <div className="st-bar st-bar--lg" aria-hidden="true"><span style={{ width: `${total ? (answered / total) * 100 : 0}%` }} /></div>
         </div>

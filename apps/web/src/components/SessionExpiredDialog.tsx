@@ -4,7 +4,7 @@ import { SESSION_EXPIRED_EVENT, isSessionExpiryPending, resetSessionLoss } from 
 import { useGoogleSignIn } from "../lib/googleSignIn";
 import { currentPath } from "../lib/reauth";
 import { routePath } from "../lib/routes";
-import { usePrepDeck } from "../store/PrepDeckContext";
+import { useAccountActions, useMockExamState, useWorkspaceState } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
 import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
 
@@ -13,7 +13,9 @@ import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
 // Every action would otherwise fail with its own "please retry" message, and
 // retrying can never succeed until the learner signs in again.
 export default function SessionExpiredDialog() {
-  const { state, preserveForReauth } = usePrepDeck();
+  const { mStage, mockAttemptId } = useMockExamState();
+  const { exams, examId } = useWorkspaceState();
+  const { preserveForReauth } = useAccountActions();
   // The Shell mounts one of these in its loading layout and one in its normal
   // layout. A refused request can announce the loss to the first and then, by
   // failing, swap in the second, so a newly mounted dialog starts from the
@@ -32,14 +34,15 @@ export default function SessionExpiredDialog() {
   }, []);
 
   if (!open) return null;
-  const inMock = state.mStage === "live" && !!state.mockAttemptId;
+  const inMock = mStage === "live" && !!mockAttemptId;
 
   const signIn = () => {
     if (!ready || busy) return;
     preserveForReauth();
     // Back to the mock when one is running, so its answers are restored on
     // resume; otherwise to this page, whose address names it (issue #41).
-    const examSlug = state.exams.find((e) => e.id === state.examId)?.slug ?? null;
+    const examSlug = exams.find((e) => e.id === examId)?.slug ?? null;
+
     start(inMock ? routePath({ screen: "mock", examSlug, learningSequence: null, knowledgePointId: null }) : currentPath());
   };
   // Staying keeps the page readable; the next refused request asks again.

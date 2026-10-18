@@ -14,9 +14,9 @@ import type { StoreCore } from "./useStoreCore";
 // bookmarks.
 export type PracticeSession = ReturnType<typeof usePracticeSession>;
 
-export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "applyStudyStatus" | "curQ">) {
+export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "applyStudyStatus">) {
   const { requests, scopedState, setState, stateRef } = core;
-  const { applyStudyStatus, curQ } = deps;
+  const { applyStudyStatus } = deps;
 
   // Shared by "start a filtered practice session," "practice this list of
   // wrong/bookmarked questions," and "review a single question" — all create
@@ -64,14 +64,13 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
       if (studyStatus) applyStudyStatus(update, studyStatus);
       update((s) => {
         if (s.attemptId !== attemptId) return {};
-        const wrong = { ...s.wrong };
         // Mirrors the server's wrong-book rule exactly (routes/attempts.ts), so
-        // this optimistic entry survives the next catalog load unchanged.
+        // this optimistic entry survives the next catalog load unchanged. A
+        // right answer keeps the same book, so what shows it does not render.
         const answeredWrong = !isCorrect && hasAnswer(q.type, chosen);
-        if (answeredWrong) {
-          const prev = wrong[q.id];
-          wrong[q.id] = { c: (prev ? prev.c : 0) + 1, at: new Date().toISOString() };
-        }
+        const prev = s.wrong[q.id];
+        const wrong = answeredWrong ? { ...s.wrong, [q.id]: { c: (prev ? prev.c : 0) + 1, at: new Date().toISOString() } } : s.wrong;
+
         return {
           // This answer joins the question's Learning history.
           lDetail: without(s.lDetail, q.id),
@@ -144,11 +143,15 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
   // No id -> bookmark the question currently being answered in live practice
   // (PracticeLive's toolbar button). An explicit id lets other review
   // surfaces — mock results, wrong/bookmarks lists — bookmark any question
-  // (FR-6.1: "during practice, mock review, or browsing").
+  // (FR-6.1: "during practice, mock review, or browsing"). The current
+  // question is read through the ref, not curQ(), so the action keeps one
+  // identity across renders.
   const toggleBookmark = useCallback((questionId?: string) => {
-    const id = questionId ?? curQ()?.id;
-    if (id) writeBookmark(id, !stateRef.current.bookmarks[id]);
-  }, [curQ, stateRef, writeBookmark]);
+    const s = stateRef.current;
+    const current = s.queue[s.idx];
+    const id = questionId ?? (current ? s.catalogBy[current]?.id : undefined);
+    if (id) writeBookmark(id, !s.bookmarks[id]);
+  }, [stateRef, writeBookmark]);
   return {
     begin, pick, savePracticeAnswer, submit, saveQuestionDraftRef, navigateQuestion, endSession, next,
     prevQ, writeBookmark, toggleBookmark,

@@ -9,14 +9,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KnowledgePointSummary } from "@prepdeck/shared";
-import { usePrepDeck } from "../../store/PrepDeckContext";
+import { useWorkspaceActions } from "../../store/PrepDeckContext";
 import { createKnowledgePoint, linkQuestionToKnowledgePoint, listKnowledgePoints } from "../../lib/knowledgePoints";
 import LinkExistingKnowledgePointModal from "./LinkExistingKnowledgePointModal";
 
 // `embedded` drops the card chrome for use inside another panel (the study
 // screens' review tabs), which already supply the border and the heading.
 export default function RelatedKnowledgePoints({ questionId, embedded = false }: { questionId: string; embedded?: boolean }) {
-  const { openKnowledgePointNote } = usePrepDeck();
+  const { openKnowledgePointNote } = useWorkspaceActions();
+
   const visit = useRef(0);
   useEffect(() => {
     visit.current++;

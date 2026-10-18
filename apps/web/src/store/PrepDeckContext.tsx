@@ -1,46 +1,30 @@
 import { storedExam, storeExam } from "../lib/examWorkspace";
 import { isActive } from "../lib/reviewLists";
 import { practiceKeyAction } from "../lib/practiceShortcuts";
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActiveAttemptResponse,
   AnnotationSettingsResponse,
   AnnotationsListResponse,
   DailyEmailSettingsResponse,
   LearningProgressResponse,
-  MarkStyle,
   NotesListResponse,
   PracticeCatalogResponse,
   ProfileResponse,
-  StudyStatusFilter,
   StudyStatusListResponse,
-  UpdateDailyEmailSettingsRequest,
   UserSettingsResponse,
 } from "@prepdeck/shared";
-import { type MockFormatId } from "@prepdeck/shared";
 import { mergeStudyStatuses } from "../lib/studyStatus";
 import { defaultMockFormat, officialFormatOf } from "../lib/mockFormat";
 import { apiFetch } from "../lib/api";
-import { type Route } from "../lib/routes";
 import { fromSharedAnnotation } from "../lib/annotations";
 import { fromSharedNote } from "../lib/notes";
 import { hasStoredEncryptedKey } from "../lib/keyStorage";
 import { getStoredKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME } from "../lib/themeStorage";
-import { type PrefetchMode } from "../lib/questionPrefetch";
-import type {
-  AiExplanationEntry,
-  AnnotationStyle,
-  AnnotationTarget,
-  Difficulty,
-  ExamSummary,
-  KeyMode,
-  Question,
-  ScreenId,
-  ThemeId,
-} from "../types";
-import { type PracticeSource, type PracticeFilters, type FeedbackMode, type ListMode, type Provider, defaultMockCount, defaultMockMinutes, type AppState } from "./appState";
-import { ACTIVATABLE_CONTROLS, type LoadOptions, browserTimeZone, saveTimeZone, timeZoneSaved } from "./storeHelpers";
+import type { ExamSummary, KeyMode, Question } from "../types";
+import { defaultMockCount, defaultMockMinutes } from "./appState";
+import { ACTIVATABLE_CONTROLS, browserTimeZone, saveTimeZone, timeZoneSaved } from "./storeHelpers";
 import { useStoreCore } from "./actions/useStoreCore";
 import { useCatalogQueries } from "./actions/useCatalogQueries";
 import { usePracticeSession } from "./actions/usePracticeSession";
@@ -52,138 +36,18 @@ import { usePracticeSetup } from "./actions/usePracticeSetup";
 import { useQuestionNotes } from "./actions/useQuestionNotes";
 import { useAccountSettings } from "./actions/useAccountSettings";
 import { useAnnotations } from "./actions/useAnnotations";
+import { StoreProviders, useStore, type PrepDeckStore } from "./storeSlices";
 
 export type { AppState, FeedbackMode, ListMode, MockStage, PracticeFilters, PracticeSource, PracticeStage, Provider } from "./appState";
 export type { KeyMode };
+export type * from "./storeSlices";
+export {
+  useAccountActions, useAccountState, useAiActions, useAiState, useCatalogActions, useCatalogState,
+  useLearningActions, useLearningState, useMockClock, useMockExamActions, useMockExamState, useNoteDraftState,
+  useNotesActions, useNotesState, usePracticeActions, usePracticeState, useReviewListsActions, useReviewListsState,
+  useSessionStages, useStudyProgressState, useTextSelection, useViewport, useWorkspaceActions, useWorkspaceState,
+} from "./storeSlices";
 
-interface PrepDeckStore {
-  state: AppState;
-  width: number;
-  height: number;
-  /** Practice's eligible questions; `study` overrides the study-status filter. */
-  pool: (options?: { study?: StudyStatusFilter }) => Question[];
-  curQ: () => Question | undefined;
-  mockQ: () => Question | undefined;
-  loadQuestionContent: (questionId: string, options?: LoadOptions) => void;
-  loadLearningDetail: (questionId: string, options?: LoadOptions) => void;
-  /**
-   * Issue #106: fetches these questions in the background for the given mode;
-   * nothing while the `after` question (the open one) is still loading.
-   */
-  prefetchQuestions: (mode: PrefetchMode, questionIds: readonly string[], options?: { after?: string }) => void;
-
-  go: (id: ScreenId, options?: { newMock?: boolean }) => void;
-  /** issue #41: moves to what a URL asks for (Back/Forward), through the same save gate as go(). */
-  navigateTo: (route: Route) => Promise<boolean>;
-  openMore: () => void;
-  closeMore: () => void;
-
-  setExamId: (id: string) => Promise<boolean>;
-  retryWorkspace: () => void;
-  dismissActionError: () => void;
-
-  setSource: (id: PracticeSource) => void;
-  setDiff: (id: Difficulty | "all") => void;
-  setFeedback: (id: FeedbackMode) => void;
-  toggleTag: (tag: string) => void;
-  setPracticeTags: (tags: string[]) => void;
-  setCount: (n: number) => void;
-  setSkipReview: (skip: boolean) => void;
-  setStudyFilter: (filter: StudyStatusFilter) => void;
-  startPractice: () => void;
-  openPracticeWithFilters: (filters: PracticeFilters) => void;
-
-  begin: (ids: string[]) => void;
-  pick: (q: Question, oid: string | string[]) => void;
-  submit: () => void;
-  next: () => void;
-  prevQ: () => void;
-  endSession: () => void;
-  toggleBookmark: (questionId?: string) => void;
-  checkAiCache: (q: Question) => void;
-  genAi: (q: Question, force?: boolean) => void;
-  showAlternateAi: (q: Question, alt: AiExplanationEntry) => void;
-
-  learningPool: (options?: { study?: StudyStatusFilter }) => Question[];
-  learningQ: () => Question | undefined;
-  setLearningStartInput: (n: number) => void;
-  toggleLearningTag: (tag: string) => void;
-  clearLearningTags: () => void;
-  setLearningDiff: (id: Difficulty | "all") => void;
-  setLearningSkipReview: (skip: boolean) => void;
-  setLearningStudyFilter: (filter: StudyStatusFilter) => void;
-  beginLearning: (fromSequence?: number) => void;
-  learningNext: () => void;
-  learningPrev: () => void;
-  learningGotoSequence: (seq: number) => void;
-  /**
-   * Issue #119: Learning has displayed this question's content. Marks it
-   * studied once per visit; prefetches and failed loads never call this.
-   */
-  markLearningViewed: (questionId: string) => void;
-  /** Issue #119: the explicit choice, e.g. "Mark as unstudied". */
-  setQuestionStudied: (questionId: string, studied: boolean) => void;
-
-  // implementation — Knowledge Points ↔ Learning Mode cross-navigation.
-  goToQuestionForReview: (examId: string, questionId: string) => void;
-  openKnowledgePointNote: (noteId: string) => void;
-  /** Within the Knowledge Points screen: open a note, or return to the list. */
-  showKnowledgePoint: (noteId: string | null) => void;
-
-  setMockFormat: (format: MockFormatId) => void;
-  setMockCount: (n: number) => void;
-  setMockMinutes: (n: number) => void;
-  setMockSkipReview: (skip: boolean) => void;
-  beginMock: () => void;
-  mockPick: (q: Question, oid: string | string[]) => void;
-  mockPrev: () => void;
-  mockNext: () => void;
-  mockGoto: (i: number) => void;
-  toggleFlag: () => void;
-  askSubmit: () => void;
-  cancelSubmit: () => void;
-  finishMock: () => void;
-  practiceWrong: () => void;
-
-  setListMode: (m: ListMode) => void;
-  removeBookmark: (id: string) => void;
-  markMastered: (id: string) => void;
-  practiceList: (ids: string[]) => void;
-
-  setNoteDraft: (v: string) => void;
-  setNoteVis: (v: "private" | "shared") => void;
-  addNote: (qid: string) => void;
-  updateNote: (id: string, content: string, visibility: "private" | "shared") => Promise<void>;
-  removeNote: (id: string) => void;
-  toggleShared: () => void;
-  updateTimeZone: (timeZone: string) => Promise<void>;
-  updateEmailSettings: (patch: UpdateDailyEmailSettingsRequest) => void;
-
-  capture: (qid: string, target: AnnotationTarget) => void;
-  apply: (style: AnnotationStyle) => void;
-  setMarkNote: (id: string, note: string) => void;
-  saveMarkNote: (id: string) => void;
-  removeMark: (id: string) => void;
-  updateMarkAlias: (style: MarkStyle, alias: string) => void;
-
-  setProvider: (p: Provider) => void;
-  setModel: (m: string) => void;
-  setKeyMode: (m: KeyMode) => void;
-  loadSessionApiKey: (key: string) => void;
-  clearSessionApiKey: () => void;
-  saveEncryptedApiKey: (apiKey: string, passphrase: string) => Promise<void>;
-  unlockSessionKey: (passphrase: string) => Promise<void>;
-  forgetStoredApiKey: () => Promise<void>;
-  signOut: (opts: { removeSavedKey: boolean }) => Promise<void>;
-  setTheme: (t: ThemeId) => void;
-
-  // Both reject with the server's message, so Settings can show why (issue #52).
-  updateDisplayName: (displayName: string) => Promise<void>;
-  uploadAvatar: (blob: Blob) => Promise<void>;
-  preserveForReauth: () => void;
-}
-
-const PrepDeckCtx = createContext<PrepDeckStore | null>(null);
 
 // The provider composes the action hooks in store/actions/ and keeps every
 // effect here, in one place and in a fixed order.
@@ -364,7 +228,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   const {
     begin, pick, savePracticeAnswer, submit, saveQuestionDraftRef, navigateQuestion, endSession, next,
     prevQ, writeBookmark, toggleBookmark,
-  } = usePracticeSession(core, { applyStudyStatus, curQ });
+  } = usePracticeSession(core, { applyStudyStatus });
 
   const { checkAiCache, genAi, showAlternateAi } = useAiExplanations(core);
 
@@ -379,7 +243,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock, mockPick, mockPrev,
     mockNext, mockGoto, toggleFlag, askSubmit, cancelSubmit, persistMockDraft, finishingMock,
     autoSubmittedMock, finishMock,
-  } = useMockExam(core, { applyStudyStatus, mockQ, refreshStudyStatuses });
+  } = useMockExam(core, { applyStudyStatus, refreshStudyStatuses });
 
   const {
     practiceWrong, saveQuestionDraft, go, openMore, closeMore, switchExam, setExamId,
@@ -522,11 +386,14 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     updateDisplayName, uploadAvatar, preserveForReauth
   };
 
-  return <PrepDeckCtx.Provider value={store}>{children}</PrepDeckCtx.Provider>;
+  return <StoreProviders store={store}>{children}</StoreProviders>;
 }
 
+/**
+ * The whole store, which renders on every state change. Screens and
+ * components read the slice hooks below instead; this stays for the browser
+ * fixtures, which drive the store through it.
+ */
 export function usePrepDeck(): PrepDeckStore {
-  const ctx = useContext(PrepDeckCtx);
-  if (!ctx) throw new Error("usePrepDeck must be used within a PrepDeckProvider");
-  return ctx;
+  return useStore();
 }
