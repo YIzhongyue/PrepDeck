@@ -1,261 +1,60 @@
-import { WorkspaceRequests, storedExam, storeExam, beforeWorkspaceNavigation } from "../lib/examWorkspace";
-import { catalogQuestionIds, isActive } from "../lib/reviewLists";
-import { needsFocusedPractice } from "../lib/practiceEligibility";
-import { sessionEligible } from "../lib/underReview";
-import { allowAuthoringNavigation } from "../lib/questionAuthoring";
-import { canCheckAnswer, practiceKeyAction } from "../lib/practiceShortcuts";
+import { storedExam, storeExam } from "../lib/examWorkspace";
+import { isActive } from "../lib/reviewLists";
+import { practiceKeyAction } from "../lib/practiceShortcuts";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type {
   ActiveAttemptResponse,
-  AnnotationResponse,
   AnnotationSettingsResponse,
   AnnotationsListResponse,
-  AvatarUploadResponse,
-  CompleteAttemptResponse,
   DailyEmailSettingsResponse,
   LearningProgressResponse,
-  LearningQuestionDetailResponse,
   MarkStyle,
-  NoteResponse,
   NotesListResponse,
   PracticeCatalogResponse,
-  PracticeQuestionContentResponse,
   ProfileResponse,
-  QuestionStudyStatusEntry,
-  SaveDraftAnswerResponse,
-  StartAttemptResponse,
   StudyStatusFilter,
   StudyStatusListResponse,
-  StudyStatusMutationResponse,
-  SubmitPracticeAnswerHttpResponse,
-  UpdateAnnotationSettingsRequest,
   UpdateDailyEmailSettingsRequest,
-  UpdateUserSettingsRequest,
-  UserProfile,
-  UserSettingsResponse
+  UserSettingsResponse,
 } from "@prepdeck/shared";
-import { CURATED_MODELS, DEFAULT_MARK_ALIASES, hasAnswer, MAX_ATTEMPT_QUESTIONS, newerStudyStatus, type MockFormatId } from "@prepdeck/shared";
-import { isQuestionStudied, matchesStudyStatus, mergeStudyStatuses } from "../lib/studyStatus";
-import { defaultMockFormat, mockPlan, officialFormatOf } from "../lib/mockFormat";
-import { apiFetch, ApiError, isSessionLost } from "../lib/api";
-import { stashMockSelections, takeMockSelections } from "../lib/reauth";
-import { parseRoute, type Route, type RouteIntent } from "../lib/routes";
-import { fromSharedAnnotation, toCreateAnnotationRequest } from "../lib/annotations";
+import { type MockFormatId } from "@prepdeck/shared";
+import { mergeStudyStatuses } from "../lib/studyStatus";
+import { defaultMockFormat, officialFormatOf } from "../lib/mockFormat";
+import { apiFetch } from "../lib/api";
+import { type Route } from "../lib/routes";
+import { fromSharedAnnotation } from "../lib/annotations";
 import { fromSharedNote } from "../lib/notes";
-import { fetchCachedExplanations, generateExplanation } from "../lib/ai";
-import {
-  getSessionKey, setSessionKey, clearSessionKey, hasStoredEncryptedKey, saveEncryptedKey,
-  loadEncryptedKey, clearStoredEncryptedKey, deleteLegacyKeystore
-} from "../lib/keyStorage";
-import { clearLegacyKeyMode, getStoredKeyMode, storeKeyMode } from "../lib/keyModeStorage";
-import { DEFAULT_THEME, getStoredTheme, storeTheme } from "../lib/themeStorage";
-import { learningDetailCache, type PrefetchMode } from "../lib/questionPrefetch";
+import { hasStoredEncryptedKey } from "../lib/keyStorage";
+import { getStoredKeyMode } from "../lib/keyModeStorage";
+import { DEFAULT_THEME } from "../lib/themeStorage";
+import { type PrefetchMode } from "../lib/questionPrefetch";
 import type {
-  AiExplanationEntry, AiRecord, Annotation, AnnotationStyle, AnnotationTarget, Difficulty, ExamSummary,
-  GradedAnswer, KeyMode, LearningDetail, Note, Question, ScreenId, ThemeId, TextSelection, WrongEntry
+  AiExplanationEntry,
+  AnnotationStyle,
+  AnnotationTarget,
+  Difficulty,
+  ExamSummary,
+  KeyMode,
+  Question,
+  ScreenId,
+  ThemeId,
 } from "../types";
+import { type PracticeSource, type PracticeFilters, type FeedbackMode, type ListMode, type Provider, defaultMockCount, defaultMockMinutes, type AppState } from "./appState";
+import { ACTIVATABLE_CONTROLS, type LoadOptions, browserTimeZone, saveTimeZone, timeZoneSaved } from "./storeHelpers";
+import { useStoreCore } from "./actions/useStoreCore";
+import { useCatalogQueries } from "./actions/useCatalogQueries";
+import { usePracticeSession } from "./actions/usePracticeSession";
+import { useAiExplanations } from "./actions/useAiExplanations";
+import { useLearningSession } from "./actions/useLearningSession";
+import { useMockExam } from "./actions/useMockExam";
+import { useNavigation } from "./actions/useNavigation";
+import { usePracticeSetup } from "./actions/usePracticeSetup";
+import { useQuestionNotes } from "./actions/useQuestionNotes";
+import { useAccountSettings } from "./actions/useAccountSettings";
+import { useAnnotations } from "./actions/useAnnotations";
 
-export type PracticeStage = "setup" | "live";
-export type MockStage = "setup" | "live" | "results";
-export type PracticeSource = "all" | "new" | "wrong" | "bm" | "focus";
-
-// Keyboard targets whose Enter key activates the control itself.
-const ACTIVATABLE_CONTROLS = "button, a[href], summary, [role=button], [role=link], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=menuitem], [role=option]";
-
-// implementation — an explicit, complete practice filter set. Every field the
-// Practice setup screen reads is named here, so opening Practice from
-// somewhere else (the Statistics screen's "Practice weak tags" and per-tag
-// actions) states the whole intent instead of toggling one field and
-// inheriting whatever the previous session left in the other three.
-export interface PracticeFilters {
-  source: PracticeSource;
-  tags: string[];
-  diff: Difficulty | "all";
-  study: StudyStatusFilter;
-  count: number;
-}
-export type FeedbackMode = "immediate" | "end";
-export type ListMode = "wrong" | "bm";
-export type Provider = "anthropic" | "openai";
+export type { AppState, FeedbackMode, ListMode, MockStage, PracticeFilters, PracticeSource, PracticeStage, Provider } from "./appState";
 export type { KeyMode };
-
-// A sensible per-exam mock default (FR-4.1): roughly the AWS professional-exam
-// question density, capped to however many questions the bank actually has.
-function defaultMockCount(total: number): number {
-  return Math.max(1, Math.min(65, total));
-}
-function defaultMockMinutes(count: number): number {
-  return Math.max(30, Math.round(count * 1.8));
-}
-
-export interface AppState {
-  screen: ScreenId;
-  more: boolean;
-
-  me: UserProfile | null;
-
-  exams: ExamSummary[];
-  examId: string | null;
-  catalog: Question[];
-  catalogBy: Record<string, Question>;
-  catalogRevision: number;
-  questionContent: Record<string, { status: "loading" | "error"; error?: string }>;
-  workspaceStatus: "loading" | "ready" | "error" | "empty";
-  workspaceError: string | null;
-  workspaceNotice: string | null;
-  actionError: string | null;
-  switching: boolean;
-  workspaceGeneration: number;
-  activityRevision: number;
-
-  pStage: PracticeStage;
-  source: PracticeSource;
-  diff: Difficulty | "all";
-  count: number;
-  feedback: FeedbackMode;
-  tags: string[];
-  // Issue #94: leave questions still under review out of the session. Each
-  // setup screen keeps its own choice, like its other filters (lib/underReview.ts).
-  skipReview: boolean;
-  // Issue #119: Any status / Unstudied only / Studied only.
-  studyFilter: StudyStatusFilter;
-  queue: string[];
-  idx: number;
-  sel: Record<string, string[]>;
-  done: Record<string, "ok" | "no">;
-  graded: Record<string, GradedAnswer>;
-  attemptId: string | null;
-
-  // docs/requirements/practice-and-learning-modes.md — Learning Mode: a sequential read-through, not an attempt
-  // (FR-14.7 — no attemptId here, unlike Practice/Mock). lQueue holds this
-  // session's filtered, sequence-ordered question ids; lStartInput is the
-  // "start from question #N" value on the Setup screen; lResume is the
-  // server-remembered position (FR-14.9), independent of any filter.
-  lStage: PracticeStage;
-  lTags: string[];
-  lDiff: Difficulty | "all";
-  lSkipReview: boolean;
-  lStudyFilter: StudyStatusFilter;
-  lStartInput: number;
-  lQueue: string[];
-  lIdx: number;
-  // Issue #119: counts Learning's moves to a question (start, Next, Back, a
-  // jump). Each visit marks its question studied at most once, so neither a
-  // rerender nor a refreshed detail undoes a reset made while it is shown.
-  lVisit: number;
-  lResume: number | null;
-  lDetail: Record<string, LearningDetail>;
-
-  // implementation — cross-screen navigation intent: "jump to this question in
-  // Learning Mode for pure review" (from a Knowledge Point's linked-questions
-  // card). Consumed and cleared by the effect that handles it.
-  pendingQuestionJump: { examId: string; questionId: string } | null;
-  // issue #41: a Learning position asked for by the URL (a link, a reload,
-  // Back/Forward), resolved once the exam's catalog is ready.
-  pendingLearningSequence: number | null;
-  // The Knowledge Point open in the editor (/knowledge-points/:id); null for
-  // the list. Knowledge Points belong to the account, so an exam switch
-  // leaves it alone.
-  kpNoteId: string | null;
-  // Daily review email deep link (/learning/exam?exam=<slug>&question_id=<id>)
-  // — the exam is only known by slug at that point, so this is resolved to
-  // an examId (once state.exams has loaded) into pendingQuestionJump above.
-  pendingSlugQuestionJump: { examSlug: string; questionId: string } | null;
-
-  mStage: MockStage;
-  mQueue: string[];
-  mIdx: number;
-  mSel: Record<string, string[]>;
-  mFlag: Record<string, boolean>;
-  mLeft: number;
-  mockDeadline: number | null;
-  mConfirm: boolean;
-  mockAttemptId: string | null;
-  /** Selected Mock setup format; mockCount/mockMinutes hold the custom values. */
-  mockFormat: MockFormatId;
-  mockCount: number;
-  mockMinutes: number;
-  mockSkipReview: boolean;
-  mockResult: CompleteAttemptResponse | null;
-  activeMockAttempt: ActiveAttemptResponse | null;
-
-  listMode: ListMode;
-  bookmarks: Record<string, boolean>;
-  wrong: Record<string, WrongEntry>;
-  attempted: Record<string, boolean>;
-  mastered: Record<string, boolean>;
-  // Issue #119: this exam's recorded studied statuses, by question id. A
-  // question with no entry is unstudied. Distinct from `attempted`: a question
-  // seen only in Learning is studied but unattempted.
-  studyStatus: Record<string, QuestionStudyStatusEntry>;
-  // The statuses could not be loaded. The exam stays usable; the setup screens
-  // say their study-status counts may be incomplete.
-  studyStatusError: boolean;
-  ai: Record<string, AiRecord>;
-  anns: Annotation[];
-  markAliases: Record<MarkStyle, string>;
-  notes: Note[];
-  noteDraft: string;
-  noteDraftQuestionId: string | null;
-  noteVis: "private" | "shared";
-  showShared: boolean;
-  // issue #47: the account's IANA time zone, which statistics count days in
-  // and the daily email is sent in. Null until loaded or chosen.
-  timeZone: string | null;
-  // implementation — null until the load-once GET below resolves (server-default
-  // shape, never persisted, so no offline placeholder is meaningful yet).
-  emailSettings: DailyEmailSettingsResponse | null;
-
-  provider: Provider;
-  model: string;
-  keyMode: KeyMode;
-  hasSessionKey: boolean;
-  hasStoredKey: boolean;
-  theme: ThemeId | null;
-
-  tsel: TextSelection | null;
-}
-
-const initialState: AppState = {
-  screen: "dash", more: false,
-
-  me: null,
-
-  exams: [], examId: null, catalog: [], catalogBy: {}, catalogRevision: 0, questionContent: {},
-  workspaceStatus: "loading", workspaceError: null, workspaceNotice: null,
-  actionError: null, switching: false, workspaceGeneration: 0, activityRevision: 0,
-
-  pStage: "setup", source: "all", diff: "all", count: 10, feedback: "immediate",
-  tags: [], skipReview: false, studyFilter: "all", queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
-
-  lStage: "setup", lTags: [], lDiff: "all", lSkipReview: false, lStudyFilter: "all", lStartInput: 1, lQueue: [], lIdx: 0, lVisit: 0, lResume: null, lDetail: {},
-  pendingQuestionJump: null, pendingLearningSequence: null, kpNoteId: null, pendingSlugQuestionJump: null,
-
-  mStage: "setup", mQueue: [], mIdx: 0, mSel: {}, mFlag: {}, mLeft: 0, mockDeadline: null, mConfirm: false,
-  mockAttemptId: null, mockFormat: "custom", mockCount: 10, mockMinutes: 30, mockSkipReview: false, mockResult: null, activeMockAttempt: null,
-
-  listMode: "wrong",
-  bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, studyStatus: {}, studyStatusError: false, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
-  noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, timeZone: null, emailSettings: null,
-  provider: "anthropic", model: CURATED_MODELS.anthropic[0]!.id,
-  // Both are per account (issue #46), so they are read once the account is known.
-  keyMode: "memory", hasSessionKey: false, hasStoredKey: false,
-  theme: getStoredTheme() ?? DEFAULT_THEME,
-  tsel: null
-};
-
-type Patch = Partial<AppState> | ((s: AppState) => Partial<AppState>);
-
-// A prefetch (issue #106) is speculative: it leaves a question that already
-// failed alone, and its own failure clears the entry rather than recording an
-// error, so opening that question later makes an ordinary request.
-interface LoadOptions { prefetch?: boolean }
-
-function without<T>(entries: Record<string, T>, id: string): Record<string, T> {
-  if (!(id in entries)) return entries;
-  const rest = { ...entries }; delete rest[id];
-  return rest;
-}
 
 interface PrepDeckStore {
   state: AppState;
@@ -386,140 +185,20 @@ interface PrepDeckStore {
 
 const PrepDeckCtx = createContext<PrepDeckStore | null>(null);
 
-function base(node: Node | null): number | null {
-  let el = node && node.nodeType === 3 ? (node.parentElement as HTMLElement | null) : (node as HTMLElement | null);
-  while (el && el.dataset.off === undefined) el = el.parentElement;
-  return el ? parseInt(el.dataset.off || "0", 10) : null;
-}
-
-// A navigation clears the error of the screen it leaves (issue #52), not one
-// raised while it was waiting on saves: an expired draft reports "Time is up"
-// exactly then, and wiping it left the exam submitted unexplained (issue #83).
-function errorLeftBehind(before: string | null) {
-  return (s: AppState) => s.actionError === before ? null : s.actionError;
-}
-
-// The Worker refuses draft writes once a mock is past its deadline (FR-4.3) and
-// marks that refusal `expired`, which is the one 409 the client must not treat
-// as retryable: telling the user "it will be retried before submitting" would
-// promise a retry that can only fail again.
-function isExpiredAttempt(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409 && (error.body as { expired?: boolean } | null)?.expired === true;
-}
-
-// The attempt was submitted from another tab or device. Local drafts can never
-// be saved to it again, so replaying them would block this tab's submission
-// forever; POST /complete instead returns the result it was graded with.
-function isCompletedElsewhere(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409 && (error.body as { completed?: boolean } | null)?.completed === true;
-}
-
-// Neither refusal can succeed on a retry.
-function isClosedAttempt(error: unknown): boolean {
-  return isExpiredAttempt(error) || isCompletedElsewhere(error);
-}
-
-// The server refused the draft itself: not a possible answer to the question
-// (for example an option removed since this tab loaded it), or a question no
-// longer in the bank. A retry sends the same body and fails the same way, so it
-// must not block submission; the server keeps the last draft it accepted.
-function isRejectedDraft(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 400 || error.status === 404);
-}
-
-function remainingSeconds(active: ActiveAttemptResponse): number {
-  if (active.timeLimitSeconds == null) return 0;
-  const elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
-  return Math.max(0, active.timeLimitSeconds - elapsed);
-}
-
-// issue #41: the screen a URL asks for is the first one shown. Its exam is
-// chosen when the exam list arrives (below), and a Learning position once that
-// exam's catalog has loaded.
-function initialRouteIntent(): RouteIntent | null {
-  return typeof window === "undefined" ? null : parseRoute(window.location.pathname, window.location.search);
-}
-
-function stateForInitialRoute(route: RouteIntent | null): AppState {
-  if (!route) return initialState;
-  return {
-    ...initialState,
-    screen: route.screen,
-    listMode: route.screen === "bookmarks" ? "bm" : route.screen === "wrong" ? "wrong" : initialState.listMode,
-    source: route.source ?? initialState.source,
-    kpNoteId: route.knowledgePointId,
-    pendingLearningSequence: route.learningSequence,
-    pendingSlugQuestionJump: route.examSlug && route.questionId ? { examSlug: route.examSlug, questionId: route.questionId } : null,
-  };
-}
-
-function browserTimeZone(): string | null {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
-  } catch {
-    return null;
-  }
-}
-
-async function saveTimeZone(timeZone: string): Promise<string | null> {
-  const body: UpdateUserSettingsRequest = { timezone: timeZone };
-  const { timezone } = await apiFetch<UserSettingsResponse>("/api/settings", { method: "PATCH", body: JSON.stringify(body) });
-  return timezone;
-}
-
-/** The state change for a saved zone: the email shares it, and statistics refetch. */
-function timeZoneSaved(timeZone: string | null) {
-  return (s: AppState): Partial<AppState> => ({
-    timeZone,
-    emailSettings: s.emailSettings && timeZone ? { ...s.emailSettings, timezone: timeZone } : s.emailSettings,
-    activityRevision: s.activityRevision + 1,
-  });
-}
-
+// The provider composes the action hooks in store/actions/ and keeps every
+// effect here, in one place and in a fixed order.
 export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
-  const initialRoute = useRef<RouteIntent | null | undefined>(undefined);
-  if (initialRoute.current === undefined) initialRoute.current = initialRouteIntent();
-  const [state, setStateRaw] = useState<AppState>(() => stateForInitialRoute(initialRoute.current ?? null));
-  const [{ width, height }, setViewport] = useState(() => ({
-    width: typeof window !== "undefined" ? window.innerWidth : 1280,
-    height: typeof window !== "undefined" ? window.innerHeight : 800
-  }));
-  const stateRef = useRef(state);
-  const requests = useRef(new WorkspaceRequests()).current;
-  const dirtyAnnotations = useRef(new Map<string, string>());
-  const dirtyMock = useRef(new Map<string, () => Promise<unknown>>());
-  // Issue #119: the Learning visit whose question has been marked (or
-  // deliberately left alone), and whether the user chose a status during it.
-  const learningVisit = useRef<{ visit: number; qid: string; manual: boolean } | null>(null);
-  // Manual status writes still in flight, per question. Until the last one
-  // settles its optimistic value stands: an older automatic mark or a refresh
-  // arriving meanwhile would otherwise flash the status it is replacing.
-  const pendingStudy = useRef(new Map<string, number>());
-
-  const setState = useCallback((patch: Patch) => {
-    const changes = typeof patch === "function" ? patch(stateRef.current) : patch;
-    // While the session is gone every write fails, and each action's own
-    // "please retry" message would be wrong: only signing in again helps, which
-    // the session-expired dialog says (issue #52).
-    if (changes.actionError && isSessionLost()) delete changes.actionError;
-    const next = { ...stateRef.current, ...changes };
-    stateRef.current = next;
-    setStateRaw(next);
-  }, []);
-
-  // Capture before starting work, and check again when React state is applied.
-  const scopedState = useCallback((lane?: string) => {
-    const current = requests.capture(lane);
-    return (patch: Patch) => { if (current()) setState(patch); };
-  }, [requests, setState]);
+  const core = useStoreCore();
+  const {
+    initialRoute, state, width, height, setViewport, stateRef, requests, pendingStudy, setState, scopedState,
+    dismissActionError,
+  } = core;
   useEffect(() => () => requests.invalidate(), [requests]);
-  const dismissActionError = useCallback(() => setState({ actionError: null }), [setState]);
-
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [setViewport]);
 
   const [bankRevision, setBankRevision] = useState(0);
   useEffect(() => {
@@ -572,7 +251,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         }
       });
     return () => { cancelled = true; };
-  }, [setState, requests, bankRevision, examListRevision]);
+  }, [setState, requests, bankRevision, examListRevision, stateRef, initialRoute]);
 
   // implementation: this user's display aliases for the 3 mark types, loaded
   // once. initialState already holds sensible defaults, so a slow/failed
@@ -630,7 +309,6 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       .then((r) => setState({ emailSettings: r }))
       .catch(() => {});
   }, [setState]);
-
   useEffect(() => {
     const examId = state.examId;
     if (!examId) return;
@@ -678,854 +356,36 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         : { workspaceStatus: "error", workspaceError: "Could not load this exam. Please retry." });
     });
     return () => { cancelled = true; };
-  }, [state.examId, state.workspaceGeneration, scopedState, setState, bankRevision]);
+  }, [state.examId, state.workspaceGeneration, scopedState, setState, bankRevision, pendingStudy]);
   const retryWorkspace = useCallback(() => setBankRevision(n => n + 1), []);
 
-  // Issue #119: keeps the newer of the local and the server's entry. `update`
-  // is the caller's scoped setter, so a reply for a previous exam is dropped.
-  const applyStudyStatus = useCallback((update: (patch: Patch) => void, entry: QuestionStudyStatusEntry, manual = false) => update(s => {
-    if (!manual && pendingStudy.current.has(entry.questionId)) return {};
-    const current = s.studyStatus[entry.questionId];
-    const next = newerStudyStatus(current, entry);
-    return next === current ? {} : { studyStatus: { ...s.studyStatus, [entry.questionId]: next } };
-  }), []);
-  const refreshStudyStatuses = useCallback(() => {
-    const examId = stateRef.current.examId;
-    if (!examId) return;
-    const update = scopedState();
-    apiFetch<StudyStatusListResponse>(`/api/exams/${encodeURIComponent(examId)}/study-status`)
-      .then(({ statuses }) => { if (Array.isArray(statuses)) update(s => ({ studyStatus: mergeStudyStatuses(s.studyStatus, statuses, pendingStudy.current), studyStatusError: false })); })
-      // Only the setup screens' counts lag; the next exam load corrects them.
-      .catch(() => {});
-  }, [scopedState]);
+  const { applyStudyStatus, refreshStudyStatuses, pool, curQ, mockQ, loadQuestionContent } = useCatalogQueries(core);
 
-  const pool = useCallback((options?: { study?: StudyStatusFilter }): Question[] => {
-    const s = stateRef.current;
-    const study = options?.study ?? s.studyFilter;
-    return s.catalog.filter((q) => {
-      if (s.source === "wrong" && (!s.wrong[q.id] || s.mastered[q.id])) return false;
-      if (s.source === "bm" && !s.bookmarks[q.id]) return false;
-      if (s.source === "new" && s.attempted[q.id]) return false;
-      if (s.source === "focus" && !needsFocusedPractice(q.id, s)) return false;
-      if (s.diff !== "all" && q.diff !== s.diff) return false;
-      if (s.tags.length && !q.tags.some((t) => s.tags.indexOf(t) >= 0)) return false;
-      if (s.skipReview && q.needsReview) return false;
-      if (!matchesStudyStatus(study, s.studyStatus, q.id)) return false;
-      return true;
-    });
-  }, []);
+  const {
+    begin, pick, savePracticeAnswer, submit, saveQuestionDraftRef, navigateQuestion, endSession, next,
+    prevQ, writeBookmark, toggleBookmark,
+  } = usePracticeSession(core, { applyStudyStatus, curQ });
 
-  const curQ = useCallback((): Question | undefined => {
-    const id = state.queue[state.idx];
-    return id ? state.catalogBy[id] : undefined;
-  }, [state.queue, state.idx, state.catalogBy]);
-  const mockQ = useCallback((): Question | undefined => {
-    const id = state.mQueue[state.mIdx];
-    return id ? state.catalogBy[id] : undefined;
-  }, [state.mQueue, state.mIdx, state.catalogBy]);
+  const { checkAiCache, genAi, showAlternateAi } = useAiExplanations(core);
 
-  const loadQuestionContent = useCallback((qid: string, { prefetch = false }: LoadOptions = {}) => {
-    const { examId, catalogBy, catalogRevision, questionContent } = stateRef.current;
-    const requested = catalogBy[qid];
-    const existing = questionContent[qid]?.status;
-    if (!examId || !requested?.hasContent || requested.content || existing === "loading" || (prefetch && existing === "error")) return;
-    const update = scopedState(`questionContent:${qid}`);
-    update(s => ({ questionContent: { ...s.questionContent, [qid]: { status: "loading" } } }));
-    apiFetch<PracticeQuestionContentResponse>(`/api/exams/${encodeURIComponent(examId)}/practice-catalog/${encodeURIComponent(qid)}`, { cache: "no-store" })
-      .then(({ content, revision }) => {
-        if (!content || (requested.revision !== undefined && requested.revision !== revision)) {
-          throw new Error("This question changed. Refresh the exam and try again.");
-        }
-        update(s => {
-          // Ignore snapshots requested before a same-exam catalog refresh,
-          // while allowing Learning and Practice to hydrate the same row.
-          if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
-          const question = { ...requested, content };
-          const pending = { ...s.questionContent }; delete pending[qid];
-          return { catalog: s.catalog.map(q => q.id === qid ? question : q),
-            catalogBy: { ...s.catalogBy, [qid]: question }, questionContent: pending };
-        });
-      }).catch(error => update(s => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : prefetch
-        ? { questionContent: without(s.questionContent, qid) }
-        : { questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : "Could not load this question. Please retry." } } }));
-  }, [scopedState]);
+  const {
+    learningPool, learningQ, setLearningStartInput, setLearningDiff, setLearningSkipReview,
+    setLearningStudyFilter, toggleLearningTag, clearLearningTags, loadLearningDetail, prefetchQuestions,
+    beginLearning, learningNext, learningPrev, learningGotoSequence, markLearningViewed,
+    setQuestionStudied,
+  } = useLearningSession(core, { applyStudyStatus, checkAiCache, loadQuestionContent, navigateQuestion });
 
-  // Shared by "start a filtered practice session," "practice this list of
-  // wrong/bookmarked questions," and "review a single question" — all create
-  // a real attempt server-side so submit() has something to grade against.
-  const begin = useCallback((requestedIds: string[]) => {
-    const ids = catalogQuestionIds(requestedIds, stateRef.current.catalogBy);
-    if (!ids.length || !stateRef.current.examId || stateRef.current.workspaceStatus !== "ready" || stateRef.current.switching) return;
-    if (requests.has("start") || !stateRef.current.exams.some(e => e.id === stateRef.current.examId)) return;
-    const update = scopedState("start");
-    const examId = stateRef.current.examId;
-    requests.write("start", () => apiFetch<StartAttemptResponse>(`/api/exams/${examId}/attempts`, {
-      method: "POST",
-      body: JSON.stringify({ mode: "practice", questionIds: ids })
-    })).then(({ attemptId }) => {
-      update({ screen: "practice", pStage: "live", queue: ids, idx: 0, sel: {}, done: {}, graded: {}, attemptId });
-    }).catch(() => update({ actionError: "Could not start practice. Please try again." }));
-  }, [scopedState, requests]);
+  const {
+    setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock, mockPick, mockPrev,
+    mockNext, mockGoto, toggleFlag, askSubmit, cancelSubmit, persistMockDraft, finishingMock,
+    autoSubmittedMock, finishMock,
+  } = useMockExam(core, { applyStudyStatus, mockQ, refreshStudyStatuses });
 
-  const pick = useCallback((q: Question, oid: string | string[]) => {
-    const current = stateRef.current.catalogBy[q.id];
-    if (!current || (current.hasContent && !current.content) || stateRef.current.done[q.id] || stateRef.current.switching) return;
-    setState((s) => {
-      const cur = (s.sel[q.id] || []).slice();
-      let nx: string[];
-      if (Array.isArray(oid)) nx = oid;
-      else if (q.type === "multiple_choice") {
-        const i = cur.indexOf(oid);
-        if (i >= 0) cur.splice(i, 1);
-        else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
-        nx = cur;
-      } else nx = [oid];
-      return { sel: { ...s.sel, [q.id]: nx } };
-    });
-  }, [setState]);
-
-  const savePracticeAnswer = useCallback(async (qid: string, attemptId: string, chosen: string[]) => {
-    const update = scopedState();
-    const q = stateRef.current.catalogBy[qid];
-    if (!q || !hasAnswer(q.type, chosen)) return;
-    const { isCorrect, correctAnswers, explanation, answerRevision, answerRevisedAt, studyStatus } = await requests.write(`answer:${attemptId}:${qid}`, () =>
-      apiFetch<SubmitPracticeAnswerHttpResponse>(`/api/attempts/${attemptId}/answers`, {
-        method: "POST", body: JSON.stringify({ questionId: qid, selectedAnswer: chosen })
-      }));
-      // Issue #119: the server marked the answered question studied.
-      if (studyStatus) applyStudyStatus(update, studyStatus);
-      update((s) => {
-        if (s.attemptId !== attemptId) return {};
-        const wrong = { ...s.wrong };
-        // Mirrors the server's wrong-book rule exactly (routes/attempts.ts), so
-        // this optimistic entry survives the next catalog load unchanged.
-        const answeredWrong = !isCorrect && hasAnswer(q.type, chosen);
-        if (answeredWrong) {
-          const prev = wrong[q.id];
-          wrong[q.id] = { c: (prev ? prev.c : 0) + 1, at: new Date().toISOString() };
-        }
-        return {
-          // This answer joins the question's Learning history.
-          lDetail: without(s.lDetail, q.id),
-          done: { ...s.done, [q.id]: isCorrect ? "ok" : "no" },
-          graded: { ...s.graded, [q.id]: { isCorrect, correctAnswers, explanation, answerRevision, answerRevisedAt } },
-          wrong,
-          mastered: answeredWrong ? { ...s.mastered, [q.id]: false } : s.mastered,
-          attempted: { ...s.attempted, [q.id]: true }
-        };
-      });
-  }, [requests, scopedState, applyStudyStatus]);
-  const submit = useCallback(() => {
-    const s = stateRef.current;
-    const qid = s.queue[s.idx];
-    if (!qid || !s.attemptId || s.switching || s.done[qid] || requests.has(`answer:${s.attemptId}:${qid}`)) return;
-    // The Check answer button's own rule, so no caller (the Enter shortcut
-    // included) can lock in a partial answer as wrong.
-    const question = s.catalogBy[qid];
-    if (!question || !canCheckAnswer(question, s.sel[qid] ?? [])) return;
-    const update = scopedState();
-    void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
-      .catch((error) => update({ actionError: error instanceof ApiError && error.status === 409
-        // Closed as idle when a newer session started (issue #40): retrying cannot help.
-        ? "This practice session has ended, so this answer was not saved. Your earlier answers are kept; start a new session to continue."
-        : "Could not save your answer. Please submit it again." }));
-  }, [requests, scopedState, savePracticeAnswer]);
-
-  const completeAttempt = useCallback(async (attemptId: string | null) => {
-    if (!attemptId) return;
-    await requests.drain();
-    await apiFetch(`/api/attempts/${attemptId}/complete`, { method: "POST" });
-  }, [requests]);
-  const saveQuestionDraftRef = useRef<() => Promise<void>>(async () => {});
-  const movingQuestion = useRef(false);
-  const navigateQuestion = useCallback((move: () => void | Promise<void>) => {
-    if (stateRef.current.switching || movingQuestion.current) return;
-    movingQuestion.current = true;
-    void beforeWorkspaceNavigation().then(() => saveQuestionDraftRef.current()).then(move)
-      .catch(() => setState({ actionError: "Could not save your question note. Your draft is retained; retry before changing questions." }))
-      .finally(() => { movingQuestion.current = false; });
-  }, [setState]);
-  const endSession = useCallback(() => {
-    if (stateRef.current.switching) return;
-    const update = scopedState();
-    const attemptId = stateRef.current.attemptId;
-    navigateQuestion(() => completeAttempt(attemptId).then(() => update(s => s.attemptId !== attemptId ? {} : {
-      pStage: "setup", attemptId: null, activityRevision: s.activityRevision + 1
-    })).catch(() => update({ actionError: "Could not finish this practice. Please retry; your session is retained." })));
-  }, [scopedState, completeAttempt, navigateQuestion]);
-  const next = useCallback(() => {
-    const s = stateRef.current;
-    if (s.switching) return;
-    if (s.idx + 1 >= s.queue.length) endSession();
-    else navigateQuestion(() => setState({ idx: s.idx + 1, tsel: null }));
-  }, [setState, endSession, navigateQuestion]);
-  const prevQ = useCallback(() => {
-    navigateQuestion(() => setState((s) => ({ idx: Math.max(0, s.idx - 1), tsel: null })));
-  }, [setState, navigateQuestion]);
-
-  const writeBookmark = useCallback((id: string, next: boolean) => {
-    const s = stateRef.current;
-    if (s.switching || !s.catalogBy[id] || requests.has(`bookmark:${s.me?.id}:${id}`)) return;
-    const update = scopedState(`bookmark:${id}`);
-    const previous = !!s.bookmarks[id];
-    setState(current => ({ bookmarks: { ...current.bookmarks, [id]: next } }));
-    void requests.write(`bookmark:${s.me?.id}:${id}`, () => apiFetch(`/api/questions/${id}/bookmark`, { method: next ? "PUT" : "DELETE" }))
-      .catch(() => update(current => ({ bookmarks: { ...current.bookmarks, [id]: previous }, actionError: "Could not save bookmark changes. Please retry." })));
-  }, [requests, scopedState, setState]);
-
-  // No id -> bookmark the question currently being answered in live practice
-  // (PracticeLive's toolbar button). An explicit id lets other review
-  // surfaces — mock results, wrong/bookmarks lists — bookmark any question
-  // (FR-6.1: "during practice, mock review, or browsing").
-  const toggleBookmark = useCallback((questionId?: string) => {
-    const id = questionId ?? curQ()?.id;
-    if (id) writeBookmark(id, !stateRef.current.bookmarks[id]);
-  }, [curQ, writeBookmark]);
-
-  // FR-7.2/FR-7.3: check the shared cache (any provider/model) before ever
-  // asking for a key. Called once per question as its review panel opens.
-  const checkAiCache = useCallback((q: Question) => {
-    const setState = scopedState("checkAiCache" + q.id);
-    setState((s) => ({ ai: { ...s.ai, [q.id]: { status: "checking" } } }));
-    fetchCachedExplanations(q.id).then((explanations) => {
-      const { provider, model } = stateRef.current;
-      const exact = explanations.find((e) => e.provider === provider && e.model === model);
-      const alternates = explanations.filter((e) => e !== exact);
-      if (exact) {
-        setState((s) => ({
-          ai: {
-            ...s.ai,
-            [q.id]: {
-              status: "ready", cached: true, content: exact.content, provider: exact.provider,
-              model: exact.model, canManage: exact.canManage, alternates
-            }
-          }
-        }));
-      } else {
-        setState((s) => ({ ai: { ...s.ai, [q.id]: { status: "idle", alternates } } }));
-      }
-    }).catch(() => {
-      setState((s) => ({ ai: { ...s.ai, [q.id]: { status: "idle" } } }));
-    });
-  }, [scopedState]);
-
-  // FR-7.4: on a cache miss, relay to the user's own provider/model via the
-  // Worker's fixed AI-proxy endpoint, sending the key for this one request
-  // only (never persisted — see lib/keyStorage.ts). FR-7.7: `force` bypasses
-  // the cache to regenerate (Admin or the original requester only; the
-  // Worker re-checks this server-side regardless of what the client sends).
-  const genAi = useCallback((q: Question, force?: boolean) => {
-    const setState = scopedState("genAi" + q.id);
-    const { provider, model } = stateRef.current;
-    const apiKey = getSessionKey();
-    if (!apiKey) {
-      setState((s) => ({
-        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: "Enter your API key in Settings first." } }
-      }));
-      return;
-    }
-    setState((s) => ({ ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "generating", error: undefined } } }));
-    generateExplanation(q.id, provider, model, apiKey, force).then(({ explanation, cached }) => {
-      setState((s) => ({
-        ai: {
-          ...s.ai,
-          [q.id]: {
-            status: "ready", cached, content: explanation.content, provider: explanation.provider,
-            model: explanation.model, canManage: explanation.canManage, alternates: s.ai[q.id]?.alternates
-          }
-        }
-      }));
-    }).catch((err) => {
-      setState((s) => ({
-        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: err instanceof ApiError ? err.message : "Could not generate an explanation." } }
-      }));
-    });
-  }, [scopedState]);
-
-  // FR-7.3: show an already-cached explanation from a different provider/
-  // model, clearly labeled, instead of generating a fresh one.
-  const showAlternateAi = useCallback((q: Question, alt: AiExplanationEntry) => {
-    setState((s) => ({
-      ai: {
-        ...s.ai,
-        [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "ready", cached: true, content: alt.content, provider: alt.provider, model: alt.model, canManage: alt.canManage }
-      }
-    }));
-  }, [setState]);
-
-  // docs/requirements/practice-and-learning-modes.md — Learning Mode. FR-14.2: same tag/difficulty filters as
-  // Practice, kept in their own lTags/lDiff (not shared with state.tags/diff)
-  // so switching between Practice and Learning doesn't cross-contaminate
-  // filter choices. Sorted by sequenceNumber (FR-14.1) — when a filter is
-  // active, this sorted-and-filtered array's own order *is* the "sequence
-  // order" per FR-14.2, while each question's real sequenceNumber (stable
-  // across filter changes) is still what "start from #N" and resume (FR-14.9)
-  // are keyed on.
-  const learningPool = useCallback((options?: { study?: StudyStatusFilter }): Question[] => {
-    const s = stateRef.current;
-    const study = options?.study ?? s.lStudyFilter;
-    return s.catalog
-      .filter((q) => {
-        if (s.lDiff !== "all" && q.diff !== s.lDiff) return false;
-        if (s.lTags.length && !q.tags.some((t) => s.lTags.indexOf(t) >= 0)) return false;
-        if (s.lSkipReview && q.needsReview) return false;
-        if (!matchesStudyStatus(study, s.studyStatus, q.id)) return false;
-        return true;
-      })
-      .slice()
-      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-  }, []);
-
-  const learningQ = useCallback((): Question | undefined => {
-    const id = state.lQueue[state.lIdx];
-    return id ? state.catalogBy[id] : undefined;
-  }, [state.lQueue, state.lIdx, state.catalogBy]);
-
-  const setLearningStartInput = useCallback((n: number) => setState({ lStartInput: n }), [setState]);
-  const setLearningDiff = useCallback((id: Difficulty | "all") => setState({ lDiff: id }), [setState]);
-  const setLearningSkipReview = useCallback((skip: boolean) => setState({ lSkipReview: skip }), [setState]);
-  const setLearningStudyFilter = useCallback((filter: StudyStatusFilter) => setState({ lStudyFilter: filter }), [setState]);
-  const toggleLearningTag = useCallback((tag: string) => {
-    setState((s) => {
-      const a = s.lTags.slice();
-      const i = a.indexOf(tag);
-      if (i >= 0) a.splice(i, 1); else a.push(tag);
-      return { lTags: a };
-    });
-  }, [setState]);
-  const clearLearningTags = useCallback(() => setState({ lTags: [] }), [setState]);
-
-  // FR-14.3/FR-14.4: fetches the answer-key'd question plus this user's own
-  // answer history — unlike Practice's graded state, this is loaded as soon
-  // as a question is viewed, with no reveal step. A detail already loaded for
-  // this question revision and answer history is shown again as it is, so a
-  // prefetched one is not requested a second time (issue #106); once it is
-  // older than LEARNING_DETAIL_TTL_MS it is still shown, and refreshed behind it.
-  const loadLearningDetail = useCallback((qid: string, { prefetch = false }: LoadOptions = {}) => {
-    const { catalogBy, catalogRevision, activityRevision, lDetail } = stateRef.current;
-    const requested = catalogBy[qid];
-    if (!requested) return;
-    const existing = lDetail[qid];
-    const cache = learningDetailCache(existing, requested, activityRevision, Date.now());
-    if (existing?.status === "loading" || (prefetch && existing?.status === "error") || cache === "fresh"
-      || (cache === "stale" && existing?.refreshing)) return;
-    const refresh = cache === "stale";
-    const setState = scopedState("loadLearningDetail" + qid);
-    setState((s) => ({ lDetail: { ...s.lDetail, [qid]: refresh ? { ...s.lDetail[qid]!, refreshing: true } : { status: "loading" } } }));
-    apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`, { cache: "no-store" }).then(({ question, history }) => {
-      if (requested.revision !== undefined && requested.revision !== question.revision) {
-        throw new Error("This question changed. Refresh the exam and try again.");
-      }
-      if (requested.hasContent && !question.content) throw new Error("Could not load this question. Please retry.");
-      setState((s) => {
-        if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
-        const hydrated = { ...s.catalogBy[qid], content: question.content ?? s.catalogBy[qid].content };
-        return {
-          catalog: s.catalog.map(q => q.id === qid ? hydrated : q),
-          catalogBy: { ...s.catalogBy, [qid]: hydrated },
-          lDetail: {
-            ...s.lDetail,
-            [qid]: { status: "ready", correctAnswers: question.correctAnswers, explanation: question.explanation, history, answerRevision: question.answerRevision, answerRevisedAt: question.answerRevisedAt,
-              questionRevision: requested.revision, activityRevision, loadedAt: Date.now() }
-          }
-        };
-      });
-    }).catch((err) => {
-      setState((s) => {
-        if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
-        // A failed refresh keeps showing the detail it was refreshing.
-        if (refresh) {
-          const current = s.lDetail[qid];
-          return current?.status === "ready" ? { lDetail: { ...s.lDetail, [qid]: { ...current, refreshing: false } } } : {};
-        }
-        return prefetch ? { lDetail: without(s.lDetail, qid) } : {
-          lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
-        };
-      });
-    });
-  }, [scopedState]);
-
-  // Issue #106: Practice and Mock prefetch only the answer-key-free component
-  // snapshot (loadQuestionContent); only Learning, which shows the answer
-  // anyway, prefetches learning-detail.
-  const prefetchQuestions = useCallback((mode: PrefetchMode, questionIds: readonly string[], { after }: { after?: string } = {}) => {
-    const s = stateRef.current;
-    if (after && (mode === "learning" ? s.lDetail[after] : s.questionContent[after])?.status === "loading") return;
-    for (const qid of questionIds) {
-      if (mode === "learning") loadLearningDetail(qid, { prefetch: true });
-      else loadQuestionContent(qid, { prefetch: true });
-    }
-  }, [loadLearningDetail, loadQuestionContent]);
-
-  // FR-14.9: updates lResume immediately (not just on the server) so leaving
-  // Learning Mode mid-session and coming back — without a full page reload —
-  // still offers "resume from #N" right away, instead of only reflecting
-  // whatever was last fetched when this exam was selected. The PUT itself is
-  // fire-and-forget: losing one write to a race/offline blip just means
-  // resume lands a question or two off on the *next* app load, not worth
-  // blocking navigation for.
-  const saveLearningProgress = useCallback((sequenceNumber: number) => {
-    const examId = stateRef.current.examId;
-    if (!examId) return;
-    setState({ lResume: sequenceNumber });
-    const update = scopedState();
-    requests.write(`learning:${examId}`, () => apiFetch(`/api/exams/${examId}/learning/progress`, { method: "PUT", body: JSON.stringify({ sequenceNumber }) }))
-      .catch(() => update({ actionError: "Could not save your learning position. Please try navigating again." }));
-  }, [setState, scopedState, requests]);
-
-  // Shared by next/prev/goto/begin: moves to a queue index, then loads that
-  // question's detail (FR-14.3/FR-14.4), checks the AI cache (FR-14.5, reusing
-  // the same checkAiCache as Practice/Mock), and persists the new position.
-  const advanceLearningTo = useCallback((idx: number) => {
-    const s = stateRef.current;
-    if (!s.lQueue.length) return;
-    const clamped = Math.max(0, Math.min(s.lQueue.length - 1, idx));
-    const qid = s.lQueue[clamped];
-    const q = qid ? s.catalogBy[qid] : undefined;
-    navigateQuestion(() => {
-      // Moving to the question already shown is not a new visit (issue #119).
-      setState(cur => ({ lIdx: clamped, lVisit: cur.lQueue[cur.lIdx] === qid ? cur.lVisit : cur.lVisit + 1 }));
-      if (q) { loadLearningDetail(q.id); checkAiCache(q); saveLearningProgress(q.sequenceNumber); }
-    });
-  }, [setState, loadLearningDetail, checkAiCache, saveLearningProgress, navigateQuestion]);
-
-  // FR-14.1: starts at the first (filtered) question whose real sequence
-  // number is >= the chosen start (or the resume position, FR-14.9);
-  // clamps to the last question if the chosen start is past the end.
-  const beginLearning = useCallback((fromSequence?: number) => {
-    if (stateRef.current.workspaceStatus !== "ready" || stateRef.current.switching) return;
-    const list = learningPool();
-    if (!list.length) return;
-    const target = fromSequence ?? stateRef.current.lStartInput ?? 1;
-    let idx = list.findIndex((q) => q.sequenceNumber >= target);
-    if (idx < 0) idx = list.length - 1;
-    const ids = list.map((q) => q.id);
-    // The session's queue is fixed here: marking questions studied as they are
-    // shown never removes one from an "Unstudied only" session.
-    setState(cur => ({ screen: "learning", lStage: "live", lQueue: ids, lIdx: idx, lVisit: cur.lVisit + 1 }));
-    const q = list[idx]!;
-    loadLearningDetail(q.id);
-    checkAiCache(q);
-    saveLearningProgress(q.sequenceNumber);
-  }, [learningPool, setState, loadLearningDetail, checkAiCache, saveLearningProgress]);
-
-  const learningNext = useCallback(() => advanceLearningTo(stateRef.current.lIdx + 1), [advanceLearningTo]);
-  const learningPrev = useCallback(() => advanceLearningTo(stateRef.current.lIdx - 1), [advanceLearningTo]);
-
-  // FR-14.8: jump directly to a different sequence number, within the
-  // current (possibly filtered) queue.
-  const learningGotoSequence = useCallback((seq: number) => {
-    const s = stateRef.current;
-    let idx = s.lQueue.findIndex((id) => (s.catalogBy[id]?.sequenceNumber ?? 0) >= seq);
-    if (idx < 0) idx = s.lQueue.length - 1;
-    advanceLearningTo(idx);
-  }, [advanceLearningTo]);
-
-  // Issue #119: the automatic mark, once per visit. The server applies it only
-  // against the revision this client last saw, so a mark delayed past a reset
-  // cannot undo it; writes per question are serialized, so a reset made here
-  // always reaches the server after this visit's mark.
-  const markLearningViewed = useCallback((qid: string) => {
-    const s = stateRef.current;
-    const examId = s.examId;
-    if (!examId || s.switching || s.lStage !== "live" || s.lQueue[s.lIdx] !== qid) return;
-    const seen = learningVisit.current;
-    if (seen && seen.visit === s.lVisit && seen.qid === qid) return;
-    const visit = { visit: s.lVisit, qid, manual: false };
-    learningVisit.current = visit;
-    if (isQuestionStudied(s.studyStatus, qid) || pendingStudy.current.has(qid)) return;
-    const update = scopedState();
-    const send = (expectedRevision: number, retry: boolean): Promise<void> => requests.write(`study:${qid}`, () =>
-      apiFetch<StudyStatusMutationResponse>(`/api/exams/${encodeURIComponent(examId)}/study-status/${encodeURIComponent(qid)}/learning-view`, {
-        method: "POST", body: JSON.stringify({ expectedRevision })
-      })).then(({ applied, status }) => {
-        applyStudyStatus(update, status);
-        // Refused because the status changed elsewhere since this exam loaded.
-        // If the question is still on screen in this visit and was not reset
-        // here, this is a later visit than that change: mark it once more.
-        if (!applied && retry && status.status === "unstudied" && learningVisit.current === visit && !visit.manual) return send(status.revision, false);
-      });
-    // A failed mark leaves the question unstudied; the next visit tries again.
-    send(s.studyStatus[qid]?.revision ?? 0, true).catch(() => {});
-  }, [scopedState, requests, applyStudyStatus]);
-
-  const setQuestionStudied = useCallback((qid: string, studied: boolean) => {
-    const s = stateRef.current;
-    const examId = s.examId;
-    if (!examId || s.switching || !s.catalogBy[qid]) return;
-    // A choice made while the question is shown is final for this visit.
-    if (learningVisit.current?.qid === qid) learningVisit.current.manual = true;
-    const status = studied ? "studied" : "unstudied";
-    const previous = s.studyStatus[qid];
-    const optimistic: QuestionStudyStatusEntry = { questionId: qid, status, revision: previous?.revision ?? 0, updatedAt: previous?.updatedAt ?? null };
-    pendingStudy.current.set(qid, (pendingStudy.current.get(qid) ?? 0) + 1);
-    setState(cur => ({ studyStatus: { ...cur.studyStatus, [qid]: optimistic } }));
-    const update = scopedState();
-    const settle = () => {
-      const left = (pendingStudy.current.get(qid) ?? 1) - 1;
-      if (left > 0) pendingStudy.current.set(qid, left); else pendingStudy.current.delete(qid);
-      return left === 0;
-    };
-    requests.write(`study:${qid}`, () => apiFetch<StudyStatusMutationResponse>(`/api/exams/${encodeURIComponent(examId)}/study-status/${encodeURIComponent(qid)}`, {
-      method: "PUT", body: JSON.stringify({ status })
-    })).then(({ status: entry }) => {
-      // Only the last of several quick toggles decides what is shown.
-      if (settle()) applyStudyStatus(update, entry, true);
-    }, () => {
-      const last = settle();
-      update(cur => ({
-        actionError: "Could not save this question's study status. Please retry.",
-        ...(last && cur.studyStatus[qid] === optimistic
-          ? { studyStatus: previous ? { ...cur.studyStatus, [qid]: previous } : without(cur.studyStatus, qid) }
-          : {})
-      }));
-    });
-  }, [setState, scopedState, requests, applyStudyStatus]);
-
-  const setMockFormat = useCallback((format: MockFormatId) => setState({ mockFormat: format }), [setState]);
-  const setMockCount = useCallback((n: number) => setState({ mockCount: n }), [setState]);
-  const setMockMinutes = useCallback((n: number) => setState({ mockMinutes: n }), [setState]);
-  const setMockSkipReview = useCallback((skip: boolean) => setState({ mockSkipReview: skip }), [setState]);
-
-  const resaveMockDraftRef = useRef<(attemptId: string, qid: string, sel: string[]) => void>(() => {});
-  const beginMock = useCallback(() => {
-    const s = stateRef.current;
-    if (s.switching || s.workspaceStatus !== "ready" || requests.has("start") || !s.exams.some(e => e.id === s.examId)) return;
-    const update = scopedState("start");
-    if (s.activeMockAttempt) {
-      const active = s.activeMockAttempt;
-      // Answers this tab could not save before signing in again (issue #52)
-      // are put back and saved now; the rest come from the server's draft.
-      const stashed = takeMockSelections(active.attemptId) ?? {};
-      const restored = Object.entries(stashed).filter(([qid, sel]) =>
-        active.questionIds.includes(qid) && JSON.stringify(sel) !== JSON.stringify(active.selectedAnswers[qid] ?? []));
-      setState({
-        mStage: "live", mQueue: active.questionIds, mIdx: 0,
-        mSel: { ...active.selectedAnswers, ...Object.fromEntries(restored) }, mFlag: active.flagged,
-        mockAttemptId: active.attemptId, mLeft: remainingSeconds(active),
-        mockDeadline: new Date(active.startedAt).getTime() + (active.timeLimitSeconds ?? 0) * 1000, mConfirm: false
-      });
-      for (const [qid, sel] of restored) resaveMockDraftRef.current(active.attemptId, qid, sel);
-      return;
-    }
-    const eligible = sessionEligible(s.catalog, s.mockSkipReview);
-    if (!s.examId || eligible.length === 0) return;
-    const shuffled = eligible.map((q) => q.id).sort(() => Math.random() - 0.5);
-    // mockPlan caps the format's length to the same eligible bank and to
-    // MAX_ATTEMPT_QUESTIONS, which the API rejects outright.
-    const plan = mockPlan(s);
-    const ids = shuffled.slice(0, plan.questionCount);
-    const timeLimitSeconds = plan.timeLimitMinutes * 60;
-    requests.write("start", () => apiFetch<StartAttemptResponse>(`/api/exams/${s.examId}/attempts`, {
-      method: "POST",
-      body: JSON.stringify({ mode: "mock", questionIds: ids, timeLimitSeconds })
-    })).then(({ attemptId, startedAt, timeLimitSeconds: serverLimit }) => {
-      update({
-        mStage: "live", mQueue: ids, mIdx: 0, mSel: {}, mFlag: {},
-        mockAttemptId: attemptId, mLeft: serverLimit ?? timeLimitSeconds,
-        mockDeadline: new Date(startedAt).getTime() + (serverLimit ?? timeLimitSeconds) * 1000, mConfirm: false
-      });
-    }).catch(() => update({ actionError: "Could not start this mock exam. Please retry." }));
-  }, [setState, scopedState, requests]);
-
-  const saveMockChange = useCallback((attemptId: string, path: string, body: unknown) => {
-    const operation = () => apiFetch(path, { method: "PUT", body: JSON.stringify(body) });
-    dirtyMock.current.set(path, operation);
-    const update = scopedState();
-    return requests.write(`mock:${attemptId}`, operation).then((result) => {
-      if (dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
-      // Issue #119: a saved non-empty draft answer marks its question studied.
-      const studyStatus = (result as Partial<SaveDraftAnswerResponse> | null)?.studyStatus;
-      if (studyStatus) applyStudyStatus(update, studyStatus);
-    }, (error) => {
-      // An expired attempt will never accept this write, so it must not stay
-      // dirty — persistMockDraft would replay it on every submission attempt.
-      if ((isClosedAttempt(error) || isRejectedDraft(error)) && dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
-      throw error;
-    });
-  }, [requests, scopedState, applyStudyStatus]);
-
-  resaveMockDraftRef.current = (attemptId, qid, sel) => {
-    saveMockChange(attemptId, `/api/attempts/${attemptId}/answers/${qid}`, { selectedAnswer: sel })
-      .catch(() => setState({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." }));
-  };
-
-  const mockPick = useCallback((q: Question, oid: string | string[]) => {
-    // Serialize draft writes for this attempt, retaining the latest local selection.
-    const current = stateRef.current.catalogBy[q.id];
-    if (!current || (current.hasContent && !current.content) || stateRef.current.switching) return;
-    const update = scopedState();
-    const cur = (stateRef.current.mSel[q.id] || []).slice();
-    let nextSel: string[];
-    if (Array.isArray(oid)) nextSel = oid;
-    else if (q.type === "multiple_choice") {
-      const i = cur.indexOf(oid);
-      if (i >= 0) cur.splice(i, 1);
-      else if (cur.length < (q.chooseCount || 1)) cur.push(oid);
-      nextSel = cur;
-    } else nextSel = [oid];
-    setState((s) => ({ mSel: { ...s.mSel, [q.id]: nextSel } }));
-    const attemptId = stateRef.current.mockAttemptId;
-    if (attemptId) {
-      saveMockChange(attemptId, `/api/attempts/${attemptId}/answers/${q.id}`, { selectedAnswer: nextSel }).catch((error) => {
-        // The server's clock ran out while this client's did not — a slept tab,
-        // a skewed clock, or a request that took too long to arrive. Submit now
-        // rather than leave the user answering a paper that is no longer open.
-        if (isExpiredAttempt(error)) {
-          update({ actionError: "Time is up. This mock exam has been submitted with the answers saved before the deadline." });
-          finishMockRef.current();
-          return;
-        }
-        if (isCompletedElsewhere(error)) {
-          update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
-          finishMockRef.current();
-          return;
-        }
-        if (isRejectedDraft(error)) {
-          update({ actionError: "This answer could not be saved, so your last saved answer to this question stands. The question may have changed; reload to see its current version." });
-          return;
-        }
-        update({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." });
-      });
-    }
-  }, [setState, saveMockChange, scopedState]);
-
-  const mockPrev = useCallback(() => setState((s) => ({ mIdx: Math.max(0, s.mIdx - 1) })), [setState]);
-  const mockNext = useCallback(() => setState((s) => ({ mIdx: Math.min(s.mQueue.length - 1, s.mIdx + 1) })), [setState]);
-  const mockGoto = useCallback((i: number) => setState({ mIdx: i }), [setState]);
-
-  const toggleFlag = useCallback(() => {
-    const q = mockQ();
-    const attemptId = stateRef.current.mockAttemptId;
-    if (!q || !attemptId) return;
-    if (stateRef.current.switching) return;
-    const update = scopedState();
-    const flagged = !stateRef.current.mFlag[q.id];
-    setState((s) => ({ mFlag: { ...s.mFlag, [q.id]: flagged } }));
-    saveMockChange(attemptId, `/api/attempts/${attemptId}/flags/${q.id}`, { flagged }).catch((error) => {
-      if (isCompletedElsewhere(error)) {
-        update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
-        finishMockRef.current();
-        return;
-      }
-      update({ actionError: "Mock flag is not saved yet. It will be retried before switching or submitting." });
-    });
-  }, [mockQ, setState, saveMockChange, scopedState]);
-
-  const askSubmit = useCallback(() => setState({ mConfirm: true }), [setState]);
-  const cancelSubmit = useCallback(() => setState({ mConfirm: false }), [setState]);
-
-  const persistMockDraft = useCallback(async () => {
-    await requests.drain();
-    const s = stateRef.current;
-    const id = s.mockAttemptId;
-    if (!id || s.mStage !== "live") return;
-    for (const [path, operation] of dirtyMock.current) {
-      if (!path.startsWith(`/api/attempts/${id}/`)) continue;
-      try {
-        await requests.write(`mock:${id}`, operation);
-      } catch (error) {
-        // A draft the server refused as past the deadline, or for an attempt
-        // already submitted elsewhere, must not block submission: it was never
-        // going to be graded either way, and failing here would leave this tab
-        // with no way to reach the result.
-        if (!isClosedAttempt(error) && !isRejectedDraft(error)) throw error;
-      }
-      if (dirtyMock.current.get(path) === operation) dirtyMock.current.delete(path);
-    }
-  }, [requests]);
-  const finishingMock = useRef(false);
-  const finishMockRef = useRef<() => void>(() => {});
-  const autoSubmittedMock = useRef<string | null>(null);
-  const finishMock = useCallback(() => {
-    const attemptId = stateRef.current.mockAttemptId;
-    if (!attemptId || stateRef.current.switching || finishingMock.current) return;
-    finishingMock.current = true;
-    const update = scopedState();
-    persistMockDraft().then(() => apiFetch<CompleteAttemptResponse>(`/api/attempts/${attemptId}/complete`, { method: "POST" })).then((result) => {
-      update((s) => {
-        if (s.mockAttemptId !== attemptId) return {};
-        const wrong = { ...s.wrong };
-        const mastered = { ...s.mastered };
-        const attempted = { ...s.attempted };
-        // A question left blank is graded incorrect but is NOT a wrong answer:
-        // the server files only answered questions in the Wrong Question Book
-        // (routes/attempts.ts), so deriving membership from `isCorrect` alone
-        // made the list — and the mastered flags feeding it — change under the
-        // user on the next reload. `hasAnswer` is that same server-side rule.
-        result.breakdown.forEach((row) => {
-          attempted[row.questionId] = true;
-          const type = s.catalogBy[row.questionId]?.type ?? "";
-          if (!row.isCorrect && hasAnswer(type, row.selectedAnswer)) {
-            mastered[row.questionId] = false;
-            const prev = wrong[row.questionId];
-            wrong[row.questionId] = { c: (prev ? prev.c : 0) + 1, at: new Date().toISOString() };
-          }
-        });
-        return { mStage: "results", mConfirm: false, mockResult: result, activeMockAttempt: null, wrong, mastered, attempted, activityRevision: s.activityRevision + 1 };
-      });
-      // Submission reconciles studied statuses on the server (issue #119).
-      refreshStudyStatuses();
-    }).catch(() => update({ actionError: "Could not submit this mock exam. Your answers are retained; please retry." })).finally(() => { finishingMock.current = false; });
-  }, [persistMockDraft, scopedState, refreshStudyStatuses]);
-  finishMockRef.current = finishMock;
-
-  const practiceWrong = useCallback(() => {
-    const miss = (stateRef.current.mockResult?.breakdown ?? []).filter((r) => !r.isCorrect).map((r) => r.questionId);
-    if (miss.length) begin(miss);
-  }, [begin]);
-
-  const saveQuestionDraft = useCallback(async () => {
-    await requests.drain();
-    const s = stateRef.current;
-    if (!s.noteDraft.trim()) return;
-    const qid = s.noteDraftQuestionId ?? (s.screen === "learning" ? s.lQueue[s.lIdx] : s.queue[s.idx]);
-    if (!qid) throw new Error("Save or discard your question note before switching.");
-    const content = s.noteDraft;
-    const { note } = await requests.write("note-draft", () => apiFetch<NoteResponse>(`/api/questions/${qid}/notes`, {
-      method: "POST", body: JSON.stringify({ content, visibility: s.noteVis })
-    }));
-    setState(current => ({ noteDraft: current.noteDraft === content ? "" : current.noteDraft, noteDraftQuestionId: current.noteDraft === content ? null : current.noteDraftQuestionId, notes: current.notes.concat(fromSharedNote(note)) }));
-  }, [requests, setState]);
-
-  saveQuestionDraftRef.current = saveQuestionDraft;
-
-  const go = useCallback(async (id: ScreenId, options?: { newMock?: boolean }) => {
-    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
-    requests.cancelLane("start");
-    const update = scopedState("navigation");
-    const clearError = errorLeftBehind(stateRef.current.actionError);
-    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
-      // An error belongs to the screen that raised it; it used to follow the
-      // learner everywhere until dismissed (issue #52).
-      update((s) => ({ screen: id, more: false, actionError: clearError(s),
-        pStage: s.pStage,
-        mStage: id === "mock" && options?.newMock && s.mStage === "results" ? "setup" : s.mStage,
-        lStage: id === "learning" ? "setup" : s.lStage,
-        pendingLearningSequence: null,
-        kpNoteId: id === "knowledgePoints" ? null : s.kpNoteId,
-        listMode: id === "bookmarks" ? "bm" : id === "wrong" ? "wrong" : s.listMode
-      }));
-    }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
-  }, [requests, scopedState, saveQuestionDraft]);
-
-  const openMore = useCallback(() => setState({ more: true }), [setState]);
-  const closeMore = useCallback(() => setState({ more: false }), [setState]);
-
-  const switchExam = useCallback(async (id: string | null, questionId?: string): Promise<boolean> => {
-    const before = stateRef.current;
-    if (before.switching || finishingMock.current) return false;
-    if (id === before.examId && !questionId) return true;
-    if (id && !before.exams.some(e => e.id === id)) {
-      setState({ actionError: "This exam is unavailable. Choose another exam." }); return false;
-    }
-    if (!await allowAuthoringNavigation() || stateRef.current.switching || finishingMock.current) return false;
-    const original = stateRef.current;
-    if (id === original.examId && !questionId) return true;
-    if (id && !original.exams.some(e => e.id === id)) return false;
-    if ((original.pStage === "live" || original.mStage === "live" || requests.has("start")) &&
-      !window.confirm("Switch study context? Practice answers will be saved and the practice ended. Mock answers will be saved so you can resume; its timer keeps running.")) return false;
-    setState({ switching: true, actionError: null });
-    try {
-      await beforeWorkspaceNavigation();
-      await requests.drain();
-      await saveQuestionDraft();
-      for (const [annotationId, note] of dirtyAnnotations.current) {
-        await apiFetch(`/api/annotations/${annotationId}`, { method: "PATCH", body: JSON.stringify({ note: note || null }) });
-        if (dirtyAnnotations.current.get(annotationId) === note) dirtyAnnotations.current.delete(annotationId);
-      }
-      await persistMockDraft();
-      const current = stateRef.current;
-      if (current.pStage === "live" && current.attemptId) {
-        await Promise.all(current.queue
-          .filter(qid => !stateRef.current.done[qid] && current.sel[qid]?.length)
-          .map(qid => savePracticeAnswer(qid, current.attemptId!, current.sel[qid]!)));
-        await apiFetch(`/api/attempts/${current.attemptId}/complete`, { method: "POST" });
-      }
-      requests.invalidate();
-      const next: Partial<AppState> = {};
-      // Only exam/session fields reset; account preferences and personal
-      // Knowledge Points remain available across exams.
-      const keys = ["catalog", "catalogBy", "catalogRevision", "questionContent", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
-        "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingLearningSequence",
-        "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockFormat", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
-        "bookmarks", "wrong", "attempted", "mastered", "studyStatus", "studyStatusError", "ai", "anns", "notes", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
-      for (const key of keys) Object.assign(next, { [key]: initialState[key] });
-      setState(s => ({ ...next, examId: id, screen: questionId ? "learning" : original.screen,
-        switching: false, workspaceStatus: id ? "loading" : "empty", workspaceError: null,
-        workspaceGeneration: s.workspaceGeneration + 1,
-        pendingQuestionJump: id && questionId ? { examId: id, questionId } : null
-      }));
-      if (original.me) storeExam(original.me.id, id);
-      window.getSelection()?.removeAllRanges();
-      return true;
-    } catch (error) {
-      setState({ switching: false, actionError: error instanceof Error ? `Could not switch: ${error.message}. Your work is retained; retry saving or switching.` : "Could not save your work. Please retry before switching." });
-      return false;
-    }
-  }, [requests, setState, saveQuestionDraft, savePracticeAnswer, persistMockDraft]);
+  const {
+    practiceWrong, saveQuestionDraft, go, openMore, closeMore, switchExam, setExamId,
+    goToQuestionForReview, openKnowledgePointNote, showKnowledgePoint, navigateTo,
+  } = useNavigation(core, { begin, finishingMock, persistMockDraft, savePracticeAnswer, saveQuestionDraftRef });
   switchExamRef.current = switchExam;
-  const setExamId = useCallback((id: string) => switchExam(id), [switchExam]);
-  const goToQuestionForReview = useCallback(async (examId: string, questionId: string) => {
-    if (examId === stateRef.current.examId) {
-      if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
-      requests.cancelLane("start");
-      const update = scopedState("navigation");
-      void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
-        update({ screen: "learning", pendingQuestionJump: { examId, questionId } });
-      }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
-      return;
-    }
-    void switchExam(examId, questionId);
-  }, [switchExam, requests, scopedState, saveQuestionDraft]);
-
-  // implementation — open a specific Knowledge Point note from outside the
-  // Knowledge Points screen (e.g. Learning Mode's related-notes card).
-  const openKnowledgePointNote = useCallback(async (noteId: string) => {
-    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
-    const update = scopedState("navigation");
-    const clearError = errorLeftBehind(stateRef.current.actionError);
-    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update(s => ({ screen: "knowledgePoints", more: false, actionError: clearError(s), kpNoteId: noteId })))
-      .catch(() => update({ actionError: "Could not save your current note. Please retry before leaving." }));
-  }, [scopedState, saveQuestionDraft]);
-  // The Knowledge Points screen's own list/editor moves, which save their
-  // drafts themselves as before.
-  const showKnowledgePoint = useCallback((noteId: string | null) => setState({ kpNoteId: noteId }), [setState]);
-
-  // issue #41: Back/Forward and a pasted URL. The same save gate as go(): an
-  // editor with unsaved changes can still refuse, and drafts are flushed
-  // before the screen changes. A different exam goes through switchExam, with
-  // its own confirmation and saves.
-  const navigateTo = useCallback(async (route: Route): Promise<boolean> => {
-    const s = stateRef.current;
-    const clearError = errorLeftBehind(s.actionError);
-    const exam = route.examSlug ? s.exams.find(e => e.slug === route.examSlug) : undefined;
-    if (route.examSlug && !exam) {
-      setState({ actionError: "That exam is not available to you." });
-      return false;
-    }
-    if (exam && exam.id !== s.examId) {
-      if (!await switchExam(exam.id)) return false;
-    } else {
-      if (s.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return false;
-      requests.cancelLane("start");
-      try {
-        await beforeWorkspaceNavigation();
-        await saveQuestionDraft();
-      } catch {
-        setState({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." });
-        return false;
-      }
-    }
-    setState(cur => ({
-      screen: route.screen, more: false, actionError: clearError(cur),
-      lStage: route.screen === "learning" && route.learningSequence == null ? "setup" : cur.lStage,
-      pendingLearningSequence: route.screen === "learning" ? route.learningSequence : null,
-      kpNoteId: route.screen === "knowledgePoints" ? route.knowledgePointId : cur.kpNoteId,
-      listMode: route.screen === "bookmarks" ? "bm" : route.screen === "wrong" ? "wrong" : cur.listMode,
-    }));
-    return true;
-  }, [requests, setState, switchExam, saveQuestionDraft]);
 
   // Resolve only after the target catalog is ready, including invalid links.
   useEffect(() => {
@@ -1556,9 +416,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     } else {
       setState({ lStage: "setup", actionError: `This exam has no question ${seq}.` });
     }
-  }, [state.pendingLearningSequence, state.screen, state.workspaceStatus, state.switching, setState, beginLearning, learningGotoSequence]);
+  }, [state.pendingLearningSequence, state.screen, state.workspaceStatus, state.switching, setState, beginLearning, learningGotoSequence, stateRef]);
 
-  const setSource = useCallback((id: PracticeSource) => setState({ source: id }), [setState]);
+  const {
+    setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, setStudyFilter,
+    startPractice, openPracticeWithFilters, setListMode, removeBookmark, markMastered, practiceList,
+  } = usePracticeSetup(core, { begin, pool, saveQuestionDraft, writeBookmark });
 
   // The daily review email's links predate routing: "?screen=wrong" and
   // "/learning/exam?exam=<slug>&question_id=<id>" (apps/worker/src/lib/
@@ -1584,284 +447,17 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     }
     setState({ pendingSlugQuestionJump: null });
     if (exam) goToQuestionForReview(exam.id, pending.questionId);
-  }, [state.pendingSlugQuestionJump, state.exams, setState, goToQuestionForReview]);
-  const setDiff = useCallback((id: Difficulty | "all") => setState({ diff: id }), [setState]);
-  const setFeedback = useCallback((id: FeedbackMode) => setState({ feedback: id }), [setState]);
-  const toggleTag = useCallback((tag: string) => {
-    setState((s) => {
-      const a = s.tags.slice();
-      const i = a.indexOf(tag);
-      if (i >= 0) a.splice(i, 1); else a.push(tag);
-      return { tags: a };
-    });
-  }, [setState]);
-  const setPracticeTags = useCallback((tags: string[]) => setState({ tags: [...new Set(tags)] }), [setState]);
-  const setCount = useCallback((n: number) => setState({ count: n }), [setState]);
-  const setSkipReview = useCallback((skip: boolean) => setState({ skipReview: skip }), [setState]);
-  const setStudyFilter = useCallback((filter: StudyStatusFilter) => setState({ studyFilter: filter }), [setState]);
-  const startPractice = useCallback(() => {
-    const p = pool();
-    if (!p.length) return;
-    const shuffled = p.map((x) => x.id).sort(() => Math.random() - 0.5);
-    begin(shuffled.slice(0, Math.min(stateRef.current.count, shuffled.length)));
-  }, [pool, begin]);
+  }, [state.pendingSlugQuestionJump, state.exams, setState, goToQuestionForReview, stateRef]);
 
-  // Opens Practice's setup screen with a filter set stated in full. Routed
-  // through the same save-drafts-then-navigate path as go(), and it always
-  // returns to `pStage: "setup"`: arriving from Statistics must never drop the
-  // user into the middle of a previous live session under new filters.
-  const openPracticeWithFilters = useCallback(async (filters: PracticeFilters) => {
-    if (stateRef.current.switching || !await allowAuthoringNavigation() || stateRef.current.switching) return;
-    requests.cancelLane("start");
-    const update = scopedState("navigation");
-    void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
-      update({
-        screen: "practice", more: false, pStage: "setup",
-        source: filters.source, tags: filters.tags.slice(), diff: filters.diff, studyFilter: filters.study,
-        count: Math.max(1, Math.min(MAX_ATTEMPT_QUESTIONS, Math.round(filters.count))),
-        queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
-      });
-    }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
-  }, [requests, scopedState, saveQuestionDraft]);
+  const { setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared } = useQuestionNotes(core);
 
-  const setListMode = useCallback((m: ListMode) => setState({ listMode: m }), [setState]);
-  const removeBookmark = useCallback((id: string) => writeBookmark(id, false), [writeBookmark]);
-  const markMastered = useCallback((id: string) => {
-    const s = stateRef.current;
-    if (s.switching || !s.catalogBy[id] || requests.has(`mastered:${id}`)) return;
-    const update = scopedState();
-    const previous = !!s.mastered[id];
-    setState(current => ({ mastered: { ...current.mastered, [id]: true } }));
-    void requests.write(`mastered:${id}`, () => apiFetch(`/api/questions/${id}/wrong-book/mastered`, { method: "PUT" }))
-      .catch(() => update(current => ({ mastered: { ...current.mastered, [id]: previous }, actionError: "Could not mark this question mastered. Please retry." })));
-  }, [requests, scopedState, setState]);
-  const practiceList = useCallback((ids: string[]) => { begin(ids); }, [begin]);
+  const {
+    updateTimeZone, updateEmailSettings, setProvider, setModel, setKeyMode, loadSessionApiKey,
+    clearSessionApiKey, saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut, setTheme,
+    updateDisplayName, uploadAvatar, preserveForReauth,
+  } = useAccountSettings(core);
 
-  const setNoteDraft = useCallback((v: string) => setState(s => ({ noteDraft: v,
-    noteDraftQuestionId: v ? (s.noteDraftQuestionId ?? (s.screen === "learning" ? s.lQueue[s.lIdx] : s.queue[s.idx]) ?? null) : null
-  })), [setState]);
-  const setNoteVis = useCallback((v: "private" | "shared") => setState({ noteVis: v }), [setState]);
-
-  // FR-11.1: persist the note server-side first (its id must be real for a
-  // later edit/delete — same reasoning as apply() for annotations).
-  const addNote = useCallback((qid: string) => {
-    const s = stateRef.current;
-    const content = s.noteDraft.trim();
-    if (!content || s.switching || requests.has("note-draft")) return;
-    const update = scopedState();
-    void requests.write("note-draft", () => apiFetch<NoteResponse>(`/api/questions/${qid}/notes`, {
-      method: "POST", body: JSON.stringify({ content, visibility: s.noteVis })
-    })).then(({ note }) => update(current => ({
-      notes: current.notes.concat(fromSharedNote(note)), noteDraft: current.noteDraft.trim() === content ? "" : current.noteDraft,
-      noteDraftQuestionId: current.noteDraft.trim() === content ? null : current.noteDraftQuestionId
-    }))).catch(() => update({ actionError: "Could not save your note. Your draft is retained; please retry." }));
-  }, [requests, scopedState]);
-
-  const updateNote = useCallback(async (id: string, content: string, visibility: "private" | "shared") => {
-    const update = scopedState();
-    await requests.write(`note:${id}`, () => apiFetch(`/api/notes/${id}`, { method: "PATCH", body: JSON.stringify({ content, visibility }) }));
-    update(s => ({ notes: s.notes.map(n => n.id === id ? { ...n, text: content, vis: visibility } : n) }));
-  }, [requests, scopedState]);
-  const removeNote = useCallback((id: string) => {
-    const update = scopedState();
-    void requests.write(`note:${id}`, () => apiFetch(`/api/notes/${id}`, { method: "DELETE" }))
-      .then(() => update(s => ({ notes: s.notes.filter(n => n.id !== id) })))
-      .catch(() => update({ actionError: "Could not delete this note. Please retry." }));
-  }, [requests, scopedState]);
-
-  // FR-11.4: persisted server-side (so it applies from any device/session),
-  // then re-fetch notes since the visible set of others' shared notes changes.
-  const toggleShared = useCallback(() => {
-    const setState = scopedState("toggleShared");
-    const examId = stateRef.current.examId;
-    const next = !stateRef.current.showShared;
-    setState({ showShared: next });
-    apiFetch("/api/settings", { method: "PATCH", body: JSON.stringify({ showSharedNotes: next }) })
-      .then(() => apiFetch<NotesListResponse>(`/api/notes?examId=${encodeURIComponent(examId ?? "")}`))
-      .then(({ notes }) => setState({ notes: notes.map(fromSharedNote) }))
-      .catch(() => {});
-  }, [scopedState]);
-
-  // issue #47. Not optimistic: every statistic is recounted in the new zone,
-  // so the Statistics screen refetches once the server has it.
-  const updateTimeZone = useCallback(async (timeZone: string) => {
-    setState(timeZoneSaved(await saveTimeZone(timeZone)));
-  }, [setState]);
-
-  // implementation — daily review email settings. Not optimistic (unlike
-  // toggleShared above): the enabled/source/timing fields are meaningful
-  // enough to wait for the server's resolved response, same as
-  // updateMarkAlias below.
-  const updateEmailSettings = useCallback((patch: UpdateDailyEmailSettingsRequest) => {
-    apiFetch<DailyEmailSettingsResponse>("/api/daily-email-settings", { method: "PATCH", body: JSON.stringify(patch) })
-      .then((r) => setState({ emailSettings: r }))
-      .catch(() => {});
-  }, [setState]);
-
-  const capture = useCallback((qid: string, target: AnnotationTarget) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) {
-      if (stateRef.current.tsel) setState({ tsel: null });
-      return;
-    }
-    const a = base(sel.anchorNode);
-    const f = base(sel.focusNode);
-    if (a === null || f === null) return;
-    let start = a + sel.anchorOffset;
-    let end = f + sel.focusOffset;
-    if (start > end) { const t = start; start = end; end = t; }
-    if (end - start < 2) return;
-    const r = sel.getRangeAt(0).getBoundingClientRect();
-    setState({ tsel: { qid, target, start, end, x: r.left + r.width / 2, y: r.top - 10 } });
-  }, [setState]);
-
-  // FR-8.1: persist the new annotation server-side first (so its id is real,
-  // not a client-guessed one) before adding it to local state — mirrors how
-  // begin() waits for the server-assigned attemptId.
-  const apply = useCallback((style: AnnotationStyle) => {
-    const setState = scopedState();
-    const t = stateRef.current.tsel;
-    if (!t) return;
-    setState({ tsel: null });
-    const g = window.getSelection();
-    if (g) g.removeAllRanges();
-    requests.write(`annotation-create:${t.qid}`, () => apiFetch<AnnotationResponse>(`/api/questions/${t.qid}/annotations`, {
-      method: "POST",
-      body: JSON.stringify(toCreateAnnotationRequest(t.target, t.start, t.end, style, ""))
-    })).then(({ annotation }) => {
-      setState((s) => ({ anns: s.anns.concat([fromSharedAnnotation(annotation)]) }));
-    }).catch(() => {});
-  }, [scopedState, requests]);
-
-  // Updates the note text locally on every keystroke (FR-8.2); the PATCH
-  // itself is fired on blur (saveMarkNote) rather than per keystroke.
-  const setMarkNote = useCallback((id: string, note: string) => {
-    dirtyAnnotations.current.set(id, note);
-    setState((s) => ({ anns: s.anns.map((x) => (x.id === id ? { ...x, note } : x)) }));
-  }, [setState]);
-  const saveMarkNote = useCallback((id: string) => {
-    const note = stateRef.current.anns.find(x => x.id === id)?.note ?? "";
-    const update = scopedState();
-    void requests.write(`annotation:${id}`, () => apiFetch(`/api/annotations/${id}`, { method: "PATCH", body: JSON.stringify({ note: note || null }) }))
-      .then(() => { if (dirtyAnnotations.current.get(id) === note) dirtyAnnotations.current.delete(id); })
-      .catch(() => update({ actionError: "Could not save the annotation note. Please retry before leaving." }));
-  }, [requests, scopedState]);
-  const removeMark = useCallback((id: string) => {
-    const update = scopedState();
-    void requests.write(`annotation:${id}`, () => apiFetch(`/api/annotations/${id}`, { method: "DELETE" }))
-      .then(() => { dirtyAnnotations.current.delete(id); update(s => ({ anns: s.anns.filter(x => x.id !== id) })); })
-      .catch(() => update({ actionError: "Could not delete the annotation. Please retry." }));
-  }, [requests, scopedState]);
-
-  // implementation: rename what a mark type means to this user. The server
-  // trims/validates and falls back to the previous (or default) alias on
-  // empty input, so the response is always the authoritative new state.
-  const updateMarkAlias = useCallback((style: MarkStyle, alias: string) => {
-    const body: UpdateAnnotationSettingsRequest = { [`${style}Alias`]: alias } as UpdateAnnotationSettingsRequest;
-    apiFetch<AnnotationSettingsResponse>("/api/annotation-settings", { method: "PATCH", body: JSON.stringify(body) })
-      .then((r) => setState({ markAliases: { hl1: r.hl1Alias, hl2: r.hl2Alias, hl3: r.hl3Alias } }))
-      .catch(() => {});
-  }, [setState]);
-
-  // Switching provider resets to that provider's first curated model (FR-7.0(c)) —
-  // a stale OpenAI model id chosen while on Anthropic would just fail upstream.
-  const setProvider = useCallback((p: Provider) => setState({ provider: p, model: CURATED_MODELS[p][0]!.id }), [setState]);
-  const setModel = useCallback((m: string) => setState({ model: m }), [setState]);
-  // The storage-method choice itself is browser-local (FR-7.9), same
-  // treatment as theme: it survives a refresh so "Encrypted in this browser"
-  // stays selected without the user re-picking it every visit.
-  const setKeyMode = useCallback((m: KeyMode) => {
-    const id = stateRef.current.me?.id;
-    if (id) storeKeyMode(id, m);
-    setState({ keyMode: m });
-  }, [setState]);
-
-  // FR-7.0: loads a key into browser runtime memory for this session (see
-  // lib/keyStorage.ts) — optionally also persisted encrypted per FR-7.9,
-  // which the Settings screen handles itself before calling this.
-  const loadSessionApiKey = useCallback((key: string) => {
-    setSessionKey(key);
-    setState({ hasSessionKey: true });
-  }, [setState]);
-  const clearSessionApiKey = useCallback(() => {
-    clearSessionKey();
-    setState({ hasSessionKey: false });
-  }, [setState]);
-
-  // The encrypted key belongs to the signed-in account (issue #46). Reads the
-  // ref, so the callbacks below never see a stale account.
-  const signedInId = () => {
-    const id = stateRef.current.me?.id;
-    if (!id) throw new Error("Not signed in");
-    return id;
-  };
-
-  // FR-7.9: encrypts and stores the key for next visit, and loads it into
-  // this session immediately so it's usable right away.
-  const saveEncryptedApiKey = useCallback(async (apiKey: string, passphrase: string) => {
-    await saveEncryptedKey(signedInId(), apiKey, passphrase);
-    setSessionKey(apiKey);
-    setState({ hasStoredKey: true, hasSessionKey: true });
-  }, [setState]);
-
-  // Unlocks a previously encrypted key with its passphrase — from Settings,
-  // or from an inline prompt next to "Generate explanation" once a refresh
-  // (or enough idle time) has dropped the in-memory session key.
-  const unlockSessionKey = useCallback(async (passphrase: string) => {
-    const key = await loadEncryptedKey(signedInId(), passphrase);
-    setSessionKey(key);
-    setState({ hasSessionKey: true });
-  }, [setState]);
-
-  const forgetStoredApiKey = useCallback(async () => {
-    await clearStoredEncryptedKey(signedInId());
-    setState({ hasStoredKey: false });
-  }, [setState]);
-
-  // Signing out ends every session of the account (issue #46; the server moves
-  // its session version on). This browser also drops the key held in memory,
-  // the saved key when asked to, and the browser-wide key storage left by
-  // earlier versions, whose owner is unknown.
-  const signOut = useCallback(async (opts: { removeSavedKey: boolean }) => {
-    const id = stateRef.current.me?.id;
-    clearSessionKey();
-    if (opts.removeSavedKey && id) await clearStoredEncryptedKey(id).catch(() => {});
-    await deleteLegacyKeystore();
-    clearLegacyKeyMode();
-    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    window.location.href = "/?auth=signedout";
-  }, []);
-
-  // Theme preference is deliberately browser-local: it can be restored before
-  // the settings request completes and does not follow the account to a device
-  // where the user may prefer a different display treatment.
-  const setTheme = useCallback((t: ThemeId) => {
-    storeTheme(t);
-    setState({ theme: t });
-  }, [setState]);
-
-  // FR-12.2: edit one's own display name.
-  const updateDisplayName = useCallback(async (displayName: string) => {
-    const trimmed = displayName.trim();
-    if (!trimmed) return;
-    const { user } = await apiFetch<ProfileResponse>("/api/me", { method: "PATCH", body: JSON.stringify({ displayName: trimmed }) });
-    setState({ me: user });
-  }, [setState]);
-
-  // FR-12.3/FR-12.4: upload a custom avatar. The caller (Settings) is
-  // responsible for client-side resize/compression via lib/avatar.ts before
-  // calling this — this just does the upload and reconciles state.me.
-  const uploadAvatar = useCallback(async (blob: Blob) => {
-    const { avatarUrl } = await apiFetch<AvatarUploadResponse>("/api/me/avatar", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
-    setState((s) => (s.me ? { me: { ...s.me, avatarUrl } } : {}));
-  }, [setState]);
-
-  // Before leaving to sign in again (issue #52): mock answers this tab holds
-  // but the server refused while the session was gone.
-  const preserveForReauth = useCallback(() => {
-    const s = stateRef.current;
-    if (s.mStage === "live" && s.mockAttemptId) stashMockSelections({ attemptId: s.mockAttemptId, sel: s.mSel });
-  }, []);
+  const { capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias } = useAnnotations(core);
 
   // Keyboard shortcuts during live practice. What each key does is decided by
   // lib/practiceShortcuts, which the shortcut panel lists from as well.
@@ -1891,7 +487,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pick, next, submit, writeBookmark]);
+  }, [pick, next, submit, writeBookmark, stateRef]);
 
   // Mock exam countdown; auto-submits when time runs out (FR-4.3).
   useEffect(() => {
@@ -1906,7 +502,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       }
     }, 1000);
     return () => clearInterval(id);
-  }, [setState, finishMock]);
+  }, [setState, finishMock, stateRef, autoSubmittedMock]);
 
   const store: PrepDeckStore = {
     state, width, height, pool, curQ, mockQ, loadQuestionContent, loadLearningDetail, prefetchQuestions,
