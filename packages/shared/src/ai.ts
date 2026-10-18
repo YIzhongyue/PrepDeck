@@ -4,6 +4,8 @@
 // explanation text, never the provider API key.
 
 import type { AiProvider } from "./types";
+import type { z } from "zod";
+import type { generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "./ai.schema.ts";
 
 export interface AiModelOption {
   id: string;
@@ -41,22 +43,11 @@ export interface AiExplanationsListResponse {
   explanations: AiExplanationDto[];
 }
 
-export interface GenerateAiExplanationRequest {
-  questionId: string;
-  provider: AiProvider;
-  model: string;
-  // Sent once, forwarded to the upstream provider, and never persisted or
-  // echoed back (FR-7.4/FR-7.5/docs/requirements/non-functional-requirements.md#security-and-privacy). Not required on a cache hit.
-  apiKey?: string;
-  // FR-7.7: bypass the cache and call upstream again, overwriting the entry.
-  force?: boolean;
-}
+export type GenerateAiExplanationRequest = z.input<typeof generateAiExplanationRequestSchema>;
 
 export interface GenerateAiExplanationResponse {
   explanation: AiExplanationDto;
   cached: boolean;
 }
 
-export interface UpdateAiExplanationRequest {
-  content: string;
-}
+export type UpdateAiExplanationRequest = z.input<typeof updateAiExplanationRequestSchema>;

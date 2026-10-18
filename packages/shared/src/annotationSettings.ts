@@ -3,6 +3,8 @@
 // already the annotations.style value — see annotations.ts) from its
 // theme-driven color and from the user's own display name for it.
 
+import type { z } from "zod";
+import type { updateAnnotationSettingsRequestSchema } from "./annotationSettings.schema.ts";
 export type MarkStyle = "hl1" | "hl2" | "hl3";
 
 export const MARK_STYLES: readonly MarkStyle[] = ["hl1", "hl2", "hl3"];
@@ -21,9 +23,4 @@ export interface AnnotationSettingsResponse {
   hl3Alias: string;
 }
 
-// Partial: Settings edits/saves one alias field at a time.
-export interface UpdateAnnotationSettingsRequest {
-  hl1Alias?: string;
-  hl2Alias?: string;
-  hl3Alias?: string;
-}
+export type UpdateAnnotationSettingsRequest = z.input<typeof updateAnnotationSettingsRequestSchema>;

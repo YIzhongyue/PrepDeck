@@ -3,14 +3,13 @@
 // FR-12.5 (showing name/avatar wherever identity is surfaced) live
 // elsewhere — see middleware/access.ts and routes/notes.ts respectively.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { invalidateCachedUser } from "../lib/userCache";
+import { readBody } from "../lib/requestBody";
+import { updateProfileRequestSchema } from "@prepdeck/shared/schemas";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // FR-12.4
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_DISPLAY_NAME_LENGTH = 100;
 
 interface ProfileRow {
   id: string;
@@ -25,17 +24,14 @@ function toProfile(row: ProfileRow) {
 }
 
 // Mounted at /api/me.
-export const profileRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const profileRouter = createRouter();
 
 // FR-12.2: edit one's own display name.
 profileRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
-  if (!displayName) return c.json({ error: "displayName is required" }, 400);
-  if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
-    return c.json({ error: `displayName must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer` }, 400);
-  }
+  const parsed = await readBody(c, updateProfileRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { displayName } = parsed.data;
 
   await c.env.DB.prepare("UPDATE users SET display_name = ? WHERE id = ?").bind(displayName, userId).run();
   await invalidateCachedUser(c.env, userId, c.get("user").email);
@@ -80,7 +76,7 @@ profileRouter.post("/avatar", async (c) => {
 // Authorized Users list, etc.), not just their own. R2 objects aren't
 // publicly readable by default (docs/architecture/system-overview.md#storage-and-services), so this streams them through
 // the Worker instead.
-export const avatarsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const avatarsRouter = createRouter();
 
 avatarsRouter.get("/:userId", async (c) => {
   const userId = c.req.param("userId");

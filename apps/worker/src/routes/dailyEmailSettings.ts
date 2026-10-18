@@ -5,11 +5,10 @@
 // `timezone` is the account's zone (users.timezone, issue #47), shared with
 // the statistics; user_email_settings.timezone is no longer used.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { resolveTimeZone, type DailyEmailSource } from "@prepdeck/shared";
-import { dailyEmailSettingsValidationError } from "../lib/dailyEmailSettings";
+import { updateDailyEmailSettingsRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 import { loadStoredTimeZone, saveUserTimeZone } from "../lib/userTimeZone";
 
 interface DailyEmailSettingsRow {
@@ -41,7 +40,7 @@ function toResponse(row: DailyEmailSettingsRow | null, timezone: string | null) 
 const SELECT_COLUMNS = "enabled, questions_per_email, source, send_hour_local, unsubscribed_at";
 
 // Mounted at /api/daily-email-settings.
-export const dailyEmailSettingsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const dailyEmailSettingsRouter = createRouter();
 
 dailyEmailSettingsRouter.get("/", async (c) => {
   const userId = c.get("user").id;
@@ -56,17 +55,9 @@ dailyEmailSettingsRouter.get("/", async (c) => {
 
 dailyEmailSettingsRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-
-  const fields = ["enabled", "questionsPerEmail", "source", "timezone", "sendHourLocal"] as const;
-  if (fields.every((field) => body[field] === undefined)) {
-    return c.json({ error: `Provide at least one of ${fields.join(", ")}` }, 400);
-  }
-  for (const field of fields) {
-    const error = dailyEmailSettingsValidationError(field, body[field]);
-    if (error) return c.json({ error }, 400);
-  }
+  const parsed = await readBody(c, updateDailyEmailSettingsRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const existing = await c.env.DB.prepare(`SELECT ${SELECT_COLUMNS} FROM user_email_settings WHERE user_id = ?`)
     .bind(userId)

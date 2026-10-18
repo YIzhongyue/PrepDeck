@@ -5,16 +5,14 @@
 // only ever sees and revokes their own grants for that audience. Nothing here
 // returns a secret: grants hold none, and token digests are never selected.
 
-import { Hono } from "hono";
 import type { ListMcpOAuthGrantsResponse } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { isMcpOAuthEnabled, type McpAudience } from "../mcp/oauth/config";
 import { listGrants, revokeOwnedGrant } from "../mcp/oauth/grants";
 
 export function createMcpConnectionsRouter(audience: McpAudience) {
-  const router = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const router = createRouter();
   if (audience === "admin") router.use("*", requireAdmin);
 
   // Listed even while OAuth is switched off, so a user can still see and

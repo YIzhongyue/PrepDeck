@@ -10,10 +10,12 @@
 // thin: parse the request, call the lib function, map its result to the
 // same HTTP status/body this route has always returned.
 
-import { Hono } from "hono";
-import { KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import {
+  autosaveKnowledgePointRequestSchema, createKnowledgePointRequestSchema, linkKnowledgePointQuestionRequestSchema,
+  reorderKnowledgePointRequestSchema, setKnowledgePointGroupRequestSchema,
+} from "@prepdeck/shared/schemas";
+import { createRouter } from "../context";
+import { readBody, readUncheckedBody } from "../lib/requestBody";
 import { buildKnowledgePointsListQuery } from "../lib/knowledgePointsQuery";
 import { loadDetail, toSummary, LIST_SELECT, type KnowledgePointRow } from "../lib/knowledgePointDetail";
 import { createNote, applyNoteUpdate, applyGroupMove, reorderNote, deleteNote, linkQuestion, unlinkQuestion, attachTag, detachTag } from "../lib/knowledgePointMutations";
@@ -22,10 +24,8 @@ import { scopeKeyFor } from "../lib/knowledgePointOrdering";
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 50;
-const MAX_TITLE_LENGTH = KNOWLEDGE_POINT_MAX_TITLE_LENGTH;
-const MAX_BODY_LENGTH = KNOWLEDGE_POINT_MAX_BODY_LENGTH;
 
-export const knowledgePointsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointsRouter = createRouter();
 
 knowledgePointsRouter.get("/", async (c) => {
   const userId = c.get("user").id;
@@ -59,10 +59,10 @@ knowledgePointsRouter.get("/", async (c) => {
 
 knowledgePointsRouter.post("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
-  const groupId = body && typeof body === "object" && "groupId" in body && (body as { groupId?: unknown }).groupId != null
-    ? String((body as { groupId?: unknown }).groupId)
-    : null;
+  // Never refused: anything but an object creates an ungrouped note.
+  const parsed = await readBody(c, createKnowledgePointRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { groupId } = parsed.data;
 
   const result = await createNote(c.env.DB, { userId, groupId });
   if (!result.ok) return c.json({ error: "Group not found" }, 404);
@@ -77,25 +77,13 @@ knowledgePointsRouter.get("/:id", async (c) => {
   return c.json({ knowledgePoint: detail });
 });
 
-function validateAutosave(body: unknown): string | null {
-  if (!body || typeof body !== "object") return "Invalid JSON body";
-  const b = body as Record<string, unknown>;
-  if (typeof b.baseRevision !== "number") return "baseRevision is required";
-  if (typeof b.title !== "string") return "title is required";
-  if (b.title.length > MAX_TITLE_LENGTH) return `title must be ${MAX_TITLE_LENGTH} characters or fewer`;
-  if (typeof b.bodyMarkdown !== "string") return "bodyMarkdown is required";
-  if (b.bodyMarkdown.length > MAX_BODY_LENGTH) return `bodyMarkdown must be ${MAX_BODY_LENGTH} characters or fewer`;
-  return null;
-}
-
 knowledgePointsRouter.put("/:id", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("user").id;
 
-  const body = await c.req.json().catch(() => null);
-  const error = validateAutosave(body);
-  if (error) return c.json({ error }, 400);
-  const { baseRevision, title, bodyMarkdown } = body as { baseRevision: number; title: string; bodyMarkdown: string };
+  const parsed = await readBody(c, autosaveKnowledgePointRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { baseRevision, title, bodyMarkdown } = parsed.data;
 
   const result = await applyNoteUpdate(c.env.DB, { id, userId, baseRevision, title, bodyMarkdown });
   if (!result.ok) {
@@ -109,9 +97,9 @@ knowledgePointsRouter.put("/:id", async (c) => {
 knowledgePointsRouter.patch("/:id/group", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object" || !("groupId" in body)) return c.json({ error: "groupId is required" }, 400);
-  const groupId = (body as { groupId?: unknown }).groupId == null ? null : String((body as { groupId?: unknown }).groupId);
+  const parsed = await readBody(c, setKnowledgePointGroupRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { groupId } = parsed.data;
 
   const result = await applyGroupMove(c.env.DB, { id, userId, groupId });
   if (!result.ok) {
@@ -124,12 +112,13 @@ knowledgePointsRouter.patch("/:id/group", async (c) => {
 knowledgePointsRouter.patch("/:id/reorder", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object" || !("beforeId" in body)) return c.json({ error: "beforeId is required" }, 400);
-  const beforeId = (body as { beforeId?: unknown }).beforeId == null ? null : String((body as { beforeId?: unknown }).beforeId);
+  const parsed = await readBody(c, reorderKnowledgePointRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { beforeId, expectedOrderRevision } = parsed.data;
 
-  // COMPATIBILITY WINDOW — make this required in the release after the one
-  // that ships it, then delete this comment and the `undefined` branch.
+  // COMPATIBILITY WINDOW — make expectedOrderRevision required (in
+  // reorderKnowledgePointRequestSchema) in the release after the one that
+  // ships it, then delete this comment.
   //
   // The order token is new in this release, so any browser tab still running
   // the previous bundle sends no `expectedOrderRevision`. Rejecting those
@@ -139,11 +128,6 @@ knowledgePointsRouter.patch("/:id/reorder", async (c) => {
   // Omitting it is treated as "no claim about what I was looking at", not as
   // "skip the concurrency check": reorderNote substitutes the scope's current
   // revision, so the write stays atomic either way.
-  const raw = (body as { expectedOrderRevision?: unknown }).expectedOrderRevision;
-  if (raw !== undefined && (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1)) {
-    return c.json({ error: "expectedOrderRevision must be a positive integer; reload the list before reordering" }, 400);
-  }
-  const expectedOrderRevision = raw as number | undefined;
   const result = await reorderNote(c.env.DB, { id, userId, beforeId, expectedOrderRevision });
   if (!result.ok) {
     if (result.reason === "not_found") return c.json({ error: "Knowledge point not found" }, 404);
@@ -158,9 +142,9 @@ knowledgePointsRouter.patch("/:id/reorder", async (c) => {
 knowledgePointsRouter.post("/:id/questions", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  const questionId = body && typeof (body as { questionId?: unknown }).questionId === "string" ? (body as { questionId: string }).questionId : null;
-  if (!questionId) return c.json({ error: "questionId is required" }, 400);
+  const parsed = await readBody(c, linkKnowledgePointQuestionRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { questionId } = parsed.data;
 
   const result = await linkQuestion(c.env.DB, { id, userId, questionId });
   if (!result.ok) {
@@ -186,8 +170,8 @@ knowledgePointsRouter.delete("/:id/questions/:questionId", async (c) => {
 knowledgePointsRouter.post("/:id/tags", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  const name = (body as { name?: unknown } | null)?.name;
+  const body = await readUncheckedBody(c);
+  const name = body.name;
 
   const result = await attachTag(c.env.DB, { id, userId, name });
   if (!result.ok) {

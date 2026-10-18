@@ -1,13 +1,12 @@
-import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { DEFAULT_MASCOT_STYLE, isMascotStyle } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { updateSiteAppearanceRequestSchema } from "@prepdeck/shared/schemas";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
+import { readBody } from "../lib/requestBody";
 
-type Context = { Bindings: Env; Variables: Variables };
-export const appearanceRouter = new Hono<Context>();
-export const adminAppearanceRouter = new Hono<Context>();
+export const appearanceRouter = createRouter();
+export const adminAppearanceRouter = createRouter();
 
 // No cookies or user data in this public response. Read the primary D1
 // binding directly (no replicas/KV/cache), so a refresh sees the last save.
@@ -30,11 +29,9 @@ adminAppearanceRouter.use("*", bodyLimit({ maxSize: 1024,
 }));
 adminAppearanceRouter.put("/", async (c) => {
   c.header("Cache-Control", "no-store");
-  const body: unknown = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body) ||
-    Object.keys(body).length !== 1 || !("mascotStyle" in body) || !isMascotStyle(body.mascotStyle)) {
-    return c.json({ error: "Expected mascotStyle to be 3D-Chibi or 2D-Anime" }, 400);
-  }
+  const parsed = await readBody(c, updateSiteAppearanceRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   try {
     const result = await c.env.DB.prepare(`INSERT INTO site_appearance (id, mascot_style, updated_at)
       VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET mascot_style = excluded.mascot_style,

@@ -6,10 +6,10 @@
 // never rendered during live, untimed practice or timed mock answering
 // (FR-11.6); that gating is a front-end concern.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
-import { MAX_NOTE_LENGTH, type NoteVisibility, type NoteWithAuthor } from "@prepdeck/shared";
+import { createRouter } from "../context";
+import type { NoteVisibility, NoteWithAuthor } from "@prepdeck/shared";
+import { createNoteRequestSchema, updateNoteRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 
 interface NoteRow {
   id: string;
@@ -45,21 +45,9 @@ const VISIBLE_TO_CLAUSE = `(n.user_id = ? OR (n.visibility = 'shared' AND (SELEC
 
 const SELECT_NOTE = `SELECT n.*, u.display_name, u.avatar_url FROM notes n JOIN users u ON u.id = n.user_id`;
 
-const TOO_LONG = `content must be ${MAX_NOTE_LENGTH.toLocaleString("en")} characters or fewer`;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untrusted JSON, checked field by field here
-function validateCreate(body: any): string | null {
-  if (!body || typeof body !== "object") return "Invalid JSON body";
-  if (typeof body.content !== "string" || !body.content.trim()) return "content is required";
-  // Checked on what is stored: the trimmed text.
-  if (body.content.trim().length > MAX_NOTE_LENGTH) return TOO_LONG;
-  if (body.visibility !== "private" && body.visibility !== "shared") return "visibility must be private or shared";
-  return null;
-}
-
 // Mounted at /api/questions/:questionId/notes — FR-11.1: add a note to a
 // question; also lists the notes visible to this user for that one question.
-export const questionNotesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionNotesRouter = createRouter();
 
 questionNotesRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
@@ -79,16 +67,16 @@ questionNotesRouter.post("/", async (c) => {
   const question = await c.env.DB.prepare("SELECT id FROM questions WHERE id = ?").bind(questionId).first();
   if (!question) return c.json({ error: "Question not found" }, 404);
 
-  const body = await c.req.json().catch(() => null);
-  const error = validateCreate(body);
-  if (error) return c.json({ error }, 400);
+  const parsed = await readBody(c, createNoteRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   await c.env.DB.prepare(
     `INSERT INTO notes (id, user_id, question_id, content, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, userId, questionId, body.content.trim(), body.visibility, now, now)
+    .bind(id, userId, questionId, body.content, body.visibility, now, now)
     .run();
 
   const row = await c.env.DB.prepare(`${SELECT_NOTE} WHERE n.id = ?`).bind(id).first<NoteRow>();
@@ -98,7 +86,7 @@ questionNotesRouter.post("/", async (c) => {
 // Mounted at /api/notes — bulk fetch of every note visible to this user
 // (own + visible shared, across questions), and edit/delete by note id
 // (FR-11.3/FR-11.8), independent of question id.
-export const notesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const notesRouter = createRouter();
 
 notesRouter.get("/", async (c) => {
   const userId = c.get("user").id;
@@ -122,17 +110,11 @@ notesRouter.patch("/:id", async (c) => {
     .first<NoteRow>();
   if (!existing) return c.json({ error: "Note not found" }, 404);
 
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-  if (body.content != null && (typeof body.content !== "string" || !body.content.trim())) {
-    return c.json({ error: "content must be a non-empty string" }, 400);
-  }
-  if (typeof body.content === "string" && body.content.trim().length > MAX_NOTE_LENGTH) return c.json({ error: TOO_LONG }, 400);
-  if (body.visibility != null && body.visibility !== "private" && body.visibility !== "shared") {
-    return c.json({ error: "visibility must be private or shared" }, 400);
-  }
+  const parsed = await readBody(c, updateNoteRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
-  const content = body.content !== undefined ? body.content.trim() : existing.content;
+  const content = body.content ?? existing.content;
   const visibility = body.visibility ?? existing.visibility;
   const now = new Date().toISOString();
   await c.env.DB.prepare("UPDATE notes SET content = ?, visibility = ?, updated_at = ? WHERE id = ?")

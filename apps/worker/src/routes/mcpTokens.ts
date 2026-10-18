@@ -5,10 +5,10 @@
 // credentials for that audience — an admin's Admin MCP tokens are personal
 // access tokens bound to their own account, not a shared service credential.
 
-import { Hono } from "hono";
-import { MCP_TOKEN_MAX_EXPIRES_IN_DAYS, MCP_TOKEN_NAME_MAX_LENGTH, TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
+import { createMcpCredentialRequestSchema } from "@prepdeck/shared/schemas";
+import { createRouter } from "../context";
+import { readBody } from "../lib/requestBody";
 import { requireAdmin } from "../middleware/admin";
 import { requireTurnstile } from "../middleware/turnstile";
 import {
@@ -18,21 +18,6 @@ import { McpApplicationError } from "../mcp/errors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseName(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const name = raw.trim();
-  if (!name || name.length > MCP_TOKEN_NAME_MAX_LENGTH) return null;
-  return name;
-}
-
-// `undefined`/`null` means "never expires". Any other non-integer or
-// out-of-range value is rejected outright.
-function parseExpiresInDays(raw: unknown): { ok: true; expiresAt: number | null } | { ok: false } {
-  if (raw === undefined || raw === null) return { ok: true, expiresAt: null };
-  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > MCP_TOKEN_MAX_EXPIRES_IN_DAYS) return { ok: false };
-  return { ok: true, expiresAt: Date.now() + raw * DAY_MS };
-}
-
 function freshSummary(issued: { id: string; name: string; createdAt: number; expiresAt: number | null }): McpCredentialSummary {
   return {
     id: issued.id, name: issued.name, createdAt: issued.createdAt, expiresAt: issued.expiresAt,
@@ -41,7 +26,7 @@ function freshSummary(issued: { id: string; name: string; createdAt: number; exp
 }
 
 export function createMcpTokensRouter(audience: McpAudience) {
-  const router = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const router = createRouter();
   if (audience === "admin") router.use("*", requireAdmin);
   // Both issue a working bearer token, so both ask for human verification
   // when the deployment uses it (issue #82). Revoking only takes access away.
@@ -55,15 +40,14 @@ export function createMcpTokensRouter(audience: McpAudience) {
 
   router.post("/", verifyHuman, async (c) => {
     const userId = c.get("user").id;
-    const body = await c.req.json().catch(() => null);
-    if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-    const name = parseName((body as Record<string, unknown>).name);
-    if (!name) return c.json({ error: `name is required (1-${MCP_TOKEN_NAME_MAX_LENGTH} characters)` }, 400);
-    const expiry = parseExpiresInDays((body as Record<string, unknown>).expiresInDays);
-    if (!expiry.ok) return c.json({ error: `expiresInDays must be an integer between 1 and ${MCP_TOKEN_MAX_EXPIRES_IN_DAYS}` }, 400);
+    const parsed = await readBody(c, createMcpCredentialRequestSchema);
+    if (!parsed.ok) return parsed.response;
+    const { name, expiresInDays } = parsed.data;
+    // No expiresInDays (or null) means "never expires".
+    const expiresAt = expiresInDays == null ? null : Date.now() + expiresInDays * DAY_MS;
 
     try {
-      const issued = await issueMcpCredential(c.env.DB, { userId, audience, name, expiresAt: expiry.expiresAt });
+      const issued = await issueMcpCredential(c.env.DB, { userId, audience, name, expiresAt });
       return c.json({ credential: freshSummary(issued), token: issued.token }, 201);
     } catch (err) {
       if (err instanceof McpApplicationError) return c.json({ error: "Could not issue this token" }, 400);

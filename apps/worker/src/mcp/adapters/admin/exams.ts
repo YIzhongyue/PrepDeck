@@ -2,9 +2,10 @@ import { McpApplicationError } from "../../errors";
 import { buildAdminMutationAuditStatement, buildConditionalAdminMutationAuditStatement, recordAdminMutationAudit } from "../../audit";
 import {
   examExists, getExam as getExamRecord, createExamStatement, updateExamStatement, archiveExamStatement,
-  EXAM_SLUG_PATTERN, type ExamCreateFields, type ExamMutableFields,
+  type ExamCreateFields, type ExamMutableFields,
 } from "../../../lib/examManagement";
-import { officialFormatError } from "@prepdeck/shared";
+import { EXAM_SLUG_PATTERN } from "@prepdeck/shared";
+import { officialFormatSchema } from "@prepdeck/shared/schemas";
 import type { AdminAdapterContext } from "./context";
 
 // Admin MCP exam lifecycle: create, update and archive.
@@ -19,7 +20,7 @@ export function examOperations(ctx: AdminAdapterContext) {
     async createExam(input: ExamCreateFields) {
       await consumeAdminMutationLimit();
       if (!EXAM_SLUG_PATTERN.test(input.slug)) throw new McpApplicationError("invalid_input");
-      if (input.officialFormat !== undefined && officialFormatError(input.officialFormat)) throw new McpApplicationError("invalid_input");
+      if (input.officialFormat !== undefined && !officialFormatSchema.safeParse(input.officialFormat).success) throw new McpApplicationError("invalid_input");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       try {
@@ -44,7 +45,7 @@ export function examOperations(ctx: AdminAdapterContext) {
       await consumeAdminMutationLimit();
       const { id, ...fields } = input;
       if (fields.slug !== undefined && !EXAM_SLUG_PATTERN.test(fields.slug)) throw new McpApplicationError("invalid_input");
-      if (fields.officialFormat !== undefined && officialFormatError(fields.officialFormat)) throw new McpApplicationError("invalid_input");
+      if (fields.officialFormat !== undefined && !officialFormatSchema.safeParse(fields.officialFormat).success) throw new McpApplicationError("invalid_input");
       const statement = updateExamStatement(db, id, fields);
       if (!statement) throw new McpApplicationError("invalid_input");
       let changed: number;

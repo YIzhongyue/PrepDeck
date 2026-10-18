@@ -5,6 +5,8 @@
 // value renders as "Set exam date" / "Set weekly goal" rather than an
 // invented date or an assumed eight-hour week.
 
+import type { z } from "zod";
+import type { updateExamStudyPreferencesRequestSchema } from "./examPreferences.schema.ts";
 export interface ExamStudyPreferencesResponse {
   examId: string;
   /** Exam date as a "YYYY-MM-DD" calendar day, counted down in UTC. */
@@ -12,13 +14,7 @@ export interface ExamStudyPreferencesResponse {
   weeklyGoalMinutes: number | null;
 }
 
-// Partial: the two values are edited independently, and `null` is a
-// meaningful value (clear the date / clear the goal), so "field omitted" and
-// "field set to null" must stay distinguishable.
-export interface UpdateExamStudyPreferencesRequest {
-  targetDate?: string | null;
-  weeklyGoalMinutes?: number | null;
-}
+export type UpdateExamStudyPreferencesRequest = z.input<typeof updateExamStudyPreferencesRequestSchema>;
 
 export const WEEKLY_GOAL_MIN_MINUTES = 15;
 export const WEEKLY_GOAL_MAX_MINUTES = 7 * 24 * 60;

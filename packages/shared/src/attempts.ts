@@ -4,6 +4,8 @@ import type { QuestionStudyStatusEntry } from "./studyStatus.ts";
 // Worker's responses and the web client's fetch calls.
 
 import type { AttemptMode, Difficulty, QuestionOption, QuestionType } from "./types";
+import type { z } from "zod";
+import type { saveDraftAnswerRequestSchema, saveFlagRequestSchema } from "./attempts.schema.ts";
 
 // A question as handed to a user who hasn't answered it yet: no correctAnswers,
 // no explanation. `chooseCount` (safe to reveal — it's a count, not which ids
@@ -119,18 +121,14 @@ export interface SubmitPracticeAnswerHttpResponse extends SubmitPracticeAnswerRe
   studyStatus: QuestionStudyStatusEntry;
 }
 
-export interface SaveDraftAnswerRequest {
-  selectedAnswer: string[];
-}
+export type SaveDraftAnswerRequest = z.input<typeof saveDraftAnswerRequestSchema>;
 
 export interface SaveDraftAnswerResponse {
   saved: true;
   studyStatus: QuestionStudyStatusEntry;
 }
 
-export interface SaveFlagRequest {
-  flagged: boolean;
-}
+export type SaveFlagRequest = z.input<typeof saveFlagRequestSchema>;
 
 export interface ActiveAttemptResponse {
   attemptId: string;

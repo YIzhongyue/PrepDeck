@@ -1,7 +1,5 @@
 import { exportComponentPackage } from "@prepdeck/shared";
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { getExam as getExamRecord } from "../lib/examManagement";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
@@ -22,7 +20,7 @@ function auditRejection(db: D1Database, context: QuestionMutationContext, reason
   return questionMutationAuditStatement(db, context, "failure", reason).run().catch(() => {});
 }
 
-export const questionsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const questionsRouter = createRouter();
 questionsRouter.onError((error, c) => {
   if (error instanceof QuestionClassificationError) return c.json({ error: error.message }, error.status);
   throw error;

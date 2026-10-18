@@ -19,11 +19,10 @@
 // `returnTo`. The authorization transaction itself travels only as an opaque
 // request id plus a path-scoped binding cookie, never inside `returnTo`.
 
-import { Hono, type Context } from "hono";
+import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MCP_OAUTH_SCOPES, type McpAuthorizationDecisionResponse, type McpAuthorizationRequestView } from "@prepdeck/shared";
-import type { Env } from "../../bindings";
-import type { Variables } from "../../context";
+import { createRouter, type AppEnv } from "../../context";
 import { requireAccessUser } from "../../middleware/access";
 import { authenticatedRateLimit, consumeRateLimit } from "../../middleware/rateLimit";
 import {
@@ -38,7 +37,7 @@ import {
   getPendingAuthorizationRequest, refreshAccessToken, revokeByToken, validCodeChallenge, type TokenResult,
 } from "./grants";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type AppContext = Context<AppEnv>;
 
 // Public, credential-free protocol endpoints may be called from a browser-based
 // MCP client. They set no cookies and read none, so any origin may call them.
@@ -56,7 +55,7 @@ const notEnabled = (c: AppContext) => c.json({ error: "not_found", error_descrip
 
 // --- Discovery ----------------------------------------------------------------
 
-export const oauthWellKnownRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const oauthWellKnownRouter = createRouter();
 
 oauthWellKnownRouter.options("*", preflight);
 
@@ -99,7 +98,7 @@ oauthWellKnownRouter.all("*", (c) => c.json({ error: "not_found" }, 404, CORS_HE
 
 // --- Protocol endpoints -------------------------------------------------------
 
-export const oauthRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const oauthRouter = createRouter();
 
 const BINDING_COOKIE = "pd_mcp_authz";
 
@@ -258,7 +257,7 @@ oauthRouter.post("/revoke", smallBody(8 * 1024), async (c) => {
 
 // --- Consent (browser session) -----------------------------------------------
 
-const consent = new Hono<{ Bindings: Env; Variables: Variables }>();
+const consent = createRouter();
 consent.use("*", async (c, next) => {
   if (!isMcpOAuthEnabled(c.env)) return c.json({ error: "OAuth is not enabled on this server." }, 404);
   await next();

@@ -1,25 +1,14 @@
-// The official mock format: admin input checks, the formats Mock setup offers,
+// The official mock format: the formats Mock setup offers,
 // and the pass rule scaled to a mock's length.
 
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  effectivePassMarkPct, isMockPassed, mockFormatOptions, officialFormatError, requiredCorrectFor,
+  effectivePassMarkPct, isMockPassed, mockFormatOptions, requiredCorrectFor,
   type OfficialMockFormat
 } from "./examFormat.ts";
 
 const SAP: OfficialMockFormat = { questionCount: 75, timeLimitMinutes: 180, passCorrectCount: 54 };
-
-test("officialFormatError accepts a whole format or null and names the first bad field", () => {
-  assert.equal(officialFormatError(null), null);
-  assert.equal(officialFormatError(SAP), null);
-  assert.match(officialFormatError({ ...SAP, questionCount: 0 })!, /questionCount/);
-  assert.match(officialFormatError({ ...SAP, questionCount: 201 })!, /questionCount/);
-  assert.match(officialFormatError({ ...SAP, timeLimitMinutes: 1.5 })!, /timeLimitMinutes/);
-  assert.match(officialFormatError({ ...SAP, passCorrectCount: 76 })!, /passCorrectCount/);
-  assert.match(officialFormatError({ questionCount: 75, timeLimitMinutes: 180 })!, /passCorrectCount/);
-  assert.match(officialFormatError("75")!, /object/);
-});
 
 test("the pass count scales to the mock's length, rounding up", () => {
   assert.equal(requiredCorrectFor(SAP, 75), 54);

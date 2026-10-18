@@ -2,14 +2,14 @@
 // invites a Google email with an initial role, and can later change an
 // account's role or revoke/restore its access. Admin-only (requireAdmin).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { hashPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
 import { invalidateCachedUser } from "../lib/userCache";
+import { readBody } from "../lib/requestBody";
 import type { Role, User, UserStatus } from "@prepdeck/shared";
+import { inviteUserRequestSchema, updateUserRequestSchema } from "@prepdeck/shared/schemas";
 
 interface UserRow {
   id: string;
@@ -41,9 +41,7 @@ function toUser(row: UserRow): User {
   };
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export const adminUsersRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const adminUsersRouter = createRouter();
 
 adminUsersRouter.use("*", requireAdmin);
 
@@ -59,11 +57,9 @@ adminUsersRouter.get("/", async (c) => {
 // fills those in. `password` is optional and only meaningful for the local-dev
 // email+password fallback (POST /api/auth/login) — Google OAuth ignores it.
 adminUsersRouter.post("/", async (c) => {
-  const body = await c.req.json<{ email?: string; role?: Role; password?: string }>().catch(() => null);
-  const email = body?.email?.trim().toLowerCase();
-  const role = body?.role;
-  if (!email || !EMAIL_RE.test(email)) return c.json({ error: "A valid email is required" }, 400);
-  if (role !== "admin" && role !== "user") return c.json({ error: "role must be 'admin' or 'user'" }, 400);
+  const parsed = await readBody(c, inviteUserRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { email, role, password } = parsed.data;
 
   const existing = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
   if (existing) return c.json({ error: "This email is already on the Authorized Users list" }, 409);
@@ -73,7 +69,7 @@ adminUsersRouter.post("/", async (c) => {
   // Never create reusable password credentials in production. The same
   // fail-closed gate used by /auth/login is required before hashing a supplied
   // local-development password.
-  const passwordHash = body?.password && isDevPasswordLoginEnabled(c.env) ? await hashPassword(body.password) : null;
+  const passwordHash = password && isDevPasswordLoginEnabled(c.env) ? await hashPassword(password) : null;
 
   await c.env.DB.prepare(
     "INSERT INTO users (id, email, role, status, invited_by, created_at, password_hash) VALUES (?, ?, ?, 'invited', ?, ?, ?)"
@@ -98,25 +94,10 @@ adminUsersRouter.patch("/:id", async (c) => {
     return c.json({ error: "Use your own Settings page to change your own account" }, 400);
   }
 
-  const body = await c.req.json<{ role?: Role; status?: "active" | "revoked"; googleSub?: null }>().catch(() => null);
-  if (!body) return c.json({ error: "Invalid JSON body" }, 400);
-  if (body.role !== undefined && body.role !== "admin" && body.role !== "user") {
-    return c.json({ error: "role must be 'admin' or 'user'" }, 400);
-  }
-  if (body.status !== undefined && body.status !== "active" && body.status !== "revoked") {
-    return c.json({ error: "status must be 'active' or 'revoked'" }, 400);
-  }
-  // Clearing only: an Admin can unbind a Google account, never hand-pick which
-  // one an account answers to. A subject is only ever written by a sign-in
-  // that verified it against Google's JWKS (FR-1.9), so accepting one here
-  // would turn the Authorized Users screen into a way to take over an account
-  // by typing a number.
-  if (body.googleSub !== undefined && body.googleSub !== null) {
-    return c.json({ error: "googleSub can only be cleared (null)" }, 400);
-  }
-  if (body.role === undefined && body.status === undefined && body.googleSub === undefined) {
-    return c.json({ error: "Nothing to update" }, 400);
-  }
+  // googleSub may only be cleared (null), never set: see updateUserRequestSchema.
+  const parsed = await readBody(c, updateUserRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const target = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
   if (!target) return c.json({ error: "User not found" }, 404);

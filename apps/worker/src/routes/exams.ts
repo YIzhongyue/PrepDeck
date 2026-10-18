@@ -2,18 +2,16 @@
 // Listing is available to any authenticated user (needed to pick an exam for
 // practice, per FR-3.1); mutations are Admin-only.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
-import { officialFormatError } from "@prepdeck/shared";
+import { createExamRequestSchema, updateExamRequestSchema } from "@prepdeck/shared/schemas";
 import {
-  getExam, listExams, examFieldsError,
+  getExam, listExams,
   createExamStatement, updateExamStatement, archiveExamStatement, unarchiveExamStatement,
-  type ExamMutableFields,
 } from "../lib/examManagement";
+import { readBody } from "../lib/requestBody";
 
-export const examsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examsRouter = createRouter();
 
 examsRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
@@ -29,19 +27,14 @@ examsRouter.get("/:id", async (c) => {
 });
 
 examsRouter.post("/", requireAdmin, async (c) => {
-  const body = await c.req.json<ExamMutableFields>().catch(() => null);
-  if (!body || !body.slug || !body.name) {
-    return c.json({ error: "slug and name are required" }, 400);
-  }
-  const fieldsError = examFieldsError(body as Record<string, unknown>);
-  if (fieldsError) return c.json({ error: fieldsError }, 400);
-  const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
-  if (formatError) return c.json({ error: formatError }, 400);
+  const parsed = await readBody(c, createExamRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   try {
-    await createExamStatement(c.env.DB, id, { ...body, slug: body.slug, name: body.name }, now).run();
+    await createExamStatement(c.env.DB, id, body, now).run();
   } catch {
     return c.json({ error: "An exam with this slug already exists" }, 409);
   }
@@ -70,12 +63,9 @@ examsRouter.post("/", requireAdmin, async (c) => {
 
 examsRouter.patch("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json<ExamMutableFields>().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
-  const fieldsError = examFieldsError(body as Record<string, unknown>);
-  if (fieldsError) return c.json({ error: fieldsError }, 400);
-  const formatError = body.officialFormat !== undefined ? officialFormatError(body.officialFormat) : null;
-  if (formatError) return c.json({ error: formatError }, 400);
+  const parsed = await readBody(c, updateExamRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const existing = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(id).first();
   if (!existing) return c.json({ error: "Exam not found" }, 404);
@@ -135,7 +125,7 @@ examsRouter.post("/:id/badge", requireAdmin, async (c) => {
   return c.json({ badgeIconUrl });
 });
 
-export const examBadgesRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examBadgesRouter = createRouter();
 
 examBadgesRouter.get("/:examId", async (c) => {
   const object = await c.env.BUCKET.get(`exam-badges/${c.req.param("examId")}`);

@@ -7,16 +7,15 @@
 // implementation — CRUD now lives in lib/knowledgePointTagMutations.ts, shared
 // with the User MCP adapter.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { listTags, renameTag, deleteTag } from "../lib/knowledgePointTagMutations";
+import { readUncheckedBody } from "../lib/requestBody";
 
 // See routes/knowledgePointGroups.ts's UNPAGINATED_LIMIT — REST's GET / has
 // never paginated the tag catalog either.
 const UNPAGINATED_LIMIT = 100_000;
 
-export const knowledgePointTagsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointTagsRouter = createRouter();
 
 knowledgePointTagsRouter.get("/", async (c) => {
   const { tags } = await listTags(c.env.DB, c.get("user").id, { limit: UNPAGINATED_LIMIT, offset: 0 });
@@ -24,8 +23,8 @@ knowledgePointTagsRouter.get("/", async (c) => {
 });
 
 knowledgePointTagsRouter.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const result = await renameTag(c.env.DB, { id: c.req.param("id"), userId: c.get("user").id, name: (body as { name?: unknown } | null)?.name });
+  const body = await readUncheckedBody(c);
+  const result = await renameTag(c.env.DB, { id: c.req.param("id"), userId: c.get("user").id, name: body.name });
   if (!result.ok) {
     if (result.reason === "not_found") return c.json({ error: "Tag not found" }, 404);
     if (result.reason === "duplicate") return c.json({ error: "A tag with that name already exists" }, 409);

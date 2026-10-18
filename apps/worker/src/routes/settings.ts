@@ -4,12 +4,10 @@
 // minimal and separate from the richer profile settings docs/requirements/authentication-and-users.md owns
 // (display name, avatar — see routes/profile.ts).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
-import { canonicalTimeZone, type ThemeId } from "@prepdeck/shared";
-
-const THEME_IDS: ThemeId[] = ["cream", "sage", "clay", "dusk"];
+import { createRouter } from "../context";
+import type { ThemeId } from "@prepdeck/shared";
+import { updateUserSettingsRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 
 interface SettingsRow {
   show_shared_notes: number;
@@ -17,7 +15,7 @@ interface SettingsRow {
   timezone: string | null;
 }
 
-export const settingsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const settingsRouter = createRouter();
 
 settingsRouter.get("/", async (c) => {
   const userId = c.get("user").id;
@@ -29,32 +27,16 @@ settingsRouter.get("/", async (c) => {
 
 settingsRouter.patch("/", async (c) => {
   const userId = c.get("user").id;
-  const body = await c.req.json().catch(() => null);
-  if (!body || typeof body !== "object") return c.json({ error: "Invalid JSON body" }, 400);
-
-  const hasShowSharedNotes = body.showSharedNotes !== undefined;
-  const hasTheme = body.theme !== undefined;
-  const hasTimeZone = body.timezone !== undefined;
-  if (!hasShowSharedNotes && !hasTheme && !hasTimeZone) {
-    return c.json({ error: "Provide showSharedNotes, theme and/or timezone" }, 400);
-  }
-  if (hasShowSharedNotes && typeof body.showSharedNotes !== "boolean") {
-    return c.json({ error: "showSharedNotes must be a boolean" }, 400);
-  }
-  if (hasTheme && body.theme !== null && !THEME_IDS.includes(body.theme)) {
-    return c.json({ error: `theme must be one of ${THEME_IDS.join(", ")}, or null` }, 400);
-  }
-  const requestedTimeZone = hasTimeZone ? canonicalTimeZone(body.timezone) : null;
-  if (hasTimeZone && !requestedTimeZone) {
-    return c.json({ error: "timezone must be a valid IANA time zone name" }, 400);
-  }
+  const parsed = await readBody(c, updateUserSettingsRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const current = await c.env.DB.prepare("SELECT show_shared_notes, theme, timezone FROM users WHERE id = ?")
     .bind(userId)
     .first<SettingsRow>();
-  const showSharedNotes = hasShowSharedNotes ? (body.showSharedNotes as boolean) : !!current?.show_shared_notes;
-  const theme = hasTheme ? (body.theme as ThemeId | null) : ((current?.theme as ThemeId | null) ?? null);
-  const timezone = requestedTimeZone ?? current?.timezone ?? null;
+  const showSharedNotes = body.showSharedNotes ?? !!current?.show_shared_notes;
+  const theme = body.theme !== undefined ? body.theme : ((current?.theme as ThemeId | null) ?? null);
+  const timezone = body.timezone ?? current?.timezone ?? null;
 
   await c.env.DB.prepare("UPDATE users SET show_shared_notes = ?, theme = ?, timezone = ? WHERE id = ?")
     .bind(showSharedNotes ? 1 : 0, theme, timezone, userId)

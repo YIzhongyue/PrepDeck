@@ -6,10 +6,9 @@
 // implementation — CRUD now lives in lib/knowledgePointGroupMutations.ts, shared
 // with the User MCP adapter.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { listGroups, createGroup, renameGroup, deleteGroup } from "../lib/knowledgePointGroupMutations";
+import { readUncheckedBody } from "../lib/requestBody";
 
 // REST's GET / has never paginated — every group for the user, in one
 // response. listGroups() itself always takes a page window (the User MCP
@@ -17,7 +16,7 @@ import { listGroups, createGroup, renameGroup, deleteGroup } from "../lib/knowle
 // than duplicating the query with a second code path.
 const UNPAGINATED_LIMIT = 100_000;
 
-export const knowledgePointGroupsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const knowledgePointGroupsRouter = createRouter();
 
 knowledgePointGroupsRouter.get("/", async (c) => {
   const { groups, ungroupedCount } = await listGroups(c.env.DB, c.get("user").id, { limit: UNPAGINATED_LIMIT, offset: 0 });
@@ -25,8 +24,8 @@ knowledgePointGroupsRouter.get("/", async (c) => {
 });
 
 knowledgePointGroupsRouter.post("/", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const result = await createGroup(c.env.DB, { userId: c.get("user").id, name: (body as { name?: unknown } | null)?.name });
+  const body = await readUncheckedBody(c);
+  const result = await createGroup(c.env.DB, { userId: c.get("user").id, name: body.name });
   if (!result.ok) {
     return c.json({ error: result.reason === "duplicate" ? "A group with that name already exists" : "A valid group name is required" }, result.reason === "duplicate" ? 409 : 400);
   }
@@ -34,8 +33,8 @@ knowledgePointGroupsRouter.post("/", async (c) => {
 });
 
 knowledgePointGroupsRouter.patch("/:id", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const result = await renameGroup(c.env.DB, { id: c.req.param("id"), userId: c.get("user").id, name: (body as { name?: unknown } | null)?.name });
+  const body = await readUncheckedBody(c);
+  const result = await renameGroup(c.env.DB, { id: c.req.param("id"), userId: c.get("user").id, name: body.name });
   if (!result.ok) {
     if (result.reason === "not_found") return c.json({ error: "Group not found" }, 404);
     if (result.reason === "duplicate") return c.json({ error: "A group with that name already exists" }, 409);

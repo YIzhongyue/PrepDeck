@@ -1,8 +1,7 @@
-import { Hono } from "hono";
 import { z } from "zod";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
+import { readBody } from "../lib/requestBody";
 import { hasValidImageContent, ICON_CONTENT_TYPES, type IconContentType } from "../lib/imageValidation";
 
 interface ProviderRow { id: string; name: string; short_name: string; website_url: string | null; icon_url: string | null; created_at: string; archived_at: string | null }
@@ -19,7 +18,7 @@ const providerFields = z.object({
 }).strict();
 const providerPatch = providerFields.partial().refine((value) => Object.keys(value).length > 0, "No fields to update");
 
-export const providersRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const providersRouter = createRouter();
 
 providersRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true" && c.get("user").role === "admin";
@@ -28,8 +27,8 @@ providersRouter.get("/", async (c) => {
 });
 
 providersRouter.post("/", requireAdmin, async (c) => {
-  const parsed = providerFields.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid provider" }, 400);
+  const parsed = await readBody(c, providerFields);
+  if (!parsed.ok) return parsed.response;
   const { name, shortName, websiteUrl = null } = parsed.data;
   const id = crypto.randomUUID(); const createdAt = new Date().toISOString();
   await c.env.DB.prepare("INSERT INTO providers (id, name, short_name, website_url, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -38,8 +37,8 @@ providersRouter.post("/", requireAdmin, async (c) => {
 });
 
 providersRouter.patch("/:id", requireAdmin, async (c) => {
-  const parsed = providerPatch.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid provider" }, 400);
+  const parsed = await readBody(c, providerPatch);
+  if (!parsed.ok) return parsed.response;
   const body = parsed.data;
   const fields: string[] = []; const values: unknown[] = [];
   for (const [key, column] of [["name", "name"], ["shortName", "short_name"], ["websiteUrl", "website_url"]] as const) {
@@ -123,7 +122,7 @@ providersRouter.post("/:id/icon", requireAdmin, async (c) => {
   return c.json({ iconUrl });
 });
 
-export const providerIconsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const providerIconsRouter = createRouter();
 providerIconsRouter.get("/:id", async (c) => {
   const object = await c.env.BUCKET.get(`provider-icons/${c.req.param("id")}`); if (!object) return c.json({ error: "Not found" }, 404);
   const storedType = object.httpMetadata?.contentType ?? "";

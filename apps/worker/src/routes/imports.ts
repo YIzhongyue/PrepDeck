@@ -4,9 +4,8 @@
 // plus an import_logs audit row (FR-2.5). Admin-only. The pipeline itself is
 // lib/questionImport.ts, shared with Admin MCP's import tools.
 
-import { Hono, type Context } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { Context } from "hono";
+import { createRouter, type AppEnv } from "../context";
 import { requireAdmin } from "../middleware/admin";
 import { invalidatePracticeQuestions } from "../lib/practiceCache";
 import { parseJsonBody, runD1Batches } from "../lib/importSecurity";
@@ -18,7 +17,7 @@ import {
 } from "../lib/questionImport";
 import { aggregateQuestionMutationAuditStatements, questionMutationAuditStatement } from "../lib/questionMutationAudit";
 
-type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+type AppContext = Context<AppEnv>;
 
 // Planned writes per atomic D1 batch. Admin MCP uses smaller batches; see
 // mcp/adapters/admin/imports.ts.
@@ -34,7 +33,7 @@ function isConflictResolutionList(value: unknown): value is ImportConflictResolu
     && typeof r.incomingToken === "string" && ["keep", "apply"].includes(r.action));
 }
 
-export const importsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const importsRouter = createRouter();
 
 importsRouter.use("*", requireAdmin);
 

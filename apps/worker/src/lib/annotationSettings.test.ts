@@ -1,28 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aliasValidationError, resolveMarkAlias } from "./annotationSettings.ts";
-
-test("aliasValidationError accepts an omitted field", () => {
-  assert.equal(aliasValidationError("hl1Alias", undefined), null);
-});
-
-test("aliasValidationError accepts a valid string", () => {
-  assert.equal(aliasValidationError("hl1Alias", "Service"), null);
-});
-
-test("aliasValidationError rejects a non-string value", () => {
-  assert.match(aliasValidationError("hl1Alias", 42) ?? "", /must be a string/);
-});
-
-test("aliasValidationError rejects a value longer than the max length", () => {
-  const tooLong = "x".repeat(41);
-  assert.match(aliasValidationError("hl1Alias", tooLong) ?? "", /40 characters or fewer/);
-});
-
-test("aliasValidationError allows exactly the max length after trimming", () => {
-  const exact = "x".repeat(40);
-  assert.equal(aliasValidationError("hl1Alias", `  ${exact}  `), null);
-});
+import { resolveMarkAlias } from "./annotationSettings.ts";
 
 test("resolveMarkAlias trims and returns non-empty input", () => {
   assert.equal(resolveMarkAlias("  Service  ", undefined, "hl1"), "Service");

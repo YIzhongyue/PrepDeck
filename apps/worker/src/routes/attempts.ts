@@ -9,9 +9,7 @@
 // attempt_answers rows, whose is_correct column is NOT NULL) is what makes
 // resume-on-reload possible via GET /active.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 import {
   startAttempt, submitPracticeAnswer, completeAttempt, loadOwnAttempt, readMockDraft,
   isPastDeadline, answerable, invalidAnswer, ANSWERABLE_COLUMNS,
@@ -21,14 +19,16 @@ import type { AttemptRow } from "../lib/attemptRecords";
 import { studyMutationStatus } from "../lib/studyMutationResult";
 import { getStudyStatus, markAnsweredStatement } from "../lib/studyStatus";
 import {
-  answerProblem, answerSizeProblem, hasAnswer, isStringArray, MOCK_SUBMIT_GRACE_SECONDS,
-  type ActiveAttemptResponse, type AttemptMode, type SaveDraftAnswerRequest,
-  type SaveDraftAnswerResponse, type SaveFlagRequest, type StartAttemptRequest, type SubmitPracticeAnswerHttpResponse,
+  answerProblem, answerSizeProblem, hasAnswer, MOCK_SUBMIT_GRACE_SECONDS,
+  type ActiveAttemptResponse, type AttemptMode,
+  type SaveDraftAnswerResponse, type StartAttemptRequest, type SubmitPracticeAnswerHttpResponse,
   type SubmitPracticeAnswerRequest,
 } from "@prepdeck/shared";
+import { saveDraftAnswerRequestSchema, saveFlagRequestSchema } from "@prepdeck/shared/schemas";
+import { readBody } from "../lib/requestBody";
 
 // Mounted at /api/exams/:examId/attempts
-export const examAttemptsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const examAttemptsRouter = createRouter();
 
 examAttemptsRouter.post("/", async (c) => {
   const result = await startAttempt(c.env, c.get("user").id, c.req.param("examId")!, await c.req.json<StartAttemptRequest>().catch(() => null));
@@ -36,7 +36,7 @@ examAttemptsRouter.post("/", async (c) => {
 });
 
 // Mounted at /api/attempts
-export const attemptsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const attemptsRouter = createRouter();
 
 attemptsRouter.get("/active", async (c) => {
   const examId = c.req.query("examId");
@@ -94,14 +94,11 @@ attemptsRouter.put("/:id/answers/:questionId", async (c) => {
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
 
-  const body = await c.req.json<SaveDraftAnswerRequest>().catch(() => null);
-  if (!body || !Array.isArray(body.selectedAnswer)) return c.json({ error: "selectedAnswer is required" }, 400);
-  // Not merely "an array": a non-string element survives the draft write and
-  // then throws inside grading at submission, leaving an attempt that cannot be
-  // completed at all. The boundary is the only place this can be caught cheaply.
-  if (!isStringArray(body.selectedAnswer)) {
-    return c.json({ error: "selectedAnswer must be an array of strings" }, 400);
-  }
+  // An array of strings, caught here rather than inside grading at submission;
+  // see saveDraftAnswerRequestSchema.
+  const parsed = await readBody(c, saveDraftAnswerRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   // Checked before the write: the draft is merged into one attempts row with
   // json_patch, so an unbounded value would grow that row without limit.
   const tooLarge = answerSizeProblem(body.selectedAnswer);
@@ -167,8 +164,9 @@ attemptsRouter.put("/:id/flags/:questionId", async (c) => {
   const questionIds: string[] = JSON.parse(attempt.question_ids_json);
   if (!questionIds.includes(questionId)) return c.json({ error: "Question is not part of this attempt" }, 400);
 
-  const body = await c.req.json<SaveFlagRequest>().catch(() => null);
-  if (!body || typeof body.flagged !== "boolean") return c.json({ error: "flagged is required" }, 400);
+  const parsed = await readBody(c, saveFlagRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   // Deliberately does NOT bump draft_revision: flags are not graded, so a flag
   // toggled while a submission is in flight must not invalidate it. For the

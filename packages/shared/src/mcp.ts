@@ -4,6 +4,8 @@
 // only the audience/server they operate on differs (see
 // apps/worker/src/routes/mcpTokens.ts).
 
+import type { z } from "zod";
+import type { createMcpCredentialRequestSchema } from "./mcp.schema.ts";
 export type McpTokenStatus = "active" | "revoked" | "expired";
 
 export const MCP_TOKEN_NAME_MAX_LENGTH = 100;
@@ -23,11 +25,7 @@ export interface ListMcpCredentialsResponse {
   credentials: McpCredentialSummary[];
 }
 
-export interface CreateMcpCredentialRequest {
-  name: string;
-  // Days from now until expiry. Omit for a token that never expires.
-  expiresInDays?: number;
-}
+export type CreateMcpCredentialRequest = z.input<typeof createMcpCredentialRequestSchema>;
 
 // The full bearer token is included only in the create/rotate response —
 // never again afterward (list/get only ever return McpCredentialSummary).

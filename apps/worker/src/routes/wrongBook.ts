@@ -2,11 +2,9 @@
 // active view (practice-catalog's wrongEntries) until/unless the user misses
 // it again, which un-masters it (see wrongBookUpsert in routes/attempts.ts).
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 
-export const wrongBookMasteredRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const wrongBookMasteredRouter = createRouter();
 
 wrongBookMasteredRouter.put("/", async (c) => {
   const questionId = c.req.param("questionId");

@@ -2,11 +2,9 @@
 // already built into PracticeLive. Browsing a "My Bookmarks" page is section
 // 3.6 and out of scope here.
 
-import { Hono } from "hono";
-import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import { createRouter } from "../context";
 
-export const bookmarksRouter = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const bookmarksRouter = createRouter();
 
 bookmarksRouter.put("/", async (c) => {
   const questionId = c.req.param("questionId");

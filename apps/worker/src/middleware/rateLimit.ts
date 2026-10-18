@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import type { Env } from "../bindings";
-import type { Variables } from "../context";
+import type { AppEnv } from "../context";
 
 export type RateLimitClass = "auth" | "ai" | "write" | "read" | "health" | "draft";
 
@@ -120,7 +120,7 @@ function degradedConsume(key: string, limit: Limit): { allowed: boolean; retryAf
 }
 
 /** First line inside the Worker. Cloudflare WAF/Rate Limiting remains line one at the edge. */
-export const generalRateLimit: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
+export const generalRateLimit: MiddlewareHandler<AppEnv> = async (c, next) => {
   const observation = c.get("mcpObservation");
   if (observation) observation.stage = "ip_limit";
   const kind = classifyRequest(c.req.method, c.req.path);
@@ -151,7 +151,7 @@ export const generalRateLimit: MiddlewareHandler<{ Bindings: Env; Variables: Var
 };
 
 /** Run after authentication so the key contains the server-resolved user id. */
-export const authenticatedRateLimit: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
+export const authenticatedRateLimit: MiddlewareHandler<AppEnv> = async (c, next) => {
   const kind = classifyRequest(c.req.method, c.req.path);
   if (kind !== "ai" && kind !== "write" && kind !== "draft") return next();
   const result = await consumeRateLimit(c.env, `${kind}:user:${c.get("user").id}`, LIMITS[kind]).catch(() => null);
