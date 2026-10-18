@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
+import { readBody } from "../lib/requestBody";
 import { hasValidImageContent, ICON_CONTENT_TYPES, type IconContentType } from "../lib/imageValidation";
 
 interface ProviderRow { id: string; name: string; short_name: string; website_url: string | null; icon_url: string | null; created_at: string; archived_at: string | null }
@@ -26,8 +27,8 @@ providersRouter.get("/", async (c) => {
 });
 
 providersRouter.post("/", requireAdmin, async (c) => {
-  const parsed = providerFields.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid provider" }, 400);
+  const parsed = await readBody(c, providerFields);
+  if (!parsed.ok) return parsed.response;
   const { name, shortName, websiteUrl = null } = parsed.data;
   const id = crypto.randomUUID(); const createdAt = new Date().toISOString();
   await c.env.DB.prepare("INSERT INTO providers (id, name, short_name, website_url, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -36,8 +37,8 @@ providersRouter.post("/", requireAdmin, async (c) => {
 });
 
 providersRouter.patch("/:id", requireAdmin, async (c) => {
-  const parsed = providerPatch.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid provider" }, 400);
+  const parsed = await readBody(c, providerPatch);
+  if (!parsed.ok) return parsed.response;
   const body = parsed.data;
   const fields: string[] = []; const values: unknown[] = [];
   for (const [key, column] of [["name", "name"], ["shortName", "short_name"], ["websiteUrl", "website_url"]] as const) {
