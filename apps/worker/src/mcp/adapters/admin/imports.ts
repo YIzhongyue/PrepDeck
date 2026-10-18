@@ -1,31 +1,35 @@
 import { McpApplicationError } from "../../errors";
 import { buildAdminMutationAuditStatement, buildConditionalAdminMutationAuditStatement, recordAdminMutationAudit } from "../../audit";
 import { getExam as getExamRecord } from "../../../lib/examManagement";
-import {
-  createStatement, payloadOf, searchQuestions as searchQuestionsQuery, updateStatement, type QuestionRow,
-} from "../../../lib/questionManagement";
+import { payloadOf, searchQuestions as searchQuestionsQuery } from "../../../lib/questionManagement";
 import { invalidatePracticeQuestions } from "../../../lib/practiceCache";
 import {
-  findQuestionRows as findQuestionRowsByExternalId, classifyImportRows, cleanOldImportArchives,
   fileToken as computeFileToken, requestFingerprint as computeRequestFingerprint, getCommittedImportItems,
-  buildCommittedImportItemStatement, buildConditionalCommittedImportItemStatement, type ImportConflictResolution,
+  buildCommittedImportItemStatement, buildConditionalCommittedImportItemStatement,
 } from "../../../lib/importExecution";
 import {
-  normalizeImportFile, exportComponentPackage, MissingExportExternalIdError,
-  validateImportFile as validateImportFileContents,
-} from "@prepdeck/shared";
-import {
-  fetchTagIdsForQuestions, buildTagLinkStatements, buildTagNameResolver, tagResolutionSnapshot,
-} from "../../../lib/questionBankTags";
+  archiveImportFile, classifyImportDecisions, cleanOldImportArchives, commitImportWrites, countImportOutcomes,
+  decideImportRows, findImportTargets, importTagNames, isCleanUpdate, limitImportRequest, planImportWrites,
+  recordImportLog, validateImport,
+  type ChangedImportRow, type ImportConflictResolution, type ImportOutcomeStatus, type ImportRowDecision,
+} from "../../../lib/questionImport";
+import { exportComponentPackage, MissingExportExternalIdError, validateImportFile as validateImportFileContents } from "@prepdeck/shared";
+import { tagResolutionSnapshot } from "../../../lib/questionBankTags";
 import { assertImportFileDepth, type AdminAdapterContext } from "./context";
 
 // Admin MCP import workflow: validate, preview, execute (claimed, resumable
-// and replay-safe per importId) and status.
+// and replay-safe per importId) and status. The pipeline itself is
+// lib/questionImport.ts, shared with the REST import routes.
 export function importOperations(ctx: AdminAdapterContext) {
   const { db, env, principal, requireExam } = ctx;
 
   // --- Import execution helpers (implementation) ----------------------------------
   const STALE_IMPORT_MS = 2 * 60 * 1000;
+  // Planned writes per atomic D1 batch: a bounded per-attempt commit size for
+  // import execute, not a D1 statement-count limit (admin_batch_create_questions
+  // and admin_batch_update_questions already run well past 50 statements in a
+  // single db.batch()). REST commits 50 per batch.
+  const IMPORT_ITEMS_PER_BATCH = 16;
 
   interface ImportJobRow {
     id: string; exam_id: string; admin_user_id: string; file_token: string; request_fingerprint: string;
@@ -36,15 +40,14 @@ export function importOperations(ctx: AdminAdapterContext) {
   }
 
   async function consumeImportRateLimit(kind: "validate" | "execute", examId: string): Promise<void> {
-    const limiter = kind === "validate" ? env.IMPORT_VALIDATE_RATE_LIMITER : env.IMPORT_EXECUTE_RATE_LIMITER;
     // implementation — same unavailable/rate_limited distinction as the other
     // operation-level limiters. Cloudflare's native Rate Limiting binding
     // doesn't return a retryAfter, unlike the Durable-Object-backed
     // consumeRateLimit() the other two limiters use, so there is none to
     // propagate here.
-    const result = await limiter.limit({ key: `${principal.userId}:${examId}` }).catch(() => null);
-    if (!result) throw new McpApplicationError("unavailable");
-    if (!result.success) throw new McpApplicationError("rate_limited");
+    const allowed = await limitImportRequest(env, kind, principal.userId, examId).catch(() => null);
+    if (allowed === null) throw new McpApplicationError("unavailable");
+    if (!allowed) throw new McpApplicationError("rate_limited");
   }
 
   // Atomically claims `importId` for this execute attempt via the PRIMARY KEY
@@ -133,25 +136,25 @@ export function importOperations(ctx: AdminAdapterContext) {
       await consumeImportRateLimit("validate", input.examId);
       await requireExam(input.examId);
       assertImportFileDepth(input.file);
-      const { issues, duplicateExternalIdsInFile, questionCount } = validateImportFileContents(input.file);
-      if (issues.length > 0) {
+      const { issues, duplicateExternalIdsInFile, questionCount, file } = validateImport(input.file);
+      if (!file) {
         return {
           importId: null, importToken: null, valid: false, questionCount, issues, duplicateExternalIdsInFile,
           duplicateExternalIdsInDb: [], creates: [], updates: [], skips: [], conflicts: [],
         };
       }
-      const file = normalizeImportFile(input.file);
-      const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
-      const existing = externalIds.length ? await findQuestionRowsByExternalId(db, input.examId, externalIds) : [];
+      const existing = await findImportTargets(db, input.examId, file.questions);
+      // De-duplicated, unlike REST's /validate, which lists an ambiguous
+      // externalId once per matching row.
       const duplicateExternalIdsInDb = [...new Set(existing.map((r) => r.external_id!).filter(Boolean))];
-      const classification = await classifyImportRows(db, existing, file.questions);
+      const classification = classifyImportDecisions(await decideImportRows(db, existing, file.questions));
       // Snapshots what every tag name in the file currently resolves to
       // (read-only) and binds it into importToken alongside the file
       // content, so a taxonomy change before execute (a rename/merge that
       // changes what an unchanged name would now resolve to) is detected as
       // a stale proposal instead of silently committing a different tag
       // identity than the one reviewed here — see fileToken's own comment.
-      const tagSnapshot = await tagResolutionSnapshot(db, file.questions.flatMap((q) => q.tags ?? []));
+      const tagSnapshot = await tagResolutionSnapshot(db, importTagNames(file.questions));
       return {
         importId: crypto.randomUUID(),
         importToken: await computeFileToken(input.examId, input.file, tagSnapshot),
@@ -182,15 +185,14 @@ export function importOperations(ctx: AdminAdapterContext) {
         throw new McpApplicationError("conflict");
       }
 
-      const { issues, questionCount } = validateImportFileContents(input.file);
-      if (issues.length > 0) {
+      const { questionCount, file } = validateImport(input.file);
+      if (!file) {
         await recordAdminMutationAudit(db, principal, {
           tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: [input.importId],
           outcome: "failure", detail: { reason: "invalid_input" },
         });
         throw new McpApplicationError("invalid_input");
       }
-      const file = normalizeImportFile(input.file);
       const resolutions = input.conflictResolutions ?? [];
       const fingerprint = await computeRequestFingerprint(computedFileToken, resolutions);
 
@@ -201,12 +203,13 @@ export function importOperations(ctx: AdminAdapterContext) {
         return { importId: input.importId, idempotentReplay: true, ...(jobRow.result_json ? JSON.parse(jobRow.result_json) : {}) };
       }
 
+      // Unlike REST, which archives after its writes, the file is archived
+      // before anything is written, so a failed archive leaves no partial import.
       const now = new Date().toISOString();
       let r2Key = jobRow.r2_object_key;
       if (!r2Key) {
-        r2Key = `imports/${input.examId}/${Date.now()}-${crypto.randomUUID()}.json`;
         try {
-          await env.BUCKET.put(r2Key, JSON.stringify(input.file), { httpMetadata: { contentType: "application/json" } });
+          r2Key = await archiveImportFile(env.BUCKET, input.examId, JSON.stringify(input.file));
         } catch {
           if (!resuming) await db.prepare("DELETE FROM admin_mcp_import_jobs WHERE id = ?").bind(input.importId).run();
           await recordAdminMutationAudit(db, principal, {
@@ -224,193 +227,92 @@ export function importOperations(ctx: AdminAdapterContext) {
           .bind(r2Key, Date.now(), input.importId).run();
       }
 
-      const externalIds = file.questions.map((q) => q.externalId).filter((x): x is string => !!x);
-      const existingRows = externalIds.length ? await findQuestionRowsByExternalId(db, input.examId, externalIds) : [];
-      const classification = await classifyImportRows(db, existingRows, file.questions);
-      const resolutionByQuestion = new Map(resolutions.map((r) => [r.questionId, r]));
-      // Bulk-resolve every distinct tag name in the file once (implementation),
-      // rather than once per created/updated row below.
-      const resolveTagIds = await buildTagNameResolver(db, file.questions.flatMap((q) => q.tags ?? []), now);
+      const existingRows = await findImportTargets(db, input.examId, file.questions);
+      const decisions = await decideImportRows(db, existingRows, file.questions);
 
-      type ExecuteOutcome = {
-        index: number; questionId: string; externalId: string | null;
-        status: "created" | "updated" | "skipped" | "conflict" | "failed"; reason?: string;
-      };
-      const outcomes: ExecuteOutcome[] = [];
-      const pendingApplies: { index: number; row: QuestionRow }[] = [];
+      const outcomes: {
+        index: number; questionId: string; externalId: string | null; status: ImportOutcomeStatus; reason?: string;
+      }[] = [];
 
       // implementation (review round 2) — recover what a PRIOR attempt of this
       // exact importId already committed before reclassifying anything.
-      // Without this, re-running classifyImportRows against current DB state
+      // Without this, re-running the classification against current DB state
       // makes an already-applied create/update look "identical" to its
       // incoming payload and reclassifies it as a plain skip — silently
       // losing track of it in this attempt's created/updated counts (and
       // therefore in the final result and cache-invalidation decision).
-      // Indices recorded here are excluded from every classification bucket
-      // below and never reprocessed.
+      // Indices recorded here are left out of the plan below and never
+      // reprocessed. (This replaces implementation's admin_mcp_create_operations
+      // for imports; that ledger stays reserved for admin_create_question/
+      // admin_batch_create_questions' own idempotency.)
       const alreadyCommitted = await getCommittedImportItems(db, input.importId);
       for (const item of alreadyCommitted.values()) {
         outcomes.push({ index: item.itemIndex, questionId: item.questionId, externalId: item.externalId, status: item.kind });
       }
 
-      // Matches REST's exact rule (routes/imports.ts): ANY non-identical row
-      // — whether classifyImportRows called it a candidate "update" or a
-      // "conflict" — needs an explicit, exactly-matching resolution to be
-      // applied. Ambiguous external ids are never resolvable at all.
-      const needsResolution = [
-        ...classification.updates.map((u) => ({ ...u, ambiguous: false as const, reason: undefined as string | undefined })),
-        ...classification.conflicts.map((c) => ({
-          index: c.index, questionId: c.questionId, externalId: c.externalId,
-          expectedRevision: c.expectedRevision, incomingToken: c.incomingToken,
-          reason: c.reason as string | undefined, ambiguous: c.reason === "ambiguous_external_id",
-        })),
+      // Matches REST's rule: ANY non-identical row — whether preview called it
+      // an "update" or a "conflict" — needs an explicit, exactly-matching
+      // resolution to be applied. Ordered as this tool has always reported
+      // outcomes: preview's updates, then its conflicts, then identical skips;
+      // then the creates and updates this attempt commits.
+      const pending = decisions.filter((d) => !alreadyCommitted.has(d.index));
+      const changed = pending.filter((d): d is ChangedImportRow => d.kind === "changed");
+      const ordered: ImportRowDecision[] = [
+        ...changed.filter(isCleanUpdate), ...changed.filter((d) => !isCleanUpdate(d)),
+        ...pending.filter((d) => d.kind === "identical"), ...pending.filter((d) => d.kind === "create"),
       ];
-      for (const item of needsResolution) {
-        if (alreadyCommitted.has(item.index)) continue;
-        if (item.ambiguous) {
-          outcomes.push({ index: item.index, questionId: item.questionId, externalId: item.externalId, status: "conflict", reason: "ambiguous_external_id" });
-          continue;
-        }
-        const resolution = resolutionByQuestion.get(item.questionId);
-        const valid = resolution && resolution.expectedRevision === item.expectedRevision && resolution.incomingToken === item.incomingToken;
-        if (!valid) {
-          outcomes.push({ index: item.index, questionId: item.questionId, externalId: item.externalId, status: "conflict", reason: item.reason ?? "incoming_changes" });
-          continue;
-        }
-        if (resolution!.action === "keep") {
-          outcomes.push({ index: item.index, questionId: item.questionId, externalId: item.externalId, status: "skipped", reason: "kept_current" });
-          continue;
-        }
-        const row = existingRows.find((r) => r.id === item.questionId)!;
-        pendingApplies.push({ index: item.index, row });
-      }
-      for (const skip of classification.skips) {
-        if (alreadyCommitted.has(skip.index)) continue;
-        outcomes.push({ index: skip.index, questionId: skip.questionId, externalId: skip.externalId, status: "skipped", reason: skip.reason });
-      }
-
-      // Resume-safety for creates now lives entirely in the pre-filter above
-      // (alreadyCommitted), backed by admin_mcp_import_committed_items
-      // (migration 0024) rather than implementation's admin_mcp_create_operations —
-      // that ledger stays reserved for admin_create_question/
-      // admin_batch_create_questions' own idempotency, unrelated to imports.
-      const creates = classification.creates.filter((c) => !alreadyCommitted.has(c.index));
-
-      // Chunked by item count for import-execute-specific reasons (bounded
-      // per-attempt commit size, not a hard D1 statement-count limit —
-      // admin_batch_create_questions/admin_batch_update_questions already
-      // run well past 50 statements in a single db.batch() without issue).
-      // Each item's tag-link statements are pushed into the SAME chunk
-      // `statements` array as its row write, so both commit or roll back
-      // together (implementation review — question_tag_links is authoritative
-      // content, not a best-effort side effect).
-      for (let start = 0; start < creates.length; start += 16) {
-        const chunk = creates.slice(start, start + 16);
-        const statements: D1PreparedStatement[] = [];
-        const meta: { index: number; id: string; externalId: string | null }[] = [];
-        for (const c of chunk) {
-          const q = file.questions[c.index]!;
-          const id = crypto.randomUUID();
-          const tagIds = resolveTagIds(q.tags);
-          // imported=true records import_baseline_json (and, alongside it,
-          // the resolved tagIds as import_baseline_tag_ids_json — see
-          // lib/importConflicts.ts), matching REST's execute route —
-          // without it, a *future* re-import of this same externalId could
-          // never distinguish "locally edited since" from "safe incoming
-          // change".
-          statements.push(createStatement(db, input.examId, id, q, now, true, tagIds));
-          statements.push(buildCommittedImportItemStatement(db, {
-            importId: input.importId, itemIndex: c.index, questionId: id, examId: input.examId, externalId: c.externalId, kind: "created",
-          }));
-          statements.push(buildAdminMutationAuditStatement(db, principal, {
-            tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: [id],
-            outcome: "success", detail: { importId: input.importId, externalId: c.externalId },
-          }));
-          // A fresh id has no revision to race — unconditional, same as
-          // createQuestion/admin_batch_create_questions.
-          statements.push(...buildTagLinkStatements(db, id, tagIds, []));
-          meta.push({ index: c.index, id, externalId: c.externalId });
-        }
-        if (statements.length === 0) continue;
-        try {
-          await db.batch(statements);
-          for (const m of meta) outcomes.push({ index: m.index, questionId: m.id, externalId: m.externalId, status: "created" });
-        } catch {
-          for (const m of meta) outcomes.push({ index: m.index, questionId: m.id, externalId: m.externalId, status: "failed", reason: "batch_rolled_back" });
-          await recordAdminMutationAudit(db, principal, {
-            tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: meta.map((m) => m.id),
-            outcome: "failure", detail: { reason: "batch_rolled_back" },
-          });
-        }
-      }
-
-      const currentTagIdsByQuestion = await fetchTagIdsForQuestions(db, pendingApplies.map((a) => a.row.id));
-      for (let start = 0; start < pendingApplies.length; start += 16) {
-        const chunk = pendingApplies.slice(start, start + 16);
-        const statements: D1PreparedStatement[] = [];
-        // `updateStatementIndex` replaces the old fixed `i * 3` arithmetic:
-        // each item now carries a variable number of trailing tag-link
-        // statements (see below), so its primary update statement's
-        // position must be tracked explicitly rather than assumed.
-        const meta: { index: number; questionId: string; externalId: string | null; updateStatementIndex: number }[] = [];
-        for (const a of chunk) {
-          const q = file.questions[a.index]!;
-          const tagIds = resolveTagIds(q.tags);
-          const updateStatementIndex = statements.length;
-          // Order matters: buildConditionalCommittedImportItemStatement reads
-          // changes() from THIS updateStatement, and the audit statement
-          // after it reads changes() from the committed-item insert in turn
-          // (verified: a 0-row conditional INSERT still sets changes()=0,
-          // propagating a stale-revision "no" through the whole chain). The
-          // tag-link statements below go AFTER both — nothing may run
-          // between updateStatement and its two dependent changes()-chained
-          // statements.
-          statements.push(updateStatement(db, a.row, q, now, true, tagIds));
-          statements.push(buildConditionalCommittedImportItemStatement(db, {
-            importId: input.importId, itemIndex: a.index, questionId: a.row.id, examId: input.examId,
-            externalId: a.row.external_id, kind: "updated",
-          }));
-          statements.push(buildConditionalAdminMutationAuditStatement(db, principal, {
-            tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: [a.row.id],
+      const resolutionByQuestion = new Map(resolutions.map((r) => [r.questionId, r]));
+      const plan = await planImportWrites(db, {
+        examId: input.examId, questions: file.questions, decisions: ordered, now,
+        // The last resolution naming the question, if several do.
+        resolutionFor: (d) => resolutionByQuestion.get(d.row.id),
+        // A create either inserts its row or throws, so its ledger entry and
+        // audit row are unconditional. An update's are chained on changes():
+        // the ledger entry reads the UPDATE's, and the audit row reads the
+        // ledger entry's in turn (a 0-row conditional INSERT still sets
+        // changes()=0, propagating a stale-revision "no" through the chain).
+        chainedStatements: (w) => w.kind === "create" ? [
+          buildCommittedImportItemStatement(db, {
+            importId: input.importId, itemIndex: w.index, questionId: w.questionId, examId: w.examId, externalId: w.externalId, kind: "created",
+          }),
+          buildAdminMutationAuditStatement(db, principal, {
+            tool: "admin_execute_import", action: "import_execute", examId: w.examId, targetIds: [w.questionId],
+            outcome: "success", detail: { importId: input.importId, externalId: w.externalId },
+          }),
+        ] : [
+          buildConditionalCommittedImportItemStatement(db, {
+            importId: input.importId, itemIndex: w.index, questionId: w.questionId, examId: w.examId, externalId: w.externalId, kind: "updated",
+          }),
+          buildConditionalAdminMutationAuditStatement(db, principal, {
+            tool: "admin_execute_import", action: "import_execute", examId: w.examId, targetIds: [w.questionId],
             successDetail: { importId: input.importId }, failureDetail: { reason: "stale_question" },
-          }));
-          // Guarded on the row's own post-update revision AND `now` (rather
-          // than relying on changes()-chaining, which only reflects the
-          // single immediately-preceding statement, or on revision alone —
-          // see buildTagLinkStatements: a different concurrent writer could
-          // legitimately reach the same revision value) — a stale-revision
-          // update that changed zero rows leaves the row's revision and
-          // updated_at unchanged, so this guard fails closed, in the SAME
-          // batch as the update itself rather than a separate best-effort
-          // step (implementation review).
-          statements.push(...buildTagLinkStatements(
-            db, a.row.id, tagIds, currentTagIdsByQuestion.get(a.row.id) ?? [],
-            { questionId: a.row.id, revision: a.row.revision + 1, updatedAt: now },
-          ));
-          meta.push({ index: a.index, questionId: a.row.id, externalId: a.row.external_id, updateStatementIndex });
-        }
-        try {
-          const results = await db.batch(statements);
-          meta.forEach((m) => {
-            const changed = results[m.updateStatementIndex]!.meta.changes > 0;
-            outcomes.push({
-              index: m.index, questionId: m.questionId, externalId: m.externalId,
-              status: changed ? "updated" : "conflict", reason: changed ? undefined : "stale_question; refresh preview",
-            });
-          });
-        } catch {
-          meta.forEach((m) => outcomes.push({ index: m.index, questionId: m.questionId, externalId: m.externalId, status: "failed", reason: "batch_rolled_back" }));
-          await recordAdminMutationAudit(db, principal, {
-            tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: meta.map((m) => m.questionId),
-            outcome: "failure", detail: { reason: "batch_rolled_back" },
-          });
-        }
+          }),
+        ],
+      });
+      for (const { decision, status, reason } of plan.unchanged) {
+        outcomes.push({ index: decision.index, questionId: decision.row.id, externalId: decision.row.external_id, status, reason });
       }
 
-      const created = outcomes.filter((o) => o.status === "created").length;
-      const updated = outcomes.filter((o) => o.status === "updated").length;
-      const skipped = outcomes.filter((o) => o.status === "skipped" || o.status === "conflict").length;
-      const failed = outcomes.filter((o) => o.status === "failed").length;
+      // All creates commit before any update.
+      const commit = (writes: typeof plan.writes) => commitImportWrites(db, writes, {
+        itemsPerBatch: IMPORT_ITEMS_PER_BATCH,
+        onRollback: (rolledBack) => recordAdminMutationAudit(db, principal, {
+          tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: rolledBack.map((w) => w.questionId),
+          outcome: "failure", detail: { reason: "batch_rolled_back" },
+        }),
+      });
+      const results = [
+        ...await commit(plan.writes.filter((p) => p.write.kind === "create")),
+        ...await commit(plan.writes.filter((p) => p.write.kind === "update")),
+      ];
+      for (const { write, status } of results) {
+        const base = { index: write.index, questionId: write.questionId, externalId: write.externalId };
+        if (status === "committed") outcomes.push({ ...base, status: write.kind === "create" ? "created" : "updated" });
+        else if (status === "stale") outcomes.push({ ...base, status: "conflict", reason: "stale_question; refresh preview" });
+        else outcomes.push({ ...base, status: "failed", reason: "batch_rolled_back" });
+      }
+
+      const { created, updated, skipped, failed } = countImportOutcomes(outcomes);
       const status: "completed" | "partial" | "failed" = failed === 0 ? "completed" : (created + updated > 0 ? "partial" : "failed");
 
       // Lean summary only — no payload content/differences, so this table
@@ -423,12 +325,9 @@ export function importOperations(ctx: AdminAdapterContext) {
            result_json = ?, completed_at = ?, updated_at = ? WHERE id = ?`,
       ).bind(status, created, updated, skipped, failed, JSON.stringify(resultSummary), completedAtMs, completedAtMs, input.importId).run();
 
-      // Same table REST writes, so MCP-originated imports appear in the
-      // existing GET /logs history.
-      const importLogId = crypto.randomUUID();
-      await db.prepare(
-        "INSERT INTO import_logs (id, exam_id, uploaded_by, r2_object_key, question_count, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ).bind(importLogId, input.examId, principal.userId, r2Key, file.questions.length, now).run();
+      await recordImportLog(db, {
+        examId: input.examId, uploadedBy: principal.userId, r2ObjectKey: r2Key, questionCount: file.questions.length, createdAt: now,
+      });
 
       if (created > 0 || updated > 0) await invalidatePracticeQuestions(env, input.examId).catch(() => {});
 

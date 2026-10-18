@@ -1,99 +1,8 @@
-// implementation — import-execution helpers shared between the REST import routes
-// (routes/imports.ts) and Admin MCP's import tools (mcp/adapters/admin/imports.ts), per
-// implementation's "share management logic with the future Admin MCP". Extracted
-// unchanged from routes/imports.ts except where noted.
-import { canonical, questionSelectColumns, toQuestion, type QuestionPayload, type QuestionRow } from "./questionManagement";
-import { importConflict, type ImportConflict } from "./importConflicts";
-
-const D1_LOOKUP_IDS_PER_QUERY = 90;
-const ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const MAX_ARCHIVES_PER_EXAM = 20;
-
-export async function findQuestionRows(db: D1Database, examId: string, externalIds: string[]): Promise<QuestionRow[]> {
-  const rows: QuestionRow[] = [];
-  for (let start = 0; start < externalIds.length; start += D1_LOOKUP_IDS_PER_QUERY) {
-    const ids = externalIds.slice(start, start + D1_LOOKUP_IDS_PER_QUERY);
-    const placeholders = ids.map(() => "?").join(",");
-    const { results } = await db.prepare(
-      `SELECT ${questionSelectColumns()} FROM questions WHERE exam_id = ? AND external_id IN (${placeholders})`
-    ).bind(examId, ...ids).all<QuestionRow>();
-    rows.push(...(results ?? []));
-  }
-  return rows;
-}
-
-export async function cleanOldImportArchives(bucket: R2Bucket, examId: string, keepKey: string): Promise<void> {
-  const objects: R2Object[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await bucket.list({ prefix: `imports/${examId}/`, cursor });
-    objects.push(...page.objects);
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-
-  const cutoff = Date.now() - ARCHIVE_RETENTION_MS;
-  const ordered = objects.sort((a, b) => b.uploaded.getTime() - a.uploaded.getTime());
-  const expired = ordered.filter(
-    (object, index) => object.key !== keepKey && (index >= MAX_ARCHIVES_PER_EXAM || object.uploaded.getTime() < cutoff)
-  );
-  if (expired.length) await bucket.delete(expired.map((object) => object.key));
-}
-
-// implementation — factored out of routes/imports.ts's POST `/` handler so
-// Admin MCP's admin_preview_import can report the same create/update/skip/
-// conflict breakdown the execute path uses, instead of duplicating the
-// branching or (like REST's current `/validate`) only reporting conflicts.
-// This is a PREVIEW classification of what execute would do against the
-// database as it stood when `existing` was fetched — it is not a guarantee:
-// admin_execute_import re-runs this same function against current state at
-// commit time, and a row can move buckets (e.g. edited between preview and
-// execute becomes a conflict instead of a clean update).
-export interface ImportCreateCandidate { index: number; externalId: string | null }
-export interface ImportUpdateCandidate {
-  index: number; questionId: string; externalId: string | null; expectedRevision: number; incomingToken: string;
-}
-export interface ImportSkipCandidate { index: number; questionId: string; externalId: string | null; reason: string }
-export interface ImportRowClassification {
-  creates: ImportCreateCandidate[];
-  updates: ImportUpdateCandidate[];
-  skips: ImportSkipCandidate[];
-  conflicts: (ImportConflict & { index: number })[];
-}
-
-export async function classifyImportRows(
-  db: D1Database,
-  existing: QuestionRow[],
-  questions: QuestionPayload[],
-): Promise<ImportRowClassification> {
-  const creates: ImportCreateCandidate[] = [];
-  const updates: ImportUpdateCandidate[] = [];
-  const skips: ImportSkipCandidate[] = [];
-  const conflicts: (ImportConflict & { index: number })[] = [];
-
-  for (const [index, q] of questions.entries()) {
-    const matches = q.externalId ? existing.filter((r) => r.external_id === q.externalId) : [];
-    if (!matches.length) {
-      creates.push({ index, externalId: q.externalId ?? null });
-      continue;
-    }
-    for (const row of matches) {
-      if (matches.length === 1 && canonical(toQuestion(row)) === canonical(q)) {
-        skips.push({ index, questionId: row.id, externalId: row.external_id, reason: "identical" });
-        continue;
-      }
-      const conflict = await importConflict(db, row, q, matches.length > 1);
-      if (matches.length > 1 || conflict.reason !== "incoming_changes") {
-        conflicts.push({ ...conflict, index });
-      } else {
-        updates.push({
-          index, questionId: row.id, externalId: row.external_id,
-          expectedRevision: row.revision, incomingToken: conflict.incomingToken,
-        });
-      }
-    }
-  }
-  return { creates, updates, skips, conflicts };
-}
+// Admin MCP import execution: the proposal tokens that bind admin_execute_import
+// to the file (and tag resolution) admin_preview_import reviewed, and the
+// committed-item ledger that makes a resumed execute replay-safe. The import
+// pipeline itself, shared with the REST routes, lives in lib/questionImport.ts.
+import type { ImportConflictResolution } from "./questionImport";
 
 async function sha256Hex(material: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
@@ -117,13 +26,6 @@ async function sha256Hex(material: string): Promise<string> {
 // was reviewed.
 export async function fileToken(examId: string, file: unknown, tagSnapshot: Record<string, string | null>): Promise<string> {
   return sha256Hex(JSON.stringify({ examId, file, tagSnapshot }));
-}
-
-export interface ImportConflictResolution {
-  questionId: string;
-  expectedRevision: number;
-  incomingToken: string;
-  action: "keep" | "apply";
 }
 
 // Binds fileToken *and* the caller's conflict-resolution decisions, so an
