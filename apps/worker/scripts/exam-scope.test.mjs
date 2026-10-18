@@ -1,21 +1,15 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ practiceCatalogRouter }, { examAttemptsRouter }, { bookmarksRouter }, { wrongBookMasteredRouter }, { annotationsRouter }, { notesRouter }, { setCachedPracticeQuestions, invalidatePracticeQuestions }] = await Promise.all([
   bundle("../src/routes/practice.ts"), bundle("../src/routes/attempts.ts"), bundle("../src/routes/bookmarks.ts"), bundle("../src/routes/wrongBook.ts"), bundle("../src/routes/annotations.ts"), bundle("../src/routes/notes.ts"), bundle("../src/lib/practiceCache.ts")]);
 
 function setup() {
-  const db = new DatabaseSync(":memory:");
-  const dir = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(dir).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, dir), "utf8"));
+  const db = openDatabase(null);
   for (const id of ["u1", "u2"]) db.prepare("INSERT INTO users(id,email,created_at) VALUES (?,?,?)").run(id, `${id}@test`, "2026-09-09");
   for (const exam of ["A", "B", "empty"]) db.prepare("INSERT INTO exams(id,slug,name,created_at) VALUES (?,?,?,?)").run(exam, exam, exam, "2026-09-09");
   for (const id of ["A1", "A2", "A3", "B1", "B2", "B3"]) {
@@ -32,12 +26,7 @@ function setup() {
   }
   const cache = new Map();
   const queries = [];
-  const DB = { prepare(sql) { queries.push(sql); let values = []; return {
-    bind(...args) { values = args; return this; },
-    async first() { return db.prepare(sql).get(...values) ?? null; },
-    async all() { return { results: db.prepare(sql).all(...values) }; },
-    async run() { return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } }; }
-  }; } };
+  const DB = createD1(db, { onQuery: ({ sql }) => { queries.push(sql); } });
   const env = { DB, KV: { get: async key => cache.has(key) ? JSON.parse(cache.get(key)) : null, put: async (key, value) => cache.set(key, value), delete: async key => cache.delete(key) } };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: c.req.header("x-user") ?? "u1", role: "user" }); await next(); });

@@ -7,17 +7,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { build } from 'esbuild';
+import { importTs } from '../../../tests/support/bundle.mjs';
 
 const web = fileURLToPath(new URL('../', import.meta.url));
-const { outputFiles } = await build({
-  entryPoints: [resolve(web, 'src/lib/statistics.ts')],
-  bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
-  alias: { '@': resolve(web, 'src') },
-});
 const {
   buildStatisticsModel, eligibleQuestionIdsForTags, formatDateKey, formatDuration, formatSignedPoints, readinessNarrative, timeZoneLabel,
-} = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString('base64')}`);
+} = await importTs(new URL('../src/lib/statistics.ts', import.meta.url), {
+  platform: 'browser', target: 'es2022', alias: { '@': resolve(web, 'src') },
+});
 
 const NOW = new Date('2026-09-20T12:00:00Z');
 

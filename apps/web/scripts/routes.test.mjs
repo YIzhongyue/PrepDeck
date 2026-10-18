@@ -3,15 +3,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { importTs } from '../../../tests/support/bundle.mjs';
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL('../src/lib/routes.ts', import.meta.url))],
-  bundle: true, write: false, format: 'esm', platform: 'neutral',
-});
 const { parseRoute, routePath, routeTitle, SPA_ROUTE_PREFIXES } =
-  await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString('base64')}`);
+  await importTs(new URL('../src/lib/routes.ts', import.meta.url));
 
 const route = (over) => ({ screen: 'dash', examSlug: 'cloud', learningSequence: null, knowledgePointId: null, ...over });
 

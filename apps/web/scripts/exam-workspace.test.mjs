@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { transformSync } from 'esbuild';
-const { code } = transformSync(readFileSync(new URL('../src/lib/examWorkspace.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
-const { WorkspaceRequests, storedExam, storeExam } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+import { importTs } from '../../../tests/support/bundle.mjs';
+const { WorkspaceRequests, storedExam, storeExam } = await importTs(new URL('../src/lib/examWorkspace.ts', import.meta.url), { target: 'es2022' });
 test('A → B → A never revives an old visit; repeated detail reads reject older completions', () => {
   const requests = new WorkspaceRequests(); const firstA = requests.capture();
   requests.invalidate(); const b = requests.capture(); requests.invalidate(); const secondA = requests.capture();

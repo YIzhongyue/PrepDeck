@@ -5,14 +5,9 @@
 // which is also what the Worker grades and files wrong answers with.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { importTs } from '../../../tests/support/bundle.mjs';
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL('../src/lib/mockAnswers.ts', import.meta.url))],
-  bundle: true, write: false, platform: 'neutral', format: 'esm', mainFields: ['module', 'main'],
-});
-const { isMockAnswered, mockAnsweredCount } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
+const { isMockAnswered, mockAnsweredCount } = await importTs(new URL('../src/lib/mockAnswers.ts', import.meta.url));
 
 const catalogBy = {
   single: { type: 'single_choice' },

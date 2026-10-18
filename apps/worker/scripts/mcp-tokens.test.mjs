@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
 // implementation — self-service MCP token lifecycle (create/list/revoke/rotate)
 // for both /api/mcp-tokens (User MCP) and /api/admin/mcp-tokens (Admin MCP).
@@ -12,35 +11,17 @@ import { Hono } from "hono";
 // same lightweight harness as exam-scope.test.mjs — the MCP protocol/auth
 // boundary itself is covered separately in mcp-foundation.test.mjs.
 
-async function bundle(path) {
-  const { outputFiles } = await build({
-    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
-    bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 
 const { createMcpTokensRouter } = await bundle("../src/routes/mcpTokens.ts");
 
 function setup() {
-  const db = new DatabaseSync(":memory:");
-  const dir = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, dir), "utf8"));
+  const db = openDatabase(null);
   for (const [id, role, status] of [["alice", "user", "active"], ["bob", "user", "active"], ["admin", "admin", "active"]]) {
     db.prepare("INSERT INTO users(id, email, role, status, created_at) VALUES (?, ?, ?, ?, ?)").run(id, `${id}@test`, role, status, "2026-09-09");
   }
 
-  const DB = {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) { values = args; return this; },
-        async first() { return db.prepare(sql).get(...values) ?? null; },
-        async all() { return { results: db.prepare(sql).all(...values) }; },
-        async run() { return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } }; },
-      };
-    },
-  };
+  const DB = createD1(db);
   const env = { DB };
 
   const app = new Hono();

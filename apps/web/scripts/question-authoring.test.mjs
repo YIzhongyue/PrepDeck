@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { build } from "esbuild";
-import { fileURLToPath } from "node:url";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "node", format: "esm" });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url), { platform: "node" });
 const { blankQuestion, formPayload, questionForm, allowAuthoringNavigation } = await bundle("../src/lib/questionAuthoring.ts");
 const { parseMarkdown } = await bundle("../src/lib/markdown.ts");
 const { mdSegsFor } = await bundle("../src/lib/annotations.ts");

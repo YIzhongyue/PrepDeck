@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
-import { build } from "esbuild";
+import test from "node:test";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
 
 // implementation — User MCP Knowledge Points tools. Same harness shape as
 // mcp-user-learning.test.mjs (real worker entry + MCP SDK, bundled for Node
@@ -17,33 +14,19 @@ import { Hono } from "hono";
 // REST+MCP mixed scenario can be exercised against the exact same
 // underlying database, proving the shared lib layer (lib/knowledgePoint*.ts)
 // behaves identically regardless of caller.
-const [{ text }] = (await build({
-  stdin: {
-    contents: `export { default as worker } from './src/index.ts';
+const { worker, issueMcpCredential, knowledgePointsRouter, knowledgePointGroupsRouter, knowledgePointTagsRouter, kpImagesRouter } = await importTs({
+  contents: `export { default as worker } from './src/index.ts';
       export * from './src/mcp/credentials.ts';
       export { knowledgePointsRouter } from './src/routes/knowledgePoints.ts';
       export { knowledgePointGroupsRouter } from './src/routes/knowledgePointGroups.ts';
       export { knowledgePointTagsRouter } from './src/routes/knowledgePointTags.ts';
       export { kpImagesRouter } from './src/routes/kpImages.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-})).outputFiles;
-const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-user-kp-test-"));
-after(() => rm(buildDir, { recursive: true, force: true }));
-const bundlePath = join(buildDir, "worker.mjs");
-await writeFile(bundlePath, text);
-const { worker, issueMcpCredential, knowledgePointsRouter, knowledgePointGroupsRouter, knowledgePointTagsRouter, kpImagesRouter } = await import(pathToFileURL(bundlePath).href);
+  resolveDir: new URL("..", import.meta.url),
+}, { platform: "workerd" });
 
-const migrationsDir = new URL("../../../migrations/", import.meta.url);
-const migrationFiles = (await readdir(migrationsDir))
-  .filter((n) => n.endsWith(".sql") && n !== "0002_seed_sap_c02_questions.sql")
-  .sort();
-const schema = (await Promise.all(migrationFiles.map((name) => readFile(new URL(name, migrationsDir), "utf8")))).join("\n");
+const schema = migrationSql({ filter: (n) => n !== SEED_MIGRATION });
 
 const NO_SIDE_EFFECT_TABLES = ["attempts", "attempt_answers", "wrong_question_book", "bookmarks", "learning_progress"];
-const D1_MAX_BOUND_PARAMETERS = 100;
 
 const restApp = new Hono();
 restApp.use("*", async (c, next) => {
@@ -59,46 +42,13 @@ restApp.route("/api/knowledge-point-tags", knowledgePointTagsRouter);
 restApp.route("/api/kp-images", kpImagesRouter);
 
 async function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const [id, role] of [["alice", "user"], ["bob", "user"], ["admin", "admin"]]) {
     sqlite.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, ?, 'active', ?)")
       .run(id, `${id}@example.test`, role, new Date().toISOString());
   }
-  const DB = { prepare(sql) {
-    const methodsFor = (args) => {
-      if (args.length > D1_MAX_BOUND_PARAMETERS) {
-        throw new Error(`D1_ERROR: too many SQL variables (${args.length} bound, ${D1_MAX_BOUND_PARAMETERS} max)`);
-      }
-      return {
-        first: async () => sqlite.prepare(sql).get(...args) ?? null,
-        run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
-        all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-        // Real D1's db.batch() supports mixed read/write statements and
-        // returns populated `.results` for a SELECT the same way `.all()`
-        // does — see mcp/adapter.ts's listNotes, which batches a row read
-        // with a revision read for one consistent snapshot. `_isSelect`
-        // lets DB.batch below pick the matching execution path per
-        // statement instead of always using `.run()` (whose `{meta:{changes}}`
-        // shape has no room for rows).
-        _isSelect: /^\s*select\b/i.test(sql),
-      };
-    };
-    return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-  } };
-  DB.batch = async (statements) => {
-    sqlite.exec("BEGIN");
-    try {
-      const results = [];
-      for (const statement of statements) results.push(await (statement._isSelect ? statement.all() : statement.run()));
-      sqlite.exec("COMMIT");
-      return results;
-    } catch (error) {
-      sqlite.exec("ROLLBACK");
-      throw error;
-    }
-  };
+  const DB = createD1(sqlite);
   const r2Objects = new Map();
   const BUCKET = {
     put: async (key, value) => { r2Objects.set(key, value); },

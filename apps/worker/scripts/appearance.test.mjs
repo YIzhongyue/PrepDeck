@@ -1,42 +1,26 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-const { outputFiles } = await build({
-  stdin: { contents: `export * from './routes/appearance'; export { requireAccessUser } from './middleware/access'; export { createSessionToken } from './lib/session';`,
-    resolveDir: fileURLToPath(new URL("../src/", import.meta.url)), loader: "ts" },
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
+const { appearanceRouter, adminAppearanceRouter, requireAccessUser, createSessionToken } = await importTs({
+  contents: `export * from './routes/appearance'; export { requireAccessUser } from './middleware/access'; export { createSessionToken } from './lib/session';`,
+  resolveDir: new URL("../src/", import.meta.url),
 });
-const { appearanceRouter, adminAppearanceRouter, requireAccessUser, createSessionToken } =
-  await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
 
 function fixture(t) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
-  const migrations = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(migrations).filter(name => name.endsWith(".sql")).sort()) {
-    db.exec(readFileSync(new URL(name, migrations), "utf8"));
-  }
+  const db = openDatabase(t);
   for (const [id, role, status] of [["admin", "admin", "active"], ["user", "user", "active"], ["revoked", "admin", "revoked"]]) {
     db.prepare("INSERT INTO users(id,email,role,status,created_at) VALUES (?,?,?,?,?)").run(id, `${id}@test`, role, status, "2026-10-01");
   }
   const faults = { read: false, write: false };
   const env = { AUTH_MODE: "cookie", SESSION_SECRET: "test-session-secret-for-appearance", KV: { get: async () => null, put: async () => {} },
-    DB: { prepare(sql) { let values = []; return {
-      bind(...args) { values = args; return this; },
-      async first() {
-        if (faults.read && sql.includes("site_appearance")) throw new Error("unavailable");
-        return db.prepare(sql).get(...values) ?? null;
-      },
-      async run() {
-        if (faults.write) throw new Error("unavailable");
-        return { success: true, meta: { changes: Number(db.prepare(sql).run(...values).changes) } };
-      },
-    }; } },
+    DB: createD1(db, { onQuery({ sql, method }) {
+      if (faults.read && method === "first" && sql.includes("site_appearance")) throw new Error("unavailable");
+      if (faults.write && method === "run") throw new Error("unavailable");
+    } }),
   };
   // Same public/protected split as index.ts, with the real cookie and role
   // middleware: no header or request-body role can authorize the write.

@@ -6,65 +6,32 @@
 // google-identity tests; here a browser "is signed in" by holding a session
 // cookie minted with the Worker's own session module.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
-import { build } from "esbuild";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-const [{ text }] = (await build({
-  stdin: {
-    contents: `export { default as worker } from './src/index.ts';
+const { worker, issueSessionToken, issueMcpCredential, runMcpOAuthPrune, validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } =
+  await importTs({
+  contents: `export { default as worker } from './src/index.ts';
       export { issueSessionToken } from './src/lib/session.ts';
       export { issueMcpCredential } from './src/mcp/credentials.ts';
       export { runMcpOAuthPrune } from './src/scheduled/pruneMcpOAuth.ts';
       export { validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } from './src/mcp/oauth/clients.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-})).outputFiles;
-const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-oauth-test-"));
-after(() => rm(buildDir, { recursive: true, force: true }));
-const bundlePath = join(buildDir, "worker.mjs");
-await writeFile(bundlePath, text);
-const { worker, issueSessionToken, issueMcpCredential, runMcpOAuthPrune, validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } =
-  await import(pathToFileURL(bundlePath).href);
+  resolveDir: new URL("..", import.meta.url),
+}, { platform: "workerd" });
 
 const BASE = "https://prepdeck.test";
 const REDIRECT = "https://client.example/callback";
 
 function setup(t, overrides = {}) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter((n) => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   for (const [id, role] of [["alice", "user"], ["bob", "user"], ["root", "admin"]]) {
     db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, ?, 'active', '2026-09-09')").run(id, `${id}@example.test`, role);
   }
   const queries = [];
-  const DB = {
-    prepare(sql) {
-      const methods = (values) => ({
-        async first() { queries.push(sql); return db.prepare(sql).get(...values) ?? null; },
-        async all() { queries.push(sql); return { results: db.prepare(sql).all(...values) }; },
-        async run() { queries.push(sql); return { meta: { changes: Number(db.prepare(sql).run(...values).changes) } }; },
-      });
-      return { bind: (...values) => methods(values), ...methods([]) };
-    },
-    async batch(statements) {
-      db.exec("BEGIN");
-      try {
-        const results = [];
-        for (const statement of statements) results.push(await statement.run());
-        db.exec("COMMIT");
-        return results;
-      } catch (error) { db.exec("ROLLBACK"); throw error; }
-    },
-  };
+  const DB = createD1(db, { onQuery: ({ sql }) => { queries.push(sql); } });
   const kv = new Map();
   const KV = {
     async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },

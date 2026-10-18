@@ -4,14 +4,9 @@
 // scenes once it is old.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { importTs } from '../../../tests/support/bundle.mjs';
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL('../src/lib/questionPrefetch.ts', import.meta.url))],
-  bundle: true, write: false, platform: 'neutral', format: 'esm', mainFields: ['module', 'main'],
-});
-const { QUESTION_PREFETCH_AHEAD, LEARNING_DETAIL_TTL_MS, prefetchWindow, learningDetailCache } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
+const { QUESTION_PREFETCH_AHEAD, LEARNING_DETAIL_TTL_MS, prefetchWindow, learningDetailCache } = await importTs(new URL('../src/lib/questionPrefetch.ts', import.meta.url));
 
 const queue = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'];
 

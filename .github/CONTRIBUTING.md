@@ -81,6 +81,11 @@ npm test --workspace apps/worker
 npm run build --workspace apps/web
 ```
 
+Node tests load TypeScript, D1 and the schema through the shared helpers in
+`tests/support/`: `importTs` bundles source and imports it, `openDatabase`
+applies the migrations to an in-memory SQLite database, and `createD1` puts
+D1's interface in front of it. Use them rather than another copy.
+
 Avoid using the root `npm run build` as a general local validation command.
 The Worker build hook applies remote D1 migrations in Cloudflare Workers Builds
 when `WORKERS_CI=1` and the build branch is the production branch; migrations

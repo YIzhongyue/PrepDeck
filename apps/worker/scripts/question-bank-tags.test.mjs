@@ -7,67 +7,24 @@
 // because those pure-ish catalog functions had no direct unit coverage at
 // all before implementation.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({
-    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
-    bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const {
   normalizeTagName, normalizeTagKey, resolveOrCreateTags, fetchTagIdsForQuestion, fetchTagIdsForQuestions,
   buildTagLinkStatements, buildTagNameResolver, findTagCatalogRowByName, countQuestionsForTag,
   countQuestionsForAnyTag, distinctExamIdsForTags,
 } = await bundle("../src/lib/questionBankTags.ts");
 
-const migrationsDir = new URL("../../../migrations/", import.meta.url);
-const allMigrations = readdirSync(migrationsDir).filter((n) => n.endsWith(".sql") && n !== "0002_seed_sap_c02_questions.sql").sort();
-
-function applyMigrations(db, names) {
-  for (const name of names) db.exec(readFileSync(new URL(name, migrationsDir), "utf8"));
-}
-
-// A minimal D1 shim — just enough of prepare/bind/first/all/run/batch for
-// the functions under test, same shape as the other scripts/*.test.mjs D1
-// fakes (see mcp-foundation.test.mjs's fixture()).
-function d1(sqlite) {
-  const db = {
-    prepare(sql) {
-      const methodsFor = (args) => ({
-        first: async () => sqlite.prepare(sql).get(...args) ?? null,
-        run: async () => ({ meta: { changes: sqlite.prepare(sql).run(...args).changes } }),
-        all: async () => ({ results: sqlite.prepare(sql).all(...args) }),
-      });
-      return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-    },
-    async batch(statements) {
-      sqlite.exec("BEGIN");
-      try {
-        const results = [];
-        for (const statement of statements) results.push(await statement.run());
-        sqlite.exec("COMMIT");
-        return results;
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
-    },
-  };
-  return db;
-}
+const unseeded = (n) => n !== SEED_MIGRATION;
 
 function baseFixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
-  applyMigrations(sqlite, allMigrations);
+  const sqlite = openDatabase(t, { filter: unseeded });
   sqlite.prepare("INSERT INTO exams (id, slug, name, created_at) VALUES (?, ?, ?, ?)").run("examA", "exam-a", "Exam A", "2026-01-01T00:00:00.000Z");
-  return { sqlite, db: d1(sqlite) };
+  return { sqlite, db: createD1(sqlite) };
 }
 
 function insertQuestion(sqlite, id, examId = "examA") {
@@ -224,10 +181,7 @@ test("countQuestionsForTag/countQuestionsForAnyTag and distinctExamIdsForTags re
 });
 
 test("migration 0026 backfills a pre-existing tags_json column into question_bank_tags + question_tag_links, deduping by normalized name and preserving existing catalog ids", async (t) => {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
-  const preRefactor = allMigrations.filter((n) => Number(n.slice(0, 4)) < 26);
-  applyMigrations(sqlite, preRefactor);
+  const sqlite = openDatabase(t, { filter: (n) => unseeded(n) && Number(n.slice(0, 4)) < 26 });
 
   sqlite.prepare("INSERT INTO exams (id, slug, name, created_at) VALUES (?, ?, ?, ?)").run("examA", "exam-a", "Exam A", "2026-01-01T00:00:00.000Z");
   const insertLegacyQuestion = sqlite.prepare(
@@ -261,7 +215,7 @@ test("migration 0026 backfills a pre-existing tags_json column into question_ban
   // the runtime kept the NBSP, landing on two different catalog rows.
   insertLegacyQuestion.run("q5", 5, "Q5", JSON.stringify(["aws cloud"]));
 
-  applyMigrations(sqlite, allMigrations.filter((n) => Number(n.slice(0, 4)) >= 26));
+  applyMigrations(sqlite, { filter: (n) => unseeded(n) && Number(n.slice(0, 4)) >= 26 });
 
   const awsRow = sqlite.prepare("SELECT id, name, normalized_name FROM question_bank_tags WHERE normalized_name = 'aws'").get();
   assert.equal(awsRow.id, preexistingId, "the pre-existing #65 catalog row's id survives the backfill");
@@ -328,10 +282,7 @@ test("migration 0026 backfills a pre-existing tags_json column into question_ban
 });
 
 test("migration 0026 resolves a collision between pre-existing catalog rows that only collide once normalization is corrected", async (t) => {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
-  const preRefactor = allMigrations.filter((n) => Number(n.slice(0, 4)) < 26);
-  applyMigrations(sqlite, preRefactor);
+  const sqlite = openDatabase(t, { filter: (n) => unseeded(n) && Number(n.slice(0, 4)) < 26 });
   sqlite.prepare("INSERT INTO exams (id, slug, name, created_at) VALUES (?, ?, ?, ?)").run("examA", "exam-a", "Exam A", "2026-01-01T00:00:00.000Z");
 
   // Simulates a pre-existing pair of catalog rows that a bare
@@ -346,7 +297,7 @@ test("migration 0026 resolves a collision between pre-existing catalog rows that
     "INSERT INTO question_bank_tags (id, name, created_at, updated_at) VALUES ('id-b', 'aws', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
   ).run();
 
-  applyMigrations(sqlite, allMigrations.filter((n) => Number(n.slice(0, 4)) >= 26));
+  applyMigrations(sqlite, { filter: (n) => unseeded(n) && Number(n.slice(0, 4)) >= 26 });
 
   const rows = sqlite.prepare("SELECT id, name FROM question_bank_tags WHERE normalized_name = 'aws'").all();
   assert.equal(rows.length, 1, "the unique index on normalized_name must hold — the collision was resolved, not left to fail CREATE UNIQUE INDEX");

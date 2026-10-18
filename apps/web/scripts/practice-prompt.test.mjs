@@ -1,17 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
 // Bundled: the prompt builder formats structured answers with @prepdeck/shared.
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("../src/lib/practicePrompt.ts", import.meta.url))],
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"], target: "es2022",
-});
-const code = outputFiles[0].text;
-const { buildLearningPrompt, buildPracticePrompt, copyText } = await import(
-  `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`
-);
+const { buildLearningPrompt, buildPracticePrompt, copyText } = await importTs(new URL("../src/lib/practicePrompt.ts", import.meta.url), { target: "es2022" });
 
 const question = {
   id: "q1", externalId: "EX-1", sequenceNumber: 1, type: "single_choice",
@@ -183,10 +175,7 @@ test("copyText discards its hidden textarea when the legacy clipboard API throws
 // Issue #42: a matching question's options are its left column only, and its
 // answer key is stored as ["left","right"] ID pairs, so the prompt used to name
 // right-hand items it never showed. Ordering answers were bare IDs too.
-const shared = await (async () => {
-  const bundled = await build({ entryPoints: [fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
-})();
+const shared = await importTs(new URL("../../../packages/shared/src/index.ts", import.meta.url));
 const { readFileSync } = await import("node:fs");
 const component = name => {
   const row = shared.normalizeImportFile(JSON.parse(readFileSync(new URL(`../../../tests/fixtures/components/${name}.json`, import.meta.url), "utf8"))).questions[0];

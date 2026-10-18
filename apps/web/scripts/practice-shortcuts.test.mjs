@@ -3,15 +3,10 @@
 // shortcut, and the panel must list exactly what the handler implements.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("../src/lib/practiceShortcuts.ts", import.meta.url))],
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-});
 const { canCheckAnswer, practiceKeyAction, practiceShortcutHints, requiredSelections } =
-  await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+  await importTs(new URL("../src/lib/practiceShortcuts.ts", import.meta.url));
 
 const options = ids => ids.map(id => ({ id, text: `Option ${id}` }));
 const single = { id: "s", type: "single_choice", chooseCount: null, options: options(["A", "B", "C", "D"]) };

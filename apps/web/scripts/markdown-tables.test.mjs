@@ -1,10 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL("../src/lib/markdown.ts", import.meta.url))], bundle: true, write: false, platform: "node", format: "esm" });
-const { parseMarkdown } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+const { parseMarkdown } = await importTs(new URL("../src/lib/markdown.ts", import.meta.url), { platform: "node" });
 
 const fixture = "| Option | Why it is incorrect |\n| --- | --- |\n| A | **SHA256** is a one-way hash. |\n| B | Administrators cannot view secrets in plain text. |";
 const cellsOf = (parsed) => parsed.blocks.filter(b => b.cell).map(b => ({ ...b.cell, text: parsed.plainText.slice(b.start, b.end) }));
@@ -70,21 +68,11 @@ test("a short row without pipes is padded", () => {
   assert.deepEqual(cells.filter(c => c.row === 2).map(c => c.text), ["bar", ""]);
 });
 
-async function renderer() {
-  const { outputFiles } = await build({
-    stdin: {
-      contents: `import { createElement } from "react"; import { renderToStaticMarkup } from "react-dom/server"; import M from "./src/components/MarkdownHighlightedText.tsx"; export const render = (src) => renderToStaticMarkup(createElement(M, { src, annotations: [], qid: "q", target: "stem", show: false, tables: true }));`,
-      resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "tsx"
-    },
-    bundle: true, write: false, platform: "node", format: "esm", jsx: "automatic",
-    banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' }
-  });
-  const dir = fileURLToPath(new URL("../node_modules/.cache/", import.meta.url));
-  const { mkdirSync, writeFileSync } = await import("node:fs");
-  mkdirSync(dir, { recursive: true });
-  const file = `${dir}markdown-render.test.mjs`;
-  writeFileSync(file, outputFiles[0].text);
-  return import(file);
+function renderer() {
+  return importTs({
+    contents: `import { createElement } from "react"; import { renderToStaticMarkup } from "react-dom/server"; import M from "./src/components/MarkdownHighlightedText.tsx"; export const render = (src) => renderToStaticMarkup(createElement(M, { src, annotations: [], qid: "q", target: "stem", show: false, tables: true }));`,
+    resolveDir: new URL("..", import.meta.url), loader: "tsx",
+  }, { platform: "node", jsx: "automatic" });
 }
 
 test("the renderer outputs semantic cells and complete text across block boundaries", async () => {

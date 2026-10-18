@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
 import { normalizeImportFile } from "../../../packages/shared/src/question-components.ts";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ questionsRouter }, { importsRouter }, { attemptsRouter, examAttemptsRouter }, { learningDetailRouter }, { questionTagsRouter },
   { importConflict }, { getQuestion }] = await Promise.all([
   bundle("../src/routes/questions.ts"), bundle("../src/routes/imports.ts"), bundle("../src/routes/attempts.ts"), bundle("../src/routes/learning.ts"), bundle("../src/routes/questionTags.ts"),
@@ -18,19 +15,6 @@ const [{ questionsRouter }, { importsRouter }, { attemptsRouter, examAttemptsRou
 
 // Minimal D1 surface over node:sqlite, shared by `setup` below and by the
 // migration test at the end of this file (which has no Worker app at all).
-function d1(db) {
-  return { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  }, async batch(statements) {
-    db.exec("BEGIN");
-    try { const result = []; for (const statement of statements) result.push(await statement.run()); db.exec("COMMIT"); return result; }
-    catch (err) { db.exec("ROLLBACK"); throw err; }
-  } };
-}
 const choice = { type: "single_choice", stem: "**Which** value is even?", options: [{ id: "A", text: "2" }, { id: "B", text: "3" }], correctAnswers: ["A"] };
 
 test("exam classifications use full-bank metadata before pagination and share export predicates", async t => {
@@ -83,12 +67,10 @@ test("another configured exam exposes different categories without leaking SG va
   assert.equal((await request("/exams/ip/questions/classifications", "GET", undefined, "user")).status, 403);
 });
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,created_at) VALUES ('admin','admin@test','admin','2026-09-09'); INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09')");
   const invalidations = [], pending = [];
-  const DB = d1(db);
+  const DB = createD1(db);
   const env = { DB, KV: { delete: async key => invalidations.push(key) },
     IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) }, IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
     BUCKET: { put: async () => {}, list: async () => ({ objects: [], truncated: false }) } };
@@ -447,11 +429,8 @@ test('component re-import requires reviewed conflicts and preserves earlier grad
 // applied — and the result is fed to the real conflict classifier, because the
 // columns looking right matters only insofar as the next import behaves.
 test("0033 migrates legacy needs_review tag state onto the column and retires the tag", async t => {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  const names = readdirSync(directory).filter(n => n.endsWith(".sql")).sort();
   const migration = "0033_question_needs_review.sql";
-  for (const name of names.filter(n => n < migration)) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t, { filter: n => n < migration });
   db.exec("INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09')");
   const options = [{ id: "A", text: "2" }, { id: "B", text: "3" }];
   // Exactly the shape payloadOf/canonical produced before this migration: no
@@ -489,10 +468,10 @@ test("0033 migrates legacy needs_review tag state onto the column and retires th
     db.prepare("INSERT INTO question_tag_links(question_id,tag_id) VALUES (?,?)").run(questionId, tagId);
   }
 
-  db.exec(readFileSync(new URL(migration, directory), "utf8"));
+  applyMigrations(db, { only: [migration] });
   // The rest of the history, so the current application code below reads the
   // schema it was written for.
-  for (const name of names.filter(n => n > migration)) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  applyMigrations(db, { filter: n => n > migration });
 
   // node:sqlite hands back null-prototype rows; compare plain objects.
   const rows = (sql) => db.prepare(sql).all().map(row => ({ ...row }));
@@ -520,7 +499,7 @@ test("0033 migrates legacy needs_review tag state onto the column and retires th
   // What actually matters: what the next import reports. An untouched,
   // previously review-tagged question is an ordinary incoming change; only the
   // rows a human really did change are `locally_edited`.
-  const DB = d1(db);
+  const DB = createD1(db);
   const reasonFor = async (id, externalId) => {
     const row = await getQuestion(DB, "exam", id);
     const incoming = { externalId, type: "single_choice", stem: "Incoming", options, correctAnswers: ["A"],

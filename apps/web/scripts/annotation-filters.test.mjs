@@ -1,15 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { transformSync } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const source = readFileSync(new URL("../src/lib/annotationFilters.ts", import.meta.url), "utf8");
-const { code } = transformSync(source, {
-  loader: "ts", format: "esm", target: "es2022"
-});
-const { annotationsQueryString, isDefaultView } = await import(
-  `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`
-);
+const { annotationsQueryString, isDefaultView } = await importTs(new URL("../src/lib/annotationFilters.ts", import.meta.url), { target: "es2022" });
 
 test("no filter, default sort produces an empty query string", () => {
   assert.equal(annotationsQueryString([], "asc"), "");

@@ -3,29 +3,20 @@
 // reset at 09:00 on Monday. Days, weeks, windows and the cache now follow the
 // account's time zone. These drive the real queries and routes on node:sqlite.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { applyMigrations, migrationNames, openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [stats, cache, { settingsRouter }, { dailyEmailSettingsRouter }, email] = await Promise.all([
   bundle("../src/lib/learningStats.ts"), bundle("../src/lib/statsCache.ts"), bundle("../src/routes/settings.ts"),
   bundle("../src/routes/dailyEmailSettings.ts"), bundle("../src/scheduled/sendDailyReviewEmails.ts"),
 ]);
 
-const MIGRATIONS = new URL("../../../migrations/", import.meta.url);
-const migrationNames = readdirSync(MIGRATIONS).filter(n => n.endsWith(".sql")).sort();
-const migrate = (db, names) => { for (const name of names) db.exec(readFileSync(new URL(name, MIGRATIONS), "utf8")); };
-
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  migrate(db, migrationNames);
+  const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-01-01');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('e','e','E','2026-01-01')`);
   for (const n of [1, 2, 3, 4]) {
@@ -33,13 +24,7 @@ function setup(t) {
       VALUES (?, 'e', ?, 'single_choice', 'S', '[{"id":"A","text":"a"},{"id":"B","text":"b"}]', '["A"]', '2026-01-01', '2026-01-01')`).run(`q${n}`, n);
   }
   const kv = new Map(), kvWrites = [];
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  } };
+  const DB = createD1(db);
   const KV = {
     async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
     async put(key, value) { kvWrites.push(key); kv.set(key, value); },
@@ -210,15 +195,15 @@ test("a UTC offset is refused as a zone, so no answer is bucketed by one", async
 });
 
 test("migration 0040 keeps a daily email zone the user chose", t => {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const index = migrationNames.findIndex(n => n.startsWith("0040_"));
-  migrate(db, migrationNames.slice(0, index));
+  const names = migrationNames();
+  const index = names.findIndex(n => n.startsWith("0040_"));
+  const db = openDatabase(t, { only: names.slice(0, index) });
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('chose','a@test','user','2026-01-01'), ('default','b@test','user','2026-01-01'),
       ('none','c@test','user','2026-01-01'), ('offset','d@test','user','2026-01-01'), ('minus','e@test','user','2026-01-01');
     INSERT INTO user_email_settings (user_id, enabled, timezone, created_at, updated_at) VALUES
       ('chose', 1, 'Asia/Tokyo', '2026-01-01', '2026-01-01'), ('default', 0, 'UTC', '2026-01-01', '2026-01-01'),
       ('offset', 1, '+01:01', '2026-01-01', '2026-01-01'), ('minus', 1, '\u221205:00', '2026-01-01', '2026-01-01')`);
-  migrate(db, migrationNames.slice(index));
+  applyMigrations(db, { only: names.slice(index) });
   assert.deepEqual(db.prepare("SELECT id, timezone FROM users ORDER BY id").all().map(r => [r.id, r.timezone]),
     [["chose", "Asia/Tokyo"], ["default", null], ["minus", null], ["none", null], ["offset", null]],
     "a UTC offset the old email validator accepted is not carried over");

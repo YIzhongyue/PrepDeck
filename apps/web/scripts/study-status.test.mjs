@@ -3,15 +3,10 @@
 // with nothing but the status itself.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("../src/lib/studyStatus.ts", import.meta.url))],
-  bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"],
-});
 const { mergeStudyStatuses, matchesStudyStatus, studyFilterCounts, isQuestionStudied } =
-  await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
+  await importTs(new URL("../src/lib/studyStatus.ts", import.meta.url));
 
 const entry = (questionId, status, revision) => ({ questionId, status, revision, updatedAt: "2026-10-05T00:00:00Z" });
 

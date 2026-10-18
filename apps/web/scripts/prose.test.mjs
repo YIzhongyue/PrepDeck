@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
-const bundle = async path => {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "node", format: "esm" });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-};
+import { importTs } from "../../../tests/support/bundle.mjs";
+const bundle = path => importTs(new URL(path, import.meta.url), { platform: "node" });
 const [{ reflowPlainProse }, { parseMarkdown }, { mdSegsFor }] = await Promise.all([bundle("../src/lib/prose.ts"), bundle("../src/lib/markdown.ts"), bundle("../src/lib/annotations.ts")]);
 
 test("PDF layout lines reflow Japanese/mixed prose without Japanese spaces or joined Latin words", () => {

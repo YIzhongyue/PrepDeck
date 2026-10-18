@@ -3,18 +3,14 @@
 // back as an unhandled SQLITE_TOOBIG 500). These drive the real routes on
 // node:sqlite with the same body guard and error handler index.ts mounts.
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { build } from "esbuild";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { openDatabase } from "../../../tests/support/migrations.mjs";
 
-async function bundle(path) {
-  const { outputFiles } = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false, platform: "neutral", format: "esm", mainFields: ["module", "main"] });
-  return import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`);
-}
+const bundle = path => importTs(new URL(path, import.meta.url));
 const [notes, annotations, { jsonBodyLimit, JSON_BODY_MAX_BYTES }, { handleUnexpectedError, UNEXPECTED_ERROR_MESSAGE }, shared] = await Promise.all([
   bundle("../src/routes/notes.ts"), bundle("../src/routes/annotations.ts"), bundle("../src/lib/bodyLimit.ts"),
   bundle("../src/lib/unexpectedError.ts"), bundle("../../../packages/shared/src/index.ts"),
@@ -22,20 +18,12 @@ const [notes, annotations, { jsonBodyLimit, JSON_BODY_MAX_BYTES }, { handleUnexp
 const { MAX_NOTE_LENGTH, MAX_ANNOTATION_NOTE_LENGTH, MAX_ANNOTATION_STYLE_LENGTH } = shared;
 
 function setup(t) {
-  const db = new DatabaseSync(":memory:"); t.after(() => db.close());
-  const directory = new URL("../../../migrations/", import.meta.url);
-  for (const name of readdirSync(directory).filter(n => n.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(name, directory), "utf8"));
+  const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('u','u@test','user','2026-09-09');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('e','e','E','2026-09-09');
     INSERT INTO questions (id, exam_id, sequence_number, type, stem, options_json, correct_answers_json, created_at, updated_at)
       VALUES ('q','e',1,'single_choice','Stem','[{"id":"A","text":"a"},{"id":"B","text":"b"}]','["A"]','2026-09-09','2026-09-09')`);
-  const DB = { prepare(sql) {
-    let values = [];
-    return { bind(...args) { values = args; return this; },
-      async first() { return db.prepare(sql).get(...values) ?? null; },
-      async all() { return { results: db.prepare(sql).all(...values) }; },
-      async run() { const r = db.prepare(sql).run(...values); return { meta: { changes: Number(r.changes) } }; } };
-  } };
+  const DB = createD1(db);
   const app = new Hono();
   app.onError(handleUnexpectedError);
   app.use("*", async (c, next) => { c.set("user", { id: "u", role: "user" }); await next(); });

@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
-import { build } from "esbuild";
+import test from "node:test";
+import { importTs } from "../../../tests/support/bundle.mjs";
+import { createD1 } from "../../../tests/support/d1.mjs";
+import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
 
 // implementation — User MCP learning, history, and question discovery tools.
 // Same harness shape as mcp-foundation.test.mjs (real worker entry + MCP SDK,
@@ -14,76 +11,29 @@ import { build } from "esbuild";
 // collectively touch nearly every table in the schema, seeded from every
 // migration file rather than a curated subset (mcp-tokens.test.mjs's
 // approach) so nothing is silently missing.
-const [{ text }] = (await build({
-  stdin: {
-    contents: `export { default as worker } from './src/index.ts';
+const { worker, issueMcpCredential, issueSessionToken } = await importTs({
+  contents: `export { default as worker } from './src/index.ts';
       export { issueSessionToken } from './src/lib/session.ts';
       export * from './src/mcp/credentials.ts';`,
-    resolveDir: fileURLToPath(new URL("..", import.meta.url)),
-  },
-  bundle: true, format: "esm", platform: "node", conditions: ["workerd"], write: false,
-  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-})).outputFiles;
-const buildDir = await mkdtemp(join(tmpdir(), "prepdeck-mcp-user-learning-test-"));
-after(() => rm(buildDir, { recursive: true, force: true }));
-const bundlePath = join(buildDir, "worker.mjs");
-await writeFile(bundlePath, text);
-const { worker, issueMcpCredential, issueSessionToken } = await import(pathToFileURL(bundlePath).href);
+  resolveDir: new URL("..", import.meta.url),
+}, { platform: "workerd" });
 
 // Every migration except 0002, which (unlike the rest) seeds real exam/
 // question content rather than defining schema — including it would pollute
 // every fixture with a pre-existing exam that trips up list/count assertions.
-const migrationsDir = new URL("../../../migrations/", import.meta.url);
-const migrationFiles = (await readdir(migrationsDir))
-  .filter((n) => n.endsWith(".sql") && n !== "0002_seed_sap_c02_questions.sql")
-  .sort();
-const schema = (await Promise.all(migrationFiles.map((name) => readFile(new URL(name, migrationsDir), "utf8")))).join("\n");
+const schema = migrationSql({ filter: (n) => n !== SEED_MIGRATION });
 
 const NO_SIDE_EFFECT_TABLES = ["attempts", "attempt_answers", "wrong_question_book", "bookmarks", "learning_progress", "annotations"];
 
-// D1 documents a 100-bound-parameter limit per statement
-// (https://developers.cloudflare.com/d1/platform/limits/). The real D1
-// binding enforces it; a hand-rolled node:sqlite shim otherwise wouldn't,
-// silently letting a query that binds e.g. one parameter per excluded id
-// regress without any test noticing. Enforced here so any query built by
-// the code under test that exceeds it fails loudly, the same way it would
-// against real D1.
-const D1_MAX_BOUND_PARAMETERS = 100;
-
 async function fixture(t) {
-  const sqlite = new DatabaseSync(":memory:");
-  t.after(() => sqlite.close());
+  const sqlite = openDatabase(t, false);
   sqlite.exec(schema);
   for (const [id, role] of [["alice", "user"], ["bob", "user"], ["admin", "admin"]]) {
     sqlite.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, ?, 'active', ?)")
       .run(id, `${id}@example.test`, role, new Date().toISOString());
   }
   const queries = [];
-  const DB = { prepare(sql) {
-    const methodsFor = (args) => {
-      if (args.length > D1_MAX_BOUND_PARAMETERS) {
-        throw new Error(`D1_ERROR: too many SQL variables (${args.length} bound, ${D1_MAX_BOUND_PARAMETERS} max)`);
-      }
-      return {
-        first: async () => { queries.push({ sql, args }); return sqlite.prepare(sql).get(...args) ?? null; },
-        run: async () => { queries.push({ sql, args }); return { meta: { changes: sqlite.prepare(sql).run(...args).changes } }; },
-        all: async () => { queries.push({ sql, args }); return { results: sqlite.prepare(sql).all(...args) }; },
-      };
-    };
-    return { bind: (...args) => methodsFor(args), ...methodsFor([]) };
-  } };
-  DB.batch = async (statements) => {
-    sqlite.exec("BEGIN");
-    try {
-      const results = [];
-      for (const statement of statements) results.push(await statement.run());
-      sqlite.exec("COMMIT");
-      return results;
-    } catch (error) {
-      sqlite.exec("ROLLBACK");
-      throw error;
-    }
-  };
+  const DB = createD1(sqlite, { onQuery: ({ sql, args }) => { queries.push({ sql, args }); } });
   const kvStore = new Map();
   const env = {
     DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie",

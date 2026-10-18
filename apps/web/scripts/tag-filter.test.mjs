@@ -2,10 +2,8 @@
 // to the list on screen, and a collapsed bar that never hides an active filter.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { transformSync } from 'esbuild';
-const { code } = transformSync(readFileSync(new URL('../src/lib/tagFilter.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' });
-const { tagFacets, filterByTags, pruneTags, matchesQuery, visibleFacets } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+import { importTs } from '../../../tests/support/bundle.mjs';
+const { tagFacets, filterByTags, pruneTags, matchesQuery, visibleFacets } = await importTs(new URL('../src/lib/tagFilter.ts', import.meta.url), { target: 'es2022' });
 
 const q = (id, ...tags) => ({ id, tags });
 const questions = [
