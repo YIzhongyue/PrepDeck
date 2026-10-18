@@ -74,7 +74,7 @@ or answer revisions. Later manual edits still trigger re-import conflicts.
 
 Verification uses the actual route/MCP implementations with SQLite and all
 relevant migrations: `mutation-consistency.test.mjs` exercises success, stale
-writes, skipped imports and rollback; `mcp-foundation.test.mjs` covers separate
-audiences, preview/commit, batch retries, audit records and merged-tag imports;
+writes, skipped imports and rollback; `mcp-admin-mutations.test.mjs` and
+`mcp-admin-imports.test.mjs` cover separate audiences, preview/commit, batch retries, audit records and merged-tag imports;
 `question-authoring.test.mjs` covers all question types, pagination, dependencies
 and historical grading.

@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ attemptsRouter, examAttemptsRouter }, stats, cache, sessions, sweep] = await Promise.all([
@@ -24,13 +25,8 @@ function setup(t) {
     db.prepare(`INSERT INTO questions (id, exam_id, sequence_number, type, stem, options_json, correct_answers_json, created_at, updated_at)
       VALUES (?, ?, ?, 'single_choice', 'S', '[{"id":"A","text":"a"},{"id":"B","text":"b"}]', '["A"]', '2026-09-09', '2026-09-09')`).run(`q${n}`, exam, n);
   }
-  const kv = new Map(), kvWrites = [];
   const DB = createD1(db);
-  const KV = {
-    async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
-    async put(key, value) { kvWrites.push(key); kv.set(key, value); },
-    async delete(key) { kvWrites.push(`delete:${key}`); kv.delete(key); },
-  };
+  const KV = createKv();
   const env = { DB, KV };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: "u", role: "user" }); await next(); });
@@ -43,7 +39,7 @@ function setup(t) {
   const startPractice = async (questionIds, examId = "e") => (await request(`/exams/${examId}/attempts`, "POST", { mode: "practice", questionIds })).data.attemptId;
   const answer = (attemptId, questionId, choice) => request(`/attempts/${attemptId}/answers`, "POST", { questionId, selectedAnswer: [choice] });
   const attemptRow = id => ({ ...db.prepare("SELECT completed_at, duration_seconds, total_questions, score FROM attempts WHERE id = ?").get(id) });
-  return { db, env, kvWrites, request, startPractice, answer, attemptRow };
+  return { db, env, kvWrites: KV.writes, request, startPractice, answer, attemptRow };
 }
 
 test("graded practice answers count in every statistic before the session is ended", async t => {

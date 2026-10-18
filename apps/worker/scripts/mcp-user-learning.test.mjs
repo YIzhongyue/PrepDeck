@@ -3,9 +3,10 @@ import test from "node:test";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
 
 // implementation — User MCP learning, history, and question discovery tools.
-// Same harness shape as mcp-foundation.test.mjs (real worker entry + MCP SDK,
+// Same harness shape as mcp-foundation-fixture.mjs (real worker entry + MCP SDK,
 // bundled for Node via esbuild's "workerd" export condition, backed by an
 // in-memory node:sqlite DB behind a D1-shaped shim) but, since these tools
 // collectively touch nearly every table in the schema, seeded from every
@@ -34,24 +35,15 @@ async function fixture(t) {
   }
   const queries = [];
   const DB = createD1(sqlite, { onQuery: ({ sql, args }) => { queries.push({ sql, args }); } });
-  const kvStore = new Map();
   const env = {
+    ...createBindings(),
     DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie",
     SESSION_SECRET: "synthetic-study-mutation-test-key",
-    KV: {
-      get: async (key, type) => { const v = kvStore.get(key); return v === undefined ? null : (type === "json" ? JSON.parse(v) : v); },
-      put: async (key, value) => { kvStore.set(key, value); },
-      delete: async (key) => { kvStore.delete(key); },
-    },
-    RATE_LIMITER: { idFromName: (key) => key, get: () => ({ fetch: async () => Response.json({ allowed: true, retryAfter: 60 }) }) },
-    BUCKET: { put: async () => {}, get: async () => null, list: async () => ({ objects: [], truncated: false }), delete: async () => {} },
-    IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({ success: true }) },
   };
   const expiresAt = Date.now() + 60_000;
   const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "alice's token", expiresAt });
   const bob = await issueMcpCredential(DB, { userId: "bob", audience: "user", name: "bob's token", expiresAt });
-  return { sqlite, DB, env, kvStore, queries, alice, bob };
+  return { sqlite, DB, env, kvStore: env.KV.store, queries, alice, bob };
 }
 
 function rpc(env, token, method, params, options = {}) {
@@ -85,7 +77,7 @@ async function callUserToolExpectingError(f, token, name, args = {}) {
   return result.structuredContent.error;
 }
 
-// --- Seed helpers (raw SQL — same style mcp-foundation.test.mjs uses to
+// --- Seed helpers (raw SQL — same style mcp-foundation-fixture.mjs uses to
 // seed users directly) -------------------------------------------------------
 
 function insertExam(f, { id, slug, name, archivedAt = null, passMarkPct = null }) {
@@ -414,13 +406,13 @@ test("PR #91: every study mutation fails closed at its own shared per-user write
   seedPractice(f);
   const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
   insertAttempt(f, { id: "stale-before-denial", userId: "alice", examId: "exam1", questionIds: ["q2"], startedAt: "2026-01-01T00:00:00.000Z" });
-  const baseGet = f.env.RATE_LIMITER.get;
   let gate = "denied";
-  f.env.RATE_LIMITER.get = key => key === "mcp:user:alice:study-write" ? { fetch: async (_url, request) => {
-    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 30 });
+  f.env.RATE_LIMITER.respond = ({ key, windowSeconds, max }) => {
+    if (key !== "mcp:user:alice:study-write") return;
+    assert.deepEqual({ windowSeconds, max }, { windowSeconds: 60, max: 30 });
     if (gate === "outage") throw new Error("private limiter failure");
-    return Response.json({ allowed: false, retryAfter: 17 });
-  } } : baseGet(key);
+    return { allowed: false, retryAfter: 17 };
+  };
   for (gate of ["denied", "outage"]) {
     const before = dumpTables(f);
     for (const [name, args] of [
@@ -444,14 +436,12 @@ test("PR #91: configurable study quota counts writes together across token rotat
   const f = await fixture(t);
   seedPractice(f);
   f.env.MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE = "2";
-  const counts = new Map();
-  const baseGet = f.env.RATE_LIMITER.get;
-  f.env.RATE_LIMITER.get = key => key.endsWith(":study-write") ? { fetch: async (_url, request) => {
-    assert.deepEqual(JSON.parse(request.body), { windowSeconds: 60, max: 2 });
-    const count = (counts.get(key) ?? 0) + 1;
-    counts.set(key, count);
-    return Response.json({ allowed: count <= 2, retryAfter: 60 });
-  } } : baseGet(key);
+  const counts = f.env.RATE_LIMITER.counts;
+  f.env.RATE_LIMITER.respond = ({ key, windowSeconds, max, count }) => {
+    if (!key.endsWith(":study-write")) return;
+    assert.deepEqual({ windowSeconds, max }, { windowSeconds: 60, max: 2 });
+    return { allowed: count <= 2, retryAfter: 60 };
+  };
   const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
   await callUserTool(f, f.alice.token, "user_list_attempts");
   const rotated = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });

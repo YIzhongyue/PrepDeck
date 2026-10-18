@@ -303,7 +303,7 @@ console's "MCP tokens" tab (`screens/Admin.tsx`, `/api/admin/mcp-tokens`).
 
 Tests: `apps/worker/scripts/mcp-tokens.test.mjs` covers the HTTP CRUD surface
 (ownership isolation, validation, rotation, admin gating, namespace
-separation) against an in-memory D1-shaped SQLite DB; `mcp-foundation.test.mjs`
+separation) against an in-memory D1-shaped SQLite DB; `mcp-auth-gates.test.mjs`
 covers non-expiring credentials and `last_used_at` tracking end-to-end through
 the real `/mcp` transport.
 
@@ -717,7 +717,7 @@ markings; personal annotation overlays are never fetched by this tool. Actual
 image display still depends on the host. Formatting never mutates the bank.
 
 Tests: `apps/worker/scripts/mcp-presentation.test.mjs` (rendering and fallback),
-`mcp-foundation.test.mjs` (real SDK transports, scope, safe fields and no bank
+`mcp-user-read-tools.test.mjs` (real SDK transports, scope, safe fields and no bank
 writes), and `apps/web/scripts/mcp-presentation.browser.mjs` (visible output in
 a synthetic Markdown/image host). See [examples and screenshots](../screenshots/mcp-presentation.md).
 
@@ -821,7 +821,7 @@ every other list-returning tool. A nonexistent `examId` returns `not_found`
 before any scan runs.
 
 Tests: `apps/worker/src/lib/questionQuality.test.ts` unit-tests the pure
-checks; `apps/worker/scripts/mcp-foundation.test.mjs` exercises every tool
+checks; `apps/worker/scripts/mcp-admin-read-tools.test.mjs` exercises every tool
 above end-to-end (seeded duplicate/missing-explanation/invalid-reference/
 missing-metadata questions across two exams, one archived), asserting
 correctness, pagination, `not_found` handling, that reads never mutate the
@@ -851,7 +851,7 @@ mutation itself (one D1 `batch()`, so the audit row can never be missing
 for a committed write or present for a rolled-back one) — see "Request
 safety and limits" for exactly what it does and does not persist.
 
-Tests: `apps/worker/scripts/mcp-foundation.test.mjs`.
+Tests: `apps/worker/scripts/mcp-admin-mutations.test.mjs`.
 
 ## Exam lifecycle, bulk import, and tag catalog (implementation, implementation)
 
@@ -870,7 +870,8 @@ Also in `src/mcp/admin/server.ts`/`createAdminMcpAdapter`:
 
   Re-import conflict classification (`lib/importConflicts.ts`) compares current linked tag IDs with `import_baseline_tag_ids_json`, rather than display names. A merge remaps and deduplicates the baseline IDs in the same guarded transaction as live associations; it does not change question content or answer revisions. This is the only part of a merge that writes question rows at all, and it is the only unbounded work in that transaction: the statement has no index-usable predicate, so it leads with `import_baseline_tag_ids_json IS NOT NULL` to drop every never-imported question before expanding a JSON array per row. Renames preserve identity. Both operations therefore avoid false `locally_edited` conflicts while retaining genuine manual-edit conflicts. Separately, `admin_preview_import`'s `importToken` binds the current name-to-ID resolution (`tagResolutionSnapshot`); execution rejects a taxonomy change after preview instead of silently committing a different identity.
 
-Tests: `apps/worker/scripts/mcp-foundation.test.mjs`, `apps/worker/scripts/question-bank-tags.test.mjs`.
+Tests: `apps/worker/scripts/mcp-admin-mutations.test.mjs`, `apps/worker/scripts/mcp-admin-imports.test.mjs`,
+`apps/worker/scripts/question-bank-tags.test.mjs`.
 
 ## Pagination
 
@@ -1080,18 +1081,27 @@ against a real bundled Worker.
 real Worker with the SDK's `workerd` conditions against a SQLite-backed D1
 adapter (applying the actual migrations, not a hand-rolled schema):
 
-- `mcp-foundation.test.mjs` — transport/auth foundation (both protocol eras,
-  independent catalogs, credential namespaces and stored audience,
-  revoked/expired credentials, account status/role changes, concurrent
-  identities, spoofed identity arguments, fixed error responses,
-  secret-free storage/logging) plus the full Admin MCP catalog (implementation reads,
-  implementation mutations with audit-privacy assertions, implementation exam/import/tag tools)
-  end-to-end against a seeded question bank, and the full throttling stack
-  (implementation: circuit/IP gates, blanket account quota, Admin-mutation quota, and
-  their normalized envelope, including real quota-exhaustion and
-  credential-rotation cases with a stateful rate-limiter stub), plus metrics
-  privacy, auth/error categories, JSON/SSE outcomes, partial/replayed batches,
-  bounded volume and sink-failure isolation.
+- The MCP foundation, in files sharing one harness
+  (`mcp-foundation-fixture.mjs`):
+  - `mcp-auth-gates.test.mjs` — credential namespaces and stored audience,
+    revoked/expired credentials, account status/role changes, concurrent
+    identities, spoofed identity arguments, fixed error responses,
+    secret-free storage/logging, and the full throttling stack (circuit/IP
+    gates, blanket account quota, and their normalized envelope, including
+    real quota-exhaustion and credential-rotation cases with a counting
+    rate-limiter stub).
+  - `mcp-catalog.test.mjs` — both protocol eras, independent catalogs, tool
+    hints, and the shared pagination and error conventions.
+  - `mcp-user-read-tools.test.mjs` — quiz presentation and archived
+    questions across the User MCP read tools.
+  - `mcp-admin-read-tools.test.mjs` — the Admin MCP read and quality-control
+    tools against a seeded question bank.
+  - `mcp-admin-mutations.test.mjs` — Admin MCP mutations with audit-privacy
+    assertions and the Admin-mutation quota, exam lifecycle and tag tools.
+  - `mcp-admin-imports.test.mjs` — the import and export tools.
+  - `mcp-metrics.test.mjs` — metrics privacy, auth/error categories, JSON/SSE
+    outcomes, partial/replayed batches, bounded volume and sink-failure
+    isolation.
 - `mcp-tokens.test.mjs` — the token-lifecycle HTTP CRUD surface (ownership
   isolation, validation, rotation, admin gating, namespace separation).
 - `mcp-oauth.test.mjs` — OAuth authorization end to end (issue #102):

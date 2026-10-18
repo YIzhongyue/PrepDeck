@@ -1,7 +1,7 @@
 // Direct coverage for lib/questionImport.ts, the import pipeline shared by
 // the REST import routes and Admin MCP's import tools. Both entry points are
 // covered end to end in question-authoring, mutation-consistency and
-// mcp-foundation; this file pins the pipeline's own contract: how rows are
+// mcp-admin-imports; this file pins the pipeline's own contract: how rows are
 // classified, which resolutions apply, where the caller's chained statements
 // sit, and how stale and rolled-back batches are reported.
 import assert from "node:assert/strict";
@@ -9,6 +9,8 @@ import test from "node:test";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
+import { createBucket } from "../../../tests/support/r2.mjs";
+import { createRateLimit } from "../../../tests/support/rate-limit.mjs";
 
 const {
   validateImport, importTagNames, findImportTargets, decideImportRows, classifyImportDecisions, changedRowConflicts,
@@ -220,36 +222,30 @@ test("countImportOutcomes counts conflicts as skipped", () => {
 });
 
 test("limitImportRequest consumes the kind's limiter for this user and exam", async () => {
-  const calls = [];
-  const limiter = (name, success) => ({ limit: async (options) => { calls.push([name, options.key]); return { success }; } });
-  const env = { IMPORT_VALIDATE_RATE_LIMITER: limiter("validate", true), IMPORT_EXECUTE_RATE_LIMITER: limiter("execute", false) };
+  const env = { IMPORT_VALIDATE_RATE_LIMITER: createRateLimit(), IMPORT_EXECUTE_RATE_LIMITER: createRateLimit({ success: false }) };
   assert.equal(await limitImportRequest(env, "validate", "admin", "exam"), true);
+  assert.deepEqual(env.IMPORT_EXECUTE_RATE_LIMITER.calls, [], "validating leaves the execute limiter alone");
   assert.equal(await limitImportRequest(env, "execute", "admin", "exam"), false);
-  assert.deepEqual(calls, [["validate", "admin:exam"], ["execute", "admin:exam"]]);
+  assert.deepEqual(env.IMPORT_VALIDATE_RATE_LIMITER.calls, [{ key: "admin:exam" }]);
+  assert.deepEqual(env.IMPORT_EXECUTE_RATE_LIMITER.calls, [{ key: "admin:exam" }]);
 });
 
 test("the source file is archived under its exam, logged, and old archives are pruned", async (t) => {
   const { sqlite, db } = fixture(t);
-  const objects = new Map();
-  const bucket = {
-    put: async (key, body, options) => { objects.set(key, { body, options, uploaded: new Date() }); },
-    list: async ({ prefix }) => ({
-      objects: [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, o]) => ({ key, uploaded: o.uploaded })), truncated: false,
-    }),
-    delete: async (keys) => { for (const key of keys) objects.delete(key); },
-  };
+  const bucket = createBucket();
+  const { objects } = bucket;
   const key = await archiveImportFile(bucket, "exam", "{\"questions\":[]}");
   assert.match(key, /^imports\/exam\/\d+-[0-9a-f-]+\.json$/);
   assert.equal(objects.get(key).body, "{\"questions\":[]}");
-  assert.equal(objects.get(key).options.httpMetadata.contentType, "application/json");
+  assert.equal(objects.get(key).httpMetadata.contentType, "application/json");
 
   const id = await recordImportLog(db, { examId: "exam", uploadedBy: "admin", r2ObjectKey: key, questionCount: 3, createdAt: NOW });
   assert.deepEqual({ ...sqlite.prepare("SELECT exam_id, uploaded_by, r2_object_key, question_count, created_at FROM import_logs WHERE id = ?").get(id) },
     { exam_id: "exam", uploaded_by: "admin", r2_object_key: key, question_count: 3, created_at: NOW });
 
   const expired = "imports/exam/expired.json";
-  objects.set(expired, { body: "{}", uploaded: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000) });
-  objects.set("imports/other/expired.json", { body: "{}", uploaded: new Date(0) });
+  bucket.seed(expired, "{}", { uploaded: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000) });
+  bucket.seed("imports/other/expired.json", "{}", { uploaded: new Date(0) });
   await cleanOldImportArchives(bucket, "exam", key);
   assert.deepEqual([...objects.keys()].sort(), ["imports/other/expired.json", key].sort());
 });

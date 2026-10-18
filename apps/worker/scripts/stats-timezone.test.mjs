@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { applyMigrations, migrationNames, openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [stats, cache, { settingsRouter }, { dailyEmailSettingsRouter }, email] = await Promise.all([
@@ -23,13 +24,8 @@ function setup(t) {
     db.prepare(`INSERT INTO questions (id, exam_id, sequence_number, type, stem, options_json, correct_answers_json, created_at, updated_at)
       VALUES (?, 'e', ?, 'single_choice', 'S', '[{"id":"A","text":"a"},{"id":"B","text":"b"}]', '["A"]', '2026-01-01', '2026-01-01')`).run(`q${n}`, n);
   }
-  const kv = new Map(), kvWrites = [];
   const DB = createD1(db);
-  const KV = {
-    async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
-    async put(key, value) { kvWrites.push(key); kv.set(key, value); },
-    async delete(key) { kvWrites.push(`delete:${key}`); kv.delete(key); },
-  };
+  const KV = createKv();
   const env = { DB, KV };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: "u", role: "user" }); await next(); });
@@ -50,7 +46,7 @@ function setup(t) {
       VALUES (?, ?, ?, '["A"]', ?, ?)`).run(`${id}-aa`, id, questionId, correct, at);
   };
   const setTimeZone = tz => db.prepare("UPDATE users SET timezone = ? WHERE id = 'u'").run(tz);
-  return { db, env, kvWrites, request, answerAt, setTimeZone };
+  return { db, env, kvWrites: KV.writes, request, answerAt, setTimeZone };
 }
 
 const trend = result => result.accuracyTrend.map(p => [p.date, p.attempted]);
@@ -129,12 +125,12 @@ test("the stats cache cannot serve one time zone's buckets to another", async t 
   const ny = await cache.getOrComputeExamStats(env, "u", "e");
   assert.equal(ny.timeZone, "America/New_York", "a new zone is computed, not read from the Tokyo entry");
   assert.equal(kvWrites.length, 2);
-  assert.ok(kvWrites[0].endsWith(":Asia/Tokyo") && kvWrites[1].endsWith(":America/New_York"), kvWrites.join());
+  assert.ok(kvWrites[0].key.endsWith(":Asia/Tokyo") && kvWrites[1].key.endsWith(":America/New_York"), kvWrites.map(w => w.key).join());
   setTimeZone("Asia/Tokyo");
   assert.equal((await cache.getOrComputeExamStats(env, "u", "e")).timeZone, "Asia/Tokyo");
   assert.equal(kvWrites.length, 2, "switching back is served from the Tokyo entry");
   await cache.invalidateExamStats(env, "u", "e");
-  assert.equal(kvWrites.at(-1), kvWrites[0].replace(/^/, "delete:"), "invalidation deletes the current zone's entry");
+  assert.deepEqual(kvWrites.at(-1), { method: "delete", key: kvWrites[0].key }, "invalidation deletes the current zone's entry");
 });
 
 test("the account's time zone is set in Settings and shared with the daily email", async t => {

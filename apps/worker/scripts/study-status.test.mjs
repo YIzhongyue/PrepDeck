@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { applyMigrations, migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ questionsRouter }, { attemptsRouter, examAttemptsRouter }, { studyStatusRouter }, { learningDetailRouter }] = await Promise.all([
@@ -17,7 +18,7 @@ function setup(t) {
   const db = openDatabase(t);
   db.exec(`INSERT INTO users (id,email,role,created_at) VALUES ('admin','admin@test','admin','2026-09-09'), ('other','other@test','user','2026-09-09');
     INSERT INTO exams(id,slug,name,created_at) VALUES ('exam','test','Test exam','2026-09-09'), ('exam2','test2','Second exam','2026-09-09')`);
-  const env = { DB: createD1(db), KV: { delete: async () => {}, get: async () => null, put: async () => {} } };
+  const env = { DB: createD1(db), KV: createKv() };
   let user = "admin";
   const app = new Hono();
   app.onError((err) => { throw new Error(err.message); });

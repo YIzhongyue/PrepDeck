@@ -3,6 +3,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { classifyRequest, generalRateLimit, trustedClientKey } from "../src/middleware/rateLimit.ts";
 import { RateLimiterObject } from "../src/rateLimiterObject.ts";
+import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
 test("trusted key ignores forged forwarding headers and groups IPv6 rotations", () => {
   const a = new Headers({ "CF-Connecting-IP": "2001:db8:1234:5678::1", "X-Forwarded-For": "1.2.3.4" });
@@ -36,7 +37,7 @@ test("Durable Object atomically rejects excess concurrent cross-isolate requests
 });
 
 function failingEnv(extra = {}) {
-  return { RATE_LIMITER: { idFromName: (key) => key, get: () => ({ fetch: async () => { throw new Error("storage down"); } }) }, ...extra };
+  return { RATE_LIMITER: createRateLimiter({ respond: () => { throw new Error("storage down"); } }), ...extra };
 }
 
 test("storage failure fails closed for writes but degrades for ordinary GET", async () => {

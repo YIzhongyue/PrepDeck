@@ -8,6 +8,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 import { applyMigrations, migrationNames, migrationSql, openDatabase } from "../../../tests/support/migrations.mjs";
 
 const { authorizeIdentity, adminUsersRouter } = await importTs([
@@ -21,16 +22,6 @@ function deferred() {
   return { promise, resolve };
 }
 
-function kv() {
-  const store = new Map();
-  return {
-    store,
-    get: async (key) => (store.has(key) ? JSON.parse(store.get(key)) : null),
-    put: async (key, value) => store.set(key, value),
-    delete: async (key) => store.delete(key),
-  };
-}
-
 function fixture(t) {
   const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
   // `readHook` is the seam the concurrency test uses to park two sign-ins on
@@ -39,7 +30,7 @@ function fixture(t) {
   const readHook = { current: null };
   const env = {
     DB: createD1(sqlite, { afterQuery: async ({ sql, method }) => { if (method === "first" && readHook.current) await readHook.current(sql); } }),
-    KV: kv(),
+    KV: createKv(),
   };
 
   // Hold the first two reads matching `match` until both have arrived, then

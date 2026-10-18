@@ -8,6 +8,7 @@ import test from "node:test";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ authRouter }, { safeReturnTo }, { buildOAuthStateCookie }] = await Promise.all([bundle("../src/routes/auth.ts"), bundle("../src/lib/returnTo.ts"), bundle("../src/lib/google-oauth.ts")]);
@@ -40,14 +41,8 @@ async function signingKey() {
 function environment(t) {
   const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,status,created_at) VALUES ('alice','alice@example.test','user','invited','2026-09-09')");
-  const kv = new Map();
   const DB = createD1(db);
-  const KV = {
-    async get(key, type) { const v = kv.get(key); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; },
-    async put(key, value) { kv.set(key, value); },
-    async delete(key) { kv.delete(key); },
-  };
-  return { AUTH_MODE: "cookie", DB, KV, SESSION_SECRET: "synthetic-test-session-key", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret" };
+  return { AUTH_MODE: "cookie", DB, KV: createKv(), SESSION_SECRET: "synthetic-test-session-key", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret" };
 }
 
 async function signInThroughGoogle(t, returnTo) {

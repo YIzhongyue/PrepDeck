@@ -9,6 +9,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 import { applyMigrations, migrationNames, openDatabase } from "../../../tests/support/migrations.mjs";
 
 const bundle = path => importTs(new URL(path, import.meta.url));
@@ -23,7 +24,7 @@ function setup(t) {
   const DB = createD1(db, { async onQuery({ sql, method }) {
     if (beforeRun && (method === "run" || method === "batch")) await beforeRun(sql);
   } });
-  const env = { DB, KV: { delete: async () => {} } };
+  const env = { DB, KV: createKv() };
   const app = new Hono();
   // Surface a 500 as a thrown error: an unhandled exception in grading is
   // exactly the failure mode these tests exist to prevent.

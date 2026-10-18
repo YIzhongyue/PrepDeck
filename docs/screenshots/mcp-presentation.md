@@ -37,7 +37,7 @@ Reproduce with:
 
 ```sh
 SCREENSHOT_DIR=docs/screenshots node apps/web/scripts/mcp-presentation.browser.mjs
-node --test apps/worker/scripts/mcp-presentation.test.mjs apps/worker/scripts/mcp-foundation.test.mjs
+node --test apps/worker/scripts/mcp-presentation.test.mjs apps/worker/scripts/mcp-user-read-tools.test.mjs
 ```
 
 The browser regression is included in `npm run test:browser`; `SCREENSHOT_DIR`

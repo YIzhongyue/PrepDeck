@@ -3,6 +3,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
+import { createKv } from "../../../tests/support/kv.mjs";
 import { openDatabase } from "../../../tests/support/migrations.mjs";
 const bundle = path => importTs(new URL(path, import.meta.url));
 const [{ practiceCatalogRouter }, { examAttemptsRouter }, { bookmarksRouter }, { wrongBookMasteredRouter }, { annotationsRouter }, { notesRouter }, { setCachedPracticeQuestions, invalidatePracticeQuestions }] = await Promise.all([
@@ -24,10 +25,11 @@ function setup() {
     db.prepare("INSERT INTO annotations VALUES (?,?,?,'stem',NULL,0,2,'hl1',NULL,'now','now')").run(`${user}-${q}`, user, q);
     for (const visibility of ["private", "shared"]) db.prepare("INSERT INTO notes VALUES (?,?,?,?,?,'now','now')").run(`${user}-${q}-${visibility}`, user, q, 'A note', visibility);
   }
-  const cache = new Map();
+  const KV = createKv();
+  const cache = KV.store;
   const queries = [];
   const DB = createD1(db, { onQuery: ({ sql }) => { queries.push(sql); } });
-  const env = { DB, KV: { get: async key => cache.has(key) ? JSON.parse(cache.get(key)) : null, put: async (key, value) => cache.set(key, value), delete: async key => cache.delete(key) } };
+  const env = { DB, KV };
   const app = new Hono();
   app.use("*", async (c, next) => { c.set("user", { id: c.req.header("x-user") ?? "u1", role: "user" }); await next(); });
   app.route("/exams/:examId/practice-catalog", practiceCatalogRouter);
@@ -93,16 +95,15 @@ test("image-heavy catalogs stay small and cacheable; only opened question conten
 });
 
 test("catalog cache measures UTF-8 bytes and invalidates every deployment version", async () => {
-  const writes = [], deleted = [];
-  const env = { KV: { put: async (...args) => writes.push(args), delete: async key => deleted.push(key) } };
+  const env = { KV: createKv() };
   // The JSON characters fit but its UTF-8 bytes exceed the KV value limit.
   await setCachedPracticeQuestions(env, "A", [{ stem: "界".repeat(9 * 1024 * 1024) }]);
-  assert.equal(writes.length, 0);
+  assert.equal(env.KV.writes.length, 0);
   await setCachedPracticeQuestions(env, "A", [{ stem: "A small question", hasContent: true }]);
-  assert.equal(writes.length, 1);
-  assert.equal(writes[0][0], "practice-questions:v3:A");
+  assert.equal(env.KV.writes.length, 1);
+  assert.equal(env.KV.writes[0].key, "practice-questions:v3:A");
   await invalidatePracticeQuestions(env, "A");
-  assert.deepEqual(deleted.sort(), ["practice-questions:A", "practice-questions:v2:A", "practice-questions:v3:A"].sort());
+  assert.deepEqual(env.KV.deletes.sort(), ["practice-questions:A", "practice-questions:v2:A", "practice-questions:v3:A"].sort());
 });
 
 test("bulk practice accepts scoped bookmarks and rejects mixed-exam input", async t => {

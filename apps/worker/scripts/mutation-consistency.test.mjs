@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { importTs } from "../../../tests/support/bundle.mjs";
 import { createD1 } from "../../../tests/support/d1.mjs";
 import { migrationSql, openDatabase, SEED_MIGRATION } from "../../../tests/support/migrations.mjs";
+import { createBindings } from "../../../tests/support/bindings.mjs";
 
 const {
   attemptsRouter, examAttemptsRouter, authorizeIdentity, authRouter,
@@ -46,15 +47,7 @@ function fixture(t) {
     afterQuery: async ({ sql, method, result }) => { if (method === "first" && readHook) await readHook(sql, result); },
     afterBatch: async () => { if (batchHook) { const hook = batchHook; batchHook = null; await hook(); } },
   });
-  const values = new Map();
-  const deletedKeys = [];
-  const env = {
-    DB, AUTH_MODE: "cookie", SESSION_SECRET: "synthetic-test-session-key",
-    KV: { get: async (k) => values.has(k) ? JSON.parse(values.get(k)) : null, put: async (k,v) => values.set(k,v), delete: async (k) => values.delete(k) },
-    BUCKET: { delete: async (key) => { deletedKeys.push(key); }, put: async () => {}, list: async () => ({objects: [], truncated: false}) },
-    IMPORT_VALIDATE_RATE_LIMITER: { limit: async () => ({success: true}) },
-    IMPORT_EXECUTE_RATE_LIMITER: { limit: async () => ({success: true}) },
-  };
+  const env = { ...createBindings(), DB, AUTH_MODE: "cookie", SESSION_SECRET: "synthetic-test-session-key" };
   const app = new Hono();
   app.onError((_error, c) => c.json({ error: "Fixture request failed" }, 500));
   app.use("*", async (c, next) => { c.set("user", { id: c.req.header("x-user") ?? "alice", role: c.req.header("x-role") ?? "user" }); await next(); });
@@ -79,7 +72,7 @@ function fixture(t) {
       await ready.promise;
     };
   };
-  return { sqlite, DB, env, request, values, deletedKeys, synchronizeReads,
+  return { sqlite, DB, env, request, values: env.KV.store, synchronizeReads,
     afterBatch: (hook) => { batchHook = hook; }, onRead: (hook) => { readHook = hook; } };
 }
 
