@@ -6,6 +6,7 @@
 // Worker said.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { waitUntil } from "./browser-fixture.mjs";
@@ -18,7 +19,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React from 'rea
   const params = new URLSearchParams(location.search);
   const screens = {
     '/connect': () => params.get('request') ? <McpConnect requestId={params.get('request')} /> : <McpConnectError reason={params.get('error') ?? ''} />,
-    '/apps': () => <div style={{ padding: 20, maxWidth: 800, margin: 'auto' }}><McpConnectionsCard title="Connected apps" description="Apps you approved." apiBase="/api/mcp-connections" /></div>,
+    '/apps': () => <div style={{ padding: 20, maxWidth: 800, margin: 'auto' }}><McpConnectionsCard title="Connected apps" description="Apps you approved." apiBase={params.get('admin') ? '/api/admin/mcp-connections' : '/api/mcp-connections'} /></div>,
   };
   createRoot(document.getElementById('root')).render((screens[location.pathname] ?? (() => null))());`,
   loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
@@ -50,14 +51,16 @@ const server = createServer(async (req, res) => {
       target.searchParams.set("state", "s");
       return json(200, { redirectTo: target.toString() });
     }
-    if (url.pathname === "/api/mcp-connections" && req.method === "GET") return json(200, { enabled: oauthEnabled, grants });
-    const revoke = /^\/api\/mcp-connections\/([^/]+)\/revoke$/.exec(url.pathname);
+    if ((/^\/api\/(?:admin\/)?mcp-connections$/).test(url.pathname) && req.method === "GET") return json(200, { enabled: oauthEnabled, grants });
+    const revoke = /^\/api\/(?:admin\/)?mcp-connections\/([^/]+)\/revoke$/.exec(url.pathname);
     if (revoke && req.method === "POST") {
       grants = grants.filter((g) => g.id !== revoke[1]);
       return json(200, { ok: true });
     }
     return json(404, { error: "not found" });
   }
+  const logo = /^\/app-logos\/([a-z-]+)\.(png|svg)$/.exec(url.pathname);
+  if (logo) { res.setHeader("Content-Type", logo[2] === "svg" ? "image/svg+xml" : "image/png"); return res.end(readFileSync(new URL(`../public${url.pathname}`, import.meta.url))); }
   if (url.pathname === "/fixture.js" || url.pathname === "/fixture.css") {
     res.setHeader("Content-Type", url.pathname.endsWith("css") ? "text/css" : "text/javascript");
     return res.end(outputFiles.find((f) => f.path.endsWith(url.pathname.slice(1)))?.contents);
@@ -145,6 +148,61 @@ try {
   await page.getByRole("button", { name: "Disconnect" }).first().click();
   await waitUntil("the disconnected app to leave the list", () => page.getByText("Claude Desktop").count(), { until: (n) => n === 0 });
   assert.ok(requests.includes("POST /api/mcp-connections/g1/revoke"));
+
+  // Issue #183: real local artwork, safe fallbacks, and the shared Admin card.
+  const known = (id, name, clientId) => ({ id, clientName: name, clientId, clientKind: "metadata_document", audience: "user", scopes: ["mcp:user:read"], createdAt: Date.now(), lastUsedAt: null, status: "active" });
+  const logoGrants = [
+    known("chatgpt", "ChatGPT", "https://chatgpt.com/oauth/client.json"),
+    { ...known("codex", "Codex", "https://chatgpt.com/oauth/codex/client.json"), status: "expired" },
+    known("claude", "Claude", "https://claude.ai/oauth/mcp-oauth-client-metadata"),
+    known("vscode", "Visual Studio Code", "https://vscode.dev/oauth/client-metadata.json"),
+    known("copilot", "GitHub Copilot CLI", "https://github.com/copilot/cli/client-metadata.json"),
+    known("lookalike", "ChatGPT", "https://chatgpt.com.evil.test/oauth/client.json"),
+    { ...known("dynamic", "Claude Desktop", "pdc_test_only"), clientKind: "dynamic" },
+    known("unnamed", "   ", "https://unknown.example.test/client.json"),
+  ];
+  const thirdPartyRequests = [];
+  page.on("request", req => { if (!req.url().startsWith(origin)) thirdPartyRequests.push(req.url()); });
+  // Existing font imports are unrelated to logo loading; keep fixtures fully local.
+  await page.route("https://**/*", route => route.abort());
+  for (const admin of [false, true]) {
+    grants = logoGrants.map(g => ({ ...g, audience: admin ? "admin" : "user", scopes: [admin ? "mcp:admin:read" : "mcp:user:read"] }));
+    for (const width of [360, 1100]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const theme of ["light", "dusk"]) {
+        await page.goto(`${origin}/apps${admin ? "?admin=1" : ""}`);
+        await page.locator(".mcp-token").first().waitFor();
+        await page.evaluate(theme => document.documentElement.setAttribute("data-pd-theme", theme), theme);
+        const logos = page.locator(".mcp-app-logo img");
+        assert.equal(await logos.count(), 5);
+        await waitUntil("every bundled logo to load", () => logos.evaluateAll(imgs => imgs.every(img => img.complete && img.naturalWidth > 0)));
+        assert.equal(await page.getByRole("img").count(), 0, "decorative logos are absent from the accessibility tree");
+        assert.equal(await page.locator(".mcp-token-icon").allTextContents().then(text => text.join("|")), "|||||C|C|?");
+        assert.ok(await page.getByText("Unnamed app", { exact: true }).isVisible());
+        assert.equal(await page.getByRole("button", { name: "Disconnect" }).count(), 8);
+        assert.ok(await page.getByText("https://chatgpt.com/oauth/codex/client.json", { exact: true }).isVisible());
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, `${theme} ${width}px overflow`);
+        for (const box of await logos.evaluateAll(imgs => imgs.map(img => ({ w: img.getBoundingClientRect().width, h: img.getBoundingClientRect().height })))) assert.deepEqual(box, { w: 24, h: 24 });
+        if (process.env.SCREENSHOT_DIR) {
+          mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
+          await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mcp-apps-${admin ? "admin" : "user"}-${theme}-${width}.png`, fullPage: true });
+        }
+      }
+    }
+    await page.getByRole("button", { name: "Disconnect" }).first().click();
+    await waitUntil("supported app disconnect", () => page.locator(".mcp-token").count(), { until: n => n === 7 });
+    assert.ok(requests.includes(`POST /api/${admin ? "admin/" : ""}mcp-connections/chatgpt/revoke`));
+  }
+  assert.equal(thirdPartyRequests.filter(url => !url.startsWith("https://fonts.googleapis.com/")).length, 0, "logos make no external requests");
+
+  // Broken/unavailable local artwork must never leave a broken image.
+  grants = [logoGrants[0]];
+  await page.route("**/app-logos/openai.png", route => route.abort());
+  await page.goto(`${origin}/apps`);
+  await waitUntil("image failure initial fallback", () => page.locator(".mcp-token-icon").textContent(), { until: value => value === "C" });
+  assert.equal(await page.locator(".mcp-token-icon img").count(), 0);
+  assert.ok(await page.getByText("ChatGPT", { exact: true }).isVisible());
+  await page.unroute("**/app-logos/openai.png");
 
   // With OAuth off and nothing connected, the card stays out of the way.
   grants = [];

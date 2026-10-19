@@ -50,3 +50,8 @@
 .mcp-setup-button { white-space: normal; text-align: left; height: auto; }
 .mcp-setup-button > [data-text] { white-space: normal; }
 .mcp-setup-actions .mcp-setup-fallback { width: 100%; min-width: 0; }
+
+/* Official artwork (monochrome or brand colour) stays unmodified on a neutral white tile in
+   every theme/status. Scope this to app logos so PAT/initial icons keep their colours. */
+.mcp-token .mcp-token-icon.mcp-app-logo { background: #fff; border: 1px solid var(--color-divider); }
+.mcp-app-logo img { display: block; width: 24px; height: 24px; object-fit: contain; }
