@@ -24,7 +24,7 @@ const exams = [
 let holdBadge = false, releaseBadge;
 const server = createServer((req, res) => {
   const path = new URL(req.url, "http://fixture").pathname;
-  const json = data => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(data)); };
+  const json = (data, status = 200) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(data)); };
   if (path.endsWith("/badge")) {
     if (path.includes("broken")) { res.writeHead(404); return res.end(); }
     const send = () => { res.setHeader("Content-Type", "image/svg+xml"); res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="${path.includes("two") ? "#a33" : "#36a"}"/></svg>`); };
@@ -41,7 +41,7 @@ const server = createServer((req, res) => {
   if (path === "/api/annotation-settings") return json({ hl1Alias: "First", hl2Alias: "Second", hl3Alias: "Third" });
   if (path === "/api/annotations") return json({ annotations: [] });
   if (path === "/api/notes") return json({ notes: [] });
-  if (path.startsWith("/api/")) return json({});
+  if (path.startsWith("/api/")) return json({ error: "No fixture for this optional route" }, 503);
   if (path === "/fixture.js" || path === "/fixture.css") {
     res.setHeader("Content-Type", path.endsWith("css") ? "text/css" : "text/javascript");
     return res.end(outputFiles.find(file => file.path.endsWith(path.slice(1))).contents);
@@ -57,7 +57,7 @@ try {
   page.setDefaultTimeout(10000);
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   const ready = id => page.waitForFunction(id => window.store?.state.workspaceStatus === "ready" && window.store.state.examId === id, id);
-  await page.goto(`http://127.0.0.1:${server.address().port}/practice`);
+  await page.goto(`http://127.0.0.1:${server.address().port}/exams/cloud-one/practice`);
   await ready("one");
   const trigger = () => page.locator(".exam-selector__trigger:visible").first();
   const badge = () => trigger().locator(".exam-selector__badge");
@@ -90,7 +90,7 @@ try {
   for (const width of [320, 375, 900, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     for (const theme of ["light", "cream", "sage", "clay", "dusk"]) {
-      await page.evaluate(theme => document.querySelector('[data-pd-theme]').setAttribute('data-pd-theme', theme), theme);
+      await page.evaluate(theme => document.querySelectorAll('[data-pd-theme]').forEach(el => el.setAttribute('data-pd-theme', theme)), theme);
       for (const id of ["one", "none", "broken", "two", "broken", "one"]) {
         const exam = exams.find(exam => exam.id === id);
         await trigger().press("Enter");
