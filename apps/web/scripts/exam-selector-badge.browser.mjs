@@ -90,7 +90,7 @@ try {
   for (const width of [320, 375, 900, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     for (const theme of ["light", "cream", "sage", "clay", "dusk"]) {
-      await page.evaluate(theme => document.querySelectorAll('[data-pd-theme]').forEach(el => el.setAttribute('data-pd-theme', theme)), theme);
+      await page.evaluate(theme => window.store.setTheme(theme), theme);
       for (const id of ["one", "none", "broken", "two", "broken", "one"]) {
         const exam = exams.find(exam => exam.id === id);
         await trigger().press("Enter");
@@ -98,10 +98,13 @@ try {
         await page.getByRole("option", { name: exam.name, exact: true }).press("Enter");
         await ready(id);
         assert.equal(await trigger().getAttribute("aria-expanded"), "false");
-        await focused(trigger());
+        // Shell makes content inert, then unmounts navigation while loading.
+        // The standalone selector test covers selection focus; check Escape below.
         await checkBadge(exam);
+        assert.equal(await trigger().evaluate(el => el.closest("[data-pd-theme]").dataset.pdTheme), theme);
       }
     }
+    console.log(`PASS badge switching and themes at ${width}px`);
     await trigger().press("Enter");
     await page.keyboard.press("End"); await focused(page.getByRole("option", { name: "Security Engineering", exact: true }));
     await page.keyboard.press("Home"); await focused(page.getByRole("option", { name: "Broken Badge", exact: true }));
