@@ -115,8 +115,9 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
                   setOpen(false);
                 }}
               >
+                <ExamBadge key={`${exam.id}:${exam.badgeIconUrl}`} src={exam.badgeIconUrl} />
+                <span className="exam-selector__option-name">{exam.name}</span>
                 <span className="exam-selector__check" aria-hidden="true">{selected ? "✓" : ""}</span>
-                <span>{exam.name}</span>
               </button>
               </div>
             );

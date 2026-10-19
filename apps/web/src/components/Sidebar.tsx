@@ -19,10 +19,12 @@ export default function Sidebar({ rail }: { rail: boolean }) {
   const items = NAV.filter((item) => item.id !== "admin" || state.me?.role === "admin");
 
   return (
+    // zIndex: sticky makes the aside a stacking context, so without one the
+    // exam menu that overhangs into the content column is painted beneath it.
     <aside
       style={{
         width: rail ? 236 : 68, flex: "none", display: "flex", flexDirection: "column",
-        gap: 4, padding: "22px 14px 18px", position: "sticky", top: 0, height: "100vh",
+        gap: 4, padding: "22px 14px 18px", position: "sticky", top: 0, zIndex: 20, height: "100vh",
         borderRight: "1px solid var(--color-divider)"
       }}
     >

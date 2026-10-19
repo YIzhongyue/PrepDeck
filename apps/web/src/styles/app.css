@@ -66,8 +66,9 @@ a:hover { color: var(--color-accent-800); }
 .exam-selector__trigger:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .exam-selector__trigger:disabled { cursor: default; opacity: .55; }
 .exam-selector__badge { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
-.exam-selector__badge img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.exam-selector__badge-placeholder { border-radius: 6px; background: var(--color-bg); box-shadow: inset 0 0 0 1px var(--color-divider); color: var(--color-text-muted); }
+.exam-selector__badge img, .exam-selector__badge svg { display: block; width: 100%; height: 100%; }
+.exam-selector__badge img { object-fit: contain; }
+.exam-selector__badge-placeholder { box-sizing: border-box; border-radius: 6px; background: var(--color-bg); box-shadow: inset 0 0 0 1px var(--color-divider); color: var(--color-text-muted); }
 .exam-selector__name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exam-selector__chevrons { flex: none; opacity: .65; }
 .exam-selector__menu {
@@ -80,22 +81,33 @@ a:hover { color: var(--color-accent-800); }
   font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
 }
 .exam-selector__option {
-  width: 100%; display: flex; align-items: flex-start; gap: 7px; padding: 9px 10px;
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 7px 8px;
   border: 0; border-radius: 9px; background: transparent; color: var(--color-text);
   cursor: pointer; font: inherit; font-size: 13px; line-height: 1.3; text-align: left;
 }
 .exam-selector__option:hover, .exam-selector__option:focus-visible { background: var(--color-neutral-200); outline: none; }
 .exam-selector__option--selected { background: var(--color-neutral-200); font-weight: 600; }
-.exam-selector__check { width: 14px; flex: none; font-size: 15px; line-height: 1; }
+.exam-selector__option-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+/* Trailing, so every row's badge lines up at the left edge. */
+.exam-selector__check { width: 14px; flex: none; color: var(--color-accent-700); font-size: 15px; line-height: 1; text-align: center; }
 .exam-selector--compact { margin-bottom: 10px; }
 .exam-selector--compact .exam-selector__trigger { justify-content: center; padding: 8px 5px; }
 .exam-selector--compact .exam-selector__chevrons { display: none; }
 .exam-selector--compact .exam-selector__menu { left: -3px; }
 
-header .exam-selector { margin: 0; }
-header .exam-selector__trigger { width: 38px; min-height: 36px; border-radius: 10px; }
+/* In the top bar the menu hangs from the header, not the trigger: the avatar
+   sits to the trigger's right, so trigger-anchored it overflowed narrow screens. */
+header .exam-selector { margin: 0; position: static; }
+/* Mobile top bar: the badge fills most of the button, with a chevron as the
+   switching affordance; the 40px height keeps a comfortable touch target. */
+header .exam-selector--compact .exam-selector__trigger {
+  width: auto; min-height: 40px; gap: 3px; padding: 3px 6px 3px 3px; border-radius: 12px;
+}
+header .exam-selector--compact .exam-selector__trigger .exam-selector__badge { width: 32px; height: 32px; }
+header .exam-selector--compact .exam-selector__trigger .exam-selector__badge-placeholder { border-radius: 9px; }
+header .exam-selector--compact .exam-selector__chevrons { display: block; width: 12px; height: 12px; }
 header .exam-selector--compact .exam-selector__menu {
-  right: 0; left: auto; width: min(270px, calc(100vw - 24px));
+  top: calc(100% - 7px); right: 12px; left: auto; width: min(270px, calc(100vw - 24px));
 }
 
 /* Page breadcrumb (components/PageBreadcrumb.tsx): the one row above the
