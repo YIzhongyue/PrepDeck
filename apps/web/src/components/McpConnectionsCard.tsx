@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { MCP_OAUTH_SCOPE_INFO, type ListMcpOAuthGrantsResponse, type McpOAuthGrantSummary } from "@prepdeck/shared";
 import { apiFetch, ApiError } from "../lib/api";
 import { Button } from "@/components/base/buttons/button";
+import McpAppIcon from "./McpAppIcon";
 import "./McpTokensCard.css";
 
 const DANGER = "var(--color-danger)";
@@ -82,10 +83,10 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
 
       {state?.grants.map((grant) => (
         <div key={grant.id} className="mcp-token" data-status={grant.status === "active" ? "active" : "expired"}>
-          <span className="mcp-token-icon" aria-hidden="true">{(grant.clientName ?? "?").trim().charAt(0).toUpperCase() || "?"}</span>
+          <McpAppIcon grant={grant} />
           <div className="mcp-token-text">
             <div className="mcp-token-name-row">
-              <span className="mcp-token-name">{grant.clientName ?? "Unnamed app"}</span>
+              <span className="mcp-token-name">{grant.clientName?.trim() || "Unnamed app"}</span>
               <span className={`tag ${grant.status === "active" ? "tag-accent-2" : "tag-neutral"}`}>{grant.status === "active" ? "connected" : "expired"}</span>
             </div>
             <div className="mcp-token-meta">{grantMeta(grant)}</div>
