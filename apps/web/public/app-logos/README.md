@@ -46,11 +46,12 @@ Every file is unmodified, downloaded on 2026-10-19 from the vendor's own host:
 | `openai.png` | https://persistent.oaistatic.com/sonic/misc/openai-logo.png (512×512 PNG, the `logo_uri` of both OpenAI metadata documents) |
 | `claude.svg` | https://claude.ai/favicon.svg (the Claude spark; neither Claude document declares a `logo_uri`) |
 | `vscode.png` | https://code.visualstudio.com/assets/branding/code-stable.png (1024×1024 PNG, the `logo_uri` of both VS Code metadata documents) |
-| `github-copilot.svg` | https://github.githubassets.com/favicons/favicon-copilot.svg (the Copilot CLI document declares no `logo_uri`) |
+| `github-copilot.svg` | https://github.com/primer/octicons/blob/main/icons/copilot-24.svg (GitHub's Copilot icon drawn for 24px, the tile's size; the Copilot CLI document declares no `logo_uri`) |
 
 OpenAI logo © OpenAI, subject to https://openai.com/brand/. Claude logo ©
 Anthropic. Visual Studio Code logo © Microsoft, subject to
-https://code.visualstudio.com/brand. GitHub Copilot logo © GitHub, subject to
+https://code.visualstudio.com/brand. GitHub Copilot icon © GitHub, from Primer
+Octicons (MIT); the Copilot name and mark remain subject to
 https://brand.github.com/. None of these is covered by the repository's code
 license. Each is used solely to identify the matching connected application,
 is decorative, and stays subordinate to the app's visible name and connection
