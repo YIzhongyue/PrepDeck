@@ -186,6 +186,33 @@ try {
   brokenBadges.delete(exams[2].badgeIconUrl);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await checkBadge(exams[2]);
+  // The same per row with the menu open (#187): a failed, recovered or
+  // replaced row badge changes only that row. Marked images that survive
+  // show which rows were left alone.
+  await trigger().click();
+  await checkMenu();
+  await page.locator(".exam-selector__menu .exam-selector__badge img").evaluateAll(imgs => imgs.forEach(img => { img.dataset.kept = "1"; }));
+  const keptRows = () => page.locator('[role="option"]').evaluateAll(options => options
+    .filter(option => option.querySelector("img[data-kept]"))
+    .map(option => option.querySelector(".exam-selector__option-name").textContent));
+  const listChanged = async (exam, url) => {
+    exam.badgeIconUrl = url;
+    await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:exam-list-changed")));
+    await page.waitForFunction(([id, url]) => window.store.state.exams.find(exam => exam.id === id).badgeIconUrl === url, [exam.id, url]);
+  };
+  brokenBadges.add("/api/exam-badges/two?v=2");
+  await listChanged(exams[3], "/api/exam-badges/two?v=2");
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", "Cloud Architecture", exams[4].name]);
+  brokenBadges.delete("/api/exam-badges/two?v=2");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", "Cloud Architecture", exams[4].name]);
+  await listChanged(exams[0], "/api/exam-badges/one?v=2");
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", exams[4].name]);
+  assert.equal(await trigger().getAttribute("aria-expanded"), "true");
+  await page.keyboard.press("Escape"); await focused(trigger());
   await trigger().click();
   await page.getByRole("option", { name: "Cloud Architecture", exact: true }).click();
   await ready("one");
