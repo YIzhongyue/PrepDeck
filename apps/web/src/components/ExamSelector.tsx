@@ -5,6 +5,20 @@ import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext
 // exam (or a replacement badge). Use the existing same-origin badge URL.
 function ExamBadge({ src }: { src: string | null | undefined }) {
   const [failed, setFailed] = useState(false);
+
+  // A failure is often transient (offline, a session being refreshed), so
+  // try again when the connection or the tab comes back.
+  useEffect(() => {
+    if (!failed) return;
+    const retry = () => { if (document.visibilityState === "visible") setFailed(false); };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [failed]);
+
   return (
     <span className="exam-selector__badge" aria-hidden="true">
       {src && !failed ? (
@@ -73,7 +87,7 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
         disabled={state.exams.length === 0 || state.switching}
         onClick={() => setOpen((value) => !value)}
       >
-        <ExamBadge key={JSON.stringify([activeExam?.id, activeExam?.badgeIconUrl])} src={activeExam?.badgeIconUrl} />
+        <ExamBadge key={`${activeExam?.id}:${activeExam?.badgeIconUrl}`} src={activeExam?.badgeIconUrl} />
         {!compact && <span className="exam-selector__name">{activeExam?.slug ?? "Select an exam"}</span>}
         <svg className="exam-selector__chevrons" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="m4 5 3-3 3 3M10 9l-3 3-3-3" />

@@ -16,19 +16,22 @@ createRoot(document.getElementById('root')).render(<React.StrictMode><PrepDeckPr
 `, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 const exams = [
-  { id: "one", slug: "cloud-one", name: "Cloud Architecture", badgeIconUrl: "/api/exams/one/badge" },
+  { id: "one", slug: "cloud-one", name: "Cloud Architecture", badgeIconUrl: "/api/exam-badges/one?v=1" },
   { id: "none", slug: "without-badge", name: "No Badge", badgeIconUrl: null },
-  { id: "broken", slug: "broken-badge", name: "Broken Badge", badgeIconUrl: "/api/exams/broken/badge" },
-  { id: "two", slug: "security-with-a-very-long-exam-label-that-must-not-overflow", name: "Security Engineering", badgeIconUrl: "/api/exams/two/badge" },
+  { id: "broken", slug: "broken-badge", name: "Broken Badge", badgeIconUrl: "/api/exam-badges/broken?v=1" },
+  { id: "two", slug: "security-with-a-very-long-exam-label-that-must-not-overflow", name: "Security Engineering", badgeIconUrl: "/api/exam-badges/two?v=1" },
 ].map(exam => ({ ...exam, providers: [], questionCount: 0 }));
-let holdBadge = false, releaseBadge;
+// Same URL shape as the worker: a replacement keeps the path, bumps ?v=.
+const brokenBadges = new Set(["/api/exam-badges/broken?v=1"]);
+let holdBadge = false;
+const heldBadges = [];
 const server = createServer((req, res) => {
   const path = new URL(req.url, "http://fixture").pathname;
   const json = (data, status = 200) => { res.statusCode = status; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(data)); };
-  if (path.endsWith("/badge")) {
-    if (path.includes("broken")) { res.writeHead(404); return res.end(); }
-    const send = () => { res.setHeader("Content-Type", "image/svg+xml"); res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="${path.includes("two") ? "#a33" : "#36a"}"/></svg>`); };
-    if (holdBadge) { releaseBadge = send; return; }
+  if (path.startsWith("/api/exam-badges/")) {
+    if (brokenBadges.has(req.url)) { res.writeHead(404); return res.end(); }
+    const send = () => { res.setHeader("Content-Type", "image/svg+xml"); res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="${path.endsWith("/two") ? "#a33" : "#36a"}"/></svg>`); };
+    if (holdBadge) { heldBadges.push(send); return; }
     return send();
   }
   if (path === "/api/auth/me") return json({ user: { id: "badge-qa", email: "badge-qa@example.test", role: "user", displayName: "Badge QA" } });
@@ -65,9 +68,10 @@ try {
   const checkBadge = async exam => {
     assert.match(await trigger().getAttribute("aria-label"), new RegExp(`Select exam, current exam: ${exam.name}`));
     assert.equal(await badge().getAttribute("aria-hidden"), "true");
-    if (exam.badgeIconUrl && !exam.badgeIconUrl.includes("/broken/")) {
-      await badge().locator("img").waitFor();
-      await page.waitForFunction(() => document.querySelector('.exam-selector__badge img')?.naturalWidth > 0);
+    if (exam.badgeIconUrl && !brokenBadges.has(exam.badgeIconUrl)) {
+      // The visible trigger's own image: Sidebar and TopBar both mount one.
+      await badge().locator("img").evaluate(img => img.decode());
+      assert.ok(await badge().locator("img").evaluate(img => img.naturalWidth) > 0);
       assert.equal(await badge().locator("img").getAttribute("src"), exam.badgeIconUrl);
       assert.equal(await badge().locator("img").getAttribute("alt"), "");
       assert.equal(await badge().locator("img").evaluate(el => getComputedStyle(el).objectFit), "contain");
@@ -121,9 +125,17 @@ try {
   await trigger().click();
   await page.getByRole("option", { name: "Broken Badge", exact: true }).click();
   await ready("broken"); await checkBadge(exams[2]);
-  exams[2].badgeIconUrl = "/api/exams/replacement/badge";
+  exams[2].badgeIconUrl = "/api/exam-badges/broken?v=2";
   await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:exam-list-changed")));
-  await page.waitForFunction(() => window.store.state.exams.find(exam => exam.id === "broken").badgeIconUrl === "/api/exams/replacement/badge");
+  await page.waitForFunction(() => window.store.state.exams.find(exam => exam.id === "broken").badgeIconUrl === "/api/exam-badges/broken?v=2");
+  await checkBadge(exams[2]);
+  // A transient failure of the same URL recovers when the connection returns.
+  exams[2].badgeIconUrl = "/api/exam-badges/broken?v=3"; brokenBadges.add(exams[2].badgeIconUrl);
+  await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:exam-list-changed")));
+  await page.waitForFunction(() => window.store.state.exams.find(exam => exam.id === "broken").badgeIconUrl === "/api/exam-badges/broken?v=3");
+  await checkBadge(exams[2]);
+  brokenBadges.delete(exams[2].badgeIconUrl);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await checkBadge(exams[2]);
   await trigger().click();
   await page.getByRole("option", { name: "Cloud Architecture", exact: true }).click();
@@ -132,8 +144,10 @@ try {
   holdBadge = true;
   await page.reload({ waitUntil: "domcontentloaded" }); await ready("one");
   const before = await trigger().boundingBox();
-  await page.waitForFunction(() => !!document.querySelector('.exam-selector__badge img'));
-  await waitUntil("delayed badge request", () => releaseBadge); holdBadge = false; releaseBadge();
+  await badge().locator("img").waitFor({ state: "attached" });
+  // Release every held request: each mounted selector may fetch its own.
+  await waitUntil("delayed badge request", () => heldBadges.length); holdBadge = false;
+  for (const send of heldBadges.splice(0)) send();
   await checkBadge(exams[0]);
   assert.deepEqual(await trigger().boundingBox(), before);
   assert.deepEqual(errors, []);
