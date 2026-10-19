@@ -1,4 +1,4 @@
-// Issue #185: actual app shell and exam-switch/save flow with synthetic APIs only.
+// Issues #185 and #187: actual app shell and exam-switch/save flow with synthetic APIs only.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
@@ -20,6 +20,7 @@ const exams = [
   { id: "none", slug: "without-badge", name: "No Badge", badgeIconUrl: null },
   { id: "broken", slug: "broken-badge", name: "Broken Badge", badgeIconUrl: "/api/exam-badges/broken?v=1" },
   { id: "two", slug: "security-with-a-very-long-exam-label-that-must-not-overflow", name: "Security Engineering", badgeIconUrl: "/api/exam-badges/two?v=1" },
+  { id: "long", slug: "long-name", name: "Professional Cloud Incident Response and Forensics-Investigation-Specialty Practitioner", badgeIconUrl: "/api/exam-badges/long?v=1" },
 ].map(exam => ({ ...exam, providers: [], questionCount: 0 }));
 // Same URL shape as the worker: a replacement keeps the path, bumps ?v=.
 const brokenBadges = new Set(["/api/exam-badges/broken?v=1"]);
@@ -79,10 +80,18 @@ try {
       await badge().locator(".exam-selector__badge-placeholder").waitFor();
       assert.equal(await badge().locator("img").count(), 0);
     }
+    const inHeader = await trigger().evaluate(el => !!el.closest("header"));
     const dimensions = await badge().boundingBox();
-    assert.equal(dimensions.width, 24); assert.equal(dimensions.height, 24);
+    // The mobile top bar's badge fills most of its button (#187).
+    assert.equal(dimensions.width, inHeader ? 32 : 24); assert.equal(dimensions.height, inHeader ? 32 : 24);
     const box = await trigger().boundingBox();
-    assert.ok(box.width >= 36 && box.height >= 36, "Existing usable target size retained");
+    assert.ok(box.width >= 36 && box.height >= (inHeader ? 40 : 36), "Usable target size retained");
+    if (inHeader) {
+      const chevrons = await trigger().locator(".exam-selector__chevrons").boundingBox();
+      assert.ok(chevrons, "Mobile trigger shows a switching affordance");
+      assert.ok(dimensions.x + dimensions.width <= chevrons.x && chevrons.x + chevrons.width <= box.x + box.width);
+      assert.ok(dimensions.x - box.x <= 5 && dimensions.y - box.y <= 5, "Little empty space around the mobile badge");
+    }
     assert.ok(box.x >= 0 && box.x + box.width <= page.viewportSize().width);
     assert.equal(await trigger().evaluate(el => el.scrollWidth <= el.clientWidth), true);
     if (await trigger().locator(".exam-selector__name").count()) {
@@ -90,6 +99,43 @@ try {
       const label = await trigger().locator(".exam-selector__name").boundingBox();
       assert.ok(dimensions.x + dimensions.width <= label.x, "Badge precedes label without overlap");
     }
+  };
+  // Every option shows its own badge before its name, and the selection
+  // check after it, without overlap or horizontal overflow (#187).
+  const checkMenu = async () => {
+    const menu = page.locator(".exam-selector__menu");
+    const menuBox = await menu.boundingBox();
+    assert.ok(menuBox.x >= 0 && menuBox.x + menuBox.width <= page.viewportSize().width, "Menu stays on screen");
+    assert.equal(await menu.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    const current = await page.evaluate(() => window.store.state.examId);
+    for (const exam of exams) {
+      const option = page.getByRole("option", { name: exam.name, exact: true });
+      const optionBadge = option.locator(".exam-selector__badge");
+      assert.equal(await option.getAttribute("aria-selected"), String(exam.id === current));
+      assert.equal(await optionBadge.getAttribute("aria-hidden"), "true");
+      if (exam.badgeIconUrl && !brokenBadges.has(exam.badgeIconUrl)) {
+        await optionBadge.locator("img").evaluate(img => img.decode());
+        assert.ok(await optionBadge.locator("img").evaluate(img => img.naturalWidth) > 0);
+        assert.equal(await optionBadge.locator("img").getAttribute("src"), exam.badgeIconUrl);
+      } else {
+        await optionBadge.locator(".exam-selector__badge-placeholder").waitFor();
+        assert.equal(await optionBadge.locator("img").count(), 0);
+      }
+      const [optionBox, badgeBox, nameBox, checkBox] = await Promise.all([option, optionBadge, option.locator(".exam-selector__option-name"), option.locator(".exam-selector__check")].map(el => el.boundingBox()));
+      assert.equal(badgeBox.width, 24); assert.equal(badgeBox.height, 24);
+      assert.ok(badgeBox.x + badgeBox.width <= nameBox.x, `${exam.name}: badge precedes name`);
+      assert.ok(nameBox.x + nameBox.width <= checkBox.x, `${exam.name}: name does not reach the check`);
+      assert.ok(checkBox.x + checkBox.width <= optionBox.x + optionBox.width);
+      assert.equal(await option.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      // Nothing in the content column paints over the menu where it overhangs.
+      assert.equal(await option.evaluate(el => {
+        const r = el.getBoundingClientRect();
+        return [r.left + 12, r.right - 12].every(x => el.contains(document.elementFromPoint(x, r.top + r.height / 2)));
+      }), true, `${exam.name}: row is not covered`);
+      assert.equal(await option.locator(".exam-selector__check").textContent(), exam.id === current ? "✓" : "");
+    }
+    const longName = await page.getByRole("option", { name: exams[4].name, exact: true }).locator(".exam-selector__option-name").boundingBox();
+    assert.ok(longName.height > 20, "Long names wrap instead of truncating");
   };
   for (const width of [320, 375, 900, 1280]) {
     await page.setViewportSize({ width, height: 900 });
@@ -99,6 +145,7 @@ try {
         const exam = exams.find(exam => exam.id === id);
         await trigger().press("Enter");
         assert.equal(await trigger().getAttribute("aria-expanded"), "true");
+        if (id === "one") await checkMenu();
         await page.getByRole("option", { name: exam.name, exact: true }).press("Enter");
         await ready(id);
         assert.equal(await trigger().getAttribute("aria-expanded"), "false");
@@ -110,16 +157,18 @@ try {
     }
     console.log(`PASS badge switching and themes at ${width}px`);
     await trigger().press("Enter");
+    await checkMenu();
     await page.keyboard.press("End"); await focused(page.getByRole("option", { name: "Security Engineering", exact: true }));
     await page.keyboard.press("Home"); await focused(page.getByRole("option", { name: "Broken Badge", exact: true }));
     await page.keyboard.press("ArrowDown"); await focused(page.getByRole("option", { name: "Cloud Architecture", exact: true }));
+    if (process.env.SCREENSHOT_DIR) {
+      mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, `exam-badge-menu-${width}.png`) });
+    }
     await page.keyboard.press("Escape"); await focused(trigger());
     assert.equal(await trigger().getAttribute("aria-expanded"), "false");
     assert.equal(await trigger().evaluate(el => getComputedStyle(el).outlineStyle), "solid");
-    if (process.env.SCREENSHOT_DIR) {
-      mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
-      await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, `exam-badge-${width}.png`) });
-    }
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, `exam-badge-${width}.png`) });
   }
   // Admin badge replacement refreshes the exam list without changing exam ID.
   await trigger().click();
@@ -137,6 +186,33 @@ try {
   brokenBadges.delete(exams[2].badgeIconUrl);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await checkBadge(exams[2]);
+  // The same per row with the menu open (#187): a failed, recovered or
+  // replaced row badge changes only that row. Marked images that survive
+  // show which rows were left alone.
+  await trigger().click();
+  await checkMenu();
+  await page.locator(".exam-selector__menu .exam-selector__badge img").evaluateAll(imgs => imgs.forEach(img => { img.dataset.kept = "1"; }));
+  const keptRows = () => page.locator('[role="option"]').evaluateAll(options => options
+    .filter(option => option.querySelector("img[data-kept]"))
+    .map(option => option.querySelector(".exam-selector__option-name").textContent));
+  const listChanged = async (exam, url) => {
+    exam.badgeIconUrl = url;
+    await page.evaluate(() => window.dispatchEvent(new Event("prepdeck:exam-list-changed")));
+    await page.waitForFunction(([id, url]) => window.store.state.exams.find(exam => exam.id === id).badgeIconUrl === url, [exam.id, url]);
+  };
+  brokenBadges.add("/api/exam-badges/two?v=2");
+  await listChanged(exams[3], "/api/exam-badges/two?v=2");
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", "Cloud Architecture", exams[4].name]);
+  brokenBadges.delete("/api/exam-badges/two?v=2");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", "Cloud Architecture", exams[4].name]);
+  await listChanged(exams[0], "/api/exam-badges/one?v=2");
+  await checkMenu();
+  assert.deepEqual(await keptRows(), ["Broken Badge", exams[4].name]);
+  assert.equal(await trigger().getAttribute("aria-expanded"), "true");
+  await page.keyboard.press("Escape"); await focused(trigger());
   await trigger().click();
   await page.getByRole("option", { name: "Cloud Architecture", exact: true }).click();
   await ready("one");
@@ -151,7 +227,7 @@ try {
   await checkBadge(exams[0]);
   assert.deepEqual(await trigger().boundingBox(), before);
   assert.deepEqual(errors, []);
-  console.log("PASS: exam badges, fallback/recovery, loading layout, themes, mobile/sidebar, names and keyboard switching");
+  console.log("PASS: exam badges in trigger and options, fallback/recovery, loading layout, themes, mobile/sidebar, names and keyboard switching");
 } finally {
   await browser?.close();
   server.closeAllConnections();

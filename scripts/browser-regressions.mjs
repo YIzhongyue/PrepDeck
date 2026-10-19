@@ -24,7 +24,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 // not listed because question-authoring and component-annotations import,
 // and so run, them.
 export const SCRIPTS = [
-  ["apps/web/scripts/exam-selector-badge.browser.mjs", 15],
+  ["apps/web/scripts/exam-selector-badge.browser.mjs", 20],
   ["apps/web/scripts/exam-workspace.browser.mjs", 35],
   ["apps/web/scripts/url-routing.browser.mjs", 5],
   ["apps/web/scripts/knowledge-points.browser.mjs", 85],
