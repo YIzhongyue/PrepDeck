@@ -59,7 +59,8 @@ const server = createServer(async (req, res) => {
     }
     return json(404, { error: "not found" });
   }
-  if (url.pathname === "/app-logos/openai.png") { res.setHeader("Content-Type", "image/png"); return res.end(readFileSync(new URL("../public/app-logos/openai.png", import.meta.url))); }
+  const logo = /^\/app-logos\/([a-z-]+)\.(png|svg)$/.exec(url.pathname);
+  if (logo) { res.setHeader("Content-Type", logo[2] === "svg" ? "image/svg+xml" : "image/png"); return res.end(readFileSync(new URL(`../public${url.pathname}`, import.meta.url))); }
   if (url.pathname === "/fixture.js" || url.pathname === "/fixture.css") {
     res.setHeader("Content-Type", url.pathname.endsWith("css") ? "text/css" : "text/javascript");
     return res.end(outputFiles.find((f) => f.path.endsWith(url.pathname.slice(1)))?.contents);
@@ -153,6 +154,9 @@ try {
   const logoGrants = [
     known("chatgpt", "ChatGPT", "https://chatgpt.com/oauth/client.json"),
     { ...known("codex", "Codex", "https://chatgpt.com/oauth/codex/client.json"), status: "expired" },
+    known("claude", "Claude", "https://claude.ai/oauth/mcp-oauth-client-metadata"),
+    known("vscode", "Visual Studio Code", "https://vscode.dev/oauth/client-metadata.json"),
+    known("copilot", "GitHub Copilot CLI", "https://github.com/copilot/cli/client-metadata.json"),
     known("lookalike", "ChatGPT", "https://chatgpt.com.evil.test/oauth/client.json"),
     { ...known("dynamic", "Claude Desktop", "pdc_test_only"), clientKind: "dynamic" },
     known("unnamed", "   ", "https://unknown.example.test/client.json"),
@@ -170,12 +174,12 @@ try {
         await page.locator(".mcp-token").first().waitFor();
         await page.evaluate(theme => document.documentElement.setAttribute("data-pd-theme", theme), theme);
         const logos = page.locator(".mcp-app-logo img");
-        assert.equal(await logos.count(), 2);
-        await waitUntil("both bundled logos to load", () => logos.evaluateAll(imgs => imgs.every(img => img.complete && img.naturalWidth > 0)));
+        assert.equal(await logos.count(), 5);
+        await waitUntil("every bundled logo to load", () => logos.evaluateAll(imgs => imgs.every(img => img.complete && img.naturalWidth > 0)));
         assert.equal(await page.getByRole("img").count(), 0, "decorative logos are absent from the accessibility tree");
-        assert.equal(await page.locator(".mcp-token-icon").allTextContents().then(text => text.join("|")), "||C|C|?");
+        assert.equal(await page.locator(".mcp-token-icon").allTextContents().then(text => text.join("|")), "|||||C|C|?");
         assert.ok(await page.getByText("Unnamed app", { exact: true }).isVisible());
-        assert.equal(await page.getByRole("button", { name: "Disconnect" }).count(), 5);
+        assert.equal(await page.getByRole("button", { name: "Disconnect" }).count(), 8);
         assert.ok(await page.getByText("https://chatgpt.com/oauth/codex/client.json", { exact: true }).isVisible());
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, `${theme} ${width}px overflow`);
         for (const box of await logos.evaluateAll(imgs => imgs.map(img => ({ w: img.getBoundingClientRect().width, h: img.getBoundingClientRect().height })))) assert.deepEqual(box, { w: 24, h: 24 });
@@ -186,7 +190,7 @@ try {
       }
     }
     await page.getByRole("button", { name: "Disconnect" }).first().click();
-    await waitUntil("supported app disconnect", () => page.locator(".mcp-token").count(), { until: n => n === 4 });
+    await waitUntil("supported app disconnect", () => page.locator(".mcp-token").count(), { until: n => n === 7 });
     assert.ok(requests.includes(`POST /api/${admin ? "admin/" : ""}mcp-connections/chatgpt/revoke`));
   }
   assert.equal(thirdPartyRequests.filter(url => !url.startsWith("https://fonts.googleapis.com/")).length, 0, "logos make no external requests");
