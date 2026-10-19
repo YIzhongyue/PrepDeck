@@ -51,7 +51,10 @@ Every file is unmodified, downloaded on 2026-10-19 from the vendor's own host:
 OpenAI logo © OpenAI, subject to https://openai.com/brand/. Claude logo ©
 Anthropic. Visual Studio Code logo © Microsoft, subject to
 https://code.visualstudio.com/brand. GitHub Copilot icon © GitHub, from Primer
-Octicons (MIT); the Copilot name and mark remain subject to
+Octicons (MIT, Copyright (c) 2026 GitHub Inc.). The complete upstream copyright
+and permission notice is retained in [github-copilot.LICENSE.txt](./github-copilot.LICENSE.txt)
+and distributed alongside the SVG in the web build. Upstream license:
+https://github.com/primer/octicons/blob/main/LICENSE. The Copilot name and mark remain subject to
 https://brand.github.com/. None of these is covered by the repository's code
 license. Each is used solely to identify the matching connected application,
 is decorative, and stays subordinate to the app's visible name and connection
