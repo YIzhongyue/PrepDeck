@@ -1,6 +1,23 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 
+// Keyed by exam and URL below so an image failure cannot leak into another
+// exam (or a replacement badge). Use the existing same-origin badge URL.
+function ExamBadge({ src }: { src: string | null | undefined }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="exam-selector__badge" aria-hidden="true">
+      {src && !failed ? (
+        <img src={src} alt="" width="24" height="24" onError={() => setFailed(true)} />
+      ) : (
+        <svg className="exam-selector__badge-placeholder" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 6.5A2.5 2.5 0 0 1 8.5 4H18v14H8.5A2.5 2.5 0 0 0 6 20.5z M6 6.5v14 M10 8h4 M10 12h4" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export default function ExamSelector({ compact = false }: { compact?: boolean }) {
   const state = useWorkspaceState();
   const { setExamId } = useWorkspaceActions();
@@ -56,13 +73,8 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
         disabled={state.exams.length === 0 || state.switching}
         onClick={() => setOpen((value) => !value)}
       >
-        {compact ? (
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z M4 5.5v16 M8 7h8" />
-          </svg>
-        ) : (
-          <span className="exam-selector__name">{activeExam?.slug ?? "Select an exam"}</span>
-        )}
+        <ExamBadge key={JSON.stringify([activeExam?.id, activeExam?.badgeIconUrl])} src={activeExam?.badgeIconUrl} />
+        {!compact && <span className="exam-selector__name">{activeExam?.slug ?? "Select an exam"}</span>}
         <svg className="exam-selector__chevrons" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="m4 5 3-3 3 3M10 9l-3 3-3-3" />
         </svg>
