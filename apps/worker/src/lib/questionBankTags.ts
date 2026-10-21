@@ -97,7 +97,12 @@ export async function listTagCatalogNames(db: D1Database): Promise<string[]> {
 // create/update/import-execute commit) — resolving a name that doesn't
 // exist yet always creates it, so previewing this would create tags nobody
 // committed to yet.
-export async function resolveOrCreateTags(db: D1Database, names: string[], now: string): Promise<TagCatalogEntry[]> {
+export async function resolveOrCreateTags(
+  db: D1Database, names: string[], now: string,
+  // Optional evidence must be conditional on changes() from the preceding
+  // INSERT OR IGNORE; a concurrent winner must never be attributed to us.
+  createdStatement?: (tagId: string, normalizedName: string) => D1PreparedStatement,
+): Promise<TagCatalogEntry[]> {
   const byKey = new Map<string, string>();
   for (const raw of names) {
     const normalized = normalizeTagName(raw);
@@ -119,12 +124,14 @@ export async function resolveOrCreateTags(db: D1Database, names: string[], now: 
 
   const missing = keys.filter((key) => !found.has(key));
   if (missing.length > 0) {
-    for (const group of chunk(missing, D1_BATCH_STATEMENT_CHUNK)) {
-      const statements = group.map((key) =>
-        db.prepare(
+    for (const group of chunk(missing, createdStatement ? D1_BATCH_STATEMENT_CHUNK / 2 : D1_BATCH_STATEMENT_CHUNK)) {
+      const statements = group.flatMap((key) => {
+        const id = crypto.randomUUID();
+        const insert = db.prepare(
           `INSERT OR IGNORE INTO question_bank_tags (id, name, normalized_name, revision, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)`,
-        ).bind(crypto.randomUUID(), byKey.get(key)!, key, now, now),
-      );
+        ).bind(id, byKey.get(key)!, key, now, now);
+        return createdStatement ? [insert, createdStatement(id, key)] : [insert];
+      });
       await db.batch(statements);
     }
     // OR IGNORE means a concurrent registration of the same normalized name
@@ -151,8 +158,9 @@ export async function resolveOrCreateTags(db: D1Database, names: string[], now: 
 // resolution the same way tagsJsonExpr() applies it to reads.
 export async function buildTagNameResolver(
   db: D1Database, allNames: string[], now: string,
+  createdStatement?: (tagId: string, normalizedName: string) => D1PreparedStatement,
 ): Promise<(names: string[] | undefined) => string[]> {
-  const resolved = await resolveOrCreateTags(db, allNames, now);
+  const resolved = await resolveOrCreateTags(db, allNames, now, createdStatement);
   const idByKey = new Map(resolved.map((t) => [t.normalizedName, t.id]));
   return (names) => {
     const ids = new Set<string>();

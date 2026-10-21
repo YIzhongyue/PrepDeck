@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  fixture, getQuestionTags, questionBankFixture, callAdminTool, callAdminToolExpectingError, importFile, lastMetric,
+  fixture, issueMcpCredential, getQuestionTags, questionBankFixture, callAdminTool, callAdminToolExpectingError, importFile, lastMetric,
 } from "./mcp-foundation-fixture.mjs";
 
 test("implementation: a pure catalog rename of a previously-imported question's tag does not manufacture a false 'locally_edited' conflict on re-import", async (t) => {
@@ -363,4 +363,204 @@ test("MCP export rejects missing external IDs without writing and preserves assi
   assert.equal(result.updated, 1);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM questions").get().n, 1);
   assert.equal(f.sqlite.prepare("SELECT needs_review FROM questions WHERE id = ?").get(question.id).needs_review, 1);
+});
+
+// Issue #178: a job's own tag registration must not stale its original proposal.
+test("new import-created tags permit terminal replay without duplicate writes", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ externalId: "NEW-TAG-REPLAY", type: "fill_blank", stem: "Synthetic replay", correctAnswers: ["yes"], tags: ["new-replay-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  const result = await callAdminTool(f, "admin_execute_import", args);
+  assert.equal(result.created, 1);
+  const rows = f.sqlite.prepare("SELECT * FROM questions").all();
+  const replay = await callAdminTool(f, "admin_execute_import", args);
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(replay.created, 1);
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), rows);
+});
+
+for (const interruptAfter of ["tags", "first question batch"]) {
+  test(`new import-created tags permit recovery after ${interruptAfter}`, async (t) => {
+    const f = await questionBankFixture(t);
+    const file = importFile(Array.from({ length: 18 }, (_, i) => ({
+      // Deliberately omit external IDs: fresh re-import is not safe recovery.
+      type: "fill_blank", stem: `Synthetic recovery ${i}`, correctAnswers: ["yes"], tags: ["new-resume-tag"],
+    })));
+    const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+    const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+    const originalBatch = f.env.DB.batch.bind(f.env.DB);
+    const originalPrepare = f.env.DB.prepare.bind(f.env.DB);
+    let interrupted = false;
+    f.env.DB.batch = async (statements) => {
+      const result = await originalBatch(statements);
+      const target = interruptAfter === "tags" ? "INSERT OR IGNORE INTO question_bank_tags" : "INSERT INTO questions";
+      if (statements.some((s) => s.sql.includes(target))) {
+        interrupted = true;
+        // Simulate losing the process after the atomic commit: no later
+        // audit, counters or terminal status may be persisted by this attempt.
+        f.env.DB.prepare = () => { throw new Error("simulated process interruption"); };
+        throw new Error("simulated process interruption");
+      }
+      return result;
+    };
+    await callAdminToolExpectingError(f, "admin_execute_import", args);
+    assert.equal(interrupted, true);
+    f.env.DB.batch = originalBatch;
+    f.env.DB.prepare = originalPrepare;
+    const committed = f.sqlite.prepare("SELECT * FROM admin_mcp_import_committed_items WHERE import_id = ? ORDER BY item_index").all(preview.importId);
+    assert.equal(committed.length, interruptAfter === "tags" ? 0 : 16);
+    f.sqlite.prepare("UPDATE admin_mcp_import_jobs SET updated_at = ? WHERE id = ?").run(Date.now() - 5 * 60_000, preview.importId);
+    const resumed = await callAdminTool(f, "admin_execute_import", args);
+    assert.equal(resumed.created, 18);
+    assert.equal(resumed.failed, 0);
+    assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions WHERE stem LIKE 'Synthetic recovery %'").get().c, 18);
+    assert.deepEqual(f.sqlite.prepare("SELECT * FROM admin_mcp_import_committed_items WHERE import_id = ? ORDER BY item_index LIMIT ?").all(preview.importId, committed.length), committed);
+  });
+}
+
+
+test("import replay binds file, resolutions, exam and administrator identity", async (t) => {
+  const f = await questionBankFixture(t);
+  await callAdminTool(f, "admin_create_tag", { name: "existing-identity-tag" });
+  const file = importFile([{ externalId: "BOUND-REPLAY", type: "fill_blank", stem: "Bound replay", correctAnswers: ["yes"], tags: ["existing-identity-tag", "new-identity-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  await callAdminTool(f, "admin_execute_import", args);
+  const rows = f.sqlite.prepare("SELECT * FROM questions").all();
+  for (const changed of [
+    { file: importFile([{ ...file.questions[0], stem: "Changed content" }]) },
+    { conflictResolutions: [{ questionId: "different", expectedRevision: 1, incomingToken: "a".repeat(64), action: "keep" }] },
+    { examId: "examB" },
+  ]) {
+    assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", { ...args, ...changed })).code, "conflict");
+  }
+  f.sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = 'bob'").run();
+  const otherAdmin = await issueMcpCredential(f.DB, { userId: "bob", audience: "admin", name: "synthetic second admin", expiresAt: Date.now() + 60_000 });
+  assert.equal((await callAdminToolExpectingError({ ...f, admin: otherAdmin }, "admin_execute_import", args)).code, "conflict");
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), rows);
+});
+
+for (const mode of ["terminal", "resume"]) for (const mutation of ["rename own", "merge own", "delete own", "rename existing", "merge existing"]) {
+  test(`import ${mode} rejects unrelated taxonomy mutation: ${mutation}`, async (t) => {
+    const f = await questionBankFixture(t);
+    await callAdminTool(f, "admin_create_tag", { name: "existing-protected-tag" });
+    await callAdminTool(f, "admin_create_tag", { name: "merge-target" });
+    const file = importFile([{ externalId: "TAXONOMY-REPLAY", type: "fill_blank", stem: "Taxonomy replay", correctAnswers: ["yes"], tags: ["own-protected-tag", "existing-protected-tag"] }]);
+    const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+    const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+    await callAdminTool(f, "admin_execute_import", args);
+    if (mode === "resume") f.sqlite.prepare("UPDATE admin_mcp_import_jobs SET status = 'in_progress', updated_at = ? WHERE id = ?").run(Date.now() - 5 * 60_000, preview.importId);
+    const name = mutation.endsWith("own") ? "own-protected-tag" : "existing-protected-tag";
+    if (mutation.startsWith("rename")) await callAdminTool(f, "admin_update_tag", { name, newName: "renamed-away" });
+    else if (mutation.startsWith("merge")) await callAdminTool(f, "admin_merge_tags", { names: [name], targetName: "merge-target" });
+    else f.sqlite.prepare("DELETE FROM question_bank_tags WHERE normalized_name = ?").run(name);
+    const before = f.sqlite.prepare("SELECT * FROM admin_mcp_import_jobs WHERE id = ?").get(preview.importId);
+    const rows = f.sqlite.prepare("SELECT * FROM questions").all();
+    assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
+    assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), rows);
+    assert.deepEqual(f.sqlite.prepare("SELECT * FROM admin_mcp_import_jobs WHERE id = ?").get(preview.importId), before);
+  });
+}
+
+test("failed empty imports retain own-tag evidence when retried", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ type: "fill_blank", stem: "Retry empty failed import", correctAnswers: ["yes"], tags: ["failed-retry-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  const batch = f.env.DB.batch.bind(f.env.DB);
+  f.env.DB.batch = (statements) => {
+    if (statements.some((s) => s.sql.includes("INSERT INTO questions"))) throw new Error("simulated question batch failure");
+    return batch(statements);
+  };
+  const failed = await callAdminTool(f, "admin_execute_import", args);
+  assert.equal(failed.failed, 1);
+  const evidence = f.sqlite.prepare("SELECT * FROM admin_mcp_import_created_tags WHERE import_id = ?").all(preview.importId);
+  assert.equal(evidence.length, 1);
+  const archive = f.sqlite.prepare("SELECT r2_object_key FROM admin_mcp_import_jobs WHERE id = ?").get(preview.importId);
+  f.env.DB.batch = batch;
+  const retry = await callAdminTool(f, "admin_execute_import", args);
+  assert.equal(retry.created, 1);
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM admin_mcp_import_created_tags WHERE import_id = ?").all(preview.importId), evidence);
+  assert.deepEqual(f.sqlite.prepare("SELECT r2_object_key FROM admin_mcp_import_jobs WHERE id = ?").get(preview.importId), archive);
+  assert.equal((await callAdminTool(f, "admin_execute_import", args)).idempotentReplay, true);
+});
+
+for (const change of ["insert missing", "rename existing"]) {
+  test(`import rejects concurrent external tag change during resolution: ${change}`, async (t) => {
+    const f = await questionBankFixture(t);
+    await callAdminTool(f, "admin_create_tag", { name: "existing-race-tag" });
+    const file = importFile([{ type: "fill_blank", stem: "Concurrent external taxonomy", correctAnswers: ["yes"], tags: ["missing-race-tag", "existing-race-tag"] }]);
+    const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+    const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+    const batch = f.env.DB.batch.bind(f.env.DB);
+    let raced = false;
+    f.env.DB.batch = async (statements) => {
+      if (statements.some((s) => s.sql.includes("INSERT OR IGNORE INTO question_bank_tags"))) {
+        f.env.DB.batch = batch;
+        raced = true;
+        if (change === "insert missing") await callAdminTool(f, "admin_create_tag", { name: "missing-race-tag" });
+        else await callAdminTool(f, "admin_update_tag", { name: "existing-race-tag", newName: "renamed-race-tag" });
+      }
+      return batch(statements);
+    };
+    assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
+    assert.equal(raced, true);
+    assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions WHERE stem = 'Concurrent external taxonomy'").get().c, 0);
+    if (change === "insert missing") assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM admin_mcp_import_created_tags WHERE import_id = ?").get(preview.importId).c, 0,
+      "another request's winning tag insertion must not be journaled as our own");
+  });
+}
+
+test("an active tagged import excludes concurrent execution of the same job", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ type: "fill_blank", stem: "Concurrent job", correctAnswers: ["yes"], tags: ["concurrent-job-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  const batch = f.env.DB.batch.bind(f.env.DB);
+  let enter, release;
+  const entered = new Promise((resolve) => { enter = resolve; });
+  const released = new Promise((resolve) => { release = resolve; });
+  f.env.DB.batch = async (statements) => {
+    if (statements.some((s) => s.sql.includes("INSERT OR IGNORE INTO question_bank_tags"))) {
+      enter();
+      await released;
+    }
+    return batch(statements);
+  };
+  const first = callAdminTool(f, "admin_execute_import", args);
+  await entered;
+  try {
+    assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
+  } finally { release(); }
+  assert.equal((await first).created, 1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions WHERE stem = 'Concurrent job'").get().c, 1);
+});
+
+test("tag creation and job evidence roll back together", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ type: "fill_blank", stem: "Atomic tag evidence", correctAnswers: ["yes"], tags: ["atomic-evidence-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  const batch = f.env.DB.batch.bind(f.env.DB);
+  f.env.DB.batch = (statements) => batch(statements.some((s) => s.sql.includes("INSERT OR IGNORE INTO question_bank_tags")) ?
+    [...statements, f.env.DB.prepare("INSERT INTO missing_test_table VALUES (1)")] : statements);
+  await callAdminToolExpectingError(f, "admin_execute_import", args);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM question_bank_tags WHERE normalized_name = 'atomic-evidence-tag'").get().c, 0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM admin_mcp_import_created_tags WHERE import_id = ?").get(preview.importId).c, 0);
+  f.env.DB.batch = batch;
+  f.sqlite.prepare("UPDATE admin_mcp_import_jobs SET updated_at = ? WHERE id = ?").run(Date.now() - 5 * 60_000, preview.importId);
+  assert.equal((await callAdminTool(f, "admin_execute_import", args)).created, 1);
+});
+
+
+test("legacy jobs without own-tag evidence fail closed instead of guessing tag ownership", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ type: "fill_blank", stem: "Legacy job", correctAnswers: ["yes"], tags: ["legacy-evidence-tag"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  await callAdminTool(f, "admin_execute_import", args);
+  f.sqlite.prepare("DELETE FROM admin_mcp_import_created_tags WHERE import_id = ?").run(preview.importId);
+  assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions WHERE stem = 'Legacy job'").get().c, 1);
 });
