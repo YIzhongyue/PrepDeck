@@ -59,7 +59,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/matching-side-content.browser.mjs", 8],
   ["apps/web/scripts/question-content.browser.mjs", 6],
   ["apps/web/scripts/mcp-presentation.browser.mjs", 1],
-  ["apps/web/scripts/render-counts.browser.mjs", 8],
+  ["apps/web/scripts/render-counts.browser.mjs", 24],
   ["tests/pdf-to-quiz/review.browser.mjs", 1],
 ];
 
