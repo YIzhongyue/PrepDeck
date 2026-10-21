@@ -76,7 +76,8 @@ export async function tagResolutionSnapshot(db: D1Database, names: string[]): Pr
     ).bind(...group).all<{ id: string; normalized_name: string }>();
     for (const row of results ?? []) found.set(row.normalized_name, row.id);
   }
-  const snapshot: Record<string, string | null> = {};
+  // Tag names are arbitrary keys, including __proto__; never invoke prototype setters.
+  const snapshot: Record<string, string | null> = Object.create(null);
   for (const key of keys) snapshot[key] = found.get(key) ?? null;
   return snapshot;
 }

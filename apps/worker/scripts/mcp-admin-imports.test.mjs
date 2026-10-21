@@ -366,9 +366,9 @@ test("MCP export rejects missing external IDs without writing and preserves assi
 });
 
 // Issue #178: a job's own tag registration must not stale its original proposal.
-test("new import-created tags permit terminal replay without duplicate writes", async (t) => {
+for (const tagName of ["new-replay-tag", "__proto__", "constructor"]) test(`new import-created tag ${tagName} permits terminal replay without duplicate writes`, async (t) => {
   const f = await questionBankFixture(t);
-  const file = importFile([{ externalId: "NEW-TAG-REPLAY", type: "fill_blank", stem: "Synthetic replay", correctAnswers: ["yes"], tags: ["new-replay-tag"] }]);
+  const file = importFile([{ externalId: "NEW-TAG-REPLAY", type: "fill_blank", stem: "Synthetic replay", correctAnswers: ["yes"], tags: [tagName] }]);
   const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
   const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
   const result = await callAdminTool(f, "admin_execute_import", args);
@@ -380,12 +380,12 @@ test("new import-created tags permit terminal replay without duplicate writes", 
   assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), rows);
 });
 
-for (const interruptAfter of ["tags", "first question batch"]) {
-  test(`new import-created tags permit recovery after ${interruptAfter}`, async (t) => {
+for (const tagName of ["new-resume-tag", "__proto__"]) for (const interruptAfter of ["tags", "first question batch"]) {
+  test(`new import-created tag ${tagName} permits recovery after ${interruptAfter}`, async (t) => {
     const f = await questionBankFixture(t);
     const file = importFile(Array.from({ length: 18 }, (_, i) => ({
       // Deliberately omit external IDs: fresh re-import is not safe recovery.
-      type: "fill_blank", stem: `Synthetic recovery ${i}`, correctAnswers: ["yes"], tags: ["new-resume-tag"],
+      type: "fill_blank", stem: `Synthetic recovery ${i}`, correctAnswers: ["yes"], tags: [tagName],
     })));
     const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
     const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
@@ -563,4 +563,34 @@ test("legacy jobs without own-tag evidence fail closed instead of guessing tag o
   f.sqlite.prepare("DELETE FROM admin_mcp_import_created_tags WHERE import_id = ?").run(preview.importId);
   assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM questions WHERE stem = 'Legacy job'").get().c, 1);
+});
+
+
+for (const existing of [false, true]) test(`__proto__ tag rename rejects stale import (${existing ? "existing" : "job-created"})`, async (t) => {
+  const f = await questionBankFixture(t);
+  if (existing) await callAdminTool(f, "admin_create_tag", { name: "__proto__" });
+  const file = importFile([{ type: "fill_blank", stem: "Prototype-key rename", correctAnswers: ["yes"], tags: ["__proto__"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  const args = { examId: "examA", file, importId: preview.importId, importToken: preview.importToken };
+  if (!existing) await callAdminTool(f, "admin_execute_import", args);
+  const before = f.sqlite.prepare("SELECT * FROM questions").all();
+  await callAdminTool(f, "admin_update_tag", { name: "__proto__", newName: "renamed-prototype-tag" });
+  assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", args)).code, "conflict");
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), before);
+});
+
+test("legacy token omitting __proto__ fails closed without committing an import", async (t) => {
+  const f = await questionBankFixture(t);
+  const file = importFile([{ type: "fill_blank", stem: "Legacy prototype token", correctAnswers: ["yes"], tags: ["__proto__"] }]);
+  const preview = await callAdminTool(f, "admin_preview_import", { examId: "examA", file });
+  // The old plain-object snapshot omitted this valid key from JSON entirely.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ examId: "examA", file, tagSnapshot: {} })));
+  const importToken = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+  assert.notEqual(importToken, preview.importToken);
+  const before = f.sqlite.prepare("SELECT * FROM questions").all();
+  assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", {
+    examId: "examA", file, importId: preview.importId, importToken,
+  })).code, "conflict");
+  assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), before);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM admin_mcp_import_jobs WHERE id = ?").get(preview.importId).c, 0);
 });
