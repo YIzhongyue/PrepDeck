@@ -8,6 +8,10 @@
 // - the sign-in page has its own picker;
 // - narrow screens do not overflow sideways with the longer labels.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -15,7 +19,15 @@ import { readBody } from "./browser-fixture.mjs";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const web = fileURLToPath(new URL("../", import.meta.url));
+// Exercise the actual utility CSS, not unprocessed Tailwind directives.
+const cssPath = join(await mkdtemp(join(tmpdir(), "prepdeck-i18n-")), "utilities.css");
+execFileSync(process.execPath, [resolve(web, "../../node_modules/@tailwindcss/cli/dist/index.mjs"),
+  "-i", resolve(web, "src/styles/untitled-ui.css"), "-o", cssPath], { cwd: web });
+const utilityCss = await readFile(cssPath, "utf8");
 const { outputFiles } = await build({
+  plugins: [{ name: "compiled-utilities", setup(build) {
+    build.onLoad({ filter: /untitled-ui\.css$/ }, () => ({ contents: utilityCss, loader: "css", resolveDir: web }));
+  } }],
   stdin: { contents: `import React from 'react'; import { createRoot } from 'react-dom/client';
     import App from './src/App'; import { initI18n, setLocale } from './src/i18n';
     window.setLocaleForTest = setLocale;
@@ -109,11 +121,13 @@ try {
   const picker = page.locator("#settings-language").getByRole("button");
   await picker.click();
   await page.getByRole("option", { name: "English" }).click();
+  await page.waitForFunction(() => document.querySelectorAll('[role="listbox"]').length === 0);
   await page.getByRole("heading", { name: "Display name" }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Display name" }).inputValue(), "Draft name", "the unsaved draft is kept");
   assert.equal(await page.evaluate(() => localStorage.getItem("prepdeck.locale")), "en");
   await picker.click();
   await page.getByRole("option", { name: "日本語" }).click();
+  await page.waitForFunction(() => document.querySelectorAll('[role="listbox"]').length === 0);
   await page.getByRole("heading", { name: "表示名" }).waitFor();
   // The custom-model option must update while the same Settings card stays mounted.
   for (const [code, label, modelLabel] of [
@@ -125,11 +139,41 @@ try {
     await page.getByRole("button", { name: new RegExp(modelLabel) }).click();
     await page.getByRole("option", { name: label, exact: true }).waitFor();
     await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelectorAll('[role="listbox"]').length === 0);
   }
   await page.evaluate(() => window.setLocaleForTest("ja"));
   await page.reload();
   await page.getByRole("heading", { name: "設定", level: 1 }).waitFor({ state: "attached" });
   assert.equal(await page.evaluate(() => document.documentElement.lang), "ja", "the choice outlives a reload");
+  // The selected value's line box must share the pill and arrow's center.
+  // A paragraph's global bottom margin previously shifted it upwards.
+  const screenshots = process.env.SCREENSHOT_DIR;
+  if (screenshots) await mkdir(screenshots, { recursive: true });
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const code of ["en", "zh-CN", "ja"]) {
+      await page.evaluate(code => window.setLocaleForTest(code), code);
+      await picker.scrollIntoViewIfNeeded();
+      const metrics = await picker.evaluate(button => {
+        const text = button.querySelector("section").firstElementChild;
+        const center = element => { const r = element.getBoundingClientRect(); return r.y + r.height / 2; };
+        return { text: center(text), field: center(button), icon: center(button.querySelector("svg")),
+          margin: getComputedStyle(text).marginBottom };
+      });
+      console.log("Language alignment", width, code, metrics);
+      if (screenshots) await picker.screenshot({ path: resolve(screenshots, `language-settings-${width}-${code}.png`) });
+      assert.ok(Math.abs(metrics.text - metrics.field) <= 1, JSON.stringify(metrics));
+      assert.ok(Math.abs(metrics.text - metrics.icon) <= 1, JSON.stringify(metrics));
+      await picker.focus();
+      await picker.press("Enter");
+      await page.getByRole("listbox").waitFor();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => document.querySelectorAll('[role="listbox"]').length === 0);
+      await page.waitForFunction(() => document.querySelector("#settings-language button") === document.activeElement);
+      await noSidewaysScroll(page, `${code} settings ${width}`);
+    }
+  }
   await ja.close();
 
   // --- An unsupported language falls back to English; a stored choice wins -
@@ -157,6 +201,22 @@ try {
   await noSidewaysScroll(login, "ja sign-in");
   await login.getByRole("combobox", { name: "言語" }).selectOption("en");
   await login.getByRole("heading", { name: "Welcome back!" }).waitFor();
+  for (const width of [1280, 375]) {
+    await login.setViewportSize({ width, height: 900 });
+    for (const code of ["en", "zh-CN", "ja"]) {
+      const native = login.getByRole("combobox");
+      await native.selectOption(code);
+      await native.focus();
+      assert.equal(await native.evaluate(element => element === document.activeElement), true);
+      await native.press("Home");
+      await native.press("ArrowDown");
+      await native.press("Tab");
+      assert.equal(await native.inputValue(), "zh-CN");
+      await native.selectOption(code);
+      await noSidewaysScroll(login, `${code} sign-in ${width}`);
+      if (screenshots) await native.screenshot({ path: resolve(screenshots, `language-login-${width}-${code}.png`) });
+    }
+  }
   signedIn = true;
 
   // --- Phone layouts with the longer labels ---------------------------------
