@@ -11,6 +11,7 @@ import { errorLeftBehind } from "../storeHelpers";
 import type { StoreCore } from "./useStoreCore";
 import type { MockExam } from "./useMockExam";
 import type { PracticeSession } from "./usePracticeSession";
+import { t } from "../../i18n/runtime";
 
 // Screen and exam navigation behind one save gate: go(), switching exams,
 // URL routes and jumps to a question or Knowledge Point.
@@ -30,7 +31,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
     const s = stateRef.current;
     if (!s.noteDraft.trim()) return;
     const qid = s.noteDraftQuestionId ?? (s.screen === "learning" ? s.lQueue[s.lIdx] : s.queue[s.idx]);
-    if (!qid) throw new Error("Save or discard your question note before switching.");
+    if (!qid) throw new Error(t("errors.nav.noteFirst"));
     const content = s.noteDraft;
     const { note } = await requests.write("note-draft", () => apiFetch<NoteResponse>(`/api/questions/${qid}/notes`, {
       method: "POST", body: JSON.stringify({ content, visibility: s.noteVis })
@@ -56,7 +57,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
         kpNoteId: id === "knowledgePoints" ? null : s.kpNoteId,
         listMode: id === "bookmarks" ? "bm" : id === "wrong" ? "wrong" : s.listMode
       }));
-    }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
+    }).catch(() => update({ actionError: t("errors.nav.cancelled") }));
   }, [stateRef, requests, scopedState, saveQuestionDraft]);
 
   const openMore = useCallback(() => setState({ more: true }), [setState]);
@@ -67,14 +68,14 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
     if (before.switching || finishingMock.current) return false;
     if (id === before.examId && !questionId) return true;
     if (id && !before.exams.some(e => e.id === id)) {
-      setState({ actionError: "This exam is unavailable. Choose another exam." }); return false;
+      setState({ actionError: t("errors.nav.examUnavailable") }); return false;
     }
     if (!await allowAuthoringNavigation() || stateRef.current.switching || finishingMock.current) return false;
     const original = stateRef.current;
     if (id === original.examId && !questionId) return true;
     if (id && !original.exams.some(e => e.id === id)) return false;
     if ((original.pStage === "live" || original.mStage === "live" || requests.has("start")) &&
-      !window.confirm("Switch study context? Practice answers will be saved and the practice ended. Mock answers will be saved so you can resume; its timer keeps running.")) return false;
+      !window.confirm(t("errors.nav.switchConfirm"))) return false;
     setState({ switching: true, actionError: null });
     try {
       await beforeWorkspaceNavigation();
@@ -110,7 +111,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
       window.getSelection()?.removeAllRanges();
       return true;
     } catch (error) {
-      setState({ switching: false, actionError: error instanceof Error ? `Could not switch: ${error.message}. Your work is retained; retry saving or switching.` : "Could not save your work. Please retry before switching." });
+      setState({ switching: false, actionError: error instanceof Error ? t("errors.nav.switchFailed", { reason: error.message }) : t("errors.nav.saveBeforeSwitch") });
       return false;
     }
   }, [stateRef, finishingMock, requests, setState, saveQuestionDraft, persistMockDraft, dirtyAnnotations, savePracticeAnswer]);
@@ -122,7 +123,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
       const update = scopedState("navigation");
       void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => {
         update({ screen: "learning", pendingQuestionJump: { examId, questionId } });
-      }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
+      }).catch(() => update({ actionError: t("errors.nav.cancelled") }));
       return;
     }
     void switchExam(examId, questionId);
@@ -135,7 +136,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
     const update = scopedState("navigation");
     const clearError = errorLeftBehind(stateRef.current.actionError);
     void beforeWorkspaceNavigation().then(saveQuestionDraft).then(() => update(s => ({ screen: "knowledgePoints", more: false, actionError: clearError(s), kpNoteId: noteId })))
-      .catch(() => update({ actionError: "Could not save your current note. Please retry before leaving." }));
+      .catch(() => update({ actionError: t("errors.nav.saveNote") }));
   }, [stateRef, scopedState, saveQuestionDraft]);
   // The Knowledge Points screen's own list/editor moves, which save their
   // drafts themselves as before.
@@ -150,7 +151,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
     const clearError = errorLeftBehind(s.actionError);
     const exam = route.examSlug ? s.exams.find(e => e.slug === route.examSlug) : undefined;
     if (route.examSlug && !exam) {
-      setState({ actionError: "That exam is not available to you." });
+      setState({ actionError: t("errors.nav.examNotAvailable") });
       return false;
     }
     if (exam && exam.id !== s.examId) {
@@ -162,7 +163,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
         await beforeWorkspaceNavigation();
         await saveQuestionDraft();
       } catch {
-        setState({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." });
+        setState({ actionError: t("errors.nav.cancelled") });
         return false;
       }
     }

@@ -3,6 +3,8 @@
 // served from the same Worker (see apps/worker/wrangler.toml [assets]), so a
 // relative path works in both cases.
 
+import { t } from "../i18n/runtime";
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -68,7 +70,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     announceSessionLoss(path, res.status, body);
-    throw new ApiError(res.status, (body && body.error) || `Request to ${path} failed with ${res.status}`, body);
+    throw new ApiError(res.status, (body && body.error) || t("errors.requestFailed", { path, status: String(res.status) }), body);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

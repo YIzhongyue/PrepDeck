@@ -18,6 +18,7 @@ import { isQuestionStudied } from "../lib/studyStatus";
 import type { Breakpoints } from "../lib/responsive";
 import { questionTypeLabel } from "../lib/questionTypes";
 import type { Question } from "../types";
+import { t as translate, useI18n } from "../i18n";
 
 // docs/requirements/practice-and-learning-modes.md — Learning Mode. Unlike PracticeLive, there is no answer to
 // pick or submit: the correct answer, this user's own answer history, any
@@ -37,6 +38,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   const { go } = useWorkspaceActions();
   const { toggleBookmark } = useReviewListsActions();
   const { capture, removeMark } = useNotesActions();
+  const { t } = useI18n();
   const q = learning.learningQ();
   useQuestionPrefetch("learning", state.lQueue, state.lIdx);
   const detail = q ? state.lDetail[q.id] : undefined;
@@ -100,20 +102,20 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
   // Phones keep the actions in one row, so Back is an icon and Next is short.
   const foot = (
     <div className="st-q-foot">
-      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={learningPrev} disabled={state.lIdx === 0} aria-label={flow ? "Back" : undefined}>
-        <Icon d={IC.chevLeft} size={18} />{!flow && "Back"}
+      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={learningPrev} disabled={state.lIdx === 0} aria-label={flow ? t("common.back") : undefined}>
+        <Icon d={IC.chevLeft} size={18} />{!flow && t("common.back")}
       </button>
       <div className="st-segmented">
         <input
-          type="number" min={1} className="st-jump" placeholder="Jump to #" aria-label="Jump to question number" enterKeyHint="go"
+          type="number" min={1} className="st-jump" placeholder={t("learning.live.jumpPlaceholder")} aria-label={t("learning.live.jumpLabel")} enterKeyHint="go"
           value={jumpText} onChange={(e) => setJumpText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") jumpToInput(); }}
         />
-        <button type="button" className="st-seg-btn" onClick={jumpToInput}>Go</button>
+        <button type="button" className="st-seg-btn" onClick={jumpToInput}>{t("learning.live.go")}</button>
       </div>
       <span className="st-spacer" />
       <button type="button" className="st-btn st-btn--primary" onClick={learningNext} disabled={atEnd}>
-        {flow ? "Next" : atEnd ? "Last question" : "Next question"}<Icon d={IC.chevRight} size={18} />
+        {flow ? t("common.next") : atEnd ? t("learning.live.last") : t("practice.live.next")}<Icon d={IC.chevRight} size={18} />
       </button>
     </div>
   );
@@ -124,13 +126,13 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
         <div className="st-head-row">
           <div className="st-head-titles">
             <PageBreadcrumb screen="learning" />
-            <h1 className="st-title">Question #{q.sequenceNumber} <span className="st-title-sub">· {state.lIdx + 1} of {state.lQueue.length}</span></h1>
+            <h1 className="st-title">{t("learning.live.title", { sequence: String(q.sequenceNumber) })} <span className="st-title-sub">· {t("learning.live.position", { n: state.lIdx + 1, total: state.lQueue.length })}</span></h1>
           </div>
           <StudiedToggle studied={isQuestionStudied(state.studyStatus, q.id)} onChange={(studied) => setQuestionStudied(q.id, studied)} compact={flow} />
           <BookmarkButton on={!!state.bookmarks[q.id]} onClick={() => toggleBookmark(q.id)} />
-          <button type="button" className="st-btn" onClick={() => go("learning")}><Icon d={IC.logout} />Exit</button>
+          <button type="button" className="st-btn" onClick={() => go("learning")}><Icon d={IC.logout} />{t("learning.live.exit")}</button>
         </div>
-        <div className="st-bar" role="progressbar" aria-label="Learning progress" aria-valuemin={0} aria-valuemax={state.lQueue.length} aria-valuenow={state.lIdx + 1}>
+        <div className="st-bar" role="progressbar" aria-label={t("learning.live.progress")} aria-valuemin={0} aria-valuemax={state.lQueue.length} aria-valuenow={state.lIdx + 1}>
           <span style={{ width: `${progress}%` }} />
         </div>
       </header>
@@ -141,7 +143,7 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
         <section
-          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label="Question"
+          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label={t("study.question")}
           style={pinnedCardStyle(gridHeight, desktop || flow ? null : fitHeight)}
         >
           <div className="st-q-head">
@@ -164,8 +166,8 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
                   <OptionGroup kind="review">{optionRows(q, state, correctAnswers, ready, capture, removeMark)}</OptionGroup>
                 ) : (
                   <div className="st-answer-box">
-                    <span className="st-opt-status">Accepted answer(s)</span>
-                    <span>{ready ? correctAnswers.join(" · ") || "—" : "Loading…"}</span>
+                    <span className="st-opt-status">{t("learning.live.accepted")}</span>
+                    <span>{ready ? correctAnswers.join(" · ") || "—" : t("common.loading")}</span>
                   </div>
                 )}
               </div>
@@ -178,10 +180,10 @@ export default function LearningLive({ bp }: { bp: Breakpoints }) {
         <div className="st-side" style={{ overflowY: scroller, overscrollBehavior: "contain" }}>
           <ReviewTabs
             tabs={[
-              { key: "exp", label: "Explanation", icon: IC.sparkles },
-              { key: "history", label: "History", icon: IC.history, count: history.length },
-              { key: "notes", label: "Notes", icon: IC.msg, count: noteCount },
-              { key: "related", label: "Related", icon: IC.lightbulb }
+              { key: "exp", label: t("study.tabs.explanation"), icon: IC.sparkles },
+              { key: "history", label: t("study.tabs.history"), icon: IC.history, count: history.length },
+              { key: "notes", label: t("study.tabs.notes"), icon: IC.msg, count: noteCount },
+              { key: "related", label: t("study.tabs.related"), icon: IC.lightbulb }
             ]}
             active={tab}
             onChange={setTab}
@@ -215,7 +217,7 @@ function optionRows(
       <OptionRow
         key={o.id} id={o.id}
         state={!ready ? "idle" : right ? "correct" : "dim"}
-        status={right ? "Correct answer" : undefined}
+        status={right ? translate("study.optionStatus.correct") : undefined}
         onMouseUp={() => capture(q.id, `opt:${o.id}`)}
       >
         <QuestionContent src={o.text} content={q.content} optionId={o.id} annotations={state.anns} qid={q.id} target={`opt:${o.id}`} show={true} onRemoveMark={removeMark} />

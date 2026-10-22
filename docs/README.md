@@ -54,6 +54,7 @@ records the gaps between the original specification, current code and open issue
 | [MCP presentation examples](screenshots/mcp-presentation.md) | Synthetic quiz output, table/figure fidelity and text-only fallback verification. |
 | [Skill verification](guides/skill-verification.md) | Safe client verification and packaged User/Admin Skill checks. |
 | [Knowledge Point editor](guides/knowledge-point-editor.md) | Visual authoring, Markdown fallback and recovery. |
+| [Interface languages](guides/internationalization.md) | English, Simplified Chinese and Japanese UI: language choice and fallback, translation scope, writing translatable code and adding a locale. |
 | [Shared UI components](guides/ui-components.md) | Vendored Untitled UI primitives, the design-token mapping behind the five color schemes, and remaining migration scope. |
 | [Settings layout](screenshots/settings.md) | Desktop/mobile screenshots of the grouped Settings page and its section index. |
 | [Provider assignment accessibility](screenshots/provider-assignment.md) | Toggle-state, keyboard and failure-path verification, local screenshots and the screen-reader testing boundary. |

@@ -15,6 +15,7 @@ export interface TurnstileRenderOptions {
   sitekey: string;
   action: string;
   theme: "light" | "dark";
+  language?: string;
   size: "flexible" | "compact";
   "response-field": boolean;
   "refresh-expired": "auto";

@@ -47,6 +47,7 @@ export {
   useNotesActions, useNotesState, usePracticeActions, usePracticeState, useReviewListsActions, useReviewListsState,
   useSessionStages, useStudyProgressState, useTextSelection, useViewport, useWorkspaceActions, useWorkspaceState,
 } from "./storeSlices";
+import { t } from "../i18n/runtime";
 
 
 // The provider composes the action hooks in store/actions/ and keeps every
@@ -89,8 +90,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         if (examsResult.status === "rejected") {
           setState(s => s.workspaceStatus === "ready"
-            ? { actionError: "Could not refresh your exams. Your current work is retained; please retry." }
-            : { workspaceStatus: "error", workspaceError: "Could not load your exams. Please retry." });
+            ? { actionError: t("errors.workspace.refreshExams") }
+            : { workspaceStatus: "error", workspaceError: t("errors.workspace.loadExams") });
           return;
         }
         const { exams } = examsResult.value;
@@ -103,14 +104,14 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         const selected = exams.some(e => e.id === saved) ? saved : exams[0]?.id ?? null;
         setState(s => ({ me: user ?? s.me, exams }));
         if (previous && selected !== previous) {
-          setState({ workspaceNotice: "The selected exam is no longer available. Select an available exam to continue." });
-          if (!await switchExamRef.current(selected)) setState({ actionError: "This exam is unavailable. Your work is retained; retry saving and switching to an available exam." });
+          setState({ workspaceNotice: t("errors.workspace.selectedGone") });
+          if (!await switchExamRef.current(selected)) setState({ actionError: t("errors.workspace.switchUnavailable") });
         } else if (!previous) {
           requests.invalidate();
           setState(s => ({ examId: selected, workspaceStatus: selected ? "loading" : "empty",
             workspaceGeneration: s.workspaceGeneration + 1,
-            workspaceNotice: linkedSlug && !linked ? "The linked exam is not available to you. Another exam has been opened instead."
-              : saved && saved !== selected ? "Your previous exam is unavailable. An available exam has been selected." : null }));
+            workspaceNotice: linkedSlug && !linked ? t("errors.workspace.linkedUnavailable")
+              : saved && saved !== selected ? t("errors.workspace.previousUnavailable") : null }));
           if (user) storeExam(user.id, selected);
         }
       });
@@ -216,8 +217,8 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       }));
     }).catch(() => {
       if (!cancelled) update(s => s.workspaceStatus === "ready"
-        ? { actionError: "Could not refresh this exam. Your current work is retained; please retry." }
-        : { workspaceStatus: "error", workspaceError: "Could not load this exam. Please retry." });
+        ? { actionError: t("errors.workspace.refreshExam") }
+        : { workspaceStatus: "error", workspaceError: t("errors.workspace.loadExam") });
     });
     return () => { cancelled = true; };
   }, [state.examId, state.workspaceGeneration, scopedState, setState, bankRevision, pendingStudy]);
@@ -257,7 +258,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (!pending || state.examId !== pending.examId || state.workspaceStatus !== "ready") return;
     const q = state.catalogBy[pending.questionId];
     if (!q || q.archived) {
-      setState({ pendingQuestionJump: null, actionError: "This linked question is no longer available." });
+      setState({ pendingQuestionJump: null, actionError: t("errors.workspace.linkedQuestionGone") });
       return;
     }
     setState({ pendingQuestionJump: null, lTags: [], lDiff: "all", lSkipReview: false, lStudyFilter: "all" });
@@ -278,7 +279,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       setState({ lTags: [], lDiff: "all", lSkipReview: false, lStudyFilter: "all" });
       beginLearning(seq);
     } else {
-      setState({ lStage: "setup", actionError: `This exam has no question ${seq}.` });
+      setState({ lStage: "setup", actionError: t("errors.workspace.noSuchQuestion", { sequence: String(seq) }) });
     }
   }, [state.pendingLearningSequence, state.screen, state.workspaceStatus, state.switching, setState, beginLearning, learningGotoSequence, stateRef]);
 

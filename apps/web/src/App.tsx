@@ -33,6 +33,7 @@ import McpConnect, { McpConnectError } from "./screens/McpConnect";
 import TermsOfService from "./screens/TermsOfService";
 import { DEFAULT_THEME } from "./lib/themeStorage";
 import { UrlRouting } from "./store/urlRouting";
+import { I18nProvider, useI18n } from "./i18n";
 
 // implementation — code-split: react-markdown, mermaid, and @dnd-kit are sizable
 // dependencies only this feature needs, so they load in their own chunk on
@@ -61,6 +62,7 @@ function ShellContent() {
   const { theme: themeChoice } = useAccountState();
   const { width, height } = useViewport();
   const { retryWorkspace, dismissActionError } = useWorkspaceActions();
+  const { t } = useI18n();
   const bp = breakpointsFor(width, height);
   // Measured height includes the bottom safe-area padding and text scaling.
   const [tabBarHeight, setTabBarHeight] = useState(0);
@@ -123,7 +125,7 @@ function ShellContent() {
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", width: "100%", maxWidth: 1160, margin: "0 auto" }}>
                 {state.workspaceNotice && <p role="status">{state.workspaceNotice}</p>}
                 {state.actionError && <div role="alert" className="card" style={{ padding: 16, marginBottom: 16 }}>
-                  <p>{state.actionError}</p><button className="btn btn-secondary" onClick={dismissActionError}>Dismiss</button>
+                  <p>{state.actionError}</p><button className="btn btn-secondary" onClick={dismissActionError}>{t("common.dismiss")}</button>
                 </div>}
                 {!isSettings && !isAdmin && !isKnowledgePoints && state.workspaceStatus !== "ready" ? (
                   // Error/empty are short, self-contained states — center them in
@@ -131,8 +133,8 @@ function ShellContent() {
                   // of a fixed-size box that strands empty space below it on tall phones.
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
                     <div className="card" style={{ padding: 24 }} role={state.workspaceStatus === "error" ? "alert" : "status"}>
-                      <p>{state.workspaceStatus === "error" ? state.workspaceError : "No exams are available yet. Ask an administrator to add an exam."}</p>
-                      {state.workspaceStatus === "error" && <button className="btn btn-primary" onClick={retryWorkspace}>Retry</button>}
+                      <p>{state.workspaceStatus === "error" ? state.workspaceError : t("shell.noExams")}</p>
+                      {state.workspaceStatus === "error" && <button className="btn btn-primary" onClick={retryWorkspace}>{t("common.retry")}</button>}
                     </div>
                   </div>
                 ) : (
@@ -150,12 +152,12 @@ function ShellContent() {
                     {isNotes && <Notes />}
                     </div>}
                     {isKnowledgePoints && (
-                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>Loading…</p>}>
+                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</p>}>
                         <KnowledgePoints bp={bp} />
                       </Suspense>
                     )}
                     {isSettings && (
-                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>Loading…</p>}>
+                      <Suspense fallback={<p style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</p>}>
                         <Settings bp={bp} />
                       </Suspense>
                     )}
@@ -168,7 +170,7 @@ function ShellContent() {
         </div>
 
         {state.switching && <div role="status" aria-live="polite" className="dialog-backdrop" style={{ zIndex: 200 }}>
-          <div className="card" style={{ padding: 24 }}>Saving your work before switching…</div>
+          <div className="card" style={{ padding: 24 }}>{t("shell.switching")}</div>
         </div>}
         {showCompactNavigation && <TabBar onHeightChange={setTabBarHeight} />}
         <MoreSheet />
@@ -283,6 +285,10 @@ function AuthenticatedApp({ connectRequest }: { connectRequest?: string }) {
 }
 
 export default function App() {
+  return <I18nProvider><Routes /></I18nProvider>;
+}
+
+function Routes() {
   const publicPath = window.location.pathname.replace(/\/$/, "");
   if (publicPath === "/privacy") {
     return <PrivacyPolicy />;

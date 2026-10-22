@@ -1,8 +1,10 @@
 import { useState, type CSSProperties } from "react";
 import type { TextSegment } from "../types";
+import { useI18n } from "../i18n";
 
 export default function HighlightedText({ segs, onRemoveMark }: { segs: TextSegment[]; onRemoveMark?: (id: string) => void }) {
   const [hoveredMarks, setHoveredMarks] = useState<string[]>([]);
+  const { t } = useI18n();
 
   return (
     <>
@@ -35,8 +37,8 @@ export default function HighlightedText({ segs, onRemoveMark }: { segs: TextSegm
                 <button
                   key={id}
                   type="button"
-                  aria-label="Delete mark"
-                  title="Delete mark"
+                  aria-label={t("annotations.deleteMark")}
+                  title={t("annotations.deleteMark")}
                   onMouseEnter={() => setHoveredMarks([id])}
                   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   onMouseUp={(e) => e.stopPropagation()}

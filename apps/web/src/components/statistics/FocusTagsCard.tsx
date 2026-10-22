@@ -13,17 +13,18 @@ import { Badge, BadgeWithDot } from "@/components/base/badges/badges";
 import type { FocusTag } from "@prepdeck/shared";
 import { FOCUS_TAG_MIN_ANSWERS } from "@prepdeck/shared";
 import { FOCUS_PREVIEW_ROWS } from "../../lib/statistics";
+import { t, useI18n } from "../../i18n";
 
 function statusBadge(tag: FocusTag) {
   switch (tag.status) {
     case "weakest":
-      return <BadgeWithDot type="pill-color" size="sm" color="error">weakest</BadgeWithDot>;
+      return <BadgeWithDot type="pill-color" size="sm" color="error">{t("stats.focus.status.weakest")}</BadgeWithDot>;
     case "below-line":
-      return <BadgeWithDot type="pill-color" size="sm" color="warning">below line</BadgeWithDot>;
+      return <BadgeWithDot type="pill-color" size="sm" color="warning">{t("stats.focus.status.belowLine")}</BadgeWithDot>;
     case "on-track":
-      return <BadgeWithDot type="pill-color" size="sm" color="success">on track</BadgeWithDot>;
+      return <BadgeWithDot type="pill-color" size="sm" color="success">{t("stats.focus.status.onTrack")}</BadgeWithDot>;
     default:
-      return <Badge type="pill-color" size="sm" color="gray">not measured · needs {FOCUS_TAG_MIN_ANSWERS} answers</Badge>;
+      return <Badge type="pill-color" size="sm" color="gray">{t("stats.focus.status.notMeasured", { count: FOCUS_TAG_MIN_ANSWERS })}</Badge>;
   }
 }
 
@@ -36,12 +37,20 @@ function meterColor(tag: FocusTag): string {
   return "var(--color-accent-2-600)";
 }
 
+// The difficulty mix arrives as a fixed English identifier from @prepdeck/shared.
+const MIX_KEYS = {
+  "mostly hard": "stats.focus.mix.mostlyHard",
+  "medium-heavy": "stats.focus.mix.mediumHeavy",
+  "mostly easy": "stats.focus.mix.mostlyEasy",
+  mixed: "stats.focus.mix.mixed",
+} as const;
+
 function contextLine(tag: FocusTag): string {
   const parts: string[] = [];
-  if (tag.wrongCount > 0) parts.push(`${tag.wrongCount} wrong`);
-  if (tag.unseenCount > 0) parts.push(`${tag.unseenCount} unseen`);
-  if (parts.length === 0) parts.push("nothing left to practise");
-  if (tag.difficultyLabel) parts.push(tag.difficultyLabel);
+  if (tag.wrongCount > 0) parts.push(t("stats.focus.wrong", { count: tag.wrongCount }));
+  if (tag.unseenCount > 0) parts.push(t("stats.focus.unseen", { count: tag.unseenCount }));
+  if (parts.length === 0) parts.push(t("stats.focus.nothingLeft"));
+  if (tag.difficultyLabel) parts.push(tag.difficultyLabel in MIX_KEYS ? t(MIX_KEYS[tag.difficultyLabel as keyof typeof MIX_KEYS]) : tag.difficultyLabel);
   return parts.join(" · ");
 }
 
@@ -53,6 +62,7 @@ export default function FocusTagsCard({
   onPracticeTag: (tag: FocusTag) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
   const visible = expanded ? focus : focus.slice(0, FOCUS_PREVIEW_ROWS);
   const measured = focus.some((tag) => tag.hasEvidence);
 
@@ -60,27 +70,27 @@ export default function FocusTagsCard({
     <section className="pd-stats-card" aria-labelledby="pd-stats-focus-title">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <h3 id="pd-stats-focus-title">Where to focus</h3>
+          <h3 id="pd-stats-focus-title">{t("stats.focus.title")}</h3>
           <p className="pd-stats-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
             {/* Nothing is "weakest" until something is measured: say so rather
                 than rank by an accuracy nobody has. */}
             {!measured
-              ? `Not ranked yet: a tag is measured after ${FOCUS_TAG_MIN_ANSWERS} answers. Until then, the tags with the most questions to practise come first.`
+              ? t("stats.focus.notRanked", { count: FOCUS_TAG_MIN_ANSWERS })
               : passMarkPct == null
-              ? "Weakest tags first, hard questions weighted"
-              : `Weakest tags first, hard questions weighted, against the ${passMarkPct}% pass line`}
+              ? t("stats.focus.ranked")
+              : t("stats.focus.rankedPass", { pass: passMarkPct })}
           </p>
         </div>
         {focus.length > FOCUS_PREVIEW_ROWS && (
           <Button size="md" color="secondary" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-            {expanded ? "Show top tags" : `View all ${focus.length} tags`}
+            {expanded ? t("stats.focus.showTop") : t("stats.focus.viewAll", { count: focus.length })}
           </Button>
         )}
       </div>
 
       {focus.length === 0 ? (
         <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>
-          No tagged questions in this bank yet, so there is nothing to rank.
+          {t("stats.focus.empty")}
         </p>
       ) : (
         <ul className="pd-stats-focus-list">
@@ -101,8 +111,8 @@ export default function FocusTagsCard({
                     className="pd-stats-focus-meter-track"
                     role="img"
                     aria-label={accuracy == null
-                      ? `${tag.tag}: not enough answers to measure accuracy`
-                      : `${tag.tag}: ${accuracy}% accuracy over ${tag.attempted} answers`}
+                      ? t("stats.focus.meterUnmeasured", { tag: tag.tag })
+                      : t("stats.focus.meter", { tag: tag.tag, pct: accuracy, count: tag.attempted })}
                   >
                     <div className="pd-stats-focus-meter-fill" style={{ width: `${accuracy ?? 0}%`, background: meterColor(tag) }} />
                   </div>
@@ -113,10 +123,10 @@ export default function FocusTagsCard({
                   size="md"
                   color="secondary"
                   isDisabled={tag.eligibleCount === 0}
-                  title={tag.eligibleCount === 0 ? `Every ${tag.tag} question has been answered and none is in your wrong book.` : undefined}
+                  title={tag.eligibleCount === 0 ? t("stats.focus.allPractisedTitle", { tag: tag.tag }) : undefined}
                   onClick={() => onPracticeTag(tag)}
                 >
-                  {tag.eligibleCount === 0 ? "All practised" : `Practice ${tag.eligibleCount}`}
+                  {tag.eligibleCount === 0 ? t("stats.focus.allPractised") : t("stats.focus.practice", { count: tag.eligibleCount })}
                 </Button>
               </li>
             );

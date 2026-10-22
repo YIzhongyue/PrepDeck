@@ -8,6 +8,7 @@ import type { LinkableQuestionSummary } from "@prepdeck/shared";
 import { useWorkspaceState } from "../../store/PrepDeckContext";
 import { useKnowledgePoints } from "../../store/useKnowledgePoints";
 import { searchLinkableQuestions } from "../../lib/knowledgePoints";
+import { useI18n } from "../../i18n";
 
 export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowledgePointId: string; onClose: () => void }) {
   const { exams } = useWorkspaceState();
@@ -18,15 +19,16 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
   const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     let cancelled = false;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       searchLinkableQuestions({ q: q || undefined, examId: examId ?? undefined, knowledgePointId, limit: 20 })
         .then((res) => { if (!cancelled) { setResults(res.questions); setTotal(res.total); } })
         .catch(() => {});
     }, 250);
-    return () => { cancelled = true; window.clearTimeout(t); };
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [q, examId, knowledgePointId]);
 
   const toggleLink = (question: LinkableQuestionSummary) => {
@@ -36,11 +38,11 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
     Promise.resolve(action).then(() => {
       setBusyId(null);
       setResults((rs) => rs.map((r) => (r.questionId === question.questionId ? { ...r, linked: !r.linked } : r)));
-    }).catch(() => { setBusyId(null); setError("Could not save the question link. Retry from the note's save status."); });
+    }).catch(() => { setBusyId(null); setError(t("kp.link.saveFailed")); });
   };
 
   return (
-    <ModalLayer label="Link a question" onClose={onClose}>
+    <ModalLayer label={t("kp.editor.linkQuestion")} onClose={onClose}>
       <div className="dialog" style={{ width: "min(620px, 100%)", maxHeight: "86vh" }}>
         {error && <p role="alert">{error}</p>}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}>
@@ -48,10 +50,10 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
             <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h8l3 3v15H7z M10 11h6 M10 15h4" /></svg>
           </span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h3 style={{ margin: 0, fontSize: 20, lineHeight: 1.15 }}>Link a question</h3>
-            <p style={{ margin: "3px 0 0", fontSize: 12.5, opacity: 0.7 }}>Search by question ID or text across every exam you can access.</p>
+            <h3 style={{ margin: 0, fontSize: 20, lineHeight: 1.15 }}>{t("kp.editor.linkQuestion")}</h3>
+            <p style={{ margin: "3px 0 0", fontSize: 12.5, opacity: 0.7 }}>{t("kp.link.intro")}</p>
           </div>
-          <button type="button" aria-label="Close question picker" onClick={onClose} style={{ flex: "none", display: "grid", placeItems: "center", width: 32, height: 32, border: 0, borderRadius: "50%", background: "var(--color-neutral-100)", cursor: "pointer", fontSize: 14 }}>✕</button>
+          <button type="button" aria-label={t("kp.link.close")} onClick={onClose} style={{ flex: "none", display: "grid", placeItems: "center", width: 32, height: 32, border: 0, borderRadius: "50%", background: "var(--color-neutral-100)", cursor: "pointer", fontSize: 14 }}>✕</button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", border: "1px solid var(--color-divider)", borderRadius: 999, background: "var(--color-bg)" }}>
@@ -60,7 +62,8 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search titles and question text…"
+            placeholder={t("kp.link.search")}
+            aria-label={t("kp.link.search")}
             style={{ width: "100%", padding: 0, border: 0, outline: 0, background: "transparent", font: "inherit", fontSize: 13 }}
           />
         </div>
@@ -71,7 +74,7 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
             onClick={() => setExamId(null)}
             style={{ padding: "5px 12px", border: `1px solid ${examId === null ? "var(--color-accent)" : "var(--color-divider)"}`, borderRadius: 999, background: examId === null ? "var(--color-accent-200)" : "transparent", color: examId === null ? "var(--color-accent-800)" : "inherit", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}
           >
-            All exams
+            {t("kp.link.allExams")}
           </button>
           {exams.map((exam) => (
 
@@ -85,7 +88,7 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
               {exam.name}
             </button>
           ))}
-          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)" }}>{total} matches · showing {results.length}</span>
+          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)" }}>{t("kp.link.matches", { count: total, shown: results.length })}</span>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -101,7 +104,7 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
               {r.linked ? (
                 <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: "var(--color-accent-2-100)", color: "var(--color-accent-2-800)", fontSize: 12, fontWeight: 600 }}>
                   <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4 10-10" /></svg>
-                  Linked
+                  {t("kp.link.linked")}
                 </span>
               ) : null}
               <button
@@ -110,16 +113,16 @@ export default function LinkQuestionModal({ knowledgePointId, onClose }: { knowl
                 disabled={busyId === r.questionId}
                 style={{ flex: "none", padding: "6px 14px", border: r.linked ? "1px solid var(--color-divider)" : 0, borderRadius: 999, background: r.linked ? "transparent" : "var(--color-accent)", color: r.linked ? "var(--color-text)" : "var(--color-bg)", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }}
               >
-                {r.linked ? "Unlink" : "Link"}
+                {t(r.linked ? "kp.unlink" : "kp.link.link")}
               </button>
             </div>
           ))}
-          {results.length === 0 && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>No matching questions.</p>}
+          {results.length === 0 && <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>{t("kp.link.noQuestions")}</p>}
         </div>
 
         <div className="dialog-actions" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <p style={{ margin: 0, fontSize: 11.5, color: "var(--color-text-muted)" }}>Opening a linked question goes to review — it never records an attempt.</p>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Done</button>
+          <p style={{ margin: 0, fontSize: 11.5, color: "var(--color-text-muted)" }}>{t("kp.link.reviewNote")}</p>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t("common.done")}</button>
         </div>
       </div>
     </ModalLayer>

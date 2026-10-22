@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, type MouseEvent } from "react";
 import { parseRoute, routePath, routeTitle, type Route } from "../lib/routes";
+import { useI18n } from "../i18n";
 import type { ScreenId } from "../types";
 import {
   useCatalogState, useLearningState, useWorkspaceActions, useWorkspaceState,
@@ -80,6 +81,8 @@ function useUrlRouting(): void {
   const [popRevision, finishPop] = useReducer((revision: number) => revision + 1, 0);
   const navigateRef = useRef(navigateTo);
   navigateRef.current = navigateTo;
+  // The tab title is in the interface language, so a switch retitles it.
+  useI18n();
 
   const route = currentRoute(state);
   const path = routePath(route);

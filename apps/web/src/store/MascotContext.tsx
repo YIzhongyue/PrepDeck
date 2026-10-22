@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { DEFAULT_MASCOT_STYLE, isMascotStyle, type MascotStyle, type SiteAppearance } from "@prepdeck/shared";
 import { apiFetch } from "../lib/api";
+import { t } from "../i18n/runtime";
 
 type LoadStatus = "loading" | "ready" | "failed";
 interface MascotContextValue {
@@ -13,7 +14,7 @@ interface MascotContextValue {
 // default decoration. The application mounts the provider above its auth gate.
 const MascotContext = createContext<MascotContextValue>({
   style: DEFAULT_MASCOT_STYLE, status: "loading", refresh: async () => {},
-  save: async () => { throw new Error("Site appearance is unavailable"); },
+  save: async () => { throw new Error(t("errors.appearance.unavailable")); },
 });
 
 export function MascotProvider({ children }: { children: ReactNode }) {
@@ -58,7 +59,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
       const data = await apiFetch<SiteAppearance>("/api/admin/appearance", {
         method: "PUT", body: JSON.stringify({ mascotStyle: next }), signal: AbortSignal.timeout(15000),
       });
-      if (!isMascotStyle(data.mascotStyle)) throw new Error("Invalid appearance response. Please reload and retry.");
+      if (!isMascotStyle(data.mascotStyle)) throw new Error(t("errors.appearance.invalid"));
       if (current === generation.current) { setStyle(data.mascotStyle); setStatus("ready"); }
     } finally {
       saving.current = false;

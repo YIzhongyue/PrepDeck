@@ -6,6 +6,7 @@ import { useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent } fr
 import MermaidDiagram from "./MermaidDiagram";
 import MediaDialog from "./MediaDialog";
 import { fencedSource, imageAltText, markdownImage, safeUrl, SOURCE_LANGUAGE } from "./editorMarkdown";
+import { useI18n } from "../../i18n";
 
 // ProseMirror handles keydown/paste on the editor root, so a form control
 // inside a NodeView competes with it: Backspace at position 0 deletes the NODE
@@ -22,17 +23,18 @@ function SourceView({ node, updateAttributes }: NodeViewProps) {
   const raw = node.type.name === "rawMarkdown";
   const language = String(node.attrs.language ?? "");
   const [preview, setPreview] = useState(false);
+  const { t } = useI18n();
   return (
     <NodeViewWrapper className="kp-source-block">
       <div className="kp-block-controls" contentEditable={false}>
-        {raw ? <strong>Unsupported Markdown — editable source</strong> : (
-          <label>Language <input aria-label="Code language" value={language} onChange={e => updateAttributes({ language: e.target.value })} {...nodeViewInput} /></label>
+        {raw ? <strong>{t("kp.blocksView.unsupported")}</strong> : (
+          <label>{t("kp.blocksView.language")} <input aria-label={t("kp.blocksView.codeLanguage")} value={language} onChange={e => updateAttributes({ language: e.target.value })} {...nodeViewInput} /></label>
         )}
         {!raw && language.toLowerCase() === "mermaid" && (
-          <button type="button" onClick={() => setPreview(!preview)}>{preview ? "Edit diagram source" : "Preview diagram"}</button>
+          <button type="button" onClick={() => setPreview(!preview)}>{t(preview ? "kp.blocksView.editDiagram" : "kp.blocksView.previewDiagram")}</button>
         )}
       </div>
-      <pre hidden={preview}><NodeViewContent<"code"> as="code" aria-label={raw ? "Unsupported Markdown source" : "Code source"} /></pre>
+      <pre hidden={preview}><NodeViewContent<"code"> as="code" aria-label={t(raw ? "kp.blocksView.unsupportedSource" : "kp.blocksView.codeSource")} /></pre>
       {preview && <div contentEditable={false}><MermaidDiagram source={node.textContent} /></div>}
     </NodeViewWrapper>
   );
@@ -55,15 +57,16 @@ export const VisualCodeBlock = CodeBlock.extend({
 
 function ImageView({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const [large, setLarge] = useState(false);
+  const { t } = useI18n();
   const src = String(node.attrs.src ?? "");
   return (
     <NodeViewWrapper className="kp-image-block" contentEditable={false}>
-      {safeUrl(src) ? <button type="button" className="kp-image-open" aria-label="View larger image" onClick={() => setLarge(true)}><img src={src} alt={node.attrs.alt ?? ""} /></button> : <p role="alert">This image URL is not supported.</p>}
+      {safeUrl(src) ? <button type="button" className="kp-image-open" aria-label={t("kp.blocksView.viewLargerImage")} onClick={() => setLarge(true)}><img src={src} alt={node.attrs.alt ?? ""} /></button> : <p role="alert">{t("kp.blocksView.badImageUrl")}</p>}
       <div className="kp-block-controls">
-        <label>Alt text <input aria-label="Image alt text" value={node.attrs.alt ?? ""} onChange={e => updateAttributes({ alt: e.target.value })} {...nodeViewInput} /></label>
-        <button type="button" onClick={deleteNode}>Remove image</button>
+        <label>{t("kp.blocksView.altText")} <input aria-label={t("kp.blocksView.imageAltText")} value={node.attrs.alt ?? ""} onChange={e => updateAttributes({ alt: e.target.value })} {...nodeViewInput} /></label>
+        <button type="button" onClick={deleteNode}>{t("kp.blocksView.removeImage")}</button>
       </div>
-      {large && <MediaDialog label="image" onClose={() => setLarge(false)}>
+      {large && <MediaDialog kind="image" onClose={() => setLarge(false)}>
         <img src={src} alt={node.attrs.alt ?? ""} />
       </MediaDialog>}
     </NodeViewWrapper>

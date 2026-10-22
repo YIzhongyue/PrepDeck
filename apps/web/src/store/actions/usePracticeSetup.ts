@@ -10,6 +10,7 @@ import type { CatalogQueries } from "./useCatalogQueries";
 import type { StoreCore } from "./useStoreCore";
 import type { Navigation } from "./useNavigation";
 import type { PracticeSession } from "./usePracticeSession";
+import { t } from "../../i18n/runtime";
 
 // Practice setup filters, starting sessions from them or from a list, and
 // the wrong-question and bookmark lists.
@@ -56,7 +57,7 @@ export function usePracticeSetup(core: StoreCore, deps: Pick<PracticeSession, "b
         count: Math.max(1, Math.min(MAX_ATTEMPT_QUESTIONS, Math.round(filters.count))),
         queue: [], idx: 0, sel: {}, done: {}, graded: {}, attemptId: null,
       });
-    }).catch(() => update({ actionError: "Navigation was cancelled because your changes could not be saved. Please retry saving." }));
+    }).catch(() => update({ actionError: t("errors.nav.cancelled") }));
   }, [stateRef, requests, scopedState, saveQuestionDraft]);
 
   const setListMode = useCallback((m: ListMode) => setState({ listMode: m }), [setState]);
@@ -68,7 +69,7 @@ export function usePracticeSetup(core: StoreCore, deps: Pick<PracticeSession, "b
     const previous = !!s.mastered[id];
     setState(current => ({ mastered: { ...current.mastered, [id]: true } }));
     void requests.write(`mastered:${id}`, () => apiFetch(`/api/questions/${id}/wrong-book/mastered`, { method: "PUT" }))
-      .catch(() => update(current => ({ mastered: { ...current.mastered, [id]: previous }, actionError: "Could not mark this question mastered. Please retry." })));
+      .catch(() => update(current => ({ mastered: { ...current.mastered, [id]: previous }, actionError: t("errors.practice.mastered") })));
   }, [requests, scopedState, setState, stateRef]);
   const practiceList = useCallback((ids: string[]) => { begin(ids); }, [begin]);
   return {

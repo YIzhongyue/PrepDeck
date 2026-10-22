@@ -11,34 +11,37 @@ import { ChartTooltipContent } from "@/components/application/charts/charts-base
 import type { TrendModel } from "../../lib/statistics";
 import { formatDateKey, timeZoneLabel } from "../../lib/statistics";
 import { ChartData, usePrefersReducedMotion } from "./chartSupport";
+import { useI18n } from "../../i18n";
 
 export default function AccuracyTrendCard({ trend, timeZone }: { trend: TrendModel; timeZone: string }) {
   const reducedMotion = usePrefersReducedMotion();
+  const { t } = useI18n();
   const data = trend.points.map((p) => ({ ...p, label: formatDateKey(p.date) }));
 
   // One active day is a dot, not a line, so the chart still renders something
   // truthful rather than an empty plot area.
   const enough = data.length >= 1;
   const summary = enough
-    ? `Accuracy over the last ${trend.activeDays} active day${trend.activeDays === 1 ? "" : "s"}, `
-      + `from ${data[0]!.accuracyPct}% on ${data[0]!.label} to ${data[data.length - 1]!.accuracyPct}% on ${data[data.length - 1]!.label}.`
-      + (trend.passMarkPct == null ? " This exam has no pass mark set." : ` The pass line is ${trend.passMarkPct}%.`)
-    : "No completed answers yet, so there is no accuracy trend to show.";
+    ? t("stats.trend.summary", {
+      count: trend.activeDays, from: data[0]!.accuracyPct, fromDay: data[0]!.label,
+      to: data[data.length - 1]!.accuracyPct, toDay: data[data.length - 1]!.label,
+    }) + " " + (trend.passMarkPct == null ? t("stats.trend.noPassMark") : t("stats.trend.passLineIs", { pass: trend.passMarkPct }))
+    : t("stats.trend.empty");
 
   return (
     <section className="pd-stats-card" aria-labelledby="pd-stats-trend-title">
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h3 id="pd-stats-trend-title">Accuracy trend</h3>
+          <h3 id="pd-stats-trend-title">{t("stats.trend.title")}</h3>
           <p className="pd-stats-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
             {enough
-              ? `Last ${trend.activeDays} active day${trend.activeDays === 1 ? "" : "s"} (days are counted in ${timeZoneLabel(timeZone)})`
-              : "Needs at least one completed answer"}
+              ? t("stats.trend.subtitle", { count: trend.activeDays, zone: timeZoneLabel(timeZone) })
+              : t("stats.trend.needsAnswer")}
           </p>
         </div>
         <div className="pd-stats-chart-legend pd-stats-muted">
-          <span><span className="dot" style={{ background: "var(--color-accent)" }} />Accuracy</span>
-          {trend.passMarkPct != null && <span><span className="dot" style={{ background: "var(--color-accent-2-600)" }} />Pass line</span>}
+          <span><span className="dot" style={{ background: "var(--color-accent)" }} />{t("stats.accuracy.label")}</span>
+          {trend.passMarkPct != null && <span><span className="dot" style={{ background: "var(--color-accent-2-600)" }} />{t("stats.trend.passLine")}</span>}
         </div>
       </div>
 
@@ -64,7 +67,7 @@ export default function AccuracyTrendCard({ trend, timeZone }: { trend: TrendMod
                 <ReferenceLine y={trend.passMarkPct} stroke="var(--color-accent-2-600)" strokeDasharray="2 4" strokeWidth={2} />
               )}
               <Area
-                type="monotone" dataKey="accuracyPct" name="Accuracy"
+                type="monotone" dataKey="accuracyPct" name={t("stats.accuracy.label")}
                 stroke="var(--color-accent)" strokeWidth={2.5}
                 fill="url(#pd-stats-accuracy-fill)"
                 dot={data.length <= 12 ? { r: 3, fill: "var(--color-bg)", stroke: "var(--color-accent)", strokeWidth: 2 } : false}
@@ -75,23 +78,23 @@ export default function AccuracyTrendCard({ trend, timeZone }: { trend: TrendMod
         </div>
       ) : (
         <p className="pd-stats-muted" style={{ margin: "28px 0", fontSize: 13 }}>
-          Complete a practice or mock session and the trend appears here.
+          {t("stats.trend.completeSession")}
         </p>
       )}
 
       {enough && trend.latestPct != null && (
         <p style={{ margin: 0, fontSize: 13 }}>
-          <strong style={{ fontWeight: 600 }}>{trend.latestPct}% latest</strong>
-          {trend.passMarkPct == null
-            ? " — this exam has no pass mark set"
-            : trend.latestPct >= trend.passMarkPct ? " — above the line" : " — below the line"}
+          <strong style={{ fontWeight: 600 }}>{t("stats.trend.latest", { pct: trend.latestPct })}</strong>
+          {" — "}{t(trend.passMarkPct == null
+            ? "stats.trend.latestNoPass"
+            : trend.latestPct >= trend.passMarkPct ? "stats.trend.aboveLine" : "stats.trend.belowLine")}
         </p>
       )}
 
       <ChartData
         summary={summary}
-        caption="Accuracy by active day"
-        columns={["Day", "Answers", "Correct", "Accuracy"]}
+        caption={t("stats.trend.caption")}
+        columns={[t("stats.table.day"), t("stats.table.answers"), t("stats.table.correct"), t("stats.accuracy.label")]}
         rows={data.map((p) => [p.label, p.attempted, p.correct, `${p.accuracyPct}%`])}
       />
     </section>

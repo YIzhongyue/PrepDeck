@@ -12,11 +12,13 @@ import type { KnowledgePointSummary } from "@prepdeck/shared";
 import { useWorkspaceActions } from "../../store/PrepDeckContext";
 import { createKnowledgePoint, linkQuestionToKnowledgePoint, listKnowledgePoints } from "../../lib/knowledgePoints";
 import LinkExistingKnowledgePointModal from "./LinkExistingKnowledgePointModal";
+import { t as translate, useI18n } from "../../i18n";
 
 // `embedded` drops the card chrome for use inside another panel (the study
 // screens' review tabs), which already supply the border and the heading.
 export default function RelatedKnowledgePoints({ questionId, embedded = false }: { questionId: string; embedded?: boolean }) {
   const { openKnowledgePointNote } = useWorkspaceActions();
+  const { t } = useI18n();
 
   const visit = useRef(0);
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function RelatedKnowledgePoints({ questionId, embedded = false }:
     setError(null);
     listKnowledgePoints({ linkedQuestionId: questionId, limit: 20 })
       .then((res) => { if (generation === visit.current) setNotes(res.knowledgePoints); })
-      .catch(() => { if (generation === visit.current) setError("Could not load related notes. Please retry."); })
+      .catch(() => { if (generation === visit.current) setError(translate("kp.related.loadFailed")); })
       .finally(() => { if (generation === visit.current) setLoading(false); });
   }, [questionId]);
 
@@ -68,7 +70,7 @@ export default function RelatedKnowledgePoints({ questionId, embedded = false }:
         openKnowledgePointNote(id);
       }
     } catch {
-      if (generation === visit.current) setError("Could not create and link your note. Retry New note to continue with the same draft.");
+      if (generation === visit.current) setError(translate("kp.related.createFailed"));
     } finally {
       if (generation === visit.current) setCreating(false);
     }
@@ -77,21 +79,21 @@ export default function RelatedKnowledgePoints({ questionId, embedded = false }:
   return (
     <div className={embedded ? undefined : "card elev-sm"} style={embedded ? { display: "flex", flexDirection: "column", gap: 12, padding: 20 } : { padding: 18, gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className={embedded ? undefined : "card-kicker"} style={embedded ? { marginRight: "auto", fontSize: 14, fontWeight: 600 } : { marginRight: "auto" }}>Knowledge points</span>
+        <span className={embedded ? undefined : "card-kicker"} style={embedded ? { marginRight: "auto", fontSize: 14, fontWeight: 600 } : { marginRight: "auto" }}>{t("nav.screens.knowledgePoints")}</span>
         <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setShowLinkModal(true)}>
-          Link existing
+          {t("kp.related.linkExisting")}
         </button>
         <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} disabled={creating} onClick={createNew}>
-          + New note
+          {t("kp.related.newNote")}
         </button>
       </div>
 
       {error && <div role="alert" style={{ fontSize: 12.5 }}>{error}
-        <button type="button" className="btn btn-ghost" onClick={refresh}>Reload related notes</button>
+        <button type="button" className="btn btn-ghost" onClick={refresh}>{t("kp.related.reload")}</button>
       </div>}
 
       {!loading && notes.length === 0 && (
-        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No knowledge points reference this question yet.</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>{t("kp.related.empty")}</p>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -102,7 +104,7 @@ export default function RelatedKnowledgePoints({ questionId, embedded = false }:
             onClick={() => openKnowledgePointNote(n.id)}
             style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 16, border: 0, background: "var(--color-neutral-100)", cursor: "pointer", font: "inherit" }}
           >
-            <span style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{n.title || "Untitled knowledge point"}</span>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{n.title || t("kp.untitled")}</span>
             {n.excerpt && <span style={{ display: "block", fontSize: 12, opacity: 0.7 }}>{n.excerpt}</span>}
           </button>
         ))}

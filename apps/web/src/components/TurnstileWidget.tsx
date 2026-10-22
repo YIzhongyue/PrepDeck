@@ -11,16 +11,17 @@ import { useEffect, useRef, useState } from "react";
 import type { TurnstileAction } from "@prepdeck/shared";
 import { loadTurnstile, type TurnstileApi } from "../lib/turnstile";
 import "./TurnstileWidget.css";
+import { getLocale, useI18n, type TranslationKey } from "../i18n";
 
 type Phase = "loading" | "ready" | "verified" | "expired" | "failed" | "unavailable";
 
-const MESSAGES: Record<Phase, string> = {
-  loading: "Loading the verification check…",
-  ready: "",
-  verified: "",
-  expired: "The verification expired. Refreshing it…",
-  failed: "The verification check didn't complete.",
-  unavailable: "The verification check couldn't load. Check your connection.",
+const MESSAGES: Record<Phase, TranslationKey | null> = {
+  loading: "turnstile.loading",
+  ready: null,
+  verified: null,
+  expired: "turnstile.expired",
+  failed: "turnstile.failed",
+  unavailable: "turnstile.unavailable",
 };
 
 // The flexible widget needs 300px; narrower cards get the compact one.
@@ -44,6 +45,7 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
   const [phase, setPhase] = useState<Phase>("loading");
   // Bumped to try loading Cloudflare's script again after it failed.
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const { t } = useI18n();
 
   useEffect(() => {
     onTokenChangeRef.current = onTokenChange;
@@ -59,6 +61,8 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
         sitekey: siteKey,
         action,
         theme: widgetTheme(),
+        // Cloudflare's own text follows the interface language.
+        language: getLocale().toLowerCase(),
         size: container.clientWidth < FLEXIBLE_MIN_WIDTH ? "compact" : "flexible",
         "response-field": false,
         "refresh-expired": "auto",
@@ -103,10 +107,10 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
           anything that lists focusable elements. `data-focus-region` tells
           ModalLayer's focus trap it is there; focusing this box puts the next
           Tab inside it. */}
-      <div ref={containerRef} className="turnstile-widget" data-focus-region="" tabIndex={-1} role="group" aria-label="Human verification" />
+      <div ref={containerRef} className="turnstile-widget" data-focus-region="" tabIndex={-1} role="group" aria-label={t("turnstile.label")} />
       <div className="turnstile-status">
-        <p role="status" aria-live="polite" className={problem ? "turnstile-problem" : undefined}>{MESSAGES[phase]}</p>
-        {problem && <button type="button" className="turnstile-retry" onClick={retry}>Try again</button>}
+        <p role="status" aria-live="polite" className={problem ? "turnstile-problem" : undefined}>{MESSAGES[phase] ? t(MESSAGES[phase]) : ""}</p>
+        {problem && <button type="button" className="turnstile-retry" onClick={retry}>{t("turnstile.tryAgain")}</button>}
       </div>
     </div>
   );
@@ -117,11 +121,12 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
  * be looked up. The protected action stays disabled until a retry succeeds.
  */
 export function TurnstileConfigError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
   return (
     <div className="turnstile" data-phase="unavailable">
       <div className="turnstile-status">
-        <p role="alert" className="turnstile-problem">Couldn&apos;t check whether human verification is needed. Check your connection.</p>
-        <button type="button" className="turnstile-retry" onClick={onRetry}>Try again</button>
+        <p role="alert" className="turnstile-problem">{t("turnstile.configFailed")}</p>
+        <button type="button" className="turnstile-retry" onClick={onRetry}>{t("turnstile.tryAgain")}</button>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useId } from "react";
 import ModalLayer from "./ModalLayer";
+import { useI18n } from "../i18n";
 
 export function AdminIcon({ name }: { name: "overview" | "users" | "exams" | "shield" | "arrow" | "back" | "plus" | "search" | "key" }) {
   const paths = {
@@ -28,6 +29,7 @@ export function AdminModal({
   children: React.ReactNode;
 }) {
   const titleId = useId();
+  const { t } = useI18n();
   return (
     <ModalLayer labelledBy={titleId} onClose={onClose}>
       <div className="admin-modal">
@@ -37,7 +39,7 @@ export function AdminModal({
             <h3 id={titleId}>{title}</h3>
             <p>{subtitle}</p>
           </div>
-          <button type="button" className="admin-modal-close" aria-label="Close" disabled={closeDisabled} onClick={onClose}>✕</button>
+          <button type="button" className="admin-modal-close" aria-label={t("common.close")} disabled={closeDisabled} onClick={onClose}>✕</button>
         </div>
         {children}
       </div>

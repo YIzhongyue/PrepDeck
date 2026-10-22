@@ -1,4 +1,5 @@
 import MascotImage from "./MascotImage";
+import { useI18n } from "../i18n";
 
 /** Mascot loader shown across the viewport while an exam's data is
  * fetched. Fills the viewport-height flex parent in App.tsx so the scene
@@ -6,9 +7,10 @@ import MascotImage from "./MascotImage";
  * Purely decorative — the sr-only text
  * carries the accessible status. */
 export default function WorkspaceLoading() {
+  const { t } = useI18n();
   return (
     <div role="status" style={{ position: "relative", flex: 1, minHeight: 280, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 26, overflow: "hidden" }}>
-      <span className="sr-only">Loading this exam…</span>
+      <span className="sr-only">{t("shell.loadingExam")}</span>
       <div aria-hidden="true" data-pd-geo style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: "-16%", right: "-18%", width: "min(70%, 440px)", aspectRatio: "1 / 1", animation: "pd-orbit 64s linear infinite" }}>
           <svg viewBox="0 0 420 420" width="100%" height="100%">

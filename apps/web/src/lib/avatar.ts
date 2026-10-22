@@ -2,6 +2,8 @@
 // size, resizing/compressing client-side where practical before upload. The
 // server re-validates type and the 2 MB cap regardless (see routes/profile.ts).
 
+import { t } from "../i18n/runtime";
+
 const MAX_DIMENSION = 512;
 // Shared by every admin/profile image upload (avatars, provider icons, exam
 // badges), matching the server-side 2 MB JPEG/PNG/WebP checks.
@@ -12,14 +14,14 @@ export class AvatarValidationError extends Error {}
 
 export async function prepareAvatarUpload(file: File): Promise<Blob> {
   if (!IMAGE_UPLOAD_TYPES.has(file.type)) {
-    throw new AvatarValidationError("Please choose a JPEG, PNG, or WebP image.");
+    throw new AvatarValidationError(t("errors.avatar.type"));
   }
 
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
-    throw new AvatarValidationError("Could not read this image file.");
+    throw new AvatarValidationError(t("errors.avatar.read"));
   }
 
   const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
@@ -30,16 +32,16 @@ export async function prepareAvatarUpload(file: File): Promise<Blob> {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new AvatarValidationError("Could not process this image.");
+  if (!ctx) throw new AvatarValidationError(t("errors.avatar.process"));
   ctx.drawImage(bitmap, 0, 0, width, height);
 
   // PNG stays PNG (avatars with transparency are common); anything else
   // compresses to JPEG regardless of the source format.
   const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outputType, 0.85));
-  if (!blob) throw new AvatarValidationError("Could not process this image.");
+  if (!blob) throw new AvatarValidationError(t("errors.avatar.process"));
   if (blob.size > MAX_IMAGE_UPLOAD_BYTES) {
-    throw new AvatarValidationError("This image is too large even after compression — please choose a smaller file.");
+    throw new AvatarValidationError(t("errors.avatar.tooLarge"));
   }
   return blob;
 }

@@ -2,8 +2,10 @@ import MarkdownHighlightedText from "./MarkdownHighlightedText";
 import type { ContentBlock, QuestionContentModel } from "@prepdeck/shared";
 import { allContentBlocks } from "@prepdeck/shared";
 import { reflowPlainProse } from "../lib/prose";
+import { useI18n } from "../i18n";
 
 export default function ComponentContent({ content, blocks }: { content: QuestionContentModel; blocks?: ContentBlock[] }) {
+  const { t } = useI18n();
   return <div className="component-content">{(blocks ?? [...content.stimuli.flatMap(s => s.body), ...content.body]).map(block => {
     switch (block.type) {
       case "heading": return <h4 key={block.id}>{block.text}</h4>;
@@ -11,13 +13,13 @@ export default function ComponentContent({ content, blocks }: { content: Questio
         return <p key={block.id} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{reflowPlainProse(block.text)}</p>;
       case "code": return <pre key={block.id} style={{ overflowX: "auto", padding: 12, background: "var(--color-neutral-100)" }}><code>{block.text}</code></pre>;
       case "list": return <ul key={block.id}>{block.entries.map(e => <li key={e.id}><strong>{e.id}</strong> {e.text}</li>)}</ul>;
-      case "table": return <div key={block.id} role="region" aria-label={block.caption || "Question table"} tabIndex={0} style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
+      case "table": return <div key={block.id} role="region" aria-label={block.caption || t("authoring.component.table")} tabIndex={0} style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
         {block.caption && <caption>{block.caption}</caption>}<thead><tr>{block.columns.map((c, i) => <th key={i} scope="col" style={{ border: "1px solid var(--color-divider)", padding: 8 }}>{c}</th>)}</tr></thead>
         <tbody>{block.rows.map((r, n) => <tr key={n}>{r.map((c, i) => <td key={i} style={{ border: "1px solid var(--color-divider)", padding: 8, whiteSpace: "pre-wrap" }}>{c}</td>)}</tr>)}</tbody>
       </table></div>;
       case "figure": {
         const asset = content.assets.find(a => a.id === block.assetId);
-        return <figure key={block.id} style={{ margin: "16px 0" }}>{asset ? <img src={`data:${asset.mediaType};base64,${asset.data}`} alt={block.alt} style={{ maxWidth: "100%", height: "auto" }} /> : <p role="alert">Missing figure: {block.alt}</p>}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
+        return <figure key={block.id} style={{ margin: "16px 0" }}>{asset ? <img src={`data:${asset.mediaType};base64,${asset.data}`} alt={block.alt} style={{ maxWidth: "100%", height: "auto" }} /> : <p role="alert">{t("authoring.component.missingFigure", { alt: block.alt })}</p>}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
       }
     }
   })}</div>;

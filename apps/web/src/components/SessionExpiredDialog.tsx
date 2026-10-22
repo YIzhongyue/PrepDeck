@@ -7,6 +7,7 @@ import { routePath } from "../lib/routes";
 import { useAccountActions, useMockExamState, useWorkspaceState } from "../store/PrepDeckContext";
 import ModalLayer from "./ModalLayer";
 import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
+import { useI18n } from "../i18n";
 
 // Shown the first time any request finds the session gone (issue #52): a
 // 7-day session running out in an open tab, or a sign-out on another device.
@@ -16,6 +17,7 @@ export default function SessionExpiredDialog() {
   const { mStage, mockAttemptId } = useMockExamState();
   const { exams, examId } = useWorkspaceState();
   const { preserveForReauth } = useAccountActions();
+  const { t } = useI18n();
   // The Shell mounts one of these in its loading layout and one in its normal
   // layout. A refused request can announce the loss to the first and then, by
   // failing, swap in the second, so a newly mounted dialog starts from the
@@ -54,16 +56,15 @@ export default function SessionExpiredDialog() {
   return (
     <ModalLayer labelledBy="session-expired-title" onClose={stay}>
       <div className="dialog">
-        <h2 id="session-expired-title" className="dialog-title" style={{ margin: 0 }}>Your session has expired</h2>
+        <h2 id="session-expired-title" className="dialog-title" style={{ margin: 0 }}>{t("auth.expired.title")}</h2>
         <p id="session-expired-body" style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
-          Sign in again to continue. Everything already saved is kept
-          {inMock ? ", and your mock answers that could not be saved are restored when you resume the exam. Its timer keeps running." : "."}
+          {inMock ? t("auth.expired.bodyMock") : t("auth.expired.body")}
         </p>
         {configFailed ? <TurnstileConfigError onRetry={reloadConfig} />
           : siteKey && <TurnstileWidget key={widgetKey} siteKey={siteKey} action={TURNSTILE_ACTIONS.signIn} onTokenChange={onToken} />}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-secondary" onClick={stay}>Not now</button>
-          <button type="button" className="btn btn-primary" onClick={signIn} disabled={busy || !ready}>Sign in again</button>
+          <button type="button" className="btn btn-secondary" onClick={stay}>{t("auth.expired.notNow")}</button>
+          <button type="button" className="btn btn-primary" onClick={signIn} disabled={busy || !ready}>{t("auth.expired.signInAgain")}</button>
         </div>
       </div>
     </ModalLayer>

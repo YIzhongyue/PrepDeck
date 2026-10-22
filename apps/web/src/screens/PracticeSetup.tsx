@@ -12,31 +12,27 @@ import {
   type DifficultyChoice
 } from "../components/study/SetupKit";
 import type { Breakpoints } from "../lib/responsive";
+import { useI18n } from "../i18n";
 
+// Labels and descriptions are the `practice.sources` and `practice.feedback`
+// messages; why each source can be empty is `practice.emptySource`.
 const SOURCES = [
-  { id: "all", icon: IC.library, label: "All questions", desc: "The full bank for this exam" },
-  { id: "new", icon: IC.sparkles, label: "Unattempted", desc: "Questions you have never answered" },
-  { id: "focus", icon: IC.target, label: "Unattempted + wrong", desc: "New questions plus misses you have not mastered" },
-  { id: "wrong", icon: IC.rotate, label: "Wrong book", desc: "Misses you have not mastered yet" },
-  { id: "bm", icon: IC.bookmark, label: "Bookmarked", desc: "Questions you saved for later" }
+  { id: "all", icon: IC.library },
+  { id: "new", icon: IC.sparkles },
+  { id: "focus", icon: IC.target },
+  { id: "wrong", icon: IC.rotate },
+  { id: "bm", icon: IC.bookmark }
 ] as const;
 type SourceId = typeof SOURCES[number]["id"];
 
-// Why each source can be empty, in the learner's terms.
-const EMPTY_SOURCE: Record<SourceId, { title: string; body: string }> = {
-  all: { title: "This exam has no questions yet", body: "Questions appear here once they are added to the bank." },
-  new: { title: "You have answered every question", body: "Nothing in this bank is unattempted any more." },
-  focus: { title: "Nothing new or unmastered left", body: "You have answered every question, and your wrong book is clear." },
-  wrong: { title: "Your wrong book is empty", body: "Questions you answer incorrectly in Practice or Mock are saved here until you master them." },
-  bm: { title: "No bookmarked questions yet", body: "Bookmark a question while you study and it is saved here." }
-};
-
 const FEEDBACK = [
-  { id: "immediate", icon: IC.zap, label: "Per question", desc: "See the answer and explanation after each check" },
-  { id: "end", icon: IC.listChecks, label: "At the end", desc: "Answer everything first, then review" }
+  { id: "immediate", icon: IC.zap },
+  { id: "end", icon: IC.listChecks }
 ] as const;
 
-const DIFF_LABEL: Record<DifficultyChoice, string> = { all: "Any difficulty", easy: "Easy only", medium: "Medium only", hard: "Hard only" };
+const DIFF_LABEL: Record<DifficultyChoice, "practice.difficulty.any" | "practice.difficulty.easy" | "practice.difficulty.medium" | "practice.difficulty.hard"> = {
+  all: "practice.difficulty.any", easy: "practice.difficulty.easy", medium: "practice.difficulty.medium", hard: "practice.difficulty.hard"
+};
 const COUNT_PRESETS = [5, 10, 20, 40] as const;
 
 // A rough planning figure for the summary, not a limit.
@@ -47,6 +43,8 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
   const state = { ...usePracticeState(), ...useCatalogState(), ...useReviewListsState(), ...useStudyProgressState() };
   const { width } = useViewport();
   const { setSource, setDiff, setFeedback, toggleTag, setPracticeTags, setCount, setSkipReview, setStudyFilter, startPractice, pool } = usePracticeActions();
+  const { t } = useI18n();
+  const sourceLabel = (id: SourceId) => t(`practice.sources.${id}.label`);
 
   const layout = setupLayout(width, bp.phone);
   const emptyId = useId();
@@ -78,62 +76,61 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
     if (sourceCounts[source.id] === 0) {
       const fallback = source.id !== "new" && sourceCounts.new > 0 ? SOURCES[1] : source.id !== "all" && sourceCounts.all > 0 ? SOURCES[0] : null;
       empty = {
-        ...EMPTY_SOURCE[source.id],
-        action: fallback ? { label: `Practice ${fallback.id === "new" ? "unattempted questions" : "all questions"} (${sourceCounts[fallback.id]})`, onClick: () => setSource(fallback.id) } : undefined
+        title: t(`practice.emptySource.${source.id}.title`),
+        body: t(`practice.emptySource.${source.id}.body`),
+        action: fallback ? { label: t(fallback.id === "new" ? "practice.empty.practiceUnattempted" : "practice.empty.practiceAll", { count: sourceCounts[fallback.id] }), onClick: () => setSource(fallback.id) } : undefined
       };
     } else if (state.studyFilter !== "all" && pool({ study: "all" }).length > 0) {
       // Only the study status rules every question out (issue #119).
       const others = pool({ study: "all" }).length;
       empty = {
-        title: state.studyFilter === "unstudied" ? "You have studied every matching question" : "You have not studied any matching question yet",
-        body: state.studyFilter === "unstudied"
-          ? "Every question that fits your other choices has been shown in Learning or answered. Mark a question as unstudied in Learning to practise it here again."
-          : "None of the questions that fit your other choices has been shown in Learning or answered yet.",
-        action: { label: `Practice all ${others} matching ${others === 1 ? "question" : "questions"}`, onClick: () => setStudyFilter("all") }
+        title: t(state.studyFilter === "unstudied" ? "practice.empty.allStudiedTitle" : "practice.empty.noneStudiedTitle"),
+        body: t(state.studyFilter === "unstudied" ? "practice.empty.allStudiedBody" : "practice.empty.noneStudiedBody"),
+        action: { label: t("practice.empty.practiceMatching", { count: others }), onClick: () => setStudyFilter("all") }
       };
     } else {
       const narrowed = state.tags.length > 0 || state.diff !== "all" || state.studyFilter !== "all";
       empty = {
-        title: "No questions match these filters",
-        body: `${source.label} has ${sourceCounts[source.id]} ${sourceCounts[source.id] === 1 ? "question" : "questions"}, but none fit your domain, difficulty, study status and review choices.`,
-        action: narrowed ? { label: "Clear domain, difficulty and study status filters", onClick: () => { setPracticeTags([]); setDiff("all"); setStudyFilter("all"); } } : undefined
+        title: t("practice.empty.noMatchTitle"),
+        body: t("practice.empty.noMatchBody", { source: sourceLabel(source.id), count: sourceCounts[source.id] }),
+        action: narrowed ? { label: t("practice.empty.clearFilters"), onClick: () => { setPracticeTags([]); setDiff("all"); setStudyFilter("all"); } } : undefined
       };
     }
   }
 
   const optionsChanged = state.diff !== "all" || state.skipReview || state.feedback !== "immediate";
   const optionsSummary = [
-    DIFF_LABEL[state.diff],
-    reviewCount > 0 && (state.skipReview ? "under review skipped" : "under review included"),
-    `feedback ${feedback.label.toLowerCase()}`
+    t(DIFF_LABEL[state.diff]),
+    reviewCount > 0 && t(state.skipReview ? "practice.summary.reviewSkipped" : "practice.summary.reviewIncluded"),
+    t(`practice.summary.feedback.${feedback.id}`)
   ].filter(Boolean).join(" · ");
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
-      <SetupHeader screen="practice" title="Build a practice session">
-        Untimed. Pick where questions come from and how many, then start. Everything else is optional.
+      <SetupHeader screen="practice" title={t("practice.setup.title")}>
+        {t("practice.setup.intro")}
       </SetupHeader>
 
       <div className="st-setup" style={{ gridTemplateColumns: layout.setupCols }}>
         <div className="st-rows">
-          <SetupRow title="Question source" desc="Choose which questions to practice." cols={layout.rowCols}>
+          <SetupRow title={t("practice.setup.source")} desc={t("practice.setup.sourceDesc")} cols={layout.rowCols}>
             <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
               {SOURCES.map((s) => (
-                <ChoiceCard key={s.id} icon={s.icon} label={s.label} count={sourceCounts[s.id]} desc={s.desc} on={state.source === s.id} onSelect={() => setSource(s.id)} />
+                <ChoiceCard key={s.id} icon={s.icon} label={sourceLabel(s.id)} count={sourceCounts[s.id]} desc={t(`practice.sources.${s.id}.desc`)} on={state.source === s.id} onSelect={() => setSource(s.id)} />
               ))}
             </div>
           </SetupRow>
 
-          <SetupRow title="Question count" desc={`Choose 5–40 questions, about ${MINUTES_PER_QUESTION} minutes each.`} cols={layout.rowCols}>
+          <SetupRow title={t("practice.setup.count")} desc={t("practice.setup.countDesc", { minutes: MINUTES_PER_QUESTION })} cols={layout.rowCols}>
             <div className="st-count">
-              <div className="st-segmented" role="group" aria-label="Question count presets">
+              <div className="st-segmented" role="group" aria-label={t("practice.setup.countPresets")}>
                 {COUNT_PRESETS.map((n) => (
                   <button key={n} type="button" className="st-seg-btn" aria-pressed={state.count === n} onClick={() => setCount(n)}>{n}</button>
                 ))}
               </div>
               <div className="st-range">
                 <input
-                  type="range" min={5} max={40} step={5} value={state.count} aria-label="Question count"
+                  type="range" min={5} max={40} step={5} value={state.count} aria-label={t("practice.setup.count")}
                   onChange={(e) => setCount(parseInt(e.target.value, 10))}
                 />
                 <output aria-hidden="true">{state.count}</output>
@@ -141,7 +138,7 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
             </div>
           </SetupRow>
 
-          <SetupRow title="Domains" desc="All included unless you select specific ones." cols={layout.rowCols}>
+          <SetupRow title={t("setup.domains.title")} desc={t("setup.domains.desc")} cols={layout.rowCols}>
             <DomainPicker
               questions={state.catalog} selected={state.tags} phone={bp.phone}
               onToggle={toggleTag} onSelectResults={setPracticeTags} onClear={() => setPracticeTags([])}
@@ -151,16 +148,16 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
           <StudyStatusRow value={state.studyFilter} counts={studyCounts} unavailable={state.studyStatusError} onChange={setStudyFilter} layout={layout} />
 
           <MoreOptions summary={optionsSummary} defaultOpen={optionsChanged} cols={layout.rowCols}>
-            <SetupRow title="Difficulty" desc="Filter by question difficulty." cols={layout.rowCols}>
+            <SetupRow title={t("setup.difficulty.label")} desc={t("setup.difficulty.desc")} cols={layout.rowCols}>
               <DifficultyPicker value={state.diff} counts={diffCounts} onChange={setDiff} />
             </SetupRow>
 
             <UnderReviewRow count={reviewCount} skip={state.skipReview} onChange={setSkipReview} layout={layout} />
 
-            <SetupRow title="Answer feedback" desc="Choose when to see answers and explanations." cols={layout.rowCols}>
+            <SetupRow title={t("practice.setup.feedback")} desc={t("practice.setup.feedbackDesc")} cols={layout.rowCols}>
               <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
                 {FEEDBACK.map((f) => (
-                  <ChoiceCard key={f.id} icon={f.icon} label={f.label} desc={f.desc} on={state.feedback === f.id} onSelect={() => setFeedback(f.id)} />
+                  <ChoiceCard key={f.id} icon={f.icon} label={t(`practice.feedback.${f.id}.label`)} desc={t(`practice.feedback.${f.id}.desc`)} on={state.feedback === f.id} onSelect={() => setFeedback(f.id)} />
                 ))}
               </div>
             </SetupRow>
@@ -170,16 +167,16 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
         <aside style={{ position: layout.stickySummary ? "sticky" : "static", top: 0 }}>
           <div className="st-card st-summary">
             <div className="st-summary-head">
-              <div className="st-summary-title">Session summary</div>
-              <div className="st-summary-sub" role="status">{matched} {matched === 1 ? "question matches" : "questions match"} your filters</div>
+              <div className="st-summary-title">{t("setup.summary.title")}</div>
+              <div className="st-summary-sub" role="status">{t("setup.summary.matches", { count: matched })}</div>
             </div>
             <div className="st-summary-rows">
-              <SummaryRow icon={source.icon} label="Source" value={source.label} />
-              <SummaryRow icon={IC.circleCheck} label="Study status" value={study.label} />
-              <SummaryRow icon={IC.tag} label="Domains" value={domainSummary(state.tags)} />
-              {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.skipReview ? "Skipped" : "Included"} />}
-              <SummaryRow icon={IC.listOrdered} label="Questions" value={sessionSize} />
-              <SummaryRow icon={IC.clock} label="Estimated time" value={sessionSize ? `~${Math.max(1, Math.round(sessionSize * MINUTES_PER_QUESTION))} min` : "—"} />
+              <SummaryRow icon={source.icon} label={t("setup.summary.source")} value={sourceLabel(source.id)} />
+              <SummaryRow icon={IC.circleCheck} label={t("setup.studyStatus.title")} value={study.label} />
+              <SummaryRow icon={IC.tag} label={t("setup.domains.title")} value={domainSummary(state.tags)} />
+              {reviewCount > 0 && <SummaryRow icon={IC.alert} label={t("study.underReview.badge")} value={t(state.skipReview ? "setup.summary.skipped" : "setup.summary.included")} />}
+              <SummaryRow icon={IC.listOrdered} label={t("setup.summary.questions")} value={sessionSize} />
+              <SummaryRow icon={IC.clock} label={t("setup.summary.estimatedTime")} value={sessionSize ? t("setup.summary.minutes", { count: Math.max(1, Math.round(sessionSize * MINUTES_PER_QUESTION)) }) : "—"} />
             </div>
             {empty && <EmptyPoolNotice id={emptyId} {...empty} />}
             <div className="st-summary-foot">
@@ -187,13 +184,13 @@ export default function PracticeSetup({ bp }: { bp: Breakpoints }) {
                 type="button" className="st-btn st-btn--primary" onClick={startPractice}
                 disabled={matched === 0} aria-describedby={empty ? emptyId : undefined}
               >
-                Start session<Icon d={IC.arrowRight} size={20} />
+                {t("setup.summary.start")}<Icon d={IC.arrowRight} size={20} />
               </button>
             </div>
           </div>
           <p className="st-summary-note">
             <Icon d={IC.eyeOff} size={14} />
-            <span>Annotations and notes stay hidden while you answer. They reappear as soon as a question is graded.</span>
+            <span>{t("practice.setup.hiddenNote")}</span>
           </p>
         </aside>
       </div>

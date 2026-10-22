@@ -11,28 +11,24 @@
 // never authorizes anything without the Allow click.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { MCP_OAUTH_SCOPE_INFO, type McpAuthorizationDecisionResponse, type McpAuthorizationRequestView } from "@prepdeck/shared";
+import type { McpAuthorizationDecisionResponse, McpAuthorizationRequestView, McpOAuthScope } from "@prepdeck/shared";
 import BrandLogo from "../components/BrandLogo";
+import { CompactLanguageSelect } from "../components/LanguageSelect";
 import { apiFetch, ApiError } from "../lib/api";
+import { t as translate, useI18n } from "../i18n";
 
-// /api/oauth/authorize's reasons for not handing a request over at all.
-const REQUEST_ERRORS: Record<string, { title: string; body: string }> = {
-  invalid_client: {
-    title: "Unknown app",
-    body: "PrepDeck doesn't recognize the app that sent you here, so nothing was connected. Go back to the app and connect again; if it keeps happening, the app may not support PrepDeck's sign-in.",
-  },
-  invalid_redirect_uri: {
-    title: "Can't return to the app",
-    body: "The app asked to return to an address it didn't register, so PrepDeck stopped before showing anything. Nothing was connected. Reconnect from the app.",
-  },
-  invalid_request: {
-    title: "Invalid connection request",
-    body: "The app's request was malformed, so nothing was connected. Reconnect from the app.",
-  },
-  unavailable: {
-    title: "Connecting apps isn't available",
-    body: "This PrepDeck server doesn't accept sign-in from MCP apps. Use a personal access token from Settings → MCP access instead, if the app supports one.",
-  },
+// /api/oauth/authorize's reasons for not handing a request over at all; the
+// `mcp.connect.errors` messages explain each.
+const REQUEST_ERRORS = ["invalid_client", "invalid_redirect_uri", "invalid_request", "unavailable"] as const;
+type RequestError = (typeof REQUEST_ERRORS)[number];
+
+// The consent screen's wording for each scope (MCP_OAUTH_SCOPE_INFO has the
+// English the MCP server itself reports).
+const SCOPE_KEYS: Record<McpOAuthScope, "userRead" | "userWrite" | "adminRead" | "adminWrite"> = {
+  "mcp:user:read": "userRead",
+  "mcp:user:write": "userWrite",
+  "mcp:admin:read": "adminRead",
+  "mcp:admin:write": "adminWrite",
 };
 
 type Phase =
@@ -49,7 +45,7 @@ function Frame({ children }: { children: ReactNode }) {
       <div className="login-grid" aria-hidden="true" />
       <BrandLogo className="login-brand" />
       <div className="login-content">
-        <div className="login-card mcp-connect-card">{children}</div>
+        <div className="login-card mcp-connect-card">{children}<CompactLanguageSelect /></div>
       </div>
     </div>
   );
@@ -66,16 +62,18 @@ function Message({ title, children }: { title: string; children: ReactNode }) {
 
 /** A request PrepDeck refused before it could be shown; no sign-in needed to explain it. */
 export function McpConnectError({ reason }: { reason: string }) {
-  const known = REQUEST_ERRORS[reason] ?? REQUEST_ERRORS.invalid_request!;
+  const { t } = useI18n();
+  const known: RequestError = (REQUEST_ERRORS as readonly string[]).includes(reason) ? reason as RequestError : "invalid_request";
   return (
     <Frame>
-      <Message title={known.title}>{known.body}</Message>
+      <Message title={t(`mcp.connect.errors.${known}.title`)}>{t(`mcp.connect.errors.${known}.body`)}</Message>
     </Frame>
   );
 }
 
 export default function McpConnect({ requestId }: { requestId: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const { t, rich } = useI18n();
 
   useEffect(() => {
     let active = true;
@@ -84,7 +82,7 @@ export default function McpConnect({ requestId }: { requestId: string }) {
       .catch((err) => {
         if (!active) return;
         setPhase({ kind: "gone", message: err instanceof ApiError && err.status === 404 ? err.message
-          : "PrepDeck couldn't load this connection request. Reload the page, or reconnect from the app." });
+          : translate("mcp.connect.loadFailed") });
       });
     return () => { active = false; };
   }, [requestId]);
@@ -98,17 +96,17 @@ export default function McpConnect({ requestId }: { requestId: string }) {
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) setPhase({ kind: "gone", message: err.message });
-        else setPhase({ kind: "failed", view, message: "That didn't go through. Check your connection and try again." });
+        else setPhase({ kind: "failed", view, message: translate("mcp.connect.decideFailed") });
       });
   };
 
-  if (phase.kind === "loading") return <Frame><p className="mcp-connect-muted">Loading…</p></Frame>;
-  if (phase.kind === "gone") return <Frame><Message title="This request has ended">{phase.message}</Message></Frame>;
+  if (phase.kind === "loading") return <Frame><p className="mcp-connect-muted">{t("common.loading")}</p></Frame>;
+  if (phase.kind === "gone") return <Frame><Message title={t("mcp.connect.ended")}>{phase.message}</Message></Frame>;
   if (phase.kind === "leaving") {
     return (
       <Frame>
-        <Message title={phase.approve ? "Connected" : "Not connected"}>
-          Returning you to the app. If nothing happens, you can close this tab and continue there.
+        <Message title={t(phase.approve ? "mcp.connect.connected" : "mcp.connect.notConnected")}>
+          {t("mcp.connect.returning")}
         </Message>
       </Frame>
     );
@@ -117,59 +115,60 @@ export default function McpConnect({ requestId }: { requestId: string }) {
   const { view } = phase;
   const busy = phase.kind === "deciding";
   const admin = view.audience === "admin";
-  const clientName = view.client.name ?? "An unnamed app";
+  const clientName = view.client.name ?? t("mcp.connect.unnamedApp");
+  const server = admin ? "PrepDeck Admin MCP" : "PrepDeck";
   return (
     <Frame>
       <div className="mcp-connect">
         <div className="mcp-connect-message">
-          <h1>{view.eligible ? `Connect ${clientName} to PrepDeck?` : "Administrator access required"}</h1>
+          <h1>{view.eligible ? t("mcp.connect.title", { app: clientName }) : t("mcp.connect.adminRequired")}</h1>
           <p>
             {view.eligible
-              ? `It will act as you on ${admin ? "PrepDeck Admin MCP" : "PrepDeck"} with the access below, until you disconnect it.`
-              : `${clientName} asked for PrepDeck Admin MCP, which only an active administrator can approve. Return to the app without connecting.`}
+              ? t("mcp.connect.actsAsYou", { server })
+              : t("mcp.connect.adminOnly", { app: clientName })}
           </p>
         </div>
 
         <dl className="mcp-connect-facts">
           <div>
-            <dt>App</dt>
+            <dt>{t("mcp.connect.app")}</dt>
             <dd>
               <span className="mcp-connect-strong">{clientName}</span>
-              <span className="tag tag-neutral" title="The app describes itself; PrepDeck has not verified who publishes it.">unverified</span>
-              <span className="mcp-connect-id">{view.client.kind === "metadata_document" ? view.client.id : `Client ID ${view.client.id}`}</span>
+              <span className="tag tag-neutral" title={t("mcp.connect.unverifiedTitle")}>{t("mcp.connect.unverified")}</span>
+              <span className="mcp-connect-id">{view.client.kind === "metadata_document" ? view.client.id : t("mcp.connect.clientId", { id: view.client.id })}</span>
             </dd>
           </div>
           <div>
-            <dt>Returns to</dt>
+            <dt>{t("mcp.connect.returnsTo")}</dt>
             <dd><span className="mcp-connect-id">{view.client.redirectTarget}</span></dd>
           </div>
           <div>
-            <dt>Server</dt>
+            <dt>{t("mcp.connect.server")}</dt>
             <dd>
               <span className="mcp-connect-strong">{admin ? "Admin MCP" : "User MCP"}</span>
-              {admin && <span className="tag tag-accent-2">administrative access</span>}
+              {admin && <span className="tag tag-accent-2">{t("mcp.connect.administrativeAccess")}</span>}
               <span className="mcp-connect-id">{view.resource}</span>
             </dd>
           </div>
           <div>
-            <dt>Account</dt>
+            <dt>{t("mcp.connect.account")}</dt>
             <dd><span className="mcp-connect-strong">{view.account.email}</span></dd>
           </div>
         </dl>
 
         {view.eligible && (
           <div className="mcp-connect-scopes">
-            <h2>It will be able to</h2>
+            <h2>{t("mcp.connect.ableTo")}</h2>
             <ul>
               {view.scopes.map((scope) => (
                 <li key={scope}>
-                  <span className="mcp-connect-strong">{MCP_OAUTH_SCOPE_INFO[scope].label}</span>
-                  <span>{MCP_OAUTH_SCOPE_INFO[scope].description}</span>
+                  <span className="mcp-connect-strong">{t(`mcp.scopes.${SCOPE_KEYS[scope]}.label`)}</span>
+                  <span>{t(`mcp.scopes.${SCOPE_KEYS[scope]}.description`)}</span>
                 </li>
               ))}
             </ul>
             <p className="mcp-connect-muted">
-              Only connect apps you trust. You can disconnect it at any time from {admin ? "Admin → MCP tokens" : "Settings → MCP access"}; signing out of PrepDeck does not disconnect it.
+              {rich("mcp.connect.trust", { place: t(admin ? "mcp.connect.placeAdmin" : "mcp.connect.placeSettings") })}
             </p>
           </div>
         )}
@@ -179,11 +178,11 @@ export default function McpConnect({ requestId }: { requestId: string }) {
         <div className="mcp-connect-actions">
           {view.eligible && (
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => decide(view, true)}>
-              {busy && phase.approve ? "Connecting…" : "Allow access"}
+              {t(busy && phase.approve ? "mcp.connect.connecting" : "mcp.connect.allow")}
             </button>
           )}
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => decide(view, false)}>
-            {busy && !phase.approve ? "Returning…" : view.eligible ? "Cancel" : "Return to the app"}
+            {t(busy && !phase.approve ? "mcp.connect.returningShort" : view.eligible ? "common.cancel" : "mcp.connect.returnToApp")}
           </button>
         </div>
       </div>

@@ -6,15 +6,17 @@ import { ChoiceCard, SetupHeader, SetupRow, SummaryRow, UnderReviewRow, setupLay
 import { MAX_CUSTOM_MINUTES, MIN_CUSTOM_MINUTES, mockPlan, officialFormatOf, wholeNumberInRange } from "../lib/mockFormat";
 import { underReviewCount } from "../lib/underReview";
 import type { Breakpoints } from "../lib/responsive";
+import { useI18n } from "../i18n";
 
 const FORMAT_ICON: Record<MockFormatId, string> = { full: IC.fileText, half: IC.hourglass, sprint: IC.zap, custom: IC.sliders };
 
+// Titles and descriptions are the `mock.setup.rules` messages.
 const RULES = [
-  { icon: IC.shuffle, title: "Random draw, no repeats", desc: "Questions are sampled from the whole bank." },
-  { icon: IC.eyeOff, title: "No feedback until you submit", desc: "Flag anything you want to revisit before submitting." },
-  { icon: IC.server, title: "Server-side clock", desc: "The timer keeps running if you close the tab." },
-  { icon: IC.save, title: "Answers save as you go", desc: "A dropped connection never costs the attempt." }
-];
+  { id: "random", icon: IC.shuffle },
+  { id: "noFeedback", icon: IC.eyeOff },
+  { id: "serverClock", icon: IC.server },
+  { id: "autosave", icon: IC.save }
+] as const;
 
 export default function MockSetup({ bp }: { bp: Breakpoints }) {
   const { exams, examId } = useWorkspaceState();
@@ -22,6 +24,7 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
   const state = { ...useMockExamState(), exams, examId, catalog };
   const { width } = useViewport();
   const { setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock } = useMockExamActions();
+  const { t } = useI18n();
 
   const layout = setupLayout(width, bp.phone);
   const exam = state.exams.find((e) => e.id === state.examId);
@@ -51,67 +54,68 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
     ? Math.max(0, Math.ceil((new Date(active.startedAt).getTime() + active.timeLimitSeconds * 1000 - Date.now()) / 60000))
     : null;
   const passMark = plan.requiredCorrect != null
-    ? `${plan.requiredCorrect} of ${plan.questionCount} correct`
-    : exam?.passMarkPct != null ? `${exam.passMarkPct}%` : "Not set";
+    ? t("mock.setup.requiredCorrect", { required: plan.requiredCorrect, total: plan.questionCount })
+    : exam?.passMarkPct != null ? `${exam.passMarkPct}%` : t("mock.setup.notSet");
 
   return (
     <div className={`pd-study${bp.phone ? " st-phone" : ""}`}>
-      <SetupHeader screen="mock" title="Simulate the real thing">
-        Timed, randomly drawn, no feedback until you submit.
+      <SetupHeader screen="mock" title={t("mock.setup.title")}>
+        {t("mock.setup.intro")}
       </SetupHeader>
 
       {active && (
         <div className="st-banner" role="status">
           <span className="st-banner-icon"><Icon d={IC.timer} size={18} /></span>
           <div className="st-banner-text">
-            <div className="st-banner-title">You have an exam in progress</div>
+            <div className="st-banner-title">{t("mock.setup.inProgress")}</div>
             <div>
-              {activeAnswered} of {active.questionIds.length} answered
-              {activeMinutesLeft != null && ` · ${activeMinutesLeft} ${activeMinutesLeft === 1 ? "minute" : "minutes"} left on the server clock`}.
-              {" "}Resume it, or submit it before starting a new one.
+              {activeMinutesLeft != null
+                ? t("mock.setup.answeredLeft", { answered: activeAnswered, total: active.questionIds.length, count: activeMinutesLeft })
+                : t("mock.setup.answered", { answered: activeAnswered, total: active.questionIds.length })}
+              {" "}{t("mock.setup.resumeOrSubmit")}
             </div>
           </div>
-          <button type="button" className="st-btn st-btn--primary" onClick={beginMock}>Resume exam</button>
+          <button type="button" className="st-btn st-btn--primary" onClick={beginMock}>{t("mock.setup.resume")}</button>
         </div>
       )}
 
       <div className="st-setup" style={{ gridTemplateColumns: layout.setupCols }}>
         <div className="st-rows">
-          <SetupRow title="Format" desc="Choose the length and time limit." cols={layout.rowCols}>
+          <SetupRow title={t("mock.setup.format")} desc={t("mock.setup.formatDesc")} cols={layout.rowCols}>
             <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
               {options.map((o) => (
                 <ChoiceCard
-                  key={o.id} icon={FORMAT_ICON[o.id]} label={o.label} on={plan.format === o.id} onSelect={() => setMockFormat(o.id)}
-                  desc={`${o.questionCount} questions · ${o.timeLimitMinutes} min${o.id === "full" ? ". Matches the real test." : ""}`}
+                  key={o.id} icon={FORMAT_ICON[o.id]} label={t(`mock.setup.formats.${o.id}`)} on={plan.format === o.id} onSelect={() => setMockFormat(o.id)}
+                  desc={t(o.id === "full" ? "mock.setup.formatSizeFull" : "mock.setup.formatSize", { count: o.questionCount, minutes: o.timeLimitMinutes })}
                 />
               ))}
-              <ChoiceCard icon={FORMAT_ICON.custom} label="Custom" desc="Set your own length and time" on={plan.format === "custom"} onSelect={() => setMockFormat("custom")} />
+              <ChoiceCard icon={FORMAT_ICON.custom} label={t("mock.setup.formats.custom")} desc={t("mock.setup.customDesc")} on={plan.format === "custom"} onSelect={() => setMockFormat("custom")} />
             </div>
             {plan.format === "custom" && (
               <div className="st-custom" style={{ gridTemplateColumns: layout.cardCols }}>
                 <WholeNumberField
-                  label="Questions" field={count} min={1} max={questionMax}
-                  error={`Enter a whole number from 1 to ${questionMax}.`}
+                  label={t("setup.summary.questions")} field={count} min={1} max={questionMax}
+                  error={t("mock.setup.countError", { max: questionMax })}
                 />
                 <WholeNumberField
-                  label="Time limit (minutes)" field={minutes} min={MIN_CUSTOM_MINUTES} max={MAX_CUSTOM_MINUTES}
-                  error={`Enter a whole number of minutes from ${MIN_CUSTOM_MINUTES} to ${MAX_CUSTOM_MINUTES}.`}
+                  label={t("mock.setup.timeLimit")} field={minutes} min={MIN_CUSTOM_MINUTES} max={MAX_CUSTOM_MINUTES}
+                  error={t("mock.setup.minutesError", { min: MIN_CUSTOM_MINUTES, max: MAX_CUSTOM_MINUTES })}
                 />
               </div>
             )}
             {!official && (
-              <div className="st-note"><Icon d={IC.info} />Full and half-length exams appear once an admin sets this exam's official format.</div>
+              <div className="st-note"><Icon d={IC.info} />{t("mock.setup.noOfficial")}</div>
             )}
           </SetupRow>
 
           <UnderReviewRow count={reviewCount} skip={state.mockSkipReview} onChange={setMockSkipReview} layout={layout} />
 
-          <SetupRow title="How it works" cols={layout.rowCols}>
+          <SetupRow title={t("mock.setup.howItWorks")} cols={layout.rowCols}>
             <div className="st-rules">
               {RULES.map((r) => (
-                <div key={r.title} className="st-rule">
+                <div key={r.id} className="st-rule">
                   <span className="st-rule-icon"><Icon d={r.icon} /></span>
-                  <div><div className="st-rule-title">{r.title}</div><div className="st-rule-desc">{r.desc}</div></div>
+                  <div><div className="st-rule-title">{t(`mock.setup.rules.${r.id}.title`)}</div><div className="st-rule-desc">{t(`mock.setup.rules.${r.id}.desc`)}</div></div>
                 </div>
               ))}
             </div>
@@ -120,32 +124,34 @@ export default function MockSetup({ bp }: { bp: Breakpoints }) {
 
         <aside className="st-card st-summary" style={{ position: layout.stickySummary ? "sticky" : "static" }}>
           <div className="st-summary-head">
-            <div className="st-summary-title">Exam summary</div>
+            <div className="st-summary-title">{t("mock.setup.summary")}</div>
             {exam && <div className="st-summary-sub">{exam.name}</div>}
           </div>
           <div className="st-big-pair">
-            <div><div className="st-big-pair-k">Questions</div><div className="st-big-pair-v">{shownCount}</div></div>
-            <div><div className="st-big-pair-k">Minutes</div><div className="st-big-pair-v">{shownMinutes}</div></div>
+            <div><div className="st-big-pair-k">{t("setup.summary.questions")}</div><div className="st-big-pair-v">{shownCount}</div></div>
+            <div><div className="st-big-pair-k">{t("mock.setup.minutes")}</div><div className="st-big-pair-v">{shownMinutes}</div></div>
           </div>
           <div className="st-summary-rows">
-            <SummaryRow icon={IC.clock} label="Pace" value={plan.questionCount && !customInvalid ? `${(plan.timeLimitMinutes / plan.questionCount).toFixed(1)} min / question` : "—"} />
-            <SummaryRow icon={IC.target} label="Pass mark" value={passMark} />
-            {reviewCount > 0 && <SummaryRow icon={IC.alert} label="Under review" value={state.mockSkipReview ? "Skipped" : "Included"} />}
+            <SummaryRow icon={IC.clock} label={t("mock.setup.pace")} value={plan.questionCount && !customInvalid ? t("mock.setup.paceValue", { minutes: (plan.timeLimitMinutes / plan.questionCount).toFixed(1) }) : "—"} />
+            <SummaryRow icon={IC.target} label={t("mock.setup.passMark")} value={passMark} />
+            {reviewCount > 0 && <SummaryRow icon={IC.alert} label={t("study.underReview.badge")} value={t(state.mockSkipReview ? "setup.summary.skipped" : "setup.summary.included")} />}
           </div>
           {plan.questionCount < plan.requested && plan.questionCount > 0 && (
             <p className="st-summary-warn">
-              {skipping ? "Without the questions under review, this bank has" : "This bank has"} {plan.questionCount} {plan.questionCount === 1 ? "question" : "questions"}, so the exam uses all of them{plan.format === "custom" ? "" : ", at the same pace"}.
+              {t(skipping
+                ? plan.format === "custom" ? "mock.setup.shortBankSkipping" : "mock.setup.shortBankSkippingPace"
+                : plan.format === "custom" ? "mock.setup.shortBank" : "mock.setup.shortBankPace", { count: plan.questionCount })}
             </p>
           )}
           {skipping && plan.questionCount === 0 && (
-            <p className="st-summary-warn">Every question in this exam is under review. Include them to begin an exam.</p>
+            <p className="st-summary-warn">{t("mock.setup.allUnderReview")}</p>
           )}
           <div className="st-summary-foot">
             {active ? (
-              <button type="button" className="st-btn st-btn--primary" onClick={beginMock}><Icon d={IC.play} size={18} fill="currentColor" />Resume in-progress exam</button>
+              <button type="button" className="st-btn st-btn--primary" onClick={beginMock}><Icon d={IC.play} size={18} fill="currentColor" />{t("mock.setup.resumeInProgress")}</button>
             ) : (
               <button type="button" className="st-btn st-btn--primary" onClick={beginMock} disabled={plan.questionCount === 0 || customInvalid}>
-                <Icon d={IC.play} size={18} fill="currentColor" />Begin exam
+                <Icon d={IC.play} size={18} fill="currentColor" />{t("mock.setup.begin")}
               </button>
             )}
           </div>

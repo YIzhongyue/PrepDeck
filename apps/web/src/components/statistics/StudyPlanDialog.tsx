@@ -13,6 +13,7 @@ import { DateField } from "@/components/base/date-picker/date-field";
 import { Input } from "@/components/base/input/input";
 import { useDialogFocus } from "../knowledgePoints/useDialogFocus";
 import { timeZoneLabel } from "../../lib/statistics";
+import { useI18n } from "../../i18n";
 
 export default function StudyPlanDialog({
   preferences, examName, timeZone, onClose, onSave,
@@ -24,6 +25,7 @@ export default function StudyPlanDialog({
   onSave: (patch: UpdateExamStudyPreferencesRequest) => Promise<void>;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   useDialogFocus(dialogRef, onClose);
 
   const [date, setDate] = useState(preferences.targetDate ?? "");
@@ -54,7 +56,7 @@ export default function StudyPlanDialog({
       if (dateEdited || goalEdited) await onSave(patch);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save your study plan. Please try again.");
+      setError(e instanceof Error ? e.message : t("stats.plan.saveFailed"));
       setBusy(false);
     }
   };
@@ -66,38 +68,38 @@ export default function StudyPlanDialog({
   return createPortal(
     <div className="dialog-backdrop" style={{ zIndex: 60 }}>
       <div className="dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="pd-stats-plan-title" tabIndex={-1}>
-        <span className="dialog-title" id="pd-stats-plan-title">Study plan</span>
+        <span className="dialog-title" id="pd-stats-plan-title">{t("stats.plan.title")}</span>
         <p className="dialog-body" style={{ margin: 0 }}>
-          {examName ? `For ${examName}.` : "For the active exam."} Both are optional — clear a field to remove it.
+          {examName ? t("stats.plan.forExam", { exam: examName }) : t("stats.plan.forActive")} {t("stats.plan.optional")}
         </p>
 
         <div className="pd-stats-plan-fields">
           <DateField
-            label="Exam date"
+            label={t("stats.plan.examDate")}
             value={date}
             onChange={value => { setDate(value); setDateEdited(true); }}
             isInvalid={dateInvalid}
-            hint={dateInvalid ? "Enter a real calendar date." : `Counted down in whole days (${timeZoneLabel(timeZone)}).`}
+            hint={dateInvalid ? t("stats.plan.invalidDate") : t("stats.plan.countdownHint", { zone: timeZoneLabel(timeZone) })}
           />
           <Input
-            label="Weekly study goal (hours)"
+            label={t("stats.plan.weeklyGoal")}
             type="number"
             inputMode="decimal"
             value={hours}
             onChange={value => { setHours(value); setGoalEdited(true); }}
             isInvalid={goalInvalid}
             hint={goalInvalid
-              ? `Enter between ${WEEKLY_GOAL_MIN_MINUTES / 60} and ${WEEKLY_GOAL_MAX_MINUTES / 60} hours.`
-              : "Measured against recorded session time, Monday to Sunday."}
+              ? t("stats.plan.goalRange", { min: WEEKLY_GOAL_MIN_MINUTES / 60, max: WEEKLY_GOAL_MAX_MINUTES / 60 })
+              : t("stats.plan.goalHint")}
           />
         </div>
 
         {error && <p role="alert" style={{ margin: 0, fontSize: 13, color: "var(--color-danger-text)" }}>{error}</p>}
 
         <div className="dialog-actions">
-          <Button size="md" color="secondary" onClick={onClose} isDisabled={busy}>Cancel</Button>
+          <Button size="md" color="secondary" onClick={onClose} isDisabled={busy}>{t("common.cancel")}</Button>
           <Button size="md" onClick={save} isDisabled={busy || dateInvalid || goalInvalid} isLoading={busy} showTextWhileLoading>
-            Save
+            {t("common.save")}
           </Button>
         </div>
       </div>

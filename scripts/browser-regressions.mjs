@@ -51,6 +51,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/setup-layout.browser.mjs", 6],
   ["apps/web/scripts/visible-accessible-names.browser.mjs", 5],
   ["apps/web/scripts/settings.browser.mjs", 10],
+  ["apps/web/scripts/i18n.browser.mjs", 15],
   ["apps/web/scripts/statistics.browser.mjs", 18],
   ["apps/web/scripts/admin-console.browser.mjs", 13],
   ["apps/web/scripts/admin-question-list.browser.mjs", 22],
