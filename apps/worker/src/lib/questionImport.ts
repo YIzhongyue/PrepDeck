@@ -207,13 +207,15 @@ export interface ImportPlanInput {
   // Statements that must sit directly after the row write, such as an audit
   // row or ledger entry conditional on its changes().
   chainedStatements(write: ImportWrite): D1PreparedStatement[];
+  // MCP may journal a tag it actually creates in the same atomic batch.
+  tagCreatedStatement?: (tagId: string, normalizedName: string) => D1PreparedStatement;
 }
 
 export async function planImportWrites(db: D1Database, input: ImportPlanInput): Promise<ImportPlan> {
   const { examId, now } = input;
   // Bulk-resolve every distinct tag name in the file once, rather than once
   // per created/updated row.
-  const resolveTagIds = await buildTagNameResolver(db, importTagNames(input.questions), now);
+  const resolveTagIds = await buildTagNameResolver(db, importTagNames(input.questions), now, input.tagCreatedStatement);
   const unchanged: UnchangedImportRow[] = [];
   const toWrite: (CreateImportRow | ChangedImportRow)[] = [];
   for (const d of input.decisions) {

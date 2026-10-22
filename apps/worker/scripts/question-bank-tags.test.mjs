@@ -14,7 +14,7 @@ import { applyMigrations, openDatabase, SEED_MIGRATION } from "../../../tests/su
 
 const bundle = path => importTs(new URL(path, import.meta.url));
 const {
-  normalizeTagName, normalizeTagKey, resolveOrCreateTags, fetchTagIdsForQuestion, fetchTagIdsForQuestions,
+  tagResolutionSnapshot, normalizeTagName, normalizeTagKey, resolveOrCreateTags, fetchTagIdsForQuestion, fetchTagIdsForQuestions,
   buildTagLinkStatements, buildTagNameResolver, findTagCatalogRowByName, countQuestionsForTag,
   countQuestionsForAnyTag, distinctExamIdsForTags,
 } = await bundle("../src/lib/questionBankTags.ts");
@@ -302,4 +302,23 @@ test("migration 0026 resolves a collision between pre-existing catalog rows that
   const rows = sqlite.prepare("SELECT id, name FROM question_bank_tags WHERE normalized_name = 'aws'").all();
   assert.equal(rows.length, 1, "the unique index on normalized_name must hold — the collision was resolved, not left to fail CREATE UNIQUE INDEX");
   assert.equal(rows[0].id, "id-a", "lexicographically-first id survives as the single identity");
+});
+
+
+test("tag snapshots preserve prototype-named keys as own JSON properties", async (t) => {
+  const { db } = baseFixture(t);
+  const names = ["__proto__", "constructor", "prototype"];
+  const missing = await tagResolutionSnapshot(db, names);
+  assert.equal(Object.getPrototypeOf(missing), null);
+  assert.deepEqual(Object.keys(missing), names);
+  assert.equal(JSON.stringify(missing), '{"__proto__":null,"constructor":null,"prototype":null}');
+  await resolveOrCreateTags(db, names, "2026-01-01T00:00:00.000Z");
+  const found = await tagResolutionSnapshot(db, names);
+  assert.equal(Object.getPrototypeOf(found), null);
+  const json = JSON.parse(JSON.stringify(found));
+  for (const name of names) {
+    assert.equal(Object.hasOwn(found, name), true);
+    assert.equal(typeof found[name], "string");
+    assert.equal(json[name], found[name]);
+  }
 });

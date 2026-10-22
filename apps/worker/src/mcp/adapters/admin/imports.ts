@@ -72,7 +72,8 @@ export function importOperations(ctx: AdminAdapterContext) {
     } catch {
       const existing = await db.prepare("SELECT * FROM admin_mcp_import_jobs WHERE id = ?").bind(claim.importId).first<ImportJobRow>();
       if (!existing) throw new McpApplicationError("internal");
-      if (existing.request_fingerprint !== claim.fingerprint) {
+      if (existing.admin_user_id !== principal.userId || existing.exam_id !== claim.examId ||
+          existing.file_token !== claim.fileTok || existing.request_fingerprint !== claim.fingerprint) {
         await recordAdminMutationAudit(db, principal, {
           tool: "admin_execute_import", action: "import_execute", examId: claim.examId, targetIds: [claim.importId],
           outcome: "failure", detail: { reason: "proposal_id_reused_with_different_request" },
@@ -82,16 +83,16 @@ export function importOperations(ctx: AdminAdapterContext) {
       if (existing.status !== "in_progress") {
         const hasCommitted = existing.created_count > 0 || existing.updated_count > 0;
         if (hasCommitted || existing.status !== "failed") return { resuming: true, row: existing };
-        // Terminal failure with nothing ever committed — nothing to preserve,
-        // so clear the stale claim and let the caller retry as if this
-        // importId were unused. The WHERE clause re-checks the same
-        // predicate so a second concurrent retrier can't also "win" this
-        // delete and then both proceed to insert fresh claims.
-        const cleared = await db.prepare(
-          "DELETE FROM admin_mcp_import_jobs WHERE id = ? AND status = 'failed' AND created_count = 0 AND updated_count = 0",
-        ).bind(claim.importId).run();
-        if (cleared.meta.changes === 0) return { resuming: true, row: existing };
-        return claimImportJob(claim);
+        // Retry a failed empty job without deleting its own-tag evidence.
+        // Tag registration may have committed before any question did.
+        const reset = await db.prepare(
+          `UPDATE admin_mcp_import_jobs SET status = 'in_progress', result_json = NULL,
+             skipped_count = 0, failed_count = 0, completed_at = NULL, updated_at = ?
+           WHERE id = ? AND status = 'failed' AND created_count = 0 AND updated_count = 0 AND updated_at = ?`,
+        ).bind(nowMs, claim.importId, existing.updated_at).run();
+        if (reset.meta.changes === 0) throw new McpApplicationError("conflict");
+        return { resuming: true, row: { ...existing, status: "in_progress", result_json: null,
+          skipped_count: 0, failed_count: 0, completed_at: null, updated_at: nowMs } };
       }
       const isStale = nowMs - existing.updated_at > STALE_IMPORT_MS;
       if (!isStale) throw new McpApplicationError("conflict");
@@ -172,18 +173,41 @@ export function importOperations(ctx: AdminAdapterContext) {
       await requireExam(input.examId);
       assertImportFileDepth(input.file);
 
-      // Re-resolved against CURRENT catalog state (not the preview-time
-      // state) — a mismatch against input.importToken below means either
-      // the file changed OR the taxonomy did (see fileToken's comment).
-      const executeTimeTagSnapshot = await tagResolutionSnapshot(db, (input.file as { questions?: { tags?: string[] }[] }).questions?.flatMap((q) => q.tags ?? []) ?? []);
-      const computedFileToken = await computeFileToken(input.examId, input.file, executeTimeTagSnapshot);
-      if (computedFileToken !== input.importToken) {
+      const resolutions = input.conflictResolutions ?? [];
+      const fingerprint = await computeRequestFingerprint(input.importToken, resolutions);
+      const existingJob = await db.prepare("SELECT * FROM admin_mcp_import_jobs WHERE id = ?")
+        .bind(input.importId).first<ImportJobRow>();
+      if (existingJob && (existingJob.admin_user_id !== principal.userId || existingJob.exam_id !== input.examId ||
+          existingJob.file_token !== input.importToken || existingJob.request_fingerprint !== fingerprint)) {
         await recordAdminMutationAudit(db, principal, {
           tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: [input.importId],
-          outcome: "failure", detail: { reason: "stale_proposal" },
+          outcome: "failure", detail: { reason: "proposal_id_reused_with_different_request" },
         });
         throw new McpApplicationError("conflict");
       }
+
+      // Reconstruct only this job's proven null -> ID transitions. An external
+      // rename/merge/delete of even a job-created tag must fail closed. Legacy
+      // jobs without evidence retain the strict current-catalog token check.
+      const verifyImportToken = async () => {
+        const snapshot = await tagResolutionSnapshot(db, (input.file as { questions?: { tags?: string[] }[] }).questions?.flatMap((q) => q.tags ?? []) ?? []);
+        const { results } = await db.prepare(
+          "SELECT normalized_name, tag_id FROM admin_mcp_import_created_tags WHERE import_id = ?",
+        ).bind(input.importId).all<{ normalized_name: string; tag_id: string }>();
+        let matchesEvidence = true;
+        for (const tag of results ?? []) {
+          if (snapshot[tag.normalized_name] !== tag.tag_id) matchesEvidence = false;
+          else snapshot[tag.normalized_name] = null;
+        }
+        if (!matchesEvidence || await computeFileToken(input.examId, input.file, snapshot) !== input.importToken) {
+          await recordAdminMutationAudit(db, principal, {
+            tool: "admin_execute_import", action: "import_execute", examId: input.examId, targetIds: [input.importId],
+            outcome: "failure", detail: { reason: "stale_proposal" },
+          });
+          throw new McpApplicationError("conflict");
+        }
+      };
+      await verifyImportToken();
 
       const { questionCount, file } = validateImport(input.file);
       if (!file) {
@@ -193,11 +217,8 @@ export function importOperations(ctx: AdminAdapterContext) {
         });
         throw new McpApplicationError("invalid_input");
       }
-      const resolutions = input.conflictResolutions ?? [];
-      const fingerprint = await computeRequestFingerprint(computedFileToken, resolutions);
-
       const { resuming, row: jobRow } = await claimImportJob({
-        importId: input.importId, examId: input.examId, fileTok: computedFileToken, fingerprint, questionCount,
+        importId: input.importId, examId: input.examId, fileTok: input.importToken, fingerprint, questionCount,
       });
       if (jobRow.status !== "in_progress") {
         return { importId: input.importId, idempotentReplay: true, ...(jobRow.result_json ? JSON.parse(jobRow.result_json) : {}) };
@@ -266,6 +287,10 @@ export function importOperations(ctx: AdminAdapterContext) {
         examId: input.examId, questions: file.questions, decisions: ordered, now,
         // The last resolution naming the question, if several do.
         resolutionFor: (d) => resolutionByQuestion.get(d.row.id),
+        tagCreatedStatement: (tagId, normalizedName) => db.prepare(
+          `INSERT INTO admin_mcp_import_created_tags (import_id, normalized_name, tag_id)
+           SELECT ?, ?, ? WHERE changes() > 0`,
+        ).bind(input.importId, normalizedName, tagId),
         // A create either inserts its row or throws, so its ledger entry and
         // audit row are unconditional. An update's are chained on changes():
         // the ledger entry reads the UPDATE's, and the audit row reads the
@@ -289,6 +314,10 @@ export function importOperations(ctx: AdminAdapterContext) {
           }),
         ],
       });
+      // Resolution can race another catalog writer. Do not accept another
+      // job's INSERT OR IGNORE winner (or a concurrent rename) as our mutation.
+      // This also verifies the atomic evidence before any question is written.
+      await verifyImportToken();
       for (const { decision, status, reason } of plan.unchanged) {
         outcomes.push({ index: decision.index, questionId: decision.row.id, externalId: decision.row.external_id, status, reason });
       }
