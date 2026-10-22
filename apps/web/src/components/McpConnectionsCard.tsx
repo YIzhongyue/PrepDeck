@@ -10,22 +10,18 @@ import { MCP_OAUTH_SCOPE_INFO, type ListMcpOAuthGrantsResponse, type McpOAuthGra
 import { apiFetch, ApiError } from "../lib/api";
 import { Button } from "@/components/base/buttons/button";
 import McpAppIcon from "./McpAppIcon";
+import { formatWhen } from "./McpTokensCard";
+import { t as translate, useI18n } from "../i18n";
 import "./McpTokensCard.css";
 
 const DANGER = "var(--color-danger)";
 
-function formatWhen(ms: number): string {
-  const date = new Date(ms);
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) return `today, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-  return date.toLocaleDateString([], { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
-}
-
 function grantMeta(grant: McpOAuthGrantSummary): string {
   const access = grant.scopes.map((scope) => MCP_OAUTH_SCOPE_INFO[scope].access);
-  const parts = [access.includes("write") ? "Read and write" : "Read only", `Connected ${formatWhen(grant.createdAt)}`,
-    grant.lastUsedAt === null ? "Never used" : `Last used ${formatWhen(grant.lastUsedAt)}`];
-  if (grant.status === "expired") parts.push("Idle too long — reconnect from the app");
+  const parts = [translate(access.includes("write") ? "mcp.connections.readWrite" : "mcp.connections.readOnly"),
+    translate("mcp.connections.connected", { when: formatWhen(grant.createdAt, true) }),
+    grant.lastUsedAt === null ? translate("mcp.tokens.neverUsed") : translate("mcp.tokens.lastUsed", { when: formatWhen(grant.lastUsedAt, true) })];
+  if (grant.status === "expired") parts.push(translate("mcp.connections.idle"));
   return parts.join(" · ");
 }
 
@@ -34,6 +30,7 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     let active = true;
@@ -43,9 +40,9 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
       .then((body) => {
         if (!active) return;
         if (Array.isArray(body?.grants)) setState({ enabled: body.enabled === true, grants: body.grants });
-        else setLoadError("Could not load connected apps.");
+        else setLoadError(translate("mcp.connections.loadFailed"));
       })
-      .catch(() => { if (active) setLoadError("Could not load connected apps."); });
+      .catch(() => { if (active) setLoadError(translate("mcp.connections.loadFailed")); });
     return () => { active = false; };
   }, [apiBase]);
 
@@ -54,13 +51,13 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
   if (state && !state.enabled && state.grants.length === 0) return null;
 
   const revoke = (grant: McpOAuthGrantSummary) => {
-    const name = grant.clientName ?? "this app";
-    if (!window.confirm(`Disconnect ${name}? It stops working immediately and has to be connected again to regain access.`)) return;
+    const name = grant.clientName ?? t("mcp.connections.thisApp");
+    if (!window.confirm(t("mcp.connections.disconnectConfirm", { name }))) return;
     setBusyId(grant.id);
     setRowError(null);
     apiFetch(`${apiBase}/${grant.id}/revoke`, { method: "POST" })
       .then(() => setState((prev) => prev && { ...prev, grants: prev.grants.filter((g) => g.id !== grant.id) }))
-      .catch((err) => setRowError(err instanceof ApiError ? err.message : "Could not disconnect this app."))
+      .catch((err) => setRowError(err instanceof ApiError ? err.message : translate("mcp.connections.disconnectFailed")))
       .finally(() => setBusyId(null));
   };
 
@@ -70,14 +67,14 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
         <div className="mcp-head-text">
           <h3>{title}</h3>
           <p>{description}</p>
-          {state && !state.enabled && <p>New connections are turned off on this server; existing ones stop working until they are turned back on.</p>}
+          {state && !state.enabled && <p>{t("mcp.connections.disabled")}</p>}
         </div>
       </div>
 
       <div className="mcp-body">
         {loadError && <p style={{ margin: 0, fontSize: 13, color: DANGER }}>{loadError}</p>}
-        {!state && !loadError && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>Loading…</p>}
-        {state && state.grants.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No connected apps.</p>}
+        {!state && !loadError && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>{t("common.loading")}</p>}
+        {state && state.grants.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>{t("mcp.connections.empty")}</p>}
         {rowError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{rowError}</p>}
       </div>
 
@@ -86,14 +83,14 @@ export default function McpConnectionsCard({ title, description, apiBase }: { ti
           <McpAppIcon grant={grant} />
           <div className="mcp-token-text">
             <div className="mcp-token-name-row">
-              <span className="mcp-token-name">{grant.clientName?.trim() || "Unnamed app"}</span>
-              <span className={`tag ${grant.status === "active" ? "tag-accent-2" : "tag-neutral"}`}>{grant.status === "active" ? "connected" : "expired"}</span>
+              <span className="mcp-token-name">{grant.clientName?.trim() || t("mcp.connections.unnamed")}</span>
+              <span className={`tag ${grant.status === "active" ? "tag-accent-2" : "tag-neutral"}`}>{t(grant.status === "active" ? "mcp.connections.statusConnected" : "mcp.connections.statusExpired")}</span>
             </div>
             <div className="mcp-token-meta">{grantMeta(grant)}</div>
             <div className="mcp-token-meta" style={{ overflowWrap: "anywhere" }}>{grant.clientId}</div>
           </div>
           <div className="mcp-token-actions">
-            <Button color="link-destructive" size="sm" isDisabled={busyId === grant.id} onClick={() => revoke(grant)}>Disconnect</Button>
+            <Button color="link-destructive" size="sm" isDisabled={busyId === grant.id} onClick={() => revoke(grant)}>{t("mcp.connections.disconnect")}</Button>
           </div>
         </div>
       ))}

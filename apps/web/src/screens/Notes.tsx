@@ -8,9 +8,11 @@ import { useCatalogState, useNotesActions, useNotesState, useWorkspaceActions, u
 import HighlightedText from "../components/HighlightedText";
 import NoteCard from "../components/NoteCard";
 import PageBreadcrumb from "../components/PageBreadcrumb";
+import { useI18n } from "../i18n";
 
 // Known FR-8.4 gap: this list uses placeholder text for AI-targeted marks.
 // Other review screens load real explanations; see docs/requirements/review-notes-and-annotations.md.
+// Not translated: saved marks index into this exact text.
 const AI_PLACEHOLDER = "AI explanations aren't wired up yet — this is a placeholder.";
 
 export default function Notes() {
@@ -19,7 +21,7 @@ export default function Notes() {
   const state = { ...useNotesState(), examId, catalogBy };
   const { go } = useWorkspaceActions();
   const { capture, setMarkNote, saveMarkNote, removeMark } = useNotesActions();
-
+  const { t } = useI18n();
 
   const [markFilter, setMarkFilter] = useState<MarkStyle[]>([]);
   const [markSort, setMarkSort] = useState<MarkSortOrder>("asc");
@@ -63,14 +65,14 @@ export default function Notes() {
   return (
     <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <PageBreadcrumb screen="notes" />
-      <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>My annotations</h1>
+      <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>{t("annotations.title")}</h1>
       <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: 0.7, maxWidth: 620 }}>
-        {cardQids.length > 0 && "Select any text below to highlight, underline or bold it. "}
-        Marks are private to you and never appear while you answer.
+        {cardQids.length > 0 && `${t("annotations.selectHint")} `}
+        {t("annotations.private")}
       </p>
 
       {hasMarks && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, maxWidth: 900 }}>
-        <span id="annotation-filter-label" style={{ fontSize: 12, color: "var(--color-text-muted)", marginRight: 4 }}>Filter:</span>
+        <span id="annotation-filter-label" style={{ fontSize: 12, color: "var(--color-text-muted)", marginRight: 4 }}>{t("annotations.filter")}</span>
         <span role="group" aria-labelledby="annotation-filter-label" style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {MARK_STYLES.map((style) => {
           const on = markFilter.includes(style);
@@ -93,9 +95,9 @@ export default function Notes() {
         })}
         </span>
         {markFilter.length > 0 && (
-          <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setMarkFilter([])}>Clear filter</button>
+          <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setMarkFilter([])}>{t("annotations.clearFilter")}</button>
         )}
-        <span role="group" aria-label="Sort marks" style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+        <span role="group" aria-label={t("annotations.sort")} style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
           {(["asc", "desc"] as const).map((order) => {
             const on = markSort === order;
             return (
@@ -110,7 +112,7 @@ export default function Notes() {
                   border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
                 }}
               >
-                {order === "asc" ? "Oldest first" : "Newest first"}
+                {t(order === "asc" ? "annotations.oldest" : "annotations.newest")}
               </button>
             );
           })}
@@ -119,21 +121,21 @@ export default function Notes() {
 
       {filterStatus === "failed" && (
         <div role="alert" className="card" style={{ padding: 16, marginBottom: 16, maxWidth: 900, flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ flex: 1 }}>Could not apply this filter. The marks shown may be out of date.</span>
-          <button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>Retry</button>
+          <span style={{ flex: 1 }}>{t("annotations.filterFailed")}</span>
+          <button type="button" className="btn btn-secondary" onClick={() => setRetry((n) => n + 1)}>{t("common.retry")}</button>
         </div>
       )}
 
       {filterStatus === "idle" && cardQids.length === 0 && (filtering ? (
-        <EmptyState title="No marks match this filter" body="None of your marks in this exam use the selected mark types.">
-          <button type="button" className="btn btn-secondary" onClick={() => setMarkFilter([])}>Clear filter</button>
+        <EmptyState title={t("annotations.noMatchTitle")} body={t("annotations.noMatchBody")}>
+          <button type="button" className="btn btn-secondary" onClick={() => setMarkFilter([])}>{t("annotations.clearFilter")}</button>
         </EmptyState>
       ) : (
         <EmptyState
-          title="No annotations yet"
-          body="Select text in a question to highlight, underline or bold it: in Learning, or once you have checked an answer in Practice or submitted a mock exam. Your marks and question notes collect here."
+          title={t("annotations.emptyTitle")}
+          body={t("annotations.emptyBody")}
         >
-          <button type="button" className="btn btn-primary" onClick={() => go("learning")}>Go to Learning</button>
+          <button type="button" className="btn btn-primary" onClick={() => go("learning")}>{t("annotations.goLearning")}</button>
         </EmptyState>
       ))}
 
@@ -148,9 +150,9 @@ export default function Notes() {
             <div key={qid} className="card elev-sm" style={{ padding: 22, gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>{qq.externalId}</span>
-                {qq.tags.map((t) => <span key={t} className="tag tag-accent-2" style={{ whiteSpace: "nowrap" }}>{t}</span>)}
+                {qq.tags.map((tag) => <span key={tag} className="tag tag-accent-2" style={{ whiteSpace: "nowrap" }}>{tag}</span>)}
                 <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--color-text-muted)" }}>
-                  {marks.length} mark{marks.length === 1 ? "" : "s"}
+                  {t("annotations.marks", { count: marks.length })}
                 </span>
               </div>
               <p onMouseUp={() => capture(qid, "stem")} style={{ margin: 0, fontSize: 15, lineHeight: 1.6, textWrap: "pretty" }}>
@@ -187,13 +189,13 @@ export default function Notes() {
                         </span>
                         <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, margin: "2px 0 4px" }}>&ldquo;{quote}&rdquo;</span>
                         <input
-                          className="input" type="text" placeholder="Add a note to this mark…" value={a.note}
+                          className="input" type="text" placeholder={t("annotations.markNote")} aria-label={t("annotations.markNote")} value={a.note}
                           onChange={(e) => setMarkNote(a.id, e.target.value)} maxLength={MAX_ANNOTATION_NOTE_LENGTH}
                           onBlur={() => saveMarkNote(a.id)}
                           style={{ fontSize: 12.5, minHeight: 32 }}
                         />
                       </span>
-                      <button type="button" className="btn btn-ghost" onClick={() => removeMark(a.id)} style={{ fontSize: 12 }}>Remove</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => removeMark(a.id)} style={{ fontSize: 12 }}>{t("common.remove")}</button>
                     </div>
                   );
                 })}

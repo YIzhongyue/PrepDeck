@@ -171,6 +171,10 @@ Keep this list current; `upgrade` overwrites these files.
 | `src/components/application/charts/charts-base.tsx` | `ChartLegendContent` uses `payload.slice().reverse()` instead of `toReversed()`, which is ES2023 and outside this workspace's `lib`. |
 | `src/components/base/progress-indicators/progress-indicators.tsx` | `ProgressBarBase` forwards `aria-label`, `aria-labelledby` and `aria-valuetext` to its `role="progressbar"` element. Upstream drops them, so every bar was unnamed. |
 | `src/components/base/progress-indicators/progress-circles.tsx` | The same forwarding for `ProgressBarCircle` and `ProgressBarHalfCircle`. |
+| `src/components/base/input/input.tsx` | The password toggle's `aria-label` comes from the interface-language messages (issue #191). |
+| `src/components/base/select/select.tsx` | The default placeholder comes from the interface-language messages. |
+| `src/components/base/select/combobox.tsx` | The default placeholder comes from the interface-language messages. |
+| `src/components/base/date-picker/date-field.tsx` | Renders in the interface language (`I18nProvider locale={getLocale()}`) rather than a fixed `en-US`, and its accessible names come from the messages. |
 
 ### Licensing
 

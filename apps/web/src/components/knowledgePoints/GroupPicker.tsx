@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KnowledgePointGroup } from "@prepdeck/shared";
 import { Check, ChevronDown, Folder, Plus } from "@untitledui/icons";
 import { useClampToViewport } from "./EditorMenu";
+import { useI18n } from "../../i18n";
 
 // Mirrors the worker's normalizeGroupName (lib/knowledgePointTags.ts) so the
 // common mistakes are caught before a round trip; the server stays the
@@ -30,6 +31,7 @@ export default function GroupPicker({
   const ref = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const { t } = useI18n();
   useClampToViewport(menuRef, open);
 
   const close = () => { setOpen(false); setDraft(null); setError(null); };
@@ -49,9 +51,9 @@ export default function GroupPicker({
   const create = () => {
     if (draft === null || busy) return;
     const name = normalizeName(draft);
-    if (!name) { setError("Enter a group name."); return; }
-    if (name.length > MAX_GROUP_NAME_LENGTH) { setError(`Group names can be at most ${MAX_GROUP_NAME_LENGTH} characters.`); return; }
-    if (groups.some((g) => g.name.toLowerCase() === name.toLowerCase())) { setError(`A group named “${name}” already exists.`); return; }
+    if (!name) { setError(t("kp.groupPicker.enterName")); return; }
+    if (name.length > MAX_GROUP_NAME_LENGTH) { setError(t("kp.groupPicker.tooLong", { max: MAX_GROUP_NAME_LENGTH })); return; }
+    if (groups.some((g) => g.name.toLowerCase() === name.toLowerCase())) { setError(t("kp.groupPicker.exists", { name })); return; }
     setBusy(true);
     setError(null);
     onCreate(name)
@@ -61,11 +63,11 @@ export default function GroupPicker({
         if (!ref.current) return;
         onSelect(group.id); close(); triggerRef.current?.focus();
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not create group."))
+      .catch((err) => setError(err instanceof Error ? err.message : t("kp.manage.createFailed")))
       .finally(() => setBusy(false));
   };
 
-  const name = groupId ? (groupName ?? "Group") : "Ungrouped";
+  const name = groupId ? (groupName ?? t("kp.groupPicker.group")) : t("kp.ungrouped");
   const option = (id: string | null, label: string) => (
     <button key={id ?? ""} type="button" role="menuitemradio" aria-checked={groupId === id} className="kp-menu-item"
       onClick={() => { onSelect(id); close(); }}>
@@ -81,37 +83,37 @@ export default function GroupPicker({
       // Escape backs out one step: from the form to the list, then closed.
       if (draft !== null) back(); else close();
     }}>
-      <button ref={triggerRef} type="button" className="kp-chip" aria-label={`Group: ${name}`} aria-haspopup="menu" aria-expanded={open}
+      <button ref={triggerRef} type="button" className="kp-chip" aria-label={t("kp.groupPicker.label", { name })} aria-haspopup="menu" aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}>
         <Folder size={16} aria-hidden="true" />
         {name}
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open && draft === null && (
-        <div ref={menuRef} className="kp-menu kp-menu-pop" role="menu" aria-label="Move to group" style={{ left: 0, width: 240, maxHeight: 280, overflowY: "auto" }}>
-          {option(null, "Ungrouped")}
+        <div ref={menuRef} className="kp-menu kp-menu-pop" role="menu" aria-label={t("kp.groupPicker.moveTo")} style={{ left: 0, width: 240, maxHeight: 280, overflowY: "auto" }}>
+          {option(null, t("kp.ungrouped"))}
           {groups.map((g) => option(g.id, g.name))}
           <div className="kp-menu-sep" role="separator" />
           <button type="button" role="menuitem" className="kp-menu-item" style={{ color: "var(--color-accent)" }} onClick={() => setDraft("")}>
             <Plus size={16} aria-hidden="true" />
-            <span className="kp-mi-text"><span className="kp-mi-title">New group…</span></span>
+            <span className="kp-mi-text"><span className="kp-mi-title">{t("kp.groupPicker.newGroupEllipsis")}</span></span>
           </button>
         </div>
       )}
       {open && draft !== null && (
         <div ref={menuRef} className="kp-menu kp-menu-pop" style={{ left: 0, width: 280 }}>
-          <form className="kp-group-create" aria-label="New group" onSubmit={(e) => { e.preventDefault(); create(); }}>
-            <label className="kp-field-label" htmlFor="kp-new-group-name">New group</label>
+          <form className="kp-group-create" aria-label={t("kp.groupPicker.newGroup")} onSubmit={(e) => { e.preventDefault(); create(); }}>
+            <label className="kp-field-label" htmlFor="kp-new-group-name">{t("kp.groupPicker.newGroup")}</label>
             <input id="kp-new-group-name" className="kp-input" autoFocus autoComplete="off" value={draft} maxLength={MAX_GROUP_NAME_LENGTH}
-              placeholder="Group name" aria-invalid={!!error} aria-describedby="kp-new-group-msg" readOnly={busy}
+              placeholder={t("kp.groupPicker.namePlaceholder")} aria-invalid={!!error} aria-describedby="kp-new-group-msg" readOnly={busy}
               onChange={(e) => { setDraft(e.target.value); setError(null); }} />
             <span id="kp-new-group-msg" className={error ? "kp-field-error" : "kp-field-hint"} role={error ? "alert" : undefined}>
-              {error ?? "The note moves into it once it’s created."}
+              {error ?? t("kp.groupPicker.hint")}
             </span>
             <div className="kp-popover-actions">
               <span className="kp-tb-spacer" />
-              <button type="button" className="btn btn-secondary" disabled={busy} onClick={back}>Back</button>
-              <button type="submit" className="btn btn-primary" disabled={busy || !normalizeName(draft)}>{busy ? "Creating…" : "Create"}</button>
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={back}>{t("common.back")}</button>
+              <button type="submit" className="btn btn-primary" disabled={busy || !normalizeName(draft)}>{busy ? t("mcp.tokens.creating") : t("common.create")}</button>
             </div>
           </form>
         </div>

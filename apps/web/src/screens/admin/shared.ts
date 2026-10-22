@@ -1,4 +1,5 @@
 import type { Exam } from "@prepdeck/shared";
+import { t } from "../../i18n/runtime";
 
 // Types and formatting shared by the admin console's panels (screens/Admin.tsx).
 
@@ -11,8 +12,8 @@ export interface ExamRow extends Exam {
 export const DANGER = "var(--color-danger, #c0392b)";
 
 // "1 exam", "2 exams": every count the console prints goes through this.
-export function countOf(n: number, singular: string, plural = `${singular}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? singular : plural}`;
+export function countOf(n: number, noun: "exam" | "question"): string {
+  return t(noun === "exam" ? "admin.count.exams" : "admin.count.questions", { count: n });
 }
 
 export function initials(source: string): string {

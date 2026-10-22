@@ -15,6 +15,11 @@ import { Button } from "@/components/base/buttons/button";
 import { formatDuration, timeZoneLabel } from "../../lib/statistics";
 import { ChartData, usePrefersReducedMotion } from "./chartSupport";
 import type { StatisticsResourceStatus } from "../../hooks/useStatisticsResource";
+import { formatDate, useI18n } from "../../i18n";
+
+// The week arrives with English weekday abbreviations; the day is named from
+// its date in the interface language instead.
+const weekdayOf = (date: string) => formatDate(`${date}T00:00:00Z`, { weekday: "short", timeZone: "UTC" });
 
 interface Datum {
   weekday: string;
@@ -34,9 +39,10 @@ export default function StudyTimeCard({
   onEditPlan: () => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  const { t } = useI18n();
 
   const data: Datum[] = week.days.map((d) => ({
-    weekday: d.weekday,
+    weekday: weekdayOf(d.date),
     date: d.date,
     minutes: d.durationSeconds == null ? 0 : Math.round(d.durationSeconds / 60),
     unavailable: d.durationSeconds == null,
@@ -52,29 +58,30 @@ export default function StudyTimeCard({
   const peak = Math.max(1, ...data.map((d) => d.minutes));
 
   const summary = week.sessionsCompleted === 0
-    ? "No completed study sessions this week."
-    : `${formatDuration(totalSeconds)} of recorded study time across ${week.sessionsCompleted} session`
-      + `${week.sessionsCompleted === 1 ? "" : "s"} this week`
-      + (planStatus !== "ready" ? ". Weekly goal unavailable."
-        : goalSeconds != null ? `, against a goal of ${formatDuration(goalSeconds)}.` : ", with no weekly goal set.")
-      + (week.sessionsMissingDuration > 0 ? ` ${week.sessionsMissingDuration} session(s) did not record a duration.` : "");
+    ? t("stats.studyTime.summaryEmpty")
+    : [
+      t("stats.studyTime.summary", { time: formatDuration(totalSeconds), count: week.sessionsCompleted }),
+      planStatus !== "ready" ? t("stats.studyTime.summaryGoalUnavailable")
+        : goalSeconds != null ? t("stats.studyTime.summaryGoal", { goal: formatDuration(goalSeconds) }) : t("stats.studyTime.summaryNoGoal"),
+      week.sessionsMissingDuration > 0 ? t("stats.studyTime.summaryMissing", { count: week.sessionsMissingDuration }) : "",
+    ].filter(Boolean).join(" ");
 
   return (
     <section className="pd-stats-card" aria-labelledby="pd-stats-week-title">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <h3 id="pd-stats-week-title">Study time</h3>
+          <h3 id="pd-stats-week-title">{t("stats.studyTime.title")}</h3>
           <p className="pd-stats-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
             {goalSeconds != null
-              ? `${formatDuration(totalSeconds)} of ${formatDuration(goalSeconds)} weekly goal`
-              : `${formatDuration(totalSeconds)} recorded this week`}
+              ? t("stats.studyTime.ofGoal", { time: formatDuration(totalSeconds), goal: formatDuration(goalSeconds) })
+              : t("stats.studyTime.recorded", { time: formatDuration(totalSeconds) })}
           </p>
         </div>
         {planStatus !== "ready"
-          ? <span className="pd-stats-muted" role="status">{planStatus === "error" ? "Weekly goal unavailable" : "Loading weekly goal…"}</span>
+          ? <span className="pd-stats-muted" role="status">{t(planStatus === "error" ? "stats.studyTime.goalUnavailable" : "stats.studyTime.goalLoading")}</span>
           : goalPct != null
-          ? <Badge type="pill-color" size="md" color={goalPct >= 100 ? "success" : "brand"}>{goalPct}% of goal</Badge>
-          : <Button size="sm" color="secondary" onClick={onEditPlan}>Set weekly goal</Button>}
+          ? <Badge type="pill-color" size="md" color={goalPct >= 100 ? "success" : "brand"}>{t("stats.studyTime.goalPct", { pct: goalPct })}</Badge>
+          : <Button size="sm" color="secondary" onClick={onEditPlan}>{t("stats.studyTime.setGoal")}</Button>}
       </div>
 
       <div className="pd-stats-chart" style={{ height: 200 }} aria-hidden="true">
@@ -101,23 +108,23 @@ export default function StudyTimeCard({
       <hr className="pd-stats-divider" />
 
       <p className="pd-stats-muted" style={{ margin: 0, fontSize: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <span>{week.sessionsCompleted} session{week.sessionsCompleted === 1 ? "" : "s"}</span>
-        <span>{week.averageSessionSeconds == null ? "No session durations recorded" : `${formatDuration(week.averageSessionSeconds)} average`}</span>
-        {week.longestDay && <span>Longest {week.longestDay.weekday} · {formatDuration(week.longestDay.durationSeconds)}</span>}
+        <span>{t("stats.studyTime.sessions", { count: week.sessionsCompleted })}</span>
+        <span>{week.averageSessionSeconds == null ? t("stats.studyTime.noDurations") : t("stats.studyTime.average", { time: formatDuration(week.averageSessionSeconds) })}</span>
+        {week.longestDay && <span>{t("stats.studyTime.longest", { day: weekdayOf(week.longestDay.date), time: formatDuration(week.longestDay.durationSeconds) })}</span>}
       </p>
 
       {/* Decision 4: this is time a session was open, which is not the same as
           time spent engaged, and the difference is worth stating once. */}
       <p className="pd-stats-muted" style={{ margin: 0, fontSize: 11 }}>
-        Recorded session time, Monday to Sunday in {timeZoneLabel(timeZone)}.
-        {week.sessionsMissingDuration > 0 && ` ${week.sessionsMissingDuration} session${week.sessionsMissingDuration === 1 ? "" : "s"} recorded no duration and show as “?”.`}
+        {t("stats.studyTime.footnote", { zone: timeZoneLabel(timeZone) })}
+        {week.sessionsMissingDuration > 0 && ` ${t("stats.studyTime.footnoteMissing", { count: week.sessionsMissingDuration })}`}
       </p>
 
       <ChartData
         summary={summary}
-        caption="Recorded study time by day this week"
-        columns={["Day", "Date", "Sessions", "Recorded time"]}
-        rows={week.days.map((d) => [d.weekday, d.date, d.sessionsCompleted, formatDuration(d.durationSeconds)])}
+        caption={t("stats.studyTime.caption")}
+        columns={[t("stats.table.day"), t("stats.table.date"), t("stats.table.sessions"), t("stats.table.recordedTime")]}
+        rows={week.days.map((d) => [weekdayOf(d.date), d.date, d.sessionsCompleted, formatDuration(d.durationSeconds)])}
       />
     </section>
   );

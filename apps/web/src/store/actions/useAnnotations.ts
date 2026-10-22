@@ -5,6 +5,7 @@ import { fromSharedAnnotation, toCreateAnnotationRequest } from "../../lib/annot
 import type { AnnotationStyle, AnnotationTarget } from "../../types";
 import { base } from "../storeHelpers";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // Highlights, underlines and their notes on question text, and the user's
 // mark aliases.
@@ -59,13 +60,13 @@ export function useAnnotations(core: StoreCore) {
     const update = scopedState();
     void requests.write(`annotation:${id}`, () => apiFetch(`/api/annotations/${id}`, { method: "PATCH", body: JSON.stringify({ note: note || null }) }))
       .then(() => { if (dirtyAnnotations.current.get(id) === note) dirtyAnnotations.current.delete(id); })
-      .catch(() => update({ actionError: "Could not save the annotation note. Please retry before leaving." }));
+      .catch(() => update({ actionError: t("errors.annotations.saveNote") }));
   }, [dirtyAnnotations, requests, scopedState, stateRef]);
   const removeMark = useCallback((id: string) => {
     const update = scopedState();
     void requests.write(`annotation:${id}`, () => apiFetch(`/api/annotations/${id}`, { method: "DELETE" }))
       .then(() => { dirtyAnnotations.current.delete(id); update(s => ({ anns: s.anns.filter(x => x.id !== id) })); })
-      .catch(() => update({ actionError: "Could not delete the annotation. Please retry." }));
+      .catch(() => update({ actionError: t("errors.annotations.delete") }));
   }, [dirtyAnnotations, requests, scopedState]);
 
   // implementation: rename what a mark type means to this user. The server

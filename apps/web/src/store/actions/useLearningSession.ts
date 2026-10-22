@@ -14,6 +14,7 @@ import type { AiExplanations } from "./useAiExplanations";
 import type { CatalogQueries } from "./useCatalogQueries";
 import type { StoreCore } from "./useStoreCore";
 import type { PracticeSession } from "./usePracticeSession";
+import { t } from "../../i18n/runtime";
 
 // Learning Mode: setup filters, the sequential read-through, its saved
 // position, and per-question studied status.
@@ -84,9 +85,9 @@ export function useLearningSession(core: StoreCore, deps: Pick<CatalogQueries, "
     setState((s) => ({ lDetail: { ...s.lDetail, [qid]: refresh ? { ...s.lDetail[qid]!, refreshing: true } : { status: "loading" } } }));
     apiFetch<LearningQuestionDetailResponse>(`/api/questions/${qid}/learning-detail`, { cache: "no-store" }).then(({ question, history }) => {
       if (requested.revision !== undefined && requested.revision !== question.revision) {
-        throw new Error("This question changed. Refresh the exam and try again.");
+        throw new Error(t("errors.question.changed"));
       }
-      if (requested.hasContent && !question.content) throw new Error("Could not load this question. Please retry.");
+      if (requested.hasContent && !question.content) throw new Error(t("study.gate.loadFailed"));
       setState((s) => {
         if (s.catalogRevision !== catalogRevision || !s.catalogBy[qid]) return {};
         const hydrated = { ...s.catalogBy[qid], content: question.content ?? s.catalogBy[qid].content };
@@ -109,7 +110,7 @@ export function useLearningSession(core: StoreCore, deps: Pick<CatalogQueries, "
           return current?.status === "ready" ? { lDetail: { ...s.lDetail, [qid]: { ...current, refreshing: false } } } : {};
         }
         return prefetch ? { lDetail: without(s.lDetail, qid) } : {
-          lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : "Could not load this question." } }
+          lDetail: { ...s.lDetail, [qid]: { status: "error", error: err instanceof Error ? err.message : t("errors.question.loadFailed") } }
         };
       });
     });
@@ -140,7 +141,7 @@ export function useLearningSession(core: StoreCore, deps: Pick<CatalogQueries, "
     setState({ lResume: sequenceNumber });
     const update = scopedState();
     requests.write(`learning:${examId}`, () => apiFetch(`/api/exams/${examId}/learning/progress`, { method: "PUT", body: JSON.stringify({ sequenceNumber }) }))
-      .catch(() => update({ actionError: "Could not save your learning position. Please try navigating again." }));
+      .catch(() => update({ actionError: t("errors.learning.position") }));
   }, [stateRef, setState, scopedState, requests]);
 
   // Shared by next/prev/goto/begin: moves to a queue index, then loads that
@@ -245,7 +246,7 @@ export function useLearningSession(core: StoreCore, deps: Pick<CatalogQueries, "
     }, () => {
       const last = settle();
       update(cur => ({
-        actionError: "Could not save this question's study status. Please retry.",
+        actionError: t("errors.learning.studyStatus"),
         ...(last && cur.studyStatus[qid] === optimistic
           ? { studyStatus: previous ? { ...cur.studyStatus, [qid]: previous } : without(cur.studyStatus, qid) }
           : {})

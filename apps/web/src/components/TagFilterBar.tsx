@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { tagFacets, visibleFacets } from "../lib/tagFilter";
+import { useI18n } from "../i18n";
 import "./TagFilterBar.css";
 
 // The tag filter shared by Bookmarks and the Wrong Question Book. Both lists
@@ -30,7 +31,9 @@ interface TagFilterBarProps {
   label?: string;
 }
 
-export default function TagFilterBar({ questions, selected, onToggle, onClear, resultCount, label = "Filter by tag" }: TagFilterBarProps) {
+export default function TagFilterBar({ questions, selected, onToggle, onClear, resultCount, label: labelProp }: TagFilterBarProps) {
+  const { t } = useI18n();
+  const label = labelProp ?? t("tagFilter.label");
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
   const id = useId();
@@ -58,18 +61,18 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
         <span className="tag-filter__label" id={`${id}-label`}>{label}</span>
         <span className="tag-filter__status" role="status">
           {selected.length
-            ? `${resultCount} of ${questions.length} questions · ${selected.length} ${selected.length === 1 ? "tag" : "tags"} selected`
-            : `${questions.length} questions · all tags`}
+            ? `${t("tagFilter.resultOf", { n: resultCount, count: questions.length })} · ${t("tagFilter.tagsSelected", { count: selected.length })}`
+            : `${t("setup.questions", { count: questions.length })} · ${t("tagFilter.allTags")}`}
         </span>
         {selected.length > 0 && (
-          <button type="button" className="tag-filter__clear" onClick={onClear}>Clear filters</button>
+          <button type="button" className="tag-filter__clear" onClick={onClear}>{t("tagFilter.clear")}</button>
         )}
       </div>
 
       {expanded && searchable && (
         <input
           type="search" className="input tag-filter__search" value={query}
-          placeholder="Search tags…" aria-label="Search tags" aria-describedby={`${id}-hint`}
+          placeholder={t("tagFilter.searchPlaceholder")} aria-label={t("tagFilter.search")} aria-describedby={`${id}-hint`}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }}
         />
@@ -81,7 +84,7 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
           return (
             <button
               key={facet.name} type="button" className="tag-filter__chip" aria-pressed={on}
-              aria-label={`${facet.name} ${facet.count} ${facet.count === 1 ? "question" : "questions"}`}
+              aria-label={`${facet.name} ${t("setup.questions", { count: facet.count })}`}
               onClick={() => onToggle(facet.name)}
             >
               <svg className="tag-filter__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -95,7 +98,7 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
 
         {noMatches && (
           <p className="tag-filter__empty">
-            {selected.length ? "No other tags match" : "No tags match"} “{query.trim()}”.
+            {t(selected.length ? "tagFilter.noOtherMatch" : "tagFilter.noMatch", { query: query.trim() })}
           </p>
         )}
       </div>
@@ -107,12 +110,12 @@ export default function TagFilterBar({ questions, selected, onToggle, onClear, r
           type="button" className="tag-filter__more" aria-expanded={expanded} aria-controls={`${id}-chips`}
           onClick={() => (expanded ? collapse() : setExpanded(true))}
         >
-          {expanded ? "Show fewer" : `Show ${hidden} more`}
+          {expanded ? t("setup.domains.showFewer") : t("tagFilter.showMore", { count: hidden })}
         </button>
       )}
 
       {expanded && searchable && (
-        <p id={`${id}-hint`} className="tag-filter__hint">Selecting several tags shows questions carrying any of them.</p>
+        <p id={`${id}-hint`} className="tag-filter__hint">{t("tagFilter.hint")}</p>
       )}
     </section>
   );

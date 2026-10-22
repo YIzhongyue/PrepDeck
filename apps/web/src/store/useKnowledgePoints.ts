@@ -12,6 +12,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import type { KnowledgePointDetail, KnowledgePointGroup, KnowledgePointSort, KnowledgePointSummary, KnowledgePointTag } from "@prepdeck/shared";
 import * as api from "../lib/knowledgePoints";
 import { ApiError } from "../lib/api";
+import { t } from "../i18n/runtime";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -167,7 +168,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       return;
     }
     if (!stateRef.current.editing || composingRef.current) return;
-    if (stateRef.current.conflict) throw new Error("Resolve the revision conflict before saving.");
+    if (stateRef.current.conflict) throw new Error(t("errors.kp.resolveConflict"));
     if (!dirtyRef.current && !metadataRef.current.length) return;
     const generation = generationRef.current;
     const current = () => generation === generationRef.current;
@@ -225,7 +226,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
         saveErrorMessage: stateRef.current.uploadError });
     })().catch(error => {
       if (!current()) return;
-      const message = error instanceof Error ? error.message : "Save failed. Please retry.";
+      const message = error instanceof Error ? error.message : t("errors.kp.saveFailed");
       setState({ saveStatus: "error", saveErrorMessage: message,
         ...(api.isRevisionConflict(error) ? { conflict: (error.body as { latest: KnowledgePointDetail }).latest } : {}) });
       // Validation, authentication and revision errors require user action.
@@ -258,13 +259,13 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
 
   const flushEditor = useCallback(async () => {
     clearTimers();
-    if (composingRef.current) throw new Error("Finish composing your text before leaving.");
+    if (composingRef.current) throw new Error(t("errors.kp.composing"));
     await Promise.all([...uploadsRef.current]);
     // Let the editor insert the completed attachment before flushing its body.
     await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     if (stateRef.current.uploadError) throw new Error(stateRef.current.uploadError);
     await performSave();
-    if (hasUnsavedWork()) throw new Error("Your note still has unsaved changes. Retry saving before leaving.");
+    if (hasUnsavedWork()) throw new Error(t("errors.kp.unsaved"));
   }, [performSave, hasUnsavedWork]);
 
   useEffect(() => registerNavigationSave(flushEditor), [flushEditor]);
@@ -336,7 +337,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       if (generation !== generationRef.current) return;
       setState({ editing: knowledgePoint, title: knowledgePoint.title, bodyMarkdown: knowledgePoint.bodyMarkdown,
         editorLoading: false, saveStatus: "saved", lastSavedAt: knowledgePoint.updatedAt });
-    }).catch(() => { if (generation === generationRef.current) setState({ editorLoading: false, editorError: "Could not load this note. Retry or return to your list." }); });
+    }).catch(() => { if (generation === generationRef.current) setState({ editorLoading: false, editorError: t("errors.kp.loadNote") }); });
   }, [setState]);
 
   const creationRef = useRef<Promise<string> | null>(null);
@@ -378,7 +379,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
         offset: 0,
       })
       .then((res) => { if (sequence === listSequenceRef.current) setState({ items: res.knowledgePoints, total: res.total, orderRevision: res.orderRevision, listLoading: false }); })
-      .catch(() => { if (sequence === listSequenceRef.current) setState({ listLoading: false, listError: "Could not load your notes. Please retry." }); });
+      .catch(() => { if (sequence === listSequenceRef.current) setState({ listLoading: false, listError: t("errors.kp.loadNotes") }); });
   }, [setState]);
 
   const refreshGroupsAndTags = useCallback(() => {
@@ -398,7 +399,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
         if (s.orderRevision !== res.orderRevision && s.sort === "custom") { refreshList(); return; }
         setState({ items: [...s.items, ...res.knowledgePoints], total: res.total, listLoading: false });
       } })
-      .catch(() => { if (sequence === listSequenceRef.current) setState({ listLoading: false, listError: "Could not load more notes. Please retry." }); });
+      .catch(() => { if (sequence === listSequenceRef.current) setState({ listLoading: false, listError: t("errors.kp.loadMore") }); });
   }, [setState, refreshList]);
 
   useEffect(() => {
@@ -444,11 +445,11 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
     // A drag that cannot be saved must say so. Returning silently left the
     // card animating back with no explanation of why nothing happened.
     if (s.ordering || s.listLoading) {
-      setState({ listError: "Still saving the last move. Wait for it to finish, then try again." });
+      setState({ listError: t("errors.kp.stillMoving") });
       return;
     }
     if (s.orderRevision == null) {
-      setState({ listError: "This view cannot be reordered. Open a single group with custom sort to change the order." });
+      setState({ listError: t("errors.kp.cannotReorder") });
       return;
     }
     // Move it locally first and keep the original to put back on failure. The
@@ -466,8 +467,8 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       .then(() => { setState({ ordering: false }); refreshList(true); })
       .catch(error => {
         setState({ items: previous, ordering: false, listError: error instanceof ApiError && error.status === 409
-          ? "The order changed in another tab. The latest order has been loaded; try your move again."
-          : "Could not save the new order. Your previous order is retained; please retry." });
+          ? t("errors.kp.orderChanged")
+          : t("errors.kp.orderFailed") });
         refreshList(true);
       });
   }, [setState, refreshList]);
@@ -539,7 +540,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       setState(s => ({ editing: s.editing ? { ...s.editing, images: [...s.editing.images, image] } : null }));
       return image.url;
     } catch (error) {
-      if (generation === generationRef.current) setState({ uploadError: "Image upload failed. Retry or dismiss the upload before leaving.", saveStatus: "error" });
+      if (generation === generationRef.current) setState({ uploadError: t("errors.kp.uploadFailed"), saveStatus: "error" });
       throw error;
     } finally {
       uploadsRef.current.delete(upload);

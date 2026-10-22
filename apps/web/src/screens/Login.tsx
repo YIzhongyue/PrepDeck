@@ -5,6 +5,8 @@ import MascotImage from "../components/MascotImage";
 import TurnstileWidget, { TurnstileConfigError } from "../components/TurnstileWidget";
 import { useGoogleSignIn } from "../lib/googleSignIn";
 import { currentPath } from "../lib/reauth";
+import { CompactLanguageSelect } from "../components/LanguageSelect";
+import { useI18n } from "../i18n";
 
 interface LoginProps {
   /** Set when a Google account signed in successfully but isn't on the
@@ -23,11 +25,7 @@ interface LoginProps {
 }
 
 // Only a failed check is the learner's to fix; the other two are the server's.
-const VERIFICATION_NOTICES = {
-  failed: "We couldn't confirm you're human, or the check expired. Complete it again, then sign in.",
-  unavailable: "Human verification is unavailable right now, so sign-in couldn't start. Nothing is wrong with your check. Try again in a few minutes.",
-  misconfigured: "Sign-in is blocked by a setup problem with human verification on this server. Contact your admin.",
-} as const;
+// The notices are the `login.verification` messages.
 
 function GoogleIcon() {
   return (
@@ -51,10 +49,6 @@ function LockIcon({ size = 17 }: { size?: number }) {
 
 // The mascot pose crests the top edge of the sign-in card (Login Redesign,
 // Turn 1a): books for the sign-in states, a padlock once access is refused.
-const MASCOT = {
-  signin: { alt: "PrepDeck mascot holding a stack of books" },
-  denied: { alt: "PrepDeck mascot holding a padlock, looking apologetic" },
-};
 
 // The card carries the page's only heading. The redesign sets it below the
 // global h1 scale, so the size is given here rather than by the token sheet.
@@ -88,7 +82,7 @@ const noticeStyle: CSSProperties = {
 export default function Login({ deniedEmail, conflict, signedOut, error, verification }: LoginProps) {
   const { siteKey, configFailed, reloadConfig, verified, widgetKey, onToken, ready, busy, signIn: start } = useGoogleSignIn();
   const denied = deniedEmail !== undefined && deniedEmail !== null;
-  const mascot = denied ? MASCOT.denied : MASCOT.signin;
+  const { t } = useI18n();
 
   // Comes back to the page that asked for sign-in, such as a question linked
   // from a daily review email (issue #41), instead of always to "/".
@@ -104,22 +98,20 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
       <BrandLogo className="login-brand" />
 
       <div className="login-content">
-        <MascotImage className="login-mascot" scene={denied ? "unauthorized" : "normal"} alt={mascot.alt} />
+        <MascotImage className="login-mascot" scene={denied ? "unauthorized" : "normal"} alt={t(denied ? "login.mascotDenied" : "login.mascotSignIn")} />
 
         <div className="login-card">
           {denied ? (
             <div className="login-fade" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 15, width: "100%" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 14px", borderRadius: 999, background: "var(--color-accent-100)", color: "var(--color-accent-800)", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>
                 <LockIcon size={14} />
-                {conflict ? "Already linked" : "Invite only"}
+                {t(conflict ? "login.alreadyLinked" : "login.inviteOnly")}
               </span>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <h1 style={headingStyle}>{conflict ? "Linked to another account" : "Access not authorized"}</h1>
+                <h1 style={headingStyle}>{t(conflict ? "login.conflictTitle" : "login.deniedTitle")}</h1>
                 <p style={{ margin: 0, fontSize: 14, color: "var(--color-neutral-700)" }}>
-                  {conflict
-                    ? "This address is authorized, but it's already linked to a different Google account — so signing in with this one would have adopted someone else's data. Ask an admin to reset its Google link from Authorized Users, then sign in again."
-                    : "You signed in successfully, but this account isn't on PrepDeck's authorized list. Ask an admin to invite it, then try again."}
+                  {t(conflict ? "login.conflictBody" : "login.deniedBody")}
                 </p>
               </div>
 
@@ -135,15 +127,15 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
               {turnstile}
 
               <button type="button" className="btn btn-primary login-primary-btn" style={{ width: "100%", minHeight: 52, padding: "8.8px 17.6px", fontSize: 15, boxShadow: "0 8px 22px color-mix(in srgb, var(--color-accent) 24%, transparent)" }} onClick={signIn} disabled={busy || !ready}>
-                Try a different account
+                {t("login.tryDifferentAccount")}
               </button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-4)", width: "100%" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <h1 style={headingStyle}>Welcome back!</h1>
+                <h1 style={headingStyle}>{t("login.welcome")}</h1>
                 <p style={{ margin: 0, fontSize: 14.5, color: "var(--color-neutral-700)" }}>
-                  Every practice question, one deck. Sign in to start practicing or pick up where you left off.
+                  {t("login.tagline")}
                 </p>
               </div>
 
@@ -154,7 +146,7 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                     <path d="m16 17 5-5-5-5" />
                     <path d="M21 12H9" />
                   </svg>
-                  <span>You've been signed out. Sign in again to pick up where you left off.</span>
+                  <span>{t("login.signedOut")}</span>
                 </div>
               )}
 
@@ -165,7 +157,7 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                     <path d="M12 8v4" />
                     <path d="M12 16h.01" />
                   </svg>
-                  <span>Google sign-in didn't complete. Check your connection and try again — nothing was submitted.</span>
+                  <span>{t("login.oauthError")}</span>
                 </div>
               )}
 
@@ -176,7 +168,7 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                     <path d="M12 9v3.5" />
                     <path d="M12 16h.01" />
                   </svg>
-                  <span>{VERIFICATION_NOTICES[verification]}</span>
+                  <span>{t(`login.verification.${verification}`)}</span>
                 </div>
               )}
 
@@ -186,7 +178,7 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                     <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3z" />
                     <path d="m9 12 2 2 4-4" />
                   </svg>
-                  <span>Verification complete. You can sign in now.</span>
+                  <span>{t("login.reverified")}</span>
                 </div>
               )}
 
@@ -204,21 +196,22 @@ export default function Login({ deniedEmail, conflict, signedOut, error, verific
                 ) : (
                   <GoogleIcon />
                 )}
-                <span style={{ fontFamily: "var(--font-body)", fontWeight: 600 }}>{busy ? "Signing in…" : "Sign in with Google"}</span>
+                <span style={{ fontFamily: "var(--font-body)", fontWeight: 600 }}>{t(busy ? "login.signingIn" : "login.signInWithGoogle")}</span>
               </button>
 
               <p style={{ margin: 0, maxWidth: 340, fontSize: 12, fontWeight: 300, lineHeight: 1.5, color: "var(--color-neutral-700)" }}>
-                Access is by invitation only. Use the Google account your admin has approved, or contact them to request access.
+                {t("login.invitationOnly")}
               </p>
             </div>
           )}
 
           <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
             <hr className="hr" style={{ width: "100%", margin: 0 }} />
-            <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600 }}>
-              <a href="/privacy">Privacy Policy</a>
-              <a href="/terms">Terms of Service</a>
+            <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, flexWrap: "wrap", justifyContent: "center" }}>
+              <a href="/privacy">{t("legal.privacy")}</a>
+              <a href="/terms">{t("legal.terms")}</a>
             </div>
+            <CompactLanguageSelect />
           </div>
         </div>
       </div>

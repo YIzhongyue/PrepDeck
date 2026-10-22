@@ -1,12 +1,13 @@
-// A calendar-date field that is always rendered in English.
+// A calendar-date field rendered in the interface language (issue #191).
 //
 // `<input type="date">` takes its segment placeholders ("年/月/日") and its
 // drop-down calendar from the *browser's* UI language. That is not something
-// the page can influence — `<html lang="en">` does not reach it — so a Chrome
-// running in Chinese put Chinese into this otherwise English-only app.
+// the page can influence — `<html lang>` does not reach it — so a Chrome
+// running in Chinese put Chinese into an English page.
 //
 // React Aria renders the segments and the calendar itself, so pinning the
-// locale with `I18nProvider` keeps the field identical on every machine. The
+// locale with `I18nProvider` to PrepDeck's own interface language keeps the
+// field consistent with the text around it on every machine. The
 // wire format stays the app's own "YYYY-MM-DD" string (or "" for unset) so
 // callers do not have to know about `@internationalized/date`.
 
@@ -34,6 +35,7 @@ import {
 import { HintText } from "@/components/base/input/hint-text";
 import { Label } from "@/components/base/input/label";
 import { cx } from "@/utils/cx";
+import { getLocale, t } from "@/i18n/runtime";
 
 /** "YYYY-MM-DD" in, `CalendarDate` out; anything unparseable reads as unset. */
 const parse = (value: string): CalendarDate | null => {
@@ -61,9 +63,9 @@ export interface DateFieldProps {
 }
 
 export const DateField = ({ label, hint, value, onChange, isInvalid, isDisabled }: DateFieldProps) => (
-    <I18nProvider locale="en-US">
+    <I18nProvider locale={getLocale()}>
         <AriaDatePicker
-            aria-label={label ? undefined : "Date"}
+            aria-label={label ? undefined : t("common.date")}
             value={parse(value)}
             onChange={(next) => onChange(next ? next.toString() : "")}
             isInvalid={isInvalid}
@@ -106,7 +108,7 @@ export const DateField = ({ label, hint, value, onChange, isInvalid, isDisabled 
                         // deleting every segment is not discoverable, and this field is
                         // documented as optional.
                         slot={null}
-                        aria-label="Clear date"
+                        aria-label={t("common.clearDate")}
                         onPress={() => onChange("")}
                         className="flex cursor-pointer items-center justify-center rounded p-1 text-fg-quaternary outline-hidden transition duration-100 ease-linear hover:text-fg-quaternary_hover focus-visible:ring-2 focus-visible:ring-focus-ring"
                     >
@@ -115,7 +117,7 @@ export const DateField = ({ label, hint, value, onChange, isInvalid, isDisabled 
                 )}
 
                 <AriaButton
-                    aria-label="Choose date"
+                    aria-label={t("common.chooseDate")}
                     className="flex cursor-pointer items-center justify-center rounded p-1 text-fg-quaternary outline-hidden transition duration-100 ease-linear hover:text-fg-quaternary_hover focus-visible:ring-2 focus-visible:ring-focus-ring"
                 >
                     <CalendarIcon className="size-5" />

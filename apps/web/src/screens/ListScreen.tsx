@@ -1,17 +1,19 @@
 import { reviewIds } from "../lib/reviewLists";
 import { filterByTags, pruneTags, tagFacets } from "../lib/tagFilter";
-import { UNDER_REVIEW_NOTICE } from "../lib/underReview";
+import { underReviewNotice } from "../lib/underReview";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import TagFilterBar from "../components/TagFilterBar";
 import { useEffect, useState } from "react";
 import { useCatalogState, usePracticeActions, useReviewListsActions, useReviewListsState } from "../store/PrepDeckContext";
 import type { Breakpoints } from "../lib/responsive";
+import { useI18n } from "../i18n";
 
 export default function ListScreen({ bp }: { bp: Breakpoints }) {
   const { catalogBy } = useCatalogState();
   const state = { ...useReviewListsState(), catalogBy };
   const { begin } = usePracticeActions();
   const { practiceList, removeBookmark, markMastered } = useReviewListsActions();
+  const { t, formatDate } = useI18n();
 
   const isBookmarks = state.listMode === "bm";
   const wrongIds = reviewIds(state, "wrong");
@@ -45,7 +47,7 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
   const listQuestions = filterByTags(questions, activeTags);
   const listIds = listQuestions.map((question) => question.id);
   const toggleTagFilter = (tag: string) => {
-    setSelectedTags((previous) => (previous.indexOf(tag) >= 0 ? previous.filter((t) => t !== tag) : previous.concat(tag)));
+    setSelectedTags((previous) => (previous.indexOf(tag) >= 0 ? previous.filter((other) => other !== tag) : previous.concat(tag)));
   };
 
   return (
@@ -53,10 +55,10 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
           <PageBreadcrumb screen={isBookmarks ? "bookmarks" : "wrong"} />
-          <h1 style={{ margin: 0, fontSize: 34 }}>{isBookmarks ? "Bookmarks" : "Wrong question book"}</h1>
+          <h1 style={{ margin: 0, fontSize: 34 }}>{t(isBookmarks ? "nav.screens.bookmarks" : "lists.wrongTitle")}</h1>
         </div>
         {/* Practice exactly what the page is showing, filters included. */}
-        <button type="button" className="btn btn-primary" disabled={!listIds.length} onClick={() => practiceList(listIds)}>Practice these {listIds.length}</button>
+        <button type="button" className="btn btn-primary" disabled={!listIds.length} onClick={() => practiceList(listIds)}>{t("lists.practiceThese", { count: listIds.length })}</button>
       </div>
 
       <TagFilterBar
@@ -72,20 +74,20 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
             <div key={id} className="card elev-sm" style={{ padding: "18px 20px", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span className="tag tag-neutral" style={{ whiteSpace: "nowrap" }}>{qq.externalId}</span>
-                {qq.needsReview && <span className="tag tag-warning" title={UNDER_REVIEW_NOTICE} style={{ whiteSpace: "nowrap" }}>Under review</span>}
+                {qq.needsReview && <span className="tag tag-warning" title={underReviewNotice()} style={{ whiteSpace: "nowrap" }}>{t("study.underReview.badge")}</span>}
                 {/* Card tags are metadata, not controls: no border, no count, and
                     the ones the filter matched carry the accent ring so a
                     multi-tag result explains itself. */}
-                {qq.tags.map((t) => (
+                {qq.tags.map((tag) => (
                   <span
-                    key={t} className="tag tag-accent-2"
-                    style={{ whiteSpace: "nowrap", ...(activeTags.indexOf(t) >= 0 ? { boxShadow: "inset 0 0 0 1px var(--color-accent)" } : null) }}
+                    key={tag} className="tag tag-accent-2"
+                    style={{ whiteSpace: "nowrap", ...(activeTags.indexOf(tag) >= 0 ? { boxShadow: "inset 0 0 0 1px var(--color-accent)" } : null) }}
                   >
-                    {t}
+                    {tag}
                   </span>
                 ))}
                 <span className="tag" style={{ marginLeft: "auto", background: isBookmarks ? "var(--color-neutral-200)" : "var(--color-accent-200)", color: isBookmarks ? "var(--color-neutral-800)" : "var(--color-accent-800)", fontSize: 10.5 }}>
-                  {isBookmarks ? "saved" : w ? `${w.c}× wrong · ${new Date(w.at).toLocaleDateString()}` : ""}
+                  {isBookmarks ? t("lists.saved") : w ? t("lists.wrongTimes", { count: w.c, date: formatDate(w.at) }) : ""}
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, opacity: 0.9 }}>{qq.stem}</p>
@@ -94,12 +96,12 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
                   length; `flex-end` keeps them in the corner, and wrapping them
                   stacks them against the same edge on a narrow viewport. */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginTop: "auto", paddingTop: 2 }}>
-                <button type="button" className="btn btn-secondary" onClick={() => begin([id])} style={{ padding: "6px 14px" }}>Review</button>
+                <button type="button" className="btn btn-secondary" onClick={() => begin([id])} style={{ padding: "6px 14px" }}>{t("study.review")}</button>
                 <button
                   type="button" className="btn btn-ghost"
                   onClick={() => (isBookmarks ? removeBookmark(id) : markMastered(id))}
                 >
-                  {isBookmarks ? "Remove bookmark" : "Mark mastered"}
+                  {t(isBookmarks ? "lists.removeBookmark" : "lists.markMastered")}
                 </button>
               </div>
             </div>
@@ -114,9 +116,9 @@ export default function ListScreen({ bp }: { bp: Breakpoints }) {
               <path d="M5 13l4 4 10-10" />
             </svg>
           </span>
-          <h3 style={{ margin: 0, fontSize: 20 }}>{isBookmarks ? "Nothing saved yet" : "Wrong book is clear"}</h3>
+          <h3 style={{ margin: 0, fontSize: 20 }}>{t(isBookmarks ? "lists.emptyBookmarksTitle" : "lists.emptyWrongTitle")}</h3>
           <p style={{ margin: 0, fontSize: 13, opacity: 0.7 }}>
-            {isBookmarks ? "Bookmark a question while practising and it lands here." : "Every question you missed has been mastered. Nice."}
+            {t(isBookmarks ? "lists.emptyBookmarksBody" : "lists.emptyWrongBody")}
           </p>
         </div>
       )}

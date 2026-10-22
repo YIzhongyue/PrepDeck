@@ -21,6 +21,7 @@ import {
 } from "../components/study/StudyKit";
 import type { Breakpoints } from "../lib/responsive";
 import type { GradedAnswer, Question } from "../types";
+import { t as translate, useI18n } from "../i18n";
 
 // Longer sessions fall back to a plain bar: segments under ~6px stop reading as questions.
 const MAX_SEGMENTS = 60;
@@ -35,6 +36,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   const { toggleBookmark } = useReviewListsActions();
   const { capture, removeMark } = useNotesActions();
   const { checkAiCache } = useAiActions();
+  const { t } = useI18n();
   const q = practice.curQ();
   useQuestionPrefetch("practice", state.queue, state.idx);
 
@@ -93,26 +95,26 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
   // Phones show only the score, under the title, where the breadcrumb was.
   const stats = (
     <div className="st-stats">
-      <span><span className="st-ic-ok"><Icon d={IC.circleCheck} /></span>{okCount} correct</span>
-      <span><span className="st-ic-bad"><Icon d={IC.circleX} /></span>{noCount} incorrect</span>
-      {!flow && <span><span className="st-ic-muted"><Icon d={IC.timerOff} /></span>No timer · feedback per question</span>}
+      <span><span className="st-ic-ok"><Icon d={IC.circleCheck} /></span>{t("practice.live.correctCount", { count: okCount })}</span>
+      <span><span className="st-ic-bad"><Icon d={IC.circleX} /></span>{t("practice.live.incorrectCount", { count: noCount })}</span>
+      {!flow && <span><span className="st-ic-muted"><Icon d={IC.timerOff} /></span>{t("practice.live.noTimer")}</span>}
     </div>
   );
 
   // Phones keep the actions in one row, so Back is an icon.
   const foot = (
     <div className="st-q-foot">
-      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={prevQ} aria-label={flow ? "Back" : undefined}>
-        <Icon d={IC.chevLeft} size={18} />{!flow && "Back"}
+      <button type="button" className={`st-btn${flow ? " st-btn--icon" : ""}`} onClick={prevQ} aria-label={flow ? t("common.back") : undefined}>
+        <Icon d={IC.chevLeft} size={18} />{!flow && t("common.back")}
       </button>
       <span className="st-spacer" />
       {!graded ? (
         <button type="button" className="st-btn st-btn--primary" onClick={submit} disabled={!canCheck}>
-          {q.type === "multiple_choice" ? `Check answer (${chosen.length}/${need})` : "Check answer"}<Icon d={IC.chevRight} size={18} />
+          {q.type === "multiple_choice" ? t("practice.live.checkCount", { chosen: chosen.length, need }) : t("practice.live.check")}<Icon d={IC.chevRight} size={18} />
         </button>
       ) : (
         <button type="button" className="st-btn st-btn--primary" onClick={next}>
-          {last ? "Finish" : "Next question"}<Icon d={IC.chevRight} size={18} />
+          {last ? t("practice.live.finish") : t("practice.live.next")}<Icon d={IC.chevRight} size={18} />
         </button>
       )}
     </div>
@@ -124,11 +126,11 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         <div className="st-head-row">
           <div className="st-head-titles">
             <PageBreadcrumb screen="practice" />
-            <h1 className="st-title">Question {state.idx + 1} <span className="st-title-sub">of {state.queue.length}</span></h1>
+            <h1 className="st-title">{t("study.questionN", { n: state.idx + 1 })} <span className="st-title-sub">{t("study.ofTotal", { total: state.queue.length })}</span></h1>
             {flow && stats}
           </div>
           <BookmarkButton on={bookmarked} onClick={() => toggleBookmark()} />
-          <button type="button" className="st-btn" onClick={endSession}><Icon d={IC.x} />{flow ? "End" : "End session"}</button>
+          <button type="button" className="st-btn" onClick={endSession}><Icon d={IC.x} />{flow ? t("practice.live.end") : t("practice.live.endSession")}</button>
         </div>
         {state.queue.length <= MAX_SEGMENTS ? (
           <div className="st-segs" aria-hidden="true">
@@ -148,7 +150,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
         style={{ gridTemplateColumns: liveCols, alignItems: gridHeight ? "stretch" : "start", height: gridHeight ?? undefined }}
       >
         <section
-          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label="Question"
+          className={`st-card st-q${flow ? "" : " st-q--pinned"}`} aria-label={t("study.question")}
           style={pinnedCardStyle(gridHeight, bp.narrow && !flow ? fitHeight : null)}
         >
           <div className="st-q-head">
@@ -169,7 +171,7 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
                 {q.content && (q.type === "ordering" || q.type === "matching") ? (
                   <StructuredResponse content={q.content} selected={chosen} onChange={answer => pick(q, answer)} disabled={!!graded} correct={graded ? correctAnswers : undefined} />
                 ) : q.type === "fill_blank" ? (
-                  <label className="st-field">Your answer
+                  <label className="st-field">{t("study.yourAnswer")}
                     <input
                       className="st-input" value={chosen[0] ?? ""} disabled={!!graded} onChange={e => pick(q, e.target.value)}
                       // Enter in the answer field checks it, like the shortcut does elsewhere
@@ -189,10 +191,10 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
               <div className={`st-alert${graded === "ok" ? "" : " st-alert--bad"}`} role="status">
                 <Icon d={graded === "ok" ? IC.circleCheck : IC.circleX} size={22} />
                 <div>
-                  <div className="st-alert-title">{graded === "ok" ? "Correct" : "Incorrect — added to your wrong book"}</div>
+                  <div className="st-alert-title">{t(graded === "ok" ? "study.correct" : "practice.live.incorrectAdded")}</div>
                   <div className="st-alert-body">
-                    {correctAnswers.length > 0 && <>Correct answer: {formatAnswerText(q, correctAnswers)}. </>}
-                    The explanation is open {bp.narrow || flow ? "below" : "on the right"}.
+                    {correctAnswers.length > 0 && <>{t("practice.live.correctAnswer", { answer: formatAnswerText(q, correctAnswers) })} </>}
+                    {t(bp.narrow || flow ? "practice.live.explanationBelow" : "practice.live.explanationRight")}
                   </div>
                 </div>
               </div>
@@ -207,12 +209,12 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
             <div className="st-locked">
               <span className="st-locked-icon"><Icon d={IC.lock} size={20} /></span>
               <div>
-                <div className="st-locked-title">Explanation and notes are locked</div>
-                <div className="st-locked-body">They open as soon as you check your answer, so nothing gives the answer away.</div>
+                <div className="st-locked-title">{t("practice.live.lockedTitle")}</div>
+                <div className="st-locked-body">{t("practice.live.lockedBody")}</div>
               </div>
               {SHOW_KEYBOARD_HINTS && (
                 <div className="st-keys">
-                  <div className="st-keys-title"><Icon d={IC.keyboard} size={14} />Keyboard shortcuts</div>
+                  <div className="st-keys-title"><Icon d={IC.keyboard} size={14} />{t("practice.shortcuts.title")}</div>
                   {practiceShortcutHints(q).map((k) => (
                     <div key={k.keys} className="st-key-row"><kbd className="st-kbd">{k.keys}</kbd>{k.action}</div>
                   ))}
@@ -224,9 +226,9 @@ export default function PracticeLive({ bp }: { bp: Breakpoints }) {
           {!!graded && (
             <ReviewTabs
               tabs={[
-                { key: "exp", label: "Explanation", icon: IC.sparkles },
-                { key: "notes", label: "Notes", icon: IC.msg, count: noteCount },
-                { key: "related", label: "Related", icon: IC.lightbulb }
+                { key: "exp", label: t("study.tabs.explanation"), icon: IC.sparkles },
+                { key: "notes", label: t("study.tabs.notes"), icon: IC.msg, count: noteCount },
+                { key: "related", label: t("study.tabs.related"), icon: IC.lightbulb }
               ]}
               active={tab}
               onChange={setTab}
@@ -264,8 +266,8 @@ function optionRows(
     let optState: OptionState = on ? "selected" : "idle";
     let status: string | undefined;
     if (graded) {
-      if (right) { optState = "correct"; status = on ? "Your answer · Correct" : "Correct answer"; }
-      else if (on) { optState = "wrong"; status = "Your answer · Incorrect"; }
+      if (right) { optState = "correct"; status = translate(on ? "study.optionStatus.yoursCorrect" : "study.optionStatus.correct"); }
+      else if (on) { optState = "wrong"; status = translate("study.optionStatus.yoursIncorrect"); }
       else optState = "dim";
     }
     return (

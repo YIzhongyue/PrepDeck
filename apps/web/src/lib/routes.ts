@@ -18,6 +18,7 @@
 // back. Knowledge Points, Settings and Admin belong to the account.
 
 import type { PracticeSource } from "../store/PrepDeckContext";
+import { t } from "../i18n/runtime";
 import type { ScreenId } from "../types";
 
 export interface Route {
@@ -133,23 +134,11 @@ export function parseRoute(pathname: string, search = ""): RouteIntent | null {
   return account === "knowledgePoints" ? intent({ screen: account, knowledgePointId: second }) : null;
 }
 
-const SCREEN_TITLES: Record<ScreenId, string> = {
-  dash: "Statistics",
-  learning: "Learning",
-  practice: "Practice",
-  mock: "Mock exam",
-  bookmarks: "Bookmarks",
-  wrong: "Wrong questions",
-  notes: "Annotations",
-  knowledgePoints: "Knowledge points",
-  settings: "Settings",
-  admin: "Admin",
-};
-
 /** The tab title for a route: "Learning #57 · Cloud Pro · PrepDeck". */
 export function routeTitle(route: Route, examName: string | null): string {
-  let screen = SCREEN_TITLES[route.screen];
-  if (route.screen === "learning" && route.learningSequence != null) screen = `${screen} #${route.learningSequence}`;
+  const screen = route.screen === "learning" && route.learningSequence != null
+    ? t("nav.learningTitle", { sequence: String(route.learningSequence) })
+    : t(`nav.screens.${route.screen}`);
   const parts = [screen];
   if (examName && isExamScreen(route.screen)) parts.push(examName);
   parts.push("PrepDeck");

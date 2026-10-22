@@ -22,6 +22,8 @@ import DailyEmailCard from "./settings/DailyEmailCard";
 import { SettingsChips, SettingsToc, sectionAnchor, takeRequestedSettingsSection, useSectionNavigation, type SectionId, type SectionMeta } from "./settings/SettingsNav";
 import { useNow, zoneClock } from "./settings/zoneClock";
 import "./settings/settings.css";
+import { t as translate, useI18n } from "../i18n";
+import LanguageSelect from "../components/LanguageSelect";
 
 // The server's own message for a refused profile change (a 400 or the 413
 // "Avatar must be 2 MB or smaller"). A lost session has its own dialog, so it
@@ -31,7 +33,6 @@ function profileErrorMessage(err: unknown, fallback: string): string | null {
   return err instanceof ApiError && err.status >= 400 && err.status < 500 ? err.message : fallback;
 }
 
-const MARK_NAMES: Record<MarkStyle, string> = { hl1: "First mark", hl2: "Second mark", hl3: "Third mark" };
 
 // A row's title, description and control, side by side on a wide card and
 // stacked once the card is too narrow for both.
@@ -60,6 +61,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
 
   const { setTheme, signOut, updateTimeZone, updateDisplayName, uploadAvatar } = useAccountActions();
   const { toggleShared, updateMarkAlias } = useNotesActions();
+  const { t, rich } = useI18n();
 
   const theme = state.theme || DEFAULT_THEME;
   const [removeSavedKey, setRemoveSavedKey] = useState(false);
@@ -76,7 +78,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const [nameError, setNameError] = useState<string | null>(null);
   const saveName = () => {
     setNameError(null);
-    updateDisplayName(nameDraft).catch((err) => setNameError(profileErrorMessage(err, "Could not save your display name. Please try again.")));
+    updateDisplayName(nameDraft).catch((err) => setNameError(profileErrorMessage(err, translate("settings.profile.nameSaveFailed"))));
   };
 
   // implementation: same controlled-draft pattern as nameDraft above, re-synced
@@ -98,7 +100,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
       const blob = await prepareAvatarUpload(file);
       await uploadAvatar(blob);
     } catch (err) {
-      setAvatarError(err instanceof AvatarValidationError ? err.message : profileErrorMessage(err, "Could not upload this image."));
+      setAvatarError(err instanceof AvatarValidationError ? err.message : profileErrorMessage(err, translate("settings.profile.avatarUploadFailed")));
     } finally {
       setAvatarBusy(false);
     }
@@ -114,7 +116,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
   const changeTimeZone = (timeZone: string) => {
     setTimeZoneError(null);
-    updateTimeZone(timeZone).catch(() => setTimeZoneError("Could not save your time zone. Please retry."));
+    updateTimeZone(timeZone).catch(() => setTimeZoneError(translate("settings.timezone.saveFailed")));
   };
   // A zone the server already stores but this browser does not list still has
   // to be selectable, exactly as the native <select> kept it as an option.
@@ -139,14 +141,14 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
   const on = "var(--color-accent-2-600)";
   const off = "var(--color-neutral-400)";
   const navMeta: Partial<Record<SectionId, SectionMeta>> = {
-    ...(state.emailSettings && { email: state.emailSettings.enabled ? { text: "On", dot: on } : { text: "Off", dot: off } }),
-    ai: keyStatus === "done" ? { text: "Ready", dot: on } : keyStatus === "locked" ? { text: "Locked", dot: "var(--color-accent-600)" } : { text: "Not set", dot: off },
+    ...(state.emailSettings && { email: state.emailSettings.enabled ? { text: t("common.on"), dot: on } : { text: t("common.off"), dot: off } }),
+    ai: keyStatus === "done" ? { text: t("settings.nav.aiReady"), dot: on } : keyStatus === "locked" ? { text: t("settings.nav.aiLocked"), dot: "var(--color-accent-600)" } : { text: t("settings.nav.aiNotSet"), dot: off },
     ...(activeTokens > 0 && { mcp: { text: String(activeTokens), dot: "var(--color-accent-600)" } })
   };
   const navProps = { active, meta: navMeta, onJump: jump };
 
   const me = state.me;
-  const roleLabel = me?.role === "admin" ? "Admin" : "User";
+  const roleLabel = t(me?.role === "admin" ? "common.roles.admin" : "common.roles.user");
 
   return (
     <div className={cx("pd-settings", bp.narrow && "is-narrow")}>
@@ -159,34 +161,34 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
           {/* The top bar names the screen on narrow layouts; the heading stays
               for assistive technology. */}
           <header className={bp.narrow ? "sr-only" : "settings-header"}>
-            <p className="settings-kicker">Account</p>
-            <h1>Settings</h1>
+            <p className="settings-kicker">{t("settings.groups.account")}</p>
+            <h1>{t("nav.screens.settings")}</h1>
           </header>
 
-          <section aria-label="Account" className="settings-section">
+          <section aria-label={t("settings.groups.account")} className="settings-section">
             <div {...sectionAnchor("profile")} className="settings-hero">
               <span className="settings-hero-orb" aria-hidden="true" />
               <span className="settings-hero-orb settings-hero-orb-2" aria-hidden="true" />
               <span className="settings-hero-avatar"><ProfileAvatar profile={me} size={88} /></span>
               <div className="settings-hero-id">
-                <h2>{me?.displayName || me?.email || "Your profile"}</h2>
+                <h2>{me?.displayName || me?.email || t("settings.profile.yourProfile")}</h2>
                 <div className="settings-hero-meta">
                   <span className="settings-hero-email">{me?.email}</span>
                   <span className="settings-hero-pill">{roleLabel}</span>
-                  <span className="settings-hero-pill settings-hero-pill-google">Signed in with Google</span>
+                  <span className="settings-hero-pill settings-hero-pill-google">{t("settings.profile.signedInWithGoogle")}</span>
                 </div>
               </div>
               <div className="settings-hero-actions">
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onAvatarChosen} style={{ display: "none" }} />
                 <Button color="secondary" size="md" className="settings-hero-button" isDisabled={avatarBusy} isLoading={avatarBusy} showTextWhileLoading onClick={() => fileInputRef.current?.click()}>
-                  {avatarBusy ? "Uploading…" : "Upload avatar"}
+                  {avatarBusy ? t("settings.profile.uploading") : t("settings.profile.uploadAvatar")}
                 </Button>
                 {avatarError && <p role="alert" className="settings-hero-error">{avatarError}</p>}
               </div>
             </div>
 
             <div className="settings-card">
-              <Row id="settings-name" title="Display name" desc="From Google until you change it.">
+              <Row id="settings-name" title={t("settings.profile.displayName")} desc={t("settings.profile.displayNameDesc")}>
                 <div className="settings-inline">
                   <Input
                     className="flex-1 settings-field"
@@ -194,20 +196,20 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                     value={nameDraft}
                     onChange={(v) => { setNameDraft(v); setNameError(null); }}
                     isInvalid={nameEmpty || !!nameError}
-                    hint={nameEmpty ? "Enter a display name to save it." : nameError ?? undefined}
+                    hint={nameEmpty ? t("settings.profile.displayNameEmpty") : nameError ?? undefined}
                   />
-                  {nameDirty && <Button size="md" onClick={saveName}>Save</Button>}
+                  {nameDirty && <Button size="md" onClick={saveName}>{t("common.save")}</Button>}
                 </div>
               </Row>
               {/* Issue #46: signing out ends every session of the account, and a
                   saved AI key can go with it on a shared browser. */}
               <Row
-                id="settings-signout" anchor="session" title="Sign out everywhere"
-                desc="Ends your session on every device and browser. MCP tokens and connected apps are separate; revoke them below."
+                id="settings-signout" anchor="session" title={t("settings.session.title")}
+                desc={t("settings.session.desc")}
               >
                 <div className="settings-row-stack">
                   {state.hasStoredKey && (
-                    <Checkbox label="Also remove my saved AI key from this browser" isSelected={removeSavedKey} onChange={setRemoveSavedKey} />
+                    <Checkbox label={t("settings.session.removeKey")} isSelected={removeSavedKey} onChange={setRemoveSavedKey} />
                   )}
                   <Button
                     color="secondary-destructive"
@@ -215,7 +217,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                     isDisabled={signingOut}
                     onClick={() => { setSigningOut(true); void signOut({ removeSavedKey: state.hasStoredKey && removeSavedKey }); }}
                   >
-                    Sign out
+                    {t("settings.session.signOut")}
                   </Button>
                 </div>
               </Row>
@@ -224,14 +226,14 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
 
           <section aria-labelledby="settings-study-heading" className="settings-section">
             <div className="settings-section-head">
-              <h2 id="settings-study-heading">Study</h2>
-              <p>How PrepDeck looks, marks and reminds you.</p>
+              <h2 id="settings-study-heading">{t("settings.groups.study")}</h2>
+              <p>{t("settings.groups.studyDesc")}</p>
             </div>
 
             <div {...sectionAnchor("appearance")} className="settings-panel">
               <div className="settings-panel-text">
-                <h3 className="settings-row-title">Appearance</h3>
-                <p className="settings-row-desc">Saved in this browser and applied everywhere instantly.</p>
+                <h3 className="settings-row-title">{t("settings.appearance.title")}</h3>
+                <p className="settings-row-desc">{t("settings.appearance.desc")}</p>
               </div>
               <div className="settings-themes">
                 {THEMES.map((t) => {
@@ -253,8 +255,8 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                         </span>
                       </span>
                       <span className="settings-theme-name">
-                        <span className="settings-theme-label">{t.name}</span>
-                        <span className="settings-theme-hint">{t.hint}</span>
+                        <span className="settings-theme-label">{translate(`settings.themes.${t.id}.name`)}</span>
+                        <span className="settings-theme-hint">{translate(`settings.themes.${t.id}.hint`)}</span>
                         {selected && <span className="settings-check" aria-hidden="true">✓</span>}
                       </span>
                     </button>
@@ -264,9 +266,16 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
             </div>
 
             <div className="settings-card">
+              {/* Issue #191: the interface language, kept per browser like the theme. */}
+              <Row id="settings-language" anchor="language" title={t("language.label")} desc={t("language.description")}>
+                <div className="settings-field">
+                  <LanguageSelect aria-labelledby="settings-language-title" />
+                </div>
+              </Row>
+
               <Row
-                id="settings-marks" anchor="marks" title="Mark aliases"
-                desc="Name what each highlight means to you. The name follows you everywhere; the color follows your theme."
+                id="settings-marks" anchor="marks" title={t("settings.marks.title")}
+                desc={t("settings.marks.desc")}
               >
                 <div className="settings-marks">
                   {MARK_STYLES.map((style) => {
@@ -277,27 +286,29 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                       <div key={style} className="settings-mark">
                         <span className="settings-mark-swatch" aria-hidden="true" style={{ background: HL[style]?.background, color: HL[style]?.text }}>Aa</span>
                         <TextField
-                          aria-label={MARK_NAMES[style]}
+                          aria-label={t(`settings.marks.names.${style}`)}
                           className="settings-mark-field settings-field"
                           value={draft}
                           onChange={(value) => setAliasDrafts((d) => ({ ...d, [style]: value }))}
                         >
                           <InputBase maxLength={MARK_ALIAS_MAX_LENGTH} />
-                          <span className="settings-mark-tag" aria-hidden="true">{MARK_NAMES[style]}</span>
+                          <span className="settings-mark-tag" aria-hidden="true">{t(`settings.marks.names.${style}`)}</span>
                         </TextField>
-                        {dirty && <Button size="md" onClick={() => updateMarkAlias(style, draft)}>Save</Button>}
+                        {dirty && <Button size="md" onClick={() => updateMarkAlias(style, draft)}>{t("common.save")}</Button>}
                       </div>
                     );
                   })}
                   <p className="settings-mark-sample">
-                    A <mark style={{ background: HL.hl1?.background, color: HL.hl1?.text }} title={state.markAliases.hl1}>gateway endpoint</mark> keeps
-                    S3 traffic inside the VPC, while <mark style={{ background: HL.hl2?.background, color: HL.hl2?.text }} title={state.markAliases.hl2}>interface endpoints</mark> use
-                    PrivateLink and <mark style={{ background: HL.hl3?.background, color: HL.hl3?.text }} title={state.markAliases.hl3}>bill per hour</mark>.
+                    {rich("settings.marks.sample", {
+                      hl1: (chunks) => <mark style={{ background: HL.hl1?.background, color: HL.hl1?.text }} title={state.markAliases.hl1}>{chunks}</mark>,
+                      hl2: (chunks) => <mark style={{ background: HL.hl2?.background, color: HL.hl2?.text }} title={state.markAliases.hl2}>{chunks}</mark>,
+                      hl3: (chunks) => <mark style={{ background: HL.hl3?.background, color: HL.hl3?.text }} title={state.markAliases.hl3}>{chunks}</mark>
+                    })}
                   </p>
                 </div>
               </Row>
 
-              <Row id="settings-shared" anchor="notes" inline title="Show other users' shared notes" desc="Your own notes always show, private or shared.">
+              <Row id="settings-shared" anchor="notes" inline title={t("settings.sharedNotes.title")} desc={t("settings.sharedNotes.desc")}>
                 <Toggle
                   size="md"
                   aria-labelledby="settings-shared-title"
@@ -309,7 +320,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
 
               {/* issue #47: one zone for the account. The Statistics screen counts its
                   days, weeks and countdown in it, and the daily email is sent in it. */}
-              <Row id="settings-zone" anchor="timezone" title="Time zone" desc="Statistics count days and weeks here, and the daily email arrives at its delivery time here.">
+              <Row id="settings-zone" anchor="timezone" title={t("settings.timezone.title")} desc={t("settings.timezone.desc")}>
                 {/* A combo box rather than a plain select: the zone list runs to
                     several hundred entries, which the native control made
                     searchable by type-ahead. */}
@@ -317,7 +328,7 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
                   <Select.ComboBox
                     aria-labelledby="settings-zone-title"
                     shortcut={false}
-                    hint={timeZoneError ?? (clock ? `${clock.offset} · ${clock.time} now` : undefined)}
+                    hint={timeZoneError ?? (clock ? t("settings.timezone.now", { offset: clock.offset, time: clock.time }) : undefined)}
                     isInvalid={!!timeZoneError}
                     selectedKey={state.timeZone}
                     onSelectionChange={(key) => key !== null && changeTimeZone(String(key))}
@@ -334,26 +345,26 @@ export default function Settings({ bp }: { bp: Breakpoints }) {
 
           <section aria-labelledby="settings-integrations-heading" className="settings-section">
             <div className="settings-section-head">
-              <h2 id="settings-integrations-heading">AI &amp; integrations</h2>
-              <p>Your own key, your own clients.</p>
+              <h2 id="settings-integrations-heading">{t("settings.groups.integrations")}</h2>
+              <p>{t("settings.groups.integrationsDesc")}</p>
             </div>
 
             <AiExplanationsCard />
 
             <div {...sectionAnchor("mcp")}>
               <McpTokensCard
-                title="MCP access"
-                description="Personal access tokens for connecting AI clients (Claude, ChatGPT, etc.) to your PrepDeck study data over MCP. Each token acts as you and can be revoked at any time."
+                title={t("settings.mcp.title")}
+                description={t("settings.mcp.desc")}
                 apiBase="/api/mcp-tokens"
                 enableSetupPrompt
-                namePlaceholder="e.g. claude-desktop"
+                namePlaceholder={t("settings.mcp.namePlaceholder")}
                 onActiveCountChange={setActiveTokens}
               />
             </div>
 
             <McpConnectionsCard
-              title="Connected apps"
-              description="AI clients you connected by signing in with Google and approving access, instead of a token. Each acts as you with the access you approved, until you disconnect it."
+              title={t("settings.connections.title")}
+              description={t("settings.connections.desc")}
               apiBase="/api/mcp-connections"
             />
           </section>

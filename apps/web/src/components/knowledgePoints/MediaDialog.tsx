@@ -1,9 +1,12 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "./useDialogFocus";
+import { useI18n } from "../../i18n";
 
-export default function MediaDialog({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+/** `kind` names what is enlarged, in the dialog's name and its close button. */
+export default function MediaDialog({ kind, onClose, children }: { kind: "image" | "diagram"; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   useDialogFocus(ref, onClose);
 
   // `aria-modal` tells a screen reader this is modal but does not actually
@@ -20,9 +23,9 @@ export default function MediaDialog({ label, onClose, children }: { label: strin
     return () => { for (const el of inerted) el.inert = false; };
   }, []);
 
-  return createPortal(<div ref={ref} role="dialog" aria-modal="true" aria-label={`Enlarged ${label}`} tabIndex={-1} className="kp-image-dialog"
+  return createPortal(<div ref={ref} role="dialog" aria-modal="true" aria-label={t(`kp.media.enlarged.${kind}`)} tabIndex={-1} className="kp-image-dialog"
     style={{ position: "fixed", inset: "3vh 3vw", width: "94vw", height: "94vh", zIndex: 120, background: "var(--color-bg)", color: "var(--color-text)", overflow: "auto" }}>
-    <button type="button" className="btn btn-secondary" onClick={onClose}>Close enlarged {label}</button>
+    <button type="button" className="btn btn-secondary" onClick={onClose}>{t(`kp.media.close.${kind}`)}</button>
     {children}
   </div>, document.querySelector("[data-pd-theme]") ?? document.body);
 }

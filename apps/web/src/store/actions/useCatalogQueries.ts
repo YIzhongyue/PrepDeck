@@ -13,6 +13,7 @@ import type { Question } from "../../types";
 import type { Patch } from "../appState";
 import { type LoadOptions, without } from "../storeHelpers";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // Reads over the loaded catalog (practice pool, current question) and the
 // question content and study-status loaders they rely on.
@@ -74,7 +75,7 @@ export function useCatalogQueries(core: StoreCore) {
     apiFetch<PracticeQuestionContentResponse>(`/api/exams/${encodeURIComponent(examId)}/practice-catalog/${encodeURIComponent(qid)}`, { cache: "no-store" })
       .then(({ content, revision }) => {
         if (!content || (requested.revision !== undefined && requested.revision !== revision)) {
-          throw new Error("This question changed. Refresh the exam and try again.");
+          throw new Error(t("errors.question.changed"));
         }
         update(s => {
           // Ignore snapshots requested before a same-exam catalog refresh,
@@ -87,7 +88,7 @@ export function useCatalogQueries(core: StoreCore) {
         });
       }).catch(error => update(s => s.catalogRevision !== catalogRevision || !s.catalogBy[qid] ? {} : prefetch
         ? { questionContent: without(s.questionContent, qid) }
-        : { questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : "Could not load this question. Please retry." } } }));
+        : { questionContent: { ...s.questionContent, [qid]: { status: "error", error: error instanceof Error ? error.message : t("study.gate.loadFailed") } } }));
   }, [scopedState, stateRef]);
 
   return { applyStudyStatus, refreshStudyStatuses, pool, curQ, mockQ, loadQuestionContent };

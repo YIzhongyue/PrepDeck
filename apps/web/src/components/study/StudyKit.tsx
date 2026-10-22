@@ -10,10 +10,11 @@ import NoteCard from "../NoteCard";
 import LengthHint from "../LengthHint";
 import UnlockKeyPrompt from "../UnlockKeyPrompt";
 import AnswerRevisionNotice from "../AnswerRevisionNotice";
-import { UNDER_REVIEW_NOTICE } from "../../lib/underReview";
+import { underReviewNotice } from "../../lib/underReview";
 import type { LearningHistoryRow, Question } from "../../types";
 import { requestSettingsSection } from "../../screens/settings/SettingsNav";
 import "./study.css";
+import { useI18n, type TranslationKey } from "../../i18n";
 
 // Shared pieces of the live Practice, Mock and Learning screens. Styles live
 // in study.css under `.pd-study`.
@@ -84,8 +85,9 @@ export function modelLabelFor(provider: "anthropic" | "openai", modelId: string)
 }
 
 export function BookmarkButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  const { t } = useI18n();
   return (
-    <button type="button" className={`st-btn st-btn--icon${on ? " st-btn--on" : ""}`} onClick={onClick} title="Bookmark" aria-label="Bookmark" aria-pressed={on}>
+    <button type="button" className={`st-btn st-btn--icon${on ? " st-btn--on" : ""}`} onClick={onClick} title={t("study.bookmark")} aria-label={t("study.bookmark")} aria-pressed={on}>
       <Icon d={IC.bookmark} size={18} fill={on ? "currentColor" : "none"} />
     </button>
   );
@@ -96,13 +98,14 @@ export function BookmarkButton({ on, onClick }: { on: boolean; onClick: () => vo
    "Mark as unstudied", which its tooltip says. `compact` (phones) is
    icon-only, like the bookmark beside it. */
 export function StudiedToggle({ studied, onChange, compact = false }: { studied: boolean; onChange: (studied: boolean) => void; compact?: boolean }) {
-  const action = studied ? "Mark as unstudied" : "Mark as studied";
+  const { t } = useI18n();
+  const action = t(studied ? "study.studied.markUnstudied" : "study.studied.markStudied");
   return (
     <button
       type="button" className={`st-btn${compact ? " st-btn--icon" : ""}${studied ? " st-btn--on" : ""}`}
-      onClick={() => onChange(!studied)} aria-pressed={studied} aria-label="Studied" title={action}
+      onClick={() => onChange(!studied)} aria-pressed={studied} aria-label={t("study.studied.label")} title={action}
     >
-      <Icon d={studied ? IC.circleCheck : IC.circle} size={18} />{!compact && "Studied"}
+      <Icon d={studied ? IC.circleCheck : IC.circle} size={18} />{!compact && t("study.studied.label")}
     </button>
   );
 }
@@ -112,15 +115,16 @@ export function StudiedToggle({ studied, onChange, compact = false }: { studied:
    room for a label: the icon turns into a coloured check or cross, and the
    live region below announces the outcome. Wider layouts spell it out. */
 export function CopyPromptButton({ status, onClick, compact = false }: { status: "idle" | "copied" | "error"; onClick: () => void; compact?: boolean }) {
+  const { t } = useI18n();
   return (
     <>
       <button type="button" className="st-btn st-btn--sm st-copy" data-status={status} onClick={onClick}
-        aria-label={compact ? "Copy as prompt" : undefined} title="Copy question and answers as a Markdown prompt">
+        aria-label={compact ? t("study.copyPrompt.label") : undefined} title={t("study.copyPrompt.title")}>
         <Icon d={status === "copied" ? IC.check : status === "error" && compact ? IC.circleX : IC.copy} style={status === "copied" ? { animation: "st-pop .35s cubic-bezier(.3,1.5,.5,1) both" } : undefined} />
-        {!compact && (status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy as prompt")}
+        {!compact && (status === "copied" ? t("common.copied") : status === "error" ? t("study.copyPrompt.failed") : t("study.copyPrompt.label"))}
       </button>
       <span className="sr-only" aria-live="polite">
-        {status === "copied" ? "Markdown prompt copied to clipboard." : status === "error" ? "Could not copy the Markdown prompt." : ""}
+        {status === "copied" ? t("study.copyPrompt.copiedAnnounce") : status === "error" ? t("study.copyPrompt.failedAnnounce") : ""}
       </span>
     </>
   );
@@ -199,6 +203,7 @@ export function pinnedCardStyle(gridHeight: number | null, capHeight: number | n
    `underReview` adds the warning badge beside the type, in the header that
    stays on screen, never among the tags it could be mistaken for. */
 export function QuestionBadges({ label, typeLabel, multi, tags, compact = false, underReview = false, children }: { label: string | null; typeLabel: string; multi: boolean; tags?: string[]; compact?: boolean; underReview?: boolean; children?: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="st-badges">
       {/* The first row holds only the ID, type and actions, so tags can never push an action onto a new line. */}
@@ -210,8 +215,8 @@ export function QuestionBadges({ label, typeLabel, multi, tags, compact = false,
       </div>
       {!!tags?.length && (
         // Focusable when it scrolls, so keyboard users can reach the hidden tags too.
-        <div className={`st-tags${compact ? " st-tags--scroll" : ""}`} {...(compact ? { role: "group", "aria-label": "Tags", tabIndex: 0 } : {})}>
-          {tags.map((t) => <span key={t} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{t}</span>)}
+        <div className={`st-tags${compact ? " st-tags--scroll" : ""}`} {...(compact ? { role: "group", "aria-label": t("study.tags"), tabIndex: 0 } : {})}>
+          {tags.map((tag) => <span key={tag} className="st-badge st-badge--info"><Icon d={IC.tag} size={12} />{tag}</span>)}
         </div>
       )}
     </div>
@@ -221,15 +226,17 @@ export function QuestionBadges({ label, typeLabel, multi, tags, compact = false,
 /* Issue #94: a question an admin is still reviewing. The badge stays in the
    pinned header; the notice, above the stem, says what that means. */
 export function UnderReviewBadge() {
-  return <span className="st-badge st-badge--warn" title={UNDER_REVIEW_NOTICE}><Icon d={IC.alert} size={12} />Under review</span>;
+  const { t } = useI18n();
+  return <span className="st-badge st-badge--warn" title={underReviewNotice()}><Icon d={IC.alert} size={12} />{t("study.underReview.badge")}</span>;
 }
 
 export function UnderReviewNotice({ question }: { question: Pick<Question, "needsReview"> }) {
+  useI18n();
   if (!question.needsReview) return null;
   return (
     <div className="st-review-note" role="note">
       <Icon d={IC.alert} size={16} />
-      <span>{UNDER_REVIEW_NOTICE}</span>
+      <span>{underReviewNotice()}</span>
     </div>
   );
 }
@@ -245,17 +252,18 @@ export type OptionGroupKind = "single" | "multiple" | "review";
 
 const OptionGroupContext = createContext<{ kind: OptionGroupKind; tabStop?: string }>({ kind: "review" });
 
-const GROUP_LABEL: Record<OptionGroupKind, string> = {
-  single: "Answer options, choose one",
-  multiple: "Answer options, choose all that apply",
-  review: "Answer options"
+const GROUP_LABEL: Record<OptionGroupKind, TranslationKey> = {
+  single: "study.options.single",
+  multiple: "study.options.multiple",
+  review: "study.options.review"
 };
 
 /* Wraps a question's OptionRows. `tabStop` is the radio that Tab lands on:
    the chosen option, else the first (the usual roving-tabindex pattern). */
 export function OptionGroup({ kind, tabStop, children }: { kind: OptionGroupKind; tabStop?: string; children: ReactNode }) {
+  const { t } = useI18n();
   return (
-    <div className="st-opt-group" role={kind === "single" ? "radiogroup" : kind === "multiple" ? "group" : "list"} aria-label={GROUP_LABEL[kind]}>
+    <div className="st-opt-group" role={kind === "single" ? "radiogroup" : kind === "multiple" ? "group" : "list"} aria-label={t(GROUP_LABEL[kind])}>
       <OptionGroupContext.Provider value={{ kind, tabStop }}>{children}</OptionGroupContext.Provider>
     </div>
   );
@@ -322,6 +330,7 @@ export function Collapsible({ cap, enabled, children }: { cap: number; enabled: 
   const inner = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false);
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
   useLayoutEffect(() => {
     const el = inner.current;
     if (!el || !enabled) { setLong(false); return; }
@@ -340,7 +349,7 @@ export function Collapsible({ cap, enabled, children }: { cap: number; enabled: 
       </div>
       {enabled && long && (
         <button type="button" className="st-link st-link--brand st-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          {open ? "Show less" : "Show more"}<Icon d={IC.chevDown} size={14} strokeWidth={2.25} />
+          {open ? t("study.showLess") : t("study.showMore")}<Icon d={IC.chevDown} size={14} strokeWidth={2.25} />
         </button>
       )}
     </div>
@@ -351,16 +360,17 @@ export interface ReviewTab { key: string; label: string; icon: string; count?: n
 
 /* The graded / reading review card: a tab strip over one panel. */
 export function ReviewTabs({ tabs, active, onChange, children }: { tabs: ReviewTab[]; active: string; onChange: (key: string) => void; children: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="st-card st-review">
-      <div className="st-tabs" role="tablist" aria-label="Review">
-        {tabs.map((t) => (
+      <div className="st-tabs" role="tablist" aria-label={t("study.review")}>
+        {tabs.map((tab) => (
           <button
-            key={t.key} type="button" role="tab" id={`st-tab-${t.key}`} aria-selected={t.key === active} aria-controls="st-tabpanel"
-            className="st-tab" onClick={() => onChange(t.key)}
+            key={tab.key} type="button" role="tab" id={`st-tab-${tab.key}`} aria-selected={tab.key === active} aria-controls="st-tabpanel"
+            className="st-tab" onClick={() => onChange(tab.key)}
           >
-            <Icon d={t.icon} />{t.label}
-            {!!t.count && <span className="st-tab-count">{t.count}</span>}
+            <Icon d={tab.icon} />{tab.label}
+            {!!tab.count && <span className="st-tab-count">{tab.count}</span>}
           </button>
         ))}
       </div>
@@ -372,10 +382,11 @@ export function ReviewTabs({ tabs, active, onChange, children }: { tabs: ReviewT
 /* Shared official content only: safe to render from an unsaved authoring draft
    without reading study state or offering AI/cache actions. */
 export function OfficialExplanation({ explanation, collapsible = false }: { explanation?: string | null; collapsible?: boolean }) {
+  const { t } = useI18n();
   if (!explanation) return null;
   return (
     <div className="st-official">
-      <div className="st-official-title"><Icon d={IC.badgeCheck} size={14} />Official explanation</div>
+      <div className="st-official-title"><Icon d={IC.badgeCheck} size={14} />{t("study.officialExplanation")}</div>
       <Collapsible cap={110} enabled={collapsible}>
         <div className="st-prose"><QuestionContent src={explanation} tables /></div>
       </Collapsible>
@@ -391,20 +402,21 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
   const { go } = useWorkspaceActions();
   const { genAi, showAlternateAi } = useAiActions();
   const { capture, removeMark } = useNotesActions();
+  const { t, rich } = useI18n();
   const aiRec = ai[q.id];
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
   const modelLabel = modelLabelFor(state.provider, state.model);
   const ready = aiRec?.status === "ready";
   const badge = ready && aiRec.provider && aiRec.model
-    ? `${aiRec.cached ? "cached" : "generated"} · ${modelLabelFor(aiRec.provider, aiRec.model)}`
-    : "not cached";
+    ? `${t(aiRec.cached ? "study.ai.cached" : "study.ai.generated")} · ${modelLabelFor(aiRec.provider, aiRec.model)}`
+    : t("study.ai.notCached");
 
   return (
     <div className="st-panel">
       <OfficialExplanation explanation={explanation} collapsible={collapsible} />
 
       <div className="st-ai-head">
-        <span className="st-ai-title"><Icon d={IC.sparkles} />AI explanation</span>
+        <span className="st-ai-title"><Icon d={IC.sparkles} />{t("study.ai.title")}</span>
         <span className={`st-badge${ready ? " st-badge--ok" : ""}`}>{badge}</span>
       </div>
 
@@ -420,7 +432,7 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
             </div>
           </Collapsible>
           {aiRec.canManage && (
-            <button type="button" className="st-link" onClick={() => genAi(q, true)}><Icon d={IC.refresh} size={14} />Regenerate</button>
+            <button type="button" className="st-link" onClick={() => genAi(q, true)}><Icon d={IC.refresh} size={14} />{t("study.ai.regenerate")}</button>
           )}
         </>
       )}
@@ -428,7 +440,7 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
       {(!aiRec || aiRec.status === "checking" || aiRec.status === "generating") && (
         <span className="st-spin">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M12 3a9 9 0 019 9" /></svg>
-          <span>{aiRec?.status === "generating" ? `Relaying to ${providerLabel} …` : "Checking the shared cache …"}</span>
+          <span>{aiRec?.status === "generating" ? t("study.ai.relaying", { provider: providerLabel }) : t("study.ai.checking")}</span>
         </span>
       )}
 
@@ -436,23 +448,23 @@ export function ExplanationPanel({ q, explanation, collapsible }: { q: Question;
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {aiRec.alternates?.map((alt) => (
             <div key={`${alt.provider}:${alt.model}`} className="st-alt">
-              <span style={{ flex: 1 }}>Already explained with <strong>{modelLabelFor(alt.provider, alt.model)}</strong></span>
-              <button type="button" className="st-btn st-btn--sm" onClick={() => showAlternateAi(q, alt)}>Show it</button>
+              <span style={{ flex: 1 }}>{rich("study.ai.alreadyExplained", { model: (chunks) => <strong>{chunks}</strong>, name: modelLabelFor(alt.provider, alt.model) })}</span>
+              <button type="button" className="st-btn st-btn--sm" onClick={() => showAlternateAi(q, alt)}>{t("study.ai.showIt")}</button>
             </div>
           ))}
           {aiRec.status === "error" && <p className="st-error">{aiRec.error}</p>}
           {state.hasSessionKey ? (
             <>
-              <p className="st-muted">No cached explanation for {providerLabel} · {modelLabel} yet.</p>
-              <button type="button" className="st-btn st-btn--primary" onClick={() => genAi(q)}><Icon d={IC.sparkles} />Generate explanation</button>
+              <p className="st-muted">{t("study.ai.noCached", { provider: providerLabel, model: modelLabel })}</p>
+              <button type="button" className="st-btn st-btn--primary" onClick={() => genAi(q)}><Icon d={IC.sparkles} />{t("study.ai.generate")}</button>
             </>
           ) : state.keyMode === "encrypted" && state.hasStoredKey ? (
             <UnlockKeyPrompt onUnlock={() => genAi(q)} />
           ) : (
             <>
-              <p className="st-muted">No API key loaded. Add one in Settings to generate a fresh explanation.</p>
+              <p className="st-muted">{t("study.ai.noKey")}</p>
               <button type="button" className="st-btn" onClick={() => { requestSettingsSection("ai"); go("settings"); }}>
-                <Icon d={IC.key} />Add an API key in Settings
+                <Icon d={IC.key} />{t("study.ai.addKey")}
               </button>
             </>
           )}
@@ -470,26 +482,27 @@ export function NotesPanel({ qid }: { qid: string }) {
   const notes = visibleNotes(useNotesState(), qid);
   const state = useNoteDraftState();
   const { setNoteDraft, addNote, setNoteVis } = useNotesActions();
+  const { t } = useI18n();
 
   return (
     <div className="st-panel">
       {notes.length > 0 && <div className="st-notes">{notes.map((n) => <NoteCard key={n.id} note={n} />)}</div>}
       <div className="st-compose">
         <textarea
-          className="st-textarea" placeholder="Write a note for this question…" aria-label="Note for this question"
+          className="st-textarea" placeholder={t("notes.placeholder")} aria-label={t("notes.forQuestion")}
           value={state.noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={MAX_NOTE_LENGTH}
         />
         <LengthHint length={state.noteDraft.length} max={MAX_NOTE_LENGTH} />
         <div className="st-compose-row">
-          <div className="st-segmented" role="group" aria-label="Note visibility">
+          <div className="st-segmented" role="group" aria-label={t("notes.visibilityLabel")}>
             {(["private", "shared"] as const).map((v) => (
               <button key={v} type="button" className="st-seg-btn" aria-pressed={state.noteVis === v} onClick={() => setNoteVis(v)}>
-                <Icon d={v === "private" ? IC.lock : IC.users} size={14} />{v === "private" ? "Private" : "Shared"}
+                <Icon d={v === "private" ? IC.lock : IC.users} size={14} />{t(v === "private" ? "notes.visibility.privateLabel" : "notes.visibility.sharedLabel")}
               </button>
             ))}
           </div>
           <span style={{ flex: 1 }} />
-          <button type="button" className="st-btn st-btn--primary" onClick={() => addNote(qid)}>Save note</button>
+          <button type="button" className="st-btn st-btn--primary" onClick={() => addNote(qid)}>{t("notes.save")}</button>
         </div>
       </div>
     </div>
@@ -497,14 +510,15 @@ export function NotesPanel({ qid }: { qid: string }) {
 }
 
 export function HistoryPanel({ rows, loading, answerRevisedAt, answerRevision, question }: { rows: LearningHistoryRow[]; loading: boolean; answerRevisedAt?: string | null; answerRevision?: number; question: Question }) {
-  if (loading) return <div className="st-panel"><span className="st-muted">Loading…</span></div>;
+  const { t, rich, formatDate } = useI18n();
+  if (loading) return <div className="st-panel"><span className="st-muted">{t("common.loading")}</span></div>;
   if (!rows.length) {
     return (
       <div className="st-panel">
         <div className="st-empty">
           <span className="st-empty-icon"><Icon d={IC.history} size={20} /></span>
-          <div className="st-empty-title">No attempts yet</div>
-          <div className="st-empty-body">Not answered in Practice or Mock mode.</div>
+          <div className="st-empty-title">{t("study.history.emptyTitle")}</div>
+          <div className="st-empty-body">{t("study.history.emptyBody")}</div>
         </div>
       </div>
     );
@@ -513,12 +527,12 @@ export function HistoryPanel({ rows, loading, answerRevisedAt, answerRevision, q
     <div className="st-panel st-panel--list">
       {rows.map((h, i) => (
         <div key={`${h.attemptId}-${i}`} className="st-history-row">
-          <span className="st-badge">{h.mode === "mock" ? "Mock" : "Practice"}</span>
-          <span className="st-history-text">Answered <strong style={{ fontWeight: 600 }}>{formatAnswerText(question, h.selectedAnswer) || "—"}</strong></span>
+          <span className="st-badge">{t(h.mode === "mock" ? "study.history.mock" : "study.history.practice")}</span>
+          <span className="st-history-text">{rich("study.history.answered", { answer: (chunks) => <strong style={{ fontWeight: 600 }}>{chunks}</strong>, value: formatAnswerText(question, h.selectedAnswer) || "—" })}</span>
           <span className={`st-badge ${h.isCorrect ? "st-badge--ok" : "st-badge--bad"}`}>
-            <Icon d={h.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{h.isCorrect ? "Correct" : "Incorrect"}
+            <Icon d={h.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{t(h.isCorrect ? "study.correct" : "study.incorrect")}
           </span>
-          <span className="st-history-date">{new Date(h.answeredAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</span>
+          <span className="st-history-date">{formatDate(h.answeredAt, { year: "numeric", month: "short", day: "numeric" })}</span>
           <AnswerRevisionNotice revisedAt={answerRevisedAt} historical={h.answerRevision == null || h.answerRevision < (answerRevision ?? 1)} gradedAnswers={h.gradedAnswers} question={question} />
         </div>
       ))}

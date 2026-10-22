@@ -8,6 +8,7 @@ import {
   useCatalogActions, useCatalogState, useMockExamActions, useMockExamState, useReviewListsActions, useReviewListsState,
   useViewport, useWorkspaceActions, useWorkspaceState,
 } from "../store/PrepDeckContext";
+import { useI18n } from "../i18n";
 
 const RING_R = 52;
 const RING_C = 2 * Math.PI * RING_R;
@@ -24,6 +25,7 @@ export default function MockResults() {
   const { go } = useWorkspaceActions();
   const { toggleBookmark } = useReviewListsActions();
   const { loadQuestionContent } = useCatalogActions();
+  const { t } = useI18n();
 
   const result = state.mockResult;
   const [reviewQuestionId, setReviewQuestionId] = useState<string | null>(null);
@@ -53,17 +55,17 @@ export default function MockResults() {
   const pace = total ? (result.durationSeconds / 60 / total).toFixed(1) : "0";
 
   const metrics = [
-    { k: "Correct", v: String(result.correctCount), sub: `of ${total}`, icon: IC.circleCheck, tone: "ok" },
+    { k: t("study.correct"), v: String(result.correctCount), sub: t("study.ofTotal", { total }), icon: IC.circleCheck, tone: "ok" },
     // The pass mark when the exam has an official format; otherwise the misses.
     result.requiredCorrect != null
       ? {
-        k: "Pass mark", v: `${result.requiredCorrect} correct`, icon: IC.target, tone: "brand",
+        k: t("mock.setup.passMark"), v: t("mock.results.nCorrect", { count: result.requiredCorrect }), icon: IC.target, tone: "brand",
         sub: result.correctCount >= result.requiredCorrect
-          ? `+${result.correctCount - result.requiredCorrect} above`
-          : `${result.requiredCorrect - result.correctCount} short`
+          ? t("mock.results.above", { count: result.correctCount - result.requiredCorrect })
+          : t("mock.results.short", { count: result.requiredCorrect - result.correctCount })
       }
-      : { k: "Missed", v: String(missed), sub: unanswered ? `${unanswered} left unanswered` : "to review", icon: IC.circleX, tone: "bad" },
-    { k: "Time used", v: `${minutesUsed} min`, sub: `${pace} min / question`, icon: IC.clock, tone: "" }
+      : { k: t("mock.results.missed"), v: String(missed), sub: unanswered ? t("mock.results.unanswered", { count: unanswered }) : t("mock.results.toReview"), icon: IC.circleX, tone: "bad" },
+    { k: t("mock.results.timeUsed"), v: t("mock.results.minutes", { count: minutesUsed }), sub: t("mock.setup.paceValue", { minutes: pace }), icon: IC.clock, tone: "" }
   ];
 
   return (
@@ -79,17 +81,17 @@ export default function MockResults() {
           </div>
           <div className="st-hero-text">
             <div className="st-hero-kicker">
-              <span>Mock exam{examName ? ` · ${examName}` : ""}</span>
-              {pass === true && <span className="st-badge st-badge--ok"><Icon d={IC.trophy} size={12} />Passed</span>}
-              {pass === false && <span className="st-badge st-badge--bad"><Icon d={IC.target} size={12} />Not passed</span>}
+              <span>{t("nav.screens.mock")}{examName ? ` · ${examName}` : ""}</span>
+              {pass === true && <span className="st-badge st-badge--ok"><Icon d={IC.trophy} size={12} />{t("stats.passed")}</span>}
+              {pass === false && <span className="st-badge st-badge--bad"><Icon d={IC.target} size={12} />{t("mock.results.notPassed")}</span>}
             </div>
-            <h1>{pass === false ? "Below the pass mark" : pass === true ? "Above the pass mark" : "Exam complete"}</h1>
-            <p className="st-hero-sub">{minutesUsed} min used · {total} questions · {result.correctCount} correct</p>
+            <h1>{t(pass === false ? "mock.results.below" : pass === true ? "mock.results.aboveMark" : "mock.results.complete")}</h1>
+            <p className="st-hero-sub">{t("mock.results.heroSub", { minutes: minutesUsed, total, correct: result.correctCount })}</p>
           </div>
           <div className="st-hero-actions">
-            <button type="button" className="st-btn" onClick={() => go("mock", { newMock: true })}><Icon d={IC.rotate} />New mock</button>
+            <button type="button" className="st-btn" onClick={() => go("mock", { newMock: true })}><Icon d={IC.rotate} />{t("mock.results.newMock")}</button>
             <button type="button" className="st-btn st-btn--primary" onClick={practiceWrong} disabled={missed === 0}>
-              <Icon d={IC.target} />{missed === 0 ? "No misses to practice" : `Practice the ${missed} ${missed === 1 ? "miss" : "misses"}`}
+              <Icon d={IC.target} />{missed === 0 ? t("mock.results.noMisses") : t("mock.results.practiceMisses", { count: missed })}
             </button>
           </div>
         </div>
@@ -106,18 +108,18 @@ export default function MockResults() {
         <div className="st-card st-breakdown">
           <div className="st-breakdown-head">
             <div>
-              <h2 className="st-breakdown-title">Question breakdown</h2>
-              <div className="st-breakdown-sub">Bookmark anything worth revisiting, or open its knowledge points.</div>
+              <h2 className="st-breakdown-title">{t("mock.results.breakdown")}</h2>
+              <div className="st-breakdown-sub">{t("mock.results.breakdownSub")}</div>
             </div>
-            <div className="st-segmented" role="group" aria-label="Filter questions">
-              {([["all", `All ${result.breakdown.length}`], ["missed", `Missed ${missed}`], ["correct", `Correct ${correctRows}`]] as const).map(([k, label]) => (
+            <div className="st-segmented" role="group" aria-label={t("mock.results.filter")}>
+              {([["all", t("mock.results.filterAll", { count: result.breakdown.length })], ["missed", t("mock.results.filterMissed", { count: missed })], ["correct", t("mock.results.filterCorrect", { count: correctRows })]] as const).map(([k, label]) => (
                 <button key={k} type="button" className="st-seg-btn" aria-pressed={filter === k} onClick={() => setFilter(k)}>{label}</button>
               ))}
             </div>
           </div>
           <div className="st-table-wrap">
             <table className="st-table">
-              <thead><tr><th>#</th><th>Question</th><th>Domain</th><th>Yours</th><th>Correct</th><th>Result</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><th>#</th><th>{t("study.question")}</th><th>{t("mock.results.domain")}</th><th>{t("mock.results.yours")}</th><th>{t("study.correct")}</th><th>{t("stats.detail.result")}</th><th><span className="sr-only">{t("mock.results.actions")}</span></th></tr></thead>
               <tbody>
                 {rows.map(({ row, n }) => {
                   const qq = state.catalogBy[row.questionId];
@@ -134,14 +136,14 @@ export default function MockResults() {
                       <td>{format(row.correctAnswers)}<AnswerRevisionNotice revisedAt={row.answerRevisedAt} historical={row.answerRevision == null || row.answerRevision < row.currentAnswerRevision} gradedAnswers={row.gradedAnswers} question={qq} /></td>
                       <td>
                         <span className={`st-badge ${row.isCorrect ? "st-badge--ok" : "st-badge--bad"}`} style={{ whiteSpace: "nowrap" }}>
-                          <Icon d={row.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{row.isCorrect ? "Correct" : "Missed"}
+                          <Icon d={row.isCorrect ? IC.circleCheck : IC.circleX} size={12} />{t(row.isCorrect ? "study.correct" : "mock.results.missed")}
                         </span>
                       </td>
                       <td className="st-actions">
-                        <button type="button" className="st-icon-btn" title="Knowledge points" aria-label="Knowledge points" aria-pressed={reviewQuestionId === row.questionId} onClick={() => setReviewQuestionId(row.questionId)}>
+                        <button type="button" className="st-icon-btn" title={t("nav.screens.knowledgePoints")} aria-label={t("nav.screens.knowledgePoints")} aria-pressed={reviewQuestionId === row.questionId} onClick={() => setReviewQuestionId(row.questionId)}>
                           <Icon d={IC.lightbulb} size={18} />
                         </button>
-                        <button type="button" className="st-icon-btn" title="Bookmark" aria-label="Bookmark" aria-pressed={bookmarked} onClick={() => toggleBookmark(row.questionId)}>
+                        <button type="button" className="st-icon-btn" title={t("study.bookmark")} aria-label={t("study.bookmark")} aria-pressed={bookmarked} onClick={() => toggleBookmark(row.questionId)}>
                           <Icon d={IC.bookmark} size={18} fill={bookmarked ? "currentColor" : "none"} />
                         </button>
                       </td>
@@ -150,13 +152,13 @@ export default function MockResults() {
                 })}
               </tbody>
             </table>
-            {rows.length === 0 && <div className="st-table-empty">No questions in this view.</div>}
+            {rows.length === 0 && <div className="st-table-empty">{t("mock.results.emptyView")}</div>}
           </div>
         </div>
 
         {reviewQuestionId && (
-          <section className="st-card" aria-label="Question knowledge points">
-            <div className="st-card-title">{state.catalogBy[reviewQuestionId]?.externalId ?? "Question"}</div>
+          <section className="st-card" aria-label={t("mock.results.questionKps")}>
+            <div className="st-card-title">{state.catalogBy[reviewQuestionId]?.externalId ?? t("study.question")}</div>
             <RelatedKnowledgePoints key={reviewQuestionId} questionId={reviewQuestionId} embedded />
           </section>
         )}

@@ -1,5 +1,6 @@
 import { hasAnswer } from "@prepdeck/shared";
 import type { Question } from "../types";
+import { t } from "../i18n/runtime";
 
 // Live practice's keyboard shortcuts, and the rule behind its Check answer
 // button. The button used to wait for a complete answer while Enter submitted
@@ -86,11 +87,11 @@ export function practiceShortcutHints(question: Question): ShortcutHint[] {
   if (isChoiceQuestion(question)) {
     const options = question.options!;
     const count = Math.min(options.length, 9);
-    hints.push({ keys: range(Array.from({ length: count }, (_, i) => String(i + 1))), action: "Select an option" });
+    hints.push({ keys: range(Array.from({ length: count }, (_, i) => String(i + 1))), action: t("practice.shortcuts.selectOption") });
     const letters = options.map((o) => o.id).filter((id) => /^[A-Z]$/.test(id));
-    if (letters.length) hints.push({ keys: range(letters), action: "Select by letter" });
+    if (letters.length) hints.push({ keys: range(letters), action: t("practice.shortcuts.selectLetter") });
   }
-  hints.push({ keys: "Enter", action: "Check answer / next question" });
-  hints.push({ keys: `Shift + ${BOOKMARK_KEY}`, action: "Bookmark" });
+  hints.push({ keys: "Enter", action: t("practice.shortcuts.check") });
+  hints.push({ keys: `Shift + ${BOOKMARK_KEY}`, action: t("study.bookmark") });
   return hints;
 }

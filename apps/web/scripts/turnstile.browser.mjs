@@ -55,7 +55,7 @@ const FAKE_TURNSTILE = `(() => {
       host.attachShadow({ mode: 'closed' }).append(frame);
       el.append(host);
       widgets.set(id, { options, host });
-      control.rendered.push({ id, action: options.action, sitekey: options.sitekey, theme: options.theme, size: options.size, responseField: options['response-field'] });
+      control.rendered.push({ id, action: options.action, sitekey: options.sitekey, theme: options.theme, language: options.language, size: options.size, responseField: options['response-field'] });
       if (control.autoPass) setTimeout(() => widgets.has(id) && control.pass(id), 20);
       return id;
     },
@@ -158,6 +158,28 @@ try {
     assert.deepEqual(errors, []);
     await page.close();
     console.log("PASS the login screen waits for Turnstile, recovers from expiry and errors, and posts its token with returnTo");
+  }
+
+  // Switching locale replaces the widget and clears its previously valid token.
+  {
+    const { page, errors } = await open("/", { autoPass: false });
+    await page.locator("[data-fake-widget]").waitFor();
+    await fake(page, () => window.fakeTurnstile.pass("w1"));
+    await enabled(page, "Sign in with Google");
+    await page.getByRole("combobox", { name: "Language", exact: true }).selectOption("ja");
+    await page.waitForFunction(() => window.fakeTurnstile.rendered.length === 2);
+    assert.deepEqual(await fake(page, () => window.fakeTurnstile.rendered.map(w => w.language)), ["en", "ja"]);
+    assert.deepEqual(await fake(page, () => window.fakeTurnstile.removed), ["w1"]);
+    const signIn = page.getByRole("button", { name: "Google でサインイン" });
+    assert.ok(await signIn.isDisabled(), "the old widget token is cleared on a language change");
+    await fake(page, () => window.fakeTurnstile.fail("w2"));
+    await page.locator(".turnstile-retry").click();
+    assert.deepEqual(await fake(page, () => window.fakeTurnstile.resets), ["w2"]);
+    await fake(page, () => window.fakeTurnstile.pass("w2"));
+    await enabled(page, "Google でサインイン");
+    assert.deepEqual(errors, []);
+    await page.close();
+    console.log("PASS switching locale rebuilds Turnstile, clears its token, and preserves retry");
   }
 
   // A refused check says what to do: verify again (and then that it worked), try later, or ask an admin.

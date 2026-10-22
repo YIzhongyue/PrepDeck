@@ -4,6 +4,7 @@ import { fetchCachedExplanations, generateExplanation } from "../../lib/ai";
 import { getSessionKey } from "../../lib/keyStorage";
 import type { AiExplanationEntry, Question } from "../../types";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // AI explanations: the shared cache, generation with the user's own key, and
 // switching between cached alternatives.
@@ -50,7 +51,7 @@ export function useAiExplanations(core: StoreCore) {
     const apiKey = getSessionKey();
     if (!apiKey) {
       setState((s) => ({
-        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: "Enter your API key in Settings first." } }
+        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: t("errors.ai.noKey") } }
       }));
       return;
     }
@@ -67,7 +68,7 @@ export function useAiExplanations(core: StoreCore) {
       }));
     }).catch((err) => {
       setState((s) => ({
-        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: err instanceof ApiError ? err.message : "Could not generate an explanation." } }
+        ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: err instanceof ApiError ? err.message : t("errors.ai.generateFailed") } }
       }));
     });
   }, [scopedState, stateRef]);

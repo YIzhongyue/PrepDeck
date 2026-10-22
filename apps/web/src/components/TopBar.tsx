@@ -4,6 +4,7 @@ import { useWorkspaceState } from "../store/PrepDeckContext";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
+import { useI18n } from "../i18n";
 
 export default function TopBar({ onHeightChange, sticky = true }: { onHeightChange?: (height: number) => void; sticky?: boolean }) {
   // Measured like the TabBar's, so a screen can stick its own bar right below
@@ -19,8 +20,9 @@ export default function TopBar({ onHeightChange, sticky = true }: { onHeightChan
     return () => observer.disconnect();
   }, [onHeightChange]);
   const state = useWorkspaceState();
+  const { t } = useI18n();
 
-  const title = NAV.find((n) => n.id === state.screen)?.label || "PrepDeck";
+  const title = NAV.some((n) => n.id === state.screen) ? t(`nav.screens.${state.screen}`) : "PrepDeck";
   return (
     <header
       ref={headerRef}

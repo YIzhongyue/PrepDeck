@@ -1,11 +1,13 @@
 import { MARK_STYLES } from "@prepdeck/shared";
 import { HL } from "../data/constants";
 import { useNotesActions, useNotesState, useTextSelection } from "../store/PrepDeckContext";
+import { useI18n } from "../i18n";
 
 export default function AnnotationToolbar() {
   const tsel = useTextSelection();
   const { markAliases } = useNotesState();
   const { apply } = useNotesActions();
+  const { t } = useI18n();
   if (!tsel) return null;
   return (
     <div
@@ -37,7 +39,8 @@ export default function AnnotationToolbar() {
       <button
         type="button"
         onClick={() => apply("underline")}
-        title="Underline"
+        title={t("annotations.underline")}
+        aria-label={t("annotations.underline")}
         style={{ width: 28, height: 26, border: 0, borderRadius: 999, background: "transparent", color: "var(--pd-ink-fg)", cursor: "pointer", font: "inherit", fontSize: 13, textDecoration: "underline" }}
       >
         U
@@ -45,7 +48,8 @@ export default function AnnotationToolbar() {
       <button
         type="button"
         onClick={() => apply("bold")}
-        title="Bold"
+        title={t("annotations.bold")}
+        aria-label={t("annotations.bold")}
         style={{ width: 28, height: 26, border: 0, borderRadius: 999, background: "transparent", color: "var(--pd-ink-fg)", cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700 }}
       >
         B
