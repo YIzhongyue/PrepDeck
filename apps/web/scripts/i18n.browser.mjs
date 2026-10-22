@@ -115,6 +115,18 @@ try {
   await picker.click();
   await page.getByRole("option", { name: "日本語" }).click();
   await page.getByRole("heading", { name: "表示名" }).waitFor();
+  // The custom-model option must update while the same Settings card stays mounted.
+  for (const [code, label, modelLabel] of [
+    ["en", "Custom model id…", "Model"],
+    ["ja", "カスタムモデル ID…", "モデル"],
+    ["zh-CN", "自定义模型 ID…", "模型"],
+  ]) {
+    await page.evaluate((locale) => window.setLocaleForTest(locale), code);
+    await page.getByRole("button", { name: new RegExp(modelLabel) }).click();
+    await page.getByRole("option", { name: label, exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+  }
+  await page.evaluate(() => window.setLocaleForTest("ja"));
   await page.reload();
   await page.getByRole("heading", { name: "設定", level: 1 }).waitFor({ state: "attached" });
   assert.equal(await page.evaluate(() => document.documentElement.lang), "ja", "the choice outlives a reload");

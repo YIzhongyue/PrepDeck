@@ -35,6 +35,7 @@ function catalogFor(locale: string): Catalog {
 }
 
 let catalog = catalogFor(DEFAULT_LOCALE);
+let localeRequest = 0;
 const listeners = new Set<() => void>();
 
 /** The active locale's BCP 47 tag. */
@@ -137,17 +138,21 @@ function activate(code: string) {
  * to load leaves the page in English.
  */
 export async function initI18n(): Promise<void> {
+  const request = ++localeRequest;
   const code = initialLocale();
-  activate((await loadMessages(code)) ? code : DEFAULT_LOCALE);
+  const next = (await loadMessages(code)) ? code : DEFAULT_LOCALE;
+  if (request === localeRequest) activate(next);
 }
 
 /**
  * Switches the interface language and remembers it for this browser. Resolves
  * false, changing nothing, for an unknown locale or a resource that fails to
- * load.
+ * load, or a request superseded by a later valid locale choice.
  */
 export async function setLocale(code: string): Promise<boolean> {
-  if (!findLocale(code) || !(await loadMessages(code))) return false;
+  if (!findLocale(code)) return false;
+  const request = ++localeRequest;
+  if (!(await loadMessages(code)) || request !== localeRequest) return false;
   storeLocale(code);
   if (code !== catalog.locale) activate(code);
   return true;

@@ -182,3 +182,56 @@ test("a rich message never parses a value as markup", async () => {
     formatRich("stats.header.tracking", { exam: (c) => createElement("strong", null, c), name: "<exam>Injected</exam> {name}" })));
   assert.equal(markup, "<p>Here&#x27;s how your <strong>&lt;exam&gt;Injected&lt;/exam&gt; {name}</strong> prep is tracking today.</p>");
 });
+
+for (const latest of ["zh-CN", "en", "failed"]) {
+  test(`only the latest locale request applies (${latest}) when Japanese finishes last`, async () => {
+    const runtime = await importTs([src("runtime.ts"), src("locales.ts")]);
+    const japanese = Promise.withResolvers();
+    const chinese = Promise.withResolvers();
+    runtime.LOCALES.find(({ code }) => code === "ja").load = () => japanese.promise;
+    runtime.LOCALES.find(({ code }) => code === "zh-CN").load = () => chinese.promise;
+    const writes = [], notifications = [];
+    globalThis.window = { localStorage: { setItem: (...entry) => writes.push(entry) } };
+    globalThis.document = { documentElement: { lang: "en" } };
+    const unsubscribe = runtime.subscribe(() => notifications.push(runtime.getLocale()));
+    try {
+      const older = runtime.setLocale("ja");
+      const newer = runtime.setLocale(latest === "failed" ? "zh-CN" : latest);
+      if (latest === "failed") chinese.reject(new Error("fixture load failure"));
+      else chinese.resolve(await loadLocale("zh-CN"));
+      assert.equal(await newer, latest !== "failed");
+      japanese.resolve(await loadLocale("ja"));
+      assert.equal(await older, false);
+      const expected = latest === "failed" ? "en" : latest;
+      assert.equal(runtime.getLocale(), expected);
+      assert.equal(document.documentElement.lang, expected);
+      assert.deepEqual(notifications, expected === "en" ? [] : [expected]);
+      assert.deepEqual(writes, latest === "failed" ? [] : [[runtime.LOCALE_STORAGE_KEY, expected]]);
+    } finally {
+      unsubscribe();
+      delete globalThis.window;
+      delete globalThis.document;
+    }
+  });
+}
+
+test("an initial locale load cannot override a later explicit choice", async () => {
+  const runtime = await importTs([src("runtime.ts"), src("locales.ts")]);
+  const japanese = Promise.withResolvers();
+  runtime.LOCALES.find(({ code }) => code === "ja").load = () => japanese.promise;
+  const stored = new Map([[runtime.LOCALE_STORAGE_KEY, "ja"]]);
+  globalThis.window = { localStorage: { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) } };
+  globalThis.document = { documentElement: { lang: "en" } };
+  try {
+    const initial = runtime.initI18n();
+    assert.equal(await runtime.setLocale("zh-CN"), true);
+    japanese.resolve(await loadLocale("ja"));
+    await initial;
+    assert.equal(runtime.getLocale(), "zh-CN");
+    assert.equal(document.documentElement.lang, "zh-CN");
+    assert.equal(stored.get(runtime.LOCALE_STORAGE_KEY), "zh-CN");
+  } finally {
+    delete globalThis.window;
+    delete globalThis.document;
+  }
+});

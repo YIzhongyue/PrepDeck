@@ -43,9 +43,10 @@ export default function AiExplanationsCard() {
 
   const curatedModels = CURATED_MODELS[state.provider];
   const isCustomModel = !curatedModels.some((m) => m.id === state.model);
+  const customModelLabel = t("settings.ai.customModel");
   const modelOptions = useMemo(
-    () => [...curatedModels.map((m) => ({ id: m.id, label: m.label })), { id: "__custom", label: t("settings.ai.customModel") }],
-    [curatedModels, t]
+    () => [...curatedModels.map((m) => ({ id: m.id, label: m.label })), { id: "__custom", label: customModelLabel }],
+    [curatedModels, customModelLabel]
   );
 
   const [keyDraft, setKeyDraft] = useState("");

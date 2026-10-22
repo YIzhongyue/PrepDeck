@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TurnstileAction } from "@prepdeck/shared";
 import { loadTurnstile, type TurnstileApi } from "../lib/turnstile";
 import "./TurnstileWidget.css";
-import { getLocale, useI18n, type TranslationKey } from "../i18n";
+import { useI18n, type TranslationKey } from "../i18n";
 
 type Phase = "loading" | "ready" | "verified" | "expired" | "failed" | "unavailable";
 
@@ -45,7 +45,7 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
   const [phase, setPhase] = useState<Phase>("loading");
   // Bumped to try loading Cloudflare's script again after it failed.
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
 
   useEffect(() => {
     onTokenChangeRef.current = onTokenChange;
@@ -62,7 +62,7 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
         action,
         theme: widgetTheme(),
         // Cloudflare's own text follows the interface language.
-        language: getLocale().toLowerCase(),
+        language: locale.toLowerCase(),
         size: container.clientWidth < FLEXIBLE_MIN_WIDTH ? "compact" : "flexible",
         "response-field": false,
         "refresh-expired": "auto",
@@ -86,7 +86,7 @@ export default function TurnstileWidget({ siteKey, action, onTokenChange }: {
       widgetRef.current = null;
       if (widget) widget.api.remove(widget.id);
     };
-  }, [siteKey, action, loadAttempt]);
+  }, [siteKey, action, loadAttempt, locale]);
 
   const retry = () => {
     if (phase === "unavailable") {
