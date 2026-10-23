@@ -26,6 +26,8 @@ only to the exact reviewed scope. Preserve `proposalToken`, `proposalId`,
 token or conflict requires current state, fresh validation/preview, a new diff
 and approval for the changed proposal; never blind-retry or force overwrite.
 
+For plain-text `single_choice` or `multiple_choice` questions with no tables, charts, diagrams or images, prefer the existing Markdown-compatible representation when it preserves the complete content and answer structure faithfully. For imports, use `schemaVersion: "1.0"` with Markdown in question text inside the required JSON envelope, retaining exam metadata and required fields; do not send a raw `.md` file. For direct question creation, keep the discovered JSON payload schema. Preserve source wording, option IDs/labels/order, correct-answer mappings, explanations and required metadata. For visual/structured content, other question types or any content this representation cannot preserve reliably, use the appropriate existing supported format, including 2.0 components; never discard content to fit Markdown. This is format-selection advice only: retain validation, preview, approval, conflict handling, revision checks and replay safeguards.
+
 Prefer bounded batches to loops of individual mutations when supported. Respect
 the discovered item limit and report per-item `inputIndex`/IDs and outcomes,
 including partial failure. Do not describe a mixed batch as wholly successful.
