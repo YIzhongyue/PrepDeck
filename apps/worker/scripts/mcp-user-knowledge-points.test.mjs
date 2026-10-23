@@ -53,8 +53,8 @@ async function fixture(t) {
   const DB = createD1(sqlite);
   const env = { ...createBindings(), DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie" };
   const expiresAt = Date.now() + 60_000;
-  const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "alice's token", expiresAt });
-  const bob = await issueMcpCredential(DB, { userId: "bob", audience: "user", name: "bob's token", expiresAt });
+  const alice = await issueMcpCredential(DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "alice's token", expiresAt });
+  const bob = await issueMcpCredential(DB, { sessionVersion: 0, userId: "bob", audience: "user", name: "bob's token", expiresAt });
   return { sqlite, DB, env, alice, bob };
 }
 
@@ -343,7 +343,7 @@ test("implementation: list/search never surface another user's notes, and Admin 
 
   const adminTools = await listTools(f, f.alice.token); // user token; admin catalog checked separately below
   assert.ok(adminTools.some((n) => n.startsWith("user_")));
-  const adminCredential = await issueMcpCredential(f.DB, { userId: "admin", audience: "admin", name: "admin token", expiresAt: Date.now() + 60_000 });
+  const adminCredential = await issueMcpCredential(f.DB, { sessionVersion: 0, userId: "admin", audience: "admin", name: "admin token", expiresAt: Date.now() + 60_000 });
   const adminToolsResponse = await worker.fetch(new Request(`${f.env.APP_BASE_URL}/admin-mcp`, {
     method: "POST",
     headers: new Headers({

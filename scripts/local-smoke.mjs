@@ -13,13 +13,13 @@ let child;
 let output = "";
 let cookie;
 async function request(path, init = {}, expected = 200) {
-  const headers = { ...(cookie ? { Cookie: cookie } : {}), ...init.headers };
+  const headers = { Origin: "http://localhost:5173", ...(cookie ? { Cookie: cookie } : {}), ...init.headers };
   const response = await fetch(`${base}${path}`, { ...init, headers });
   const text = await response.text();
   assert.equal(response.status, expected, `${init.method ?? "GET"} ${path}: ${text}`);
   return text ? JSON.parse(text) : null;
 }
-const json = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const json = (method, body) => ({ method, headers: { "Content-Type": "application/json", Origin: "http://localhost:5173" }, body: JSON.stringify(body) });
 
 try {
   if (!process.argv.includes("--running")) {

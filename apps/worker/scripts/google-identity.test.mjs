@@ -23,7 +23,7 @@ function deferred() {
 }
 
 function fixture(t) {
-  const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
+  const sqlite = openDatabase(t);
   // `readHook` is the seam the concurrency test uses to park two sign-ins on
   // the same read, so both observe the same pre-write snapshot (the pattern
   // mutation-consistency.test.mjs uses for attempt races).
@@ -191,11 +191,13 @@ test("the cache entry under a replaced address is dropped on rename", async (t) 
     status: "active", google_sub: "110000000000000000001", display_name: "Alice", avatar_url: "/custom.png",
   });
 
+  env.KV.store.set("user-cache:email:alice@example.test", "legacy");
+  env.KV.store.set("user-cache:id:user-1", "legacy");
   await authorizeIdentity(env, google("110000000000000000001", "alice@newdomain.test"), profile());
 
   assert.equal(env.KV.store.has("user-cache:email:alice@example.test"), false);
-  assert.equal(env.KV.store.has("user-cache:email:alice@newdomain.test"), true);
-  assert.equal(env.KV.store.has("user-cache:id:user-1"), true);
+  assert.equal(env.KV.store.has("user-cache:email:alice@newdomain.test"), false, "authorization no longer fills KV");
+  assert.equal(env.KV.store.has("user-cache:id:user-1"), false);
 });
 
 test("a Cloudflare Access subject is never stored as a Google subject", async (t) => {

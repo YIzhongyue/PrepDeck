@@ -17,7 +17,7 @@ test("MCP tokens: a trimmed name and an optional lifetime", () => {
   for (const name of [undefined, "   ", "n".repeat(101), 5]) {
     assert.equal(error(createMcpCredentialRequestSchema, { name }), "name is required (1-100 characters)");
   }
-  for (const expiresInDays of [0, 3651, 1.5, "30"]) {
-    assert.equal(error(createMcpCredentialRequestSchema, { name: "laptop", expiresInDays }), "expiresInDays must be an integer between 1 and 3650");
+  for (const expiresInDays of [0, 91, 3651, 1.5, "30"]) {
+    assert.equal(error(createMcpCredentialRequestSchema, { name: "laptop", expiresInDays }), "expiresInDays must be an integer between 1 and 90");
   }
 });

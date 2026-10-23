@@ -1,6 +1,7 @@
 import type { Env } from "./bindings";
 import { createRouter } from "./context";
 import { requireAccessUser } from "./middleware/access";
+import { requireJsonMutationBody, requireTrustedBrowserOrigin } from "./middleware/browserRequest";
 import { authRouter } from "./routes/auth";
 import { examBadgesRouter, examsRouter } from "./routes/exams";
 import { questionsRouter } from "./routes/questions";
@@ -73,6 +74,12 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 
 // Dev-mode email+password login (/login, /logout are public; /me requires a
 // valid session/Access identity, per requireAccessUser — see routes/auth.ts).
+// Form-based Google start and bodyless logout retain the browser origin guard.
+// Google callback GET and public bearer OAuth endpoints remain independent.
+for (const path of ["/api/auth/login", "/api/auth/logout", "/api/auth/google/start"]) {
+  app.use(path, requireTrustedBrowserOrigin);
+}
+app.use("/api/auth/login", requireJsonMutationBody);
 app.route("/api/auth", authRouter);
 app.route("/api/appearance", appearanceRouter);
 // implementation — the click comes from an email, so there's no session cookie;
@@ -96,6 +103,8 @@ app.route("/admin-mcp", adminMcpRouter);
 // (FR-1.1) and the app-layer authorized-users check (FR-1.3).
 const api = createRouter();
 api.use("*", requireAccessUser);
+api.use("*", requireTrustedBrowserOrigin);
+api.use("*", requireJsonMutationBody);
 api.use("*", authenticatedRateLimit);
 // Small JSON bodies only; see lib/bodyLimit.ts. After authentication, so an
 // anonymous request is still refused with 401 rather than told about sizes.

@@ -121,9 +121,9 @@ export type DecisionResult =
  * to the client, redirect URI, PKCE challenge, grant (user, audience, scopes).
  */
 export async function decideAuthorizationRequest(db: D1Database, input: {
-  id: string; binding: string | null; userId: string; approve: boolean;
+  id: string; binding: string | null; userId: string; sessionVersion: number; approve: boolean;
 }): Promise<DecisionResult> {
-  if (!input.binding || !/^[a-f0-9]{32}$/.test(input.id)) return { ok: false, reason: "not_found" };
+  if (!Number.isSafeInteger(input.sessionVersion) || input.sessionVersion < 0 || !input.binding || !/^[a-f0-9]{32}$/.test(input.id)) return { ok: false, reason: "not_found" };
   const now = Date.now();
   const row = await db.prepare(`
     UPDATE mcp_oauth_requests SET decided_at = ?, decision = ?, user_id = ?
@@ -140,8 +140,8 @@ export async function decideAuthorizationRequest(db: D1Database, input: {
   const [grant] = await db.batch([
     db.prepare(`
       INSERT INTO mcp_oauth_grants (id, user_id, client_id, audience, scopes, created_at)
-      SELECT ?, id, ?, ?, ?, ? FROM users WHERE id = ? AND status = 'active' AND (? = 'user' OR role = 'admin')
-    `).bind(grantId, row.client_id, row.audience, row.scopes, now, input.userId, row.audience),
+      SELECT ?, id, ?, ?, ?, ? FROM users WHERE id = ? AND session_version = ? AND status = 'active' AND (? = 'user' OR role = 'admin')
+    `).bind(grantId, row.client_id, row.audience, row.scopes, now, input.userId, input.sessionVersion, row.audience),
     db.prepare(`
       INSERT INTO mcp_oauth_codes (code_hash, grant_id, client_id, redirect_uri, code_challenge, created_at, expires_at)
       SELECT ?, id, ?, ?, ?, ?, ? FROM mcp_oauth_grants WHERE id = ?

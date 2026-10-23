@@ -227,6 +227,8 @@ CF_ACCESS_AUD = ""
 GOOGLE_CLIENT_ID = ""
 AUTH_MODE = "cookie"
 APP_BASE_URL = "http://localhost:5173"
+# Built Worker UI used by the local accessibility scan; ignored in production.
+DEV_WORKER_ORIGIN = "http://localhost:8787"
 EMAIL_FROM_ADDRESS = "noreply@example.com"
 # Off locally, so the default workflow needs no network. To try it, put
 # Cloudflare's test keys in .dev.vars.development (see .dev.vars.example).

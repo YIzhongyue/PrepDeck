@@ -15,7 +15,7 @@
 
 import type { Env } from "../bindings";
 import type { Role, UserStatus } from "@prepdeck/shared";
-import { getCachedUserByEmail, invalidateCachedUser, setCachedUser, type CachedUserRow } from "./userCache";
+import { invalidateCachedUser } from "./userCache";
 
 interface UserRow {
   id: string;
@@ -25,6 +25,7 @@ interface UserRow {
   status: UserStatus;
   display_name: string | null;
   avatar_url: string | null;
+  session_version: number;
 }
 
 export interface AuthorizedIdentity {
@@ -43,7 +44,7 @@ export interface AuthorizedIdentity {
 export type DenialReason = "not_authorized" | "subject_conflict";
 
 export type AuthorizeResult =
-  | { ok: true; user: AuthorizedIdentity }
+  | { ok: true; user: AuthorizedIdentity; sessionVersion: number }
   | { ok: false; email: string; reason: DenialReason };
 
 // Provider-scoped identity: a subject is only unique *within* the provider
@@ -83,16 +84,8 @@ export async function authorizeIdentity(
     if (resolved === "subject_conflict") return { ok: false, email, reason: "subject_conflict" };
     row = resolved;
   } else {
-    // Access mode has no persisted subject to match on, so it stays on the
-    // email lookup — and keeps using the email cache, which is what makes an
-    // Access-authenticated request cheap. The OAuth callback deliberately
-    // skips that cache: it runs once per sign-in, not once per request, and a
-    // cached row carries no subject to match against anyway.
-    const cached = await getCachedUserByEmail(env, email);
-    if (cached) {
-      if (cached.status === "revoked") return { ok: false, email, reason: "not_authorized" };
-      return { ok: true, user: toIdentity(cached) };
-    }
+    // Access subject is provider-scoped; resolve its email from D1 on every
+    // request, never from an eventually consistent authorization cache.
     row = await selectUser(env, "email = ?", email);
   }
 
@@ -120,7 +113,7 @@ export async function authorizeIdentity(
   }
 
   const now = new Date().toISOString();
-  let cacheRow: CachedUserRow;
+  let authorizedRow: UserRow;
 
   // Fetch the identity provider's profile on first sign-in (to activate the
   // account) and also on any later sign-in where the avatar is still unset —
@@ -144,29 +137,25 @@ export async function authorizeIdentity(
     const displayName = row.display_name ?? profile.name ?? storedEmail.split("@")[0] ?? storedEmail;
     const avatarUrl = row.avatar_url ?? profile.picture ?? null;
     const activated = await env.DB.prepare(
-      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, status = 'active', display_name = COALESCE(display_name, ?), avatar_url = COALESCE(avatar_url, ?), last_login_at = ? WHERE id = ? AND status IN ('invited', 'active') AND ${BIND_GUARD} RETURNING id, email, role, status, display_name, avatar_url`
+      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, status = 'active', display_name = COALESCE(display_name, ?), avatar_url = COALESCE(avatar_url, ?), last_login_at = ? WHERE id = ? AND status IN ('invited', 'active') AND session_version = ? AND ${BIND_GUARD} RETURNING id, email, google_sub, role, status, display_name, avatar_url, session_version`
     )
-      .bind(subject, storedEmail, displayName, avatarUrl, now, row.id, subject, subject)
-      .first<CachedUserRow>();
+      .bind(subject, storedEmail, displayName, avatarUrl, now, row.id, row.session_version, subject, subject)
+      .first<UserRow>();
     if (!activated) return { ok: false, email, reason: await denialReason(env, subject, email) };
-    cacheRow = activated;
+    authorizedRow = activated;
   } else {
     const active = await env.DB.prepare(
-      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, last_login_at = ? WHERE id = ? AND status = 'active' AND ${BIND_GUARD} RETURNING id, email, role, status, display_name, avatar_url`
+      `UPDATE users SET google_sub = COALESCE(google_sub, ?), email = ?, last_login_at = ? WHERE id = ? AND status = 'active' AND session_version = ? AND ${BIND_GUARD} RETURNING id, email, google_sub, role, status, display_name, avatar_url, session_version`
     )
-      .bind(subject, storedEmail, now, row.id, subject, subject)
-      .first<CachedUserRow>();
+      .bind(subject, storedEmail, now, row.id, row.session_version, subject, subject)
+      .first<UserRow>();
     if (!active) return { ok: false, email, reason: await denialReason(env, subject, email) };
-    cacheRow = active;
+    authorizedRow = active;
   }
 
-  // setCachedUser files the row under the *new* address, so drop the entry
-  // still filed under the old one rather than leave it serving a stale row
-  // for up to a TTL.
-  if (row.email !== cacheRow.email) await invalidateCachedUser(env, row.id, row.email);
-
-  await setCachedUser(env, cacheRow);
-  return { ok: true, user: toIdentity(cacheRow) };
+  // Clean legacy cache entries, but never use them as an authorization source.
+  if (row.email !== authorizedRow.email) await invalidateCachedUser(env, row.id, row.email);
+  return { ok: true, user: toIdentity(authorizedRow), sessionVersion: authorizedRow.session_version };
 }
 
 // FR-1.9 resolution order for a Google-authenticated user:
@@ -216,7 +205,7 @@ async function denialReason(env: Env, subject: string | null, email: string): Pr
 }
 
 function selectUser(env: Env, where: string, value: string): Promise<UserRow | null> {
-  return env.DB.prepare(`SELECT id, email, google_sub, role, status, display_name, avatar_url FROM users WHERE ${where}`)
+  return env.DB.prepare(`SELECT id, email, google_sub, role, status, display_name, avatar_url, session_version FROM users WHERE ${where}`)
     .bind(value)
     .first<UserRow>();
 }
@@ -226,6 +215,6 @@ async function emailTakenByAnotherUser(env: Env, email: string, userId: string):
   return clash !== null;
 }
 
-function toIdentity(row: CachedUserRow): AuthorizedIdentity {
+function toIdentity(row: UserRow): AuthorizedIdentity {
   return { id: row.id, email: row.email, role: row.role, displayName: row.display_name, avatarUrl: row.avatar_url };
 }

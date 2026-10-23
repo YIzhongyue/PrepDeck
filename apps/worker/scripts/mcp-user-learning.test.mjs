@@ -41,8 +41,8 @@ async function fixture(t) {
     SESSION_SECRET: "synthetic-study-mutation-test-key",
   };
   const expiresAt = Date.now() + 60_000;
-  const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "alice's token", expiresAt });
-  const bob = await issueMcpCredential(DB, { userId: "bob", audience: "user", name: "bob's token", expiresAt });
+  const alice = await issueMcpCredential(DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "alice's token", expiresAt });
+  const bob = await issueMcpCredential(DB, { sessionVersion: 0, userId: "bob", audience: "user", name: "bob's token", expiresAt });
   return { sqlite, DB, env, kvStore: env.KV.store, queries, alice, bob };
 }
 
@@ -169,7 +169,7 @@ async function webCall(f, userId, path, method = "GET", body) {
   const token = await issueSessionToken(f.env, userId);
   const response = await worker.fetch(new Request(`${f.env.APP_BASE_URL}/api${path}`, {
     method,
-    headers: { Cookie: `pd_session=${encodeURIComponent(token)}`, Origin: f.env.APP_BASE_URL, "Content-Type": "application/json" },
+    headers: { Cookie: `__Host-pd_session=${encodeURIComponent(token)}`, Origin: f.env.APP_BASE_URL, "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }), f.env);
   const data = await response.json();
@@ -444,7 +444,7 @@ test("PR #91: configurable study quota counts writes together across token rotat
   };
   const { attemptId } = await callUserTool(f, f.alice.token, "user_start_practice", { examId: "exam1", questionIds: ["q1"] });
   await callUserTool(f, f.alice.token, "user_list_attempts");
-  const rotated = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
+  const rotated = await issueMcpCredential(f.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
   await callUserTool(f, rotated.token, "user_submit_practice_answer", { attemptId, questionId: "q1", selectedAnswer: ["a"] });
   const before = dumpTables(f);
   const error = await callUserToolExpectingError(f, f.alice.token, "user_complete_practice", { attemptId });

@@ -1486,7 +1486,7 @@ const messages: LocaleMessages = {
       updateFailed: "无法更新此账号。",
       bulkFailed: "无法更新所选账号。",
       revokeConfirm: "撤销 {email} 的访问权限？历史数据会保留，之后可以通过“恢复”撤回此操作。",
-      resetConfirm: "重置 {email} 的 Google 关联？下一个用此地址登录的 Google 账号将接管该账号及其所有数据。只有确认账号已合法转手时才这样做。",
+      resetConfirm: "重置 {email} 的 Google 关联？下一个用此地址登录的 Google 账号将接管该账号及其所有数据。只有确认账号已合法转手时才这样做。 此操作也会退出所有浏览器，并撤销所有个人访问令牌和已连接应用；恢复后必须重新连接。",
       bulkRevokeConfirm_other: "撤销 {count} 个账号的访问权限？之后可以通过“恢复”撤回此操作。",
       search: "搜索成员",
       searchPlaceholder: "搜索成员…",

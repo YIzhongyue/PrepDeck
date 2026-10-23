@@ -43,6 +43,8 @@ export interface VerifyRs256JwtOptions {
   jwksCacheKey: string;
   issuer: string | string[];
   audience: string;
+  // OIDC-specific authorized-party rules; Access application JWTs are not ID tokens.
+  validateAuthorizedParty?: boolean;
 }
 
 // Verifies signature, expiry, issuer, and audience. Returns the decoded
@@ -54,7 +56,8 @@ export async function verifyRs256Jwt(token: string, opts: VerifyRs256JwtOptions,
   const [headerB64, payloadB64, signatureB64] = parts as [string, string, string];
 
   const header = JSON.parse(new TextDecoder().decode(base64UrlToBytes(headerB64))) as { kid?: string; alg?: string };
-  if (!header.kid) throw new Error("JWT header missing kid");
+  if (header.alg !== "RS256") throw new Error("Unexpected JWT algorithm");
+  if (typeof header.kid !== "string" || !header.kid) throw new Error("JWT header missing kid");
 
   let jwks = await fetchJwks(opts.jwksUrl, opts.jwksCacheKey, env, false);
   let jwk = jwks.keys.find((k) => k.kid === header.kid);
@@ -81,13 +84,28 @@ export async function verifyRs256Jwt(token: string, opts: VerifyRs256JwtOptions,
   const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadB64))) as Record<string, unknown>;
 
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== "number" || payload.exp < now) throw new Error("Token expired");
+  if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= now) throw new Error("Token expired");
+  // Both providers may supply NumericDate claims. Allow a minute of issuer
+  // clock skew for their start/issue time; expiry remains strict.
+  for (const claim of ["nbf", "iat"] as const) {
+    const value = payload[claim];
+    if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > now + 60)) {
+      throw new Error(`Invalid ${claim} claim`);
+    }
+  }
 
   const expectedIssuers = Array.isArray(opts.issuer) ? opts.issuer : [opts.issuer];
   if (typeof payload.iss !== "string" || !expectedIssuers.includes(payload.iss)) throw new Error("Unexpected issuer");
 
   const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!audiences.includes(opts.audience)) throw new Error("Unexpected audience");
+  if (audiences.length === 0 || audiences.some((audience) => typeof audience !== "string" || !audience) || !audiences.includes(opts.audience)) {
+    throw new Error("Unexpected audience");
+  }
+  // OIDC ID tokens with multiple recipients must identify this client as the
+  // authorized party. Access JWTs do not promise OIDC azp semantics.
+  if (opts.validateAuthorizedParty && (audiences.length > 1 || payload.azp !== undefined) && payload.azp !== opts.audience) {
+    throw new Error("Unexpected authorized party");
+  }
 
   return payload;
 }

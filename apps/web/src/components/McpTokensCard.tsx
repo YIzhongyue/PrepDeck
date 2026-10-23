@@ -18,7 +18,7 @@ import { TextArea } from "@/components/base/textarea/textarea";
 import "./McpTokensCard.css";
 
 const DANGER = "var(--color-danger)";
-const EXPIRY_OPTIONS = ["never", "30", "90", "365"] as const;
+const EXPIRY_OPTIONS = ["30", "90"] as const;
 type CopyKind = "token" | "prompt";
 const STATUS_TAG_CLASS: Record<McpCredentialSummary["status"], string> = { active: "tag-accent-2", revoked: "tag-neutral", expired: "tag-neutral" };
 
@@ -61,7 +61,7 @@ export default function McpTokensCard({
 
   const [creating, setCreating] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [expiresDraft, setExpiresDraft] = useState<(typeof EXPIRY_OPTIONS)[number]>("never");
+  const [expiresDraft, setExpiresDraft] = useState<(typeof EXPIRY_OPTIONS)[number]>("30");
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -146,14 +146,14 @@ export default function McpTokensCard({
     setCreateBusy(true);
     setCreateError(null);
     try {
-      const expiresInDays = expiresDraft === "never" ? undefined : Number(expiresDraft);
+      const expiresInDays = Number(expiresDraft);
       const { credential, token } = await apiFetch<CreateMcpCredentialResponse>(apiBase, {
         method: "POST", body: JSON.stringify({ name, expiresInDays }), headers: turnstileHeaders(createHumanToken)
       });
       setTokens((prev) => [credential, ...prev]);
       reveal({ token, id: credential.id, name: credential.name, expiresAt: credential.expiresAt });
       setNameDraft("");
-      setExpiresDraft("never");
+      setExpiresDraft("30");
       setCreating(false);
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : translate("mcp.tokens.createFailed"));
@@ -279,7 +279,7 @@ export default function McpTokensCard({
                         border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
                       }}
                     >
-                      {id === "never" ? tr("mcp.tokens.expiry.never") : id === "365" ? tr("mcp.tokens.expiry.year") : tr("mcp.tokens.expiry.days", { count: Number(id) })}
+                      {tr("mcp.tokens.expiry.days", { count: Number(id) })}
                     </button>
                   );
                 })}

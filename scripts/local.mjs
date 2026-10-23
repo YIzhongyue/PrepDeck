@@ -151,7 +151,7 @@ export function loginServer(port = 8788) {
     try {
       const account = form.get("role") === "user" ? USER_ACCOUNT : ACCOUNT;
       const response = await fetch("http://127.0.0.1:8787/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(account),
+        method: "POST", headers: { "Content-Type": "application/json", Origin: "http://localhost:5173" }, body: JSON.stringify(account),
       });
       if (!response.ok) throw new Error(`Local sign-in failed (${response.status}). Run npm run dev:setup and check the Worker terminal.`);
       res.setHeader("Set-Cookie", response.headers.getSetCookie());
