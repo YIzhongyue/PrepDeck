@@ -13,7 +13,7 @@ const bundle = path => importTs(new URL(path, import.meta.url));
 const { authorizeIdentity } = await bundle("../src/lib/authorizeIdentity.ts");
 
 function fixture(t) {
-  const sqlite = openDatabase(t, { only: ["0001_init.sql"] });
+  const sqlite = openDatabase(t);
   const env = { DB: createD1(sqlite), KV: createKv() };
   return { sqlite, env };
 }

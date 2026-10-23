@@ -164,10 +164,10 @@ test("tokens are hashed at rest and provisioning cannot elevate ordinary/inactiv
   assert.ok(!JSON.stringify(rows).includes(f.alice.token));
   assert.ok(!JSON.stringify(f.queries).includes(f.alice.token));
   for (const userId of ["alice", "missing"]) {
-    await assert.rejects(issueMcpCredential(f.DB, { userId, audience: "admin", name: "x", expiresAt: Date.now() + 60_000 }), /not authorized/);
+    await assert.rejects(issueMcpCredential(f.DB, { sessionVersion: 0, userId, audience: "admin", name: "x", expiresAt: Date.now() + 60_000 }), /not authorized/);
   }
-  await assert.rejects(issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "x", expiresAt: 0 }), /Invalid/);
-  await assert.rejects(issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "  " }), /Invalid/);
+  await assert.rejects(issueMcpCredential(f.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "x", expiresAt: 0 }), /Invalid/);
+  await assert.rejects(issueMcpCredential(f.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "  " }), /Invalid/);
 });
 
 test("origin, method, byte limits, malformed protocol and unknown tool errors are bounded and redacted", async (t) => {
@@ -266,17 +266,17 @@ test("implementation: the per-account MCP quota really counts requests, is indep
   // Rotating alice's credential must not reset her exhausted quota: the key
   // is scoped to userId (mcp/routes.ts), never credentialId, specifically so
   // rotation/revoke-and-reissue can't be used to evade throttling.
-  const rotated = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
+  const rotated = await issueMcpCredential(f.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "rotated", expiresAt: Date.now() + 60_000 });
   f.sqlite.prepare("UPDATE mcp_credentials SET revoked_at = ? WHERE id = ?").run(Date.now(), f.alice.id);
   const afterRotation = await rpc(f.env, "user", rotated.token);
   assert.equal(afterRotation.status, 429, "a fresh credential for the same account must still be quota-exhausted");
   assert.equal((await payload(afterRotation)).error.code, "rate_limited");
 });
 
-test("implementation: non-expiring credentials authenticate indefinitely and successful use updates last_used_at", async (t) => {
+test("legacy non-expiring credentials remain usable and successful use updates last_used_at", async (t) => {
   const f = await fixture(t);
-  const forever = await issueMcpCredential(f.DB, { userId: "alice", audience: "user", name: "never expires" });
-  assert.equal(forever.expiresAt, null);
+  const forever = await issueMcpCredential(f.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "never expires" });
+  f.sqlite.prepare("UPDATE mcp_credentials SET expires_at = NULL WHERE id = ?").run(forever.id);
   const before = f.sqlite.prepare("SELECT last_used_at FROM mcp_credentials WHERE id = ?").get(forever.id).last_used_at;
   assert.equal(before, null);
   assert.equal((await rpc(f.env, "user", forever.token)).status, 200);

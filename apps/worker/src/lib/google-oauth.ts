@@ -28,13 +28,14 @@ export async function pkceChallengeFromVerifier(verifier: string): Promise<strin
   return toBase64Url(new Uint8Array(digest));
 }
 
-export function buildGoogleAuthUrl(env: Env, redirectUri: string, state: string, codeChallenge: string): string {
+export function buildGoogleAuthUrl(env: Env, redirectUri: string, state: string, codeChallenge: string, nonce: string): string {
   const url = new URL(AUTH_ENDPOINT);
   url.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("state", state);
+  url.searchParams.set("nonce", nonce);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
   // Always show the account chooser rather than silently reusing whichever
@@ -64,7 +65,8 @@ export async function exchangeCodeForIdentity(
   env: Env,
   code: string,
   redirectUri: string,
-  codeVerifier: string
+  codeVerifier: string,
+  nonce: string
 ): Promise<GoogleIdentity> {
   const body = new URLSearchParams({
     code,
@@ -88,9 +90,11 @@ export async function exchangeCodeForIdentity(
 
   const payload = await verifyRs256Jwt(
     json.id_token,
-    { jwksUrl: JWKS_URL, jwksCacheKey: "google_oauth_jwks", issuer: ISSUERS, audience: env.GOOGLE_CLIENT_ID },
+    { jwksUrl: JWKS_URL, jwksCacheKey: "google_oauth_jwks", issuer: ISSUERS, audience: env.GOOGLE_CLIENT_ID, validateAuthorizedParty: true },
     env
   );
+
+  if (!nonce || typeof payload.nonce !== "string" || payload.nonce !== nonce) throw new Error("Unexpected Google nonce");
 
   if (typeof payload.email !== "string" || !payload.email) throw new Error("Missing email claim");
   if (payload.email_verified !== true) throw new Error("Google email is not verified");
@@ -104,13 +108,13 @@ export async function exchangeCodeForIdentity(
   };
 }
 
-// Short-lived cookie carrying the CSRF `state`, the PKCE `code_verifier` and
+// Short-lived cookie carrying the CSRF `state`, OIDC `nonce`, PKCE verifier and
 // where to land, across the redirect to Google and back. HMAC-signed with
 // SESSION_SECRET under its own purpose prefix (as lib/unsubscribeToken.ts
 // does), with its expiry inside the signed payload (issue #82). Only
 // /google/start issues one, after it has checked Turnstile, so the callback's
 // token exchange cannot be reached by writing a matching cookie by hand.
-const OAUTH_COOKIE_NAME = "pd_oauth";
+const oauthCookieName = (secure: boolean) => secure ? "__Host-pd_oauth" : "pd_oauth";
 const OAUTH_COOKIE_TTL_SECONDS = 10 * 60;
 const OAUTH_COOKIE_PURPOSE = "oauth-state.v1";
 
@@ -118,6 +122,7 @@ type SigningEnv = Pick<Env, "SESSION_SECRET">;
 
 export interface OAuthState {
   state: string;
+  nonce: string;
   codeVerifier: string;
   returnTo: string | null;
 }
@@ -134,20 +139,24 @@ function oauthStateKey(env: SigningEnv): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", new TextEncoder().encode(env.SESSION_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 
-export async function buildOAuthStateCookie(env: SigningEnv, state: string, codeVerifier: string, secure: boolean, returnTo: string | null = null): Promise<string> {
-  const claims = { state, codeVerifier, exp: Date.now() + OAUTH_COOKIE_TTL_SECONDS * 1000, ...(returnTo ? { returnTo } : {}) };
+export async function buildOAuthStateCookie(env: SigningEnv, state: string, codeVerifier: string, secure: boolean, returnTo: string | null, nonce: string): Promise<string> {
+  const claims = { state, nonce, codeVerifier, exp: Date.now() + OAUTH_COOKIE_TTL_SECONDS * 1000, ...(returnTo ? { returnTo } : {}) };
   const payload = toBase64Url(new TextEncoder().encode(JSON.stringify(claims)));
   const signature = await crypto.subtle.sign("HMAC", await oauthStateKey(env), new TextEncoder().encode(`${OAUTH_COOKIE_PURPOSE}.${payload}`));
   const value = `${payload}.${toBase64Url(new Uint8Array(signature))}`;
-  return `${OAUTH_COOKIE_NAME}=${value}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${OAUTH_COOKIE_TTL_SECONDS}`;
+  return `${oauthCookieName(secure)}=${value}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${OAUTH_COOKIE_TTL_SECONDS}`;
 }
 
 /** The state this Worker issued, or null for a missing, unsigned, tampered or expired cookie. */
-export async function readOAuthStateCookie(env: SigningEnv, cookieHeader: string | null): Promise<OAuthState | null> {
+export async function readOAuthStateCookie(env: SigningEnv, cookieHeader: string | null, secure = true): Promise<OAuthState | null> {
   if (!cookieHeader) return null;
-  for (const part of cookieHeader.split(";")) {
+  const matches = cookieHeader.split(";").filter(part => {
     const eq = part.indexOf("=");
-    if (eq < 0 || part.slice(0, eq).trim() !== OAUTH_COOKIE_NAME) continue;
+    return eq >= 0 && part.slice(0, eq).trim() === oauthCookieName(secure);
+  });
+  if (matches.length !== 1) return null;
+  for (const part of matches) {
+    const eq = part.indexOf("=");
     const value = part.slice(eq + 1).trim();
     const dot = value.lastIndexOf(".");
     const payload = value.slice(0, dot);
@@ -156,20 +165,21 @@ export async function readOAuthStateCookie(env: SigningEnv, cookieHeader: string
     if (dot < 0 || !/^[A-Za-z0-9_-]+$/.test(payload) || !/^[A-Za-z0-9_-]{43}$/.test(signature)) return null;
     const valid = await crypto.subtle.verify("HMAC", await oauthStateKey(env), fromBase64Url(signature), new TextEncoder().encode(`${OAUTH_COOKIE_PURPOSE}.${payload}`));
     if (!valid) return null;
-    let claims: { state?: unknown; codeVerifier?: unknown; returnTo?: unknown; exp?: unknown };
+    let claims: { nonce?: unknown; state?: unknown; codeVerifier?: unknown; returnTo?: unknown; exp?: unknown };
     try {
       claims = JSON.parse(new TextDecoder().decode(fromBase64Url(payload)));
     } catch {
       return null;
     }
+    if (typeof claims.nonce !== "string" || !claims.nonce) return null;
     if (typeof claims.state !== "string" || typeof claims.codeVerifier !== "string") return null;
     if (typeof claims.exp !== "number" || !(Date.now() < claims.exp)) return null;
     // Signed by us, but still re-validated on the way out, as any redirect target is.
-    return { state: claims.state, codeVerifier: claims.codeVerifier, returnTo: safeReturnTo(claims.returnTo) };
+    return { state: claims.state, nonce: claims.nonce, codeVerifier: claims.codeVerifier, returnTo: safeReturnTo(claims.returnTo) };
   }
   return null;
 }
 
 export function clearOAuthStateCookie(secure: boolean): string {
-  return `${OAUTH_COOKIE_NAME}=; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=0`;
+  return `${oauthCookieName(secure)}=; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=0`;
 }

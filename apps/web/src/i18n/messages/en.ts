@@ -1417,7 +1417,7 @@ const en = {
       updateFailed: "Could not update this account.",
       bulkFailed: "Could not update the selected accounts.",
       revokeConfirm: "Revoke access for {email}? Historical data is kept; this can be undone with Restore.",
-      resetConfirm: "Reset the Google link for {email}? The next Google account that signs in with this address takes over this account and all of its data. Only do this if you know the account changed hands legitimately.",
+      resetConfirm: "Reset the Google link for {email}? The next Google account that signs in with this address takes over this account and all of its data. Only do this if you know the account changed hands legitimately. This also signs out every browser and revokes all personal access tokens and connected applications. They must be reconnected after recovery.",
       bulkRevokeConfirm_one: "Revoke access for {count} account? This can be undone with Restore.",
       bulkRevokeConfirm_other: "Revoke access for {count} accounts? This can be undone with Restore.",
       search: "Search people",

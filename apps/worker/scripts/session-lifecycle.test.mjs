@@ -28,7 +28,7 @@ function setup(t) {
   api.get("/whoami", c => c.json({ id: c.get("user").id }));
   api.route("/admin/users", adminUsersRouter);
   app.route("/api", api);
-  const call = (path, token, init = {}) => app.request(`https://test${path}`, { ...init, headers: { ...(token ? { Cookie: `pd_session=${encodeURIComponent(token)}` } : {}), ...(init.headers ?? {}) } }, env);
+  const call = (path, token, init = {}) => app.request(`https://test${path}`, { ...init, headers: { ...(token ? { Cookie: `__Host-pd_session=${encodeURIComponent(token)}` } : {}), ...(init.headers ?? {}) } }, env);
   const version = id => db.prepare("SELECT session_version AS v FROM users WHERE id = ?").get(id).v;
   return { db, env, kv: KV.store, call, version };
 }
@@ -42,7 +42,7 @@ test("signing out ends the token, and every other session of the account", async
 
   const out = await call("/auth/logout", laptop, { method: "POST" });
   assert.equal(out.status, 200);
-  assert.match(out.headers.get("Set-Cookie"), /pd_session=;.*Max-Age=0/);
+  assert.match(out.headers.get("Set-Cookie"), /__Host-pd_session=;.*Max-Age=0/);
   assert.equal(version("alice"), 1);
   assert.equal((await call("/api/whoami", laptop)).status, 401, "the signed-out token is refused");
   assert.equal((await call("/api/whoami", phone)).status, 401, "so is every other session of the account");
@@ -61,11 +61,11 @@ test("an old token cannot sign the account out again", async t => {
   assert.equal((await call("/api/whoami", current)).status, 200);
 });
 
-test("the cached user row is dropped on sign-out, so the next request reads the new version", async t => {
+test("legacy cached user rows are cleared and never authorize after sign-out", async t => {
   const { env, kv, call } = setup(t);
   const token = await session.issueSessionToken(env, "alice");
-  await call("/api/whoami", token);
-  assert.ok([...kv.keys()].some(k => k.includes("alice")), "the row was cached");
+  kv.set("user-cache:id:alice", JSON.stringify({ id: "alice", email: "alice@test", role: "user", status: "active", session_version: 0 }));
+  assert.equal((await call("/api/whoami", token)).status, 200);
   await call("/auth/logout", token, { method: "POST" });
   assert.equal([...kv.keys()].some(k => k.includes("alice")), false);
   // A cached row older than the version column is not trusted either.

@@ -14,7 +14,7 @@
 
 import type { Env } from "../bindings";
 
-const COOKIE_NAME = "pd_session";
+const cookieName = (secure: boolean) => secure ? "__Host-pd_session" : "pd_session";
 const TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -87,28 +87,26 @@ export async function issueSessionToken(env: Env, userId: string): Promise<strin
   return createSessionToken(userId, row?.session_version ?? 0, env);
 }
 
-export function readSessionCookie(cookieHeader: string | null): string | null {
+// Secure requests never fall back to the old unprefixed cookie. This forces a
+// one-time sign-in on rollout and prevents a sibling Domain cookie shadowing it.
+export function readSessionCookie(cookieHeader: string | null, secure = true): string | null {
   if (!cookieHeader) return null;
-  for (const part of cookieHeader.split(";")) {
+  const matches = cookieHeader.split(";").filter(part => {
     const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === COOKIE_NAME) {
-      try {
-        return decodeURIComponent(part.slice(eq + 1).trim());
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
+    return eq >= 0 && part.slice(0, eq).trim() === cookieName(secure);
+  });
+  // Refuse ambiguous duplicate names rather than depending on cookie ordering.
+  if (matches.length !== 1) return null;
+  const part = matches[0]!;
+  try { return decodeURIComponent(part.slice(part.indexOf("=") + 1).trim()); } catch { return null; }
 }
 
 // `secure` should be false only for plain-http local dev (`wrangler dev` /
 // the Vite proxy) — browsers won't store a `Secure` cookie set over http.
 export function buildSessionCookie(token: string, secure: boolean): string {
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${TTL_SECONDS}`;
+  return `${cookieName(secure)}=${encodeURIComponent(token)}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${TTL_SECONDS}`;
 }
 
 export function clearSessionCookie(secure: boolean): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=0`;
+  return `${cookieName(secure)}=; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=0`;
 }

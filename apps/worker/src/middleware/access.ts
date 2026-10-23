@@ -3,7 +3,6 @@ import type { AppEnv } from "../context";
 import { fetchAccessProfile, verifyAccessJwt } from "../lib/access-jwt";
 import { authorizeIdentity } from "../lib/authorizeIdentity";
 import { readSessionCookie, verifySessionToken } from "../lib/session";
-import { getCachedUserById, setCachedUser } from "../lib/userCache";
 
 interface UserRow {
   id: string;
@@ -51,6 +50,7 @@ const requireAccessJwtUser: Handler = async (c, next) => {
   }
 
   c.set("user", result.user);
+  c.set("sessionVersion", result.sessionVersion);
   await next();
 };
 
@@ -61,25 +61,15 @@ const requireAccessJwtUser: Handler = async (c, next) => {
 // login (POST /api/auth/login) — both land here identically once the cookie
 // exists. See lib/session.ts.
 const requireCookieSessionUser: Handler = async (c, next) => {
-  const token = readSessionCookie(c.req.header("Cookie") ?? null);
+  const token = readSessionCookie(c.req.header("Cookie") ?? null, c.env.ENVIRONMENT !== "development" || new URL(c.req.url).protocol === "https:");
   const session = token ? await verifySessionToken(token, c.env) : null;
   if (!session) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  // A token minted before the account's latest sign-out or revoke carries an
-  // older session version and is refused (issue #46). The cached row is only
-  // trusted when it carries the version; after a sign-out it is deleted, so
-  // the next request reads D1 (other locations see the delete within about a
-  // minute, KV's propagation time).
-  const cached = await getCachedUserById(c.env, session.userId);
-  if (cached && cached.session_version !== undefined) {
-    if (cached.session_version !== session.sessionVersion) return c.json({ error: "Unauthorized" }, 401);
-    if (cached.status === "revoked") return c.json({ error: "Forbidden", email: cached.email }, 403);
-    c.set("user", { id: cached.id, email: cached.email, role: cached.role, displayName: cached.display_name, avatarUrl: cached.avatar_url });
-    return next();
-  }
-
+  // Security decisions always read D1's primary through the direct binding.
+  // Do not replace this with KV or a replica session: role/status/version
+  // changes must be visible to requests admitted after the mutation commits.
   const row = await c.env.DB.prepare("SELECT id, email, role, status, display_name, avatar_url, session_version FROM users WHERE id = ?")
     .bind(session.userId)
     .first<UserRow>();
@@ -88,8 +78,8 @@ const requireCookieSessionUser: Handler = async (c, next) => {
   }
   if (row.session_version !== session.sessionVersion) return c.json({ error: "Unauthorized" }, 401);
 
+  c.set("sessionVersion", row.session_version);
   c.set("user", { id: row.id, email: row.email, role: row.role, displayName: row.display_name, avatarUrl: row.avatar_url });
-  await setCachedUser(c.env, row);
   await next();
 };
 

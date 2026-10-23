@@ -23,6 +23,7 @@ import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MCP_OAUTH_SCOPES, type McpAuthorizationDecisionResponse, type McpAuthorizationRequestView } from "@prepdeck/shared";
 import { createRouter, type AppEnv } from "../../context";
+import { requireTrustedBrowserOrigin } from "../../middleware/browserRequest";
 import { requireAccessUser } from "../../middleware/access";
 import { authenticatedRateLimit, consumeRateLimit } from "../../middleware/rateLimit";
 import {
@@ -262,6 +263,7 @@ consent.use("*", async (c, next) => {
   if (!isMcpOAuthEnabled(c.env)) return c.json({ error: "OAuth is not enabled on this server." }, 404);
   await next();
 });
+consent.use("*", requireTrustedBrowserOrigin);
 consent.use("*", requireAccessUser);
 consent.use("*", authenticatedRateLimit);
 
@@ -286,14 +288,8 @@ consent.get("/:id", async (c) => {
 });
 
 async function decide(c: AppContext, approve: boolean) {
-  // Same-origin SPA calls only. SameSite=Lax cookies already keep a cross-site
-  // form from carrying the session or the binding; this refuses one outright.
-  const origin = c.req.header("Origin");
-  if (origin && origin !== new URL(c.req.url).origin && origin !== new URL(c.env.APP_BASE_URL).origin) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
   const id = c.req.param("id") ?? "";
-  const result = await decideAuthorizationRequest(c.env.DB, { id, binding: readBindingCookie(c), userId: c.get("user").id, approve });
+  const result = await decideAuthorizationRequest(c.env.DB, { id, binding: readBindingCookie(c), userId: c.get("user").id, sessionVersion: c.get("sessionVersion"), approve });
   c.header("Cache-Control", "no-store");
   // The binding has done its job either way.
   c.header("Set-Cookie", bindingCookie(c, id.replace(/[^a-f0-9]/g, ""), "", 0));

@@ -15,6 +15,7 @@ const { outputFiles } = await build({ stdin: { contents: `import React from 'rea
   window.unmountFixture = () => root.unmount();`, loader: "tsx", resolveDir: fileURLToPath(new URL("../", import.meta.url)) },
   bundle: true, write: false, outfile: "fixture.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' } });
 let tokens = [], writes = 0, nextExpiry = null, failRotation = false;
+const creationLifetimes = [];
 const freshToken = n => `pd_mcp_user_${n.toString(16).padStart(64, "a")}`;
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -25,6 +26,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET") return json(200, { credentials: tokens });
     writes++;
     const { payload: body } = await readBody(req);
+    if (!url.pathname.endsWith("/rotate") && !url.pathname.endsWith("/revoke")) creationLifetimes.push(body.expiresInDays);
     const id = url.pathname.split("/").at(-2);
     if (url.pathname.endsWith("/revoke") || url.pathname.endsWith("/rotate")) {
       tokens = tokens.map(t => t.id === id ? { ...t, status: "revoked", revokedAt: Date.now() } : t);
@@ -64,6 +66,10 @@ try {
   const create = async name => {
     await page.getByRole("button", { name: "+ Create token", exact: true }).click();
     await page.getByPlaceholder("e.g. local-cli").fill(name);
+    assert.equal(await page.getByRole("button", { name: "Never", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "1 year", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "30 days", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "90 days", exact: true }).count(), 1);
     await page.getByRole("button", { name: "Create token", exact: true }).click();
     await inclusive().waitFor();
   };
@@ -77,6 +83,7 @@ try {
   assert.equal(await inclusive().count(), 0);
 
   await create("desktop");
+  assert.equal(creationLifetimes.at(-1), 30, "new PAT form sends finite default");
   await inclusive().click();
   await page.getByRole("status").waitFor();
   assert.ok((await page.evaluate(() => window.copied.at(-1))).includes(freshToken(1)));

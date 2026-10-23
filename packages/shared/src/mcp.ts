@@ -9,7 +9,8 @@ import type { createMcpCredentialRequestSchema } from "./mcp.schema.ts";
 export type McpTokenStatus = "active" | "revoked" | "expired";
 
 export const MCP_TOKEN_NAME_MAX_LENGTH = 100;
-export const MCP_TOKEN_MAX_EXPIRES_IN_DAYS = 3650;
+export const MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS = 30;
+export const MCP_TOKEN_MAX_EXPIRES_IN_DAYS = 90;
 
 export interface McpCredentialSummary {
   id: string;

@@ -42,13 +42,13 @@ function environment(t) {
   const db = openDatabase(t);
   db.exec("INSERT INTO users (id,email,role,status,created_at) VALUES ('alice','alice@example.test','user','invited','2026-09-09')");
   const DB = createD1(db);
-  return { AUTH_MODE: "cookie", DB, KV: createKv(), SESSION_SECRET: "synthetic-test-session-key", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret" };
+  return { APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie", DB, KV: createKv(), SESSION_SECRET: "synthetic-test-session-key", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret" };
 }
 
 async function signInThroughGoogle(t, returnTo) {
   const env = environment(t);
   const { jwk, sign } = await signingKey();
-  const idToken = await sign({ iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600, iat: Math.floor(Date.now() / 1000) });
+  let idToken = await sign({ nonce: "fixture-nonce", iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600, iat: Math.floor(Date.now() / 1000) });
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async url => String(url).includes("token") ? Response.json({ id_token: idToken }) : Response.json({ keys: [jwk] });
@@ -56,7 +56,9 @@ async function signInThroughGoogle(t, returnTo) {
   const start = await authRouter.request(`https://prepdeck.test/google/start${returnTo === undefined ? "" : `?returnTo=${encodeURIComponent(returnTo)}`}`, {}, env);
   assert.equal(start.status, 302);
   const oauthCookie = start.headers.get("Set-Cookie").split(";")[0];
-  const state = new URL(start.headers.get("Location")).searchParams.get("state");
+  const authorization = new URL(start.headers.get("Location"));
+  const state = authorization.searchParams.get("state");
+  idToken = await sign({ ...JSON.parse(Buffer.from(idToken.split(".")[1], "base64url").toString()), nonce: authorization.searchParams.get("nonce") });
   const callback = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: oauthCookie } }, env);
   return { callback, oauthCookie };
 }
@@ -65,42 +67,44 @@ test("signing in lands on the page that asked for it", async t => {
   const { callback } = await signInThroughGoogle(t, "/learning/exam?exam=sg&question_id=q1");
   assert.equal(callback.status, 302);
   assert.equal(callback.headers.get("Location"), "/learning/exam?exam=sg&question_id=q1");
-  assert.match(callback.headers.get("Set-Cookie"), /pd_session=/, "and is signed in");
+  assert.match(callback.headers.get("Set-Cookie"), /__Host-pd_session=/, "and is signed in");
 });
 
 test("without returnTo, or with a foreign one, signing in lands on /", async t => {
   assert.equal((await signInThroughGoogle(t)).callback.headers.get("Location"), "/");
   const foreign = await signInThroughGoogle(t, "//evil.example/steal");
   assert.equal(foreign.callback.headers.get("Location"), "/");
-  const claims = JSON.parse(Buffer.from(foreign.oauthCookie.slice("pd_oauth=".length).split(".")[0], "base64url").toString());
+  const claims = JSON.parse(Buffer.from(foreign.oauthCookie.slice("__Host-pd_oauth=".length).split(".")[0], "base64url").toString());
   assert.ok(!("returnTo" in claims), "a refused returnTo is not even stored");
 });
 
 test("a state cookie this Worker did not sign is refused, whatever it plants", async t => {
   const env = environment(t);
   const { jwk, sign } = await signingKey();
-  const idToken = await sign({ iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
+  let idToken = await sign({ nonce: "fixture-nonce", iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async url => String(url).includes("token") ? Response.json({ id_token: idToken }) : Response.json({ keys: [jwk] });
   const start = await authRouter.request("https://prepdeck.test/google/start", {}, env);
-  const state = new URL(start.headers.get("Location")).searchParams.get("state");
-  const planted = `pd_oauth=${encodeURIComponent(JSON.stringify({ state, codeVerifier: "v", returnTo: "https://evil.example/" }))}`;
+  const authorization = new URL(start.headers.get("Location"));
+  const state = authorization.searchParams.get("state");
+  idToken = await sign({ ...JSON.parse(Buffer.from(idToken.split(".")[1], "base64url").toString()), nonce: authorization.searchParams.get("nonce") });
+  const planted = `__Host-pd_oauth=${encodeURIComponent(JSON.stringify({ state, codeVerifier: "v", returnTo: "https://evil.example/" }))}`;
   const callback = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: planted } }, env);
-  assert.doesNotMatch(callback.headers.get("Set-Cookie") ?? "", /pd_session=/, "no session from a cookie we did not issue");
+  assert.doesNotMatch(callback.headers.get("Set-Cookie") ?? "", /__Host-pd_session=/, "no session from a cookie we did not issue");
   assert.equal(callback.headers.get("Location"), "/?auth=error");
 });
 
 test("a returnTo in a signed state cookie is still validated on the way out", async t => {
   const env = environment(t);
   const { jwk, sign } = await signingKey();
-  const idToken = await sign({ iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
+  const idToken = await sign({ nonce: "fixture-nonce", iss: "https://accounts.google.com", aud: "client-id", sub: "google-alice", email: "alice@example.test", email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 });
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async url => String(url).includes("token") ? Response.json({ id_token: idToken }) : Response.json({ keys: [jwk] });
   // Signed with the Worker's own key, as if a future caller forgot to validate.
-  const cookie = (await buildOAuthStateCookie(env, "s", "v", true, "https://evil.example/")).split(";")[0];
+  const cookie = (await buildOAuthStateCookie(env, "s", "v", true, "https://evil.example/", "fixture-nonce")).split(";")[0];
   const callback = await authRouter.request("https://prepdeck.test/google/callback?code=c&state=s", { headers: { Cookie: cookie } }, env);
-  assert.match(callback.headers.get("Set-Cookie"), /pd_session=/, "the sign-in itself succeeds");
+  assert.match(callback.headers.get("Set-Cookie"), /__Host-pd_session=/, "the sign-in itself succeeds");
   assert.equal(callback.headers.get("Location"), "/");
 });

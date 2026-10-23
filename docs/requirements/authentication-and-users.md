@@ -54,7 +54,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-1-4"></a>
 
-- **FR-1.4 (M):** Admin can change roles or revoke accounts. Browser authorization caches are explicitly invalidated after these changes, but the 600-second KV cache and its propagation mean next-request revocation is not a global consistency guarantee. MCP independently checks current account status/role in D1 on every request. This corrects the original unconditional next-request promise.
+- **FR-1.4 (M):** Admin can change roles or revoke accounts. Browser and MCP authorization read current account status/role from D1 on every request. Browser sessions also check the current session version. The direct D1 binding targets the primary; authorization must not be moved to a replica session or KV cache. Requests already admitted before a change commits may finish. Revoking an account retires all browser sessions, PATs and OAuth grants; restoring status does not revive these credentials.
 
 <a id="fr-1-5"></a>
 
@@ -70,9 +70,8 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
   every session of the account**, on every device and browser: it increments the
   version, and a token with an older version is refused with 401. Revoking an
   account increments it too. Only a still-current token can sign an account out,
-  so an old copied token cannot be used to end someone's sessions. The refusal is
-  immediate where the request lands and follows elsewhere within about a minute,
-  the time a KV deletion of the cached user row takes to propagate. Tokens issued
+  so an old copied token cannot be used to end someone's sessions. Requests admitted after the version update commits read it from D1; previously
+  admitted requests are not cancelled. Tokens issued
   before the version existed are refused, so every user signs in once after the
   upgrade. MCP tokens and MCP OAuth grants (FR-1.12) are separate credentials; sign-out does not revoke them.
 
@@ -90,7 +89,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-1-10"></a>
 
-- **FR-1.10 (M):** From the Authorized Users screen, Admin can clear an account's stored Google subject. This is the recovery path for FR-1.9's conflict denial — the legitimate case being a person whose Google account was replaced rather than renamed, such as a consumer account displaced when its domain adopted Workspace. Clearing re-arms the one-time email binding, so the next successful Google sign-in on that address claims the account with its data intact; the row itself, and everything referencing its id, is untouched. Because the next sign-in wins the account, the action is confirmed and Admin-only. A subject can only ever be *cleared* here, never entered: subjects are written solely by a sign-in that verified them against Google's JWKS.
+- **FR-1.10 (M):** From the Authorized Users screen, Admin can clear an account's stored Google subject. This is the recovery path for FR-1.9's conflict denial — the legitimate case being a person whose Google account was replaced rather than renamed, such as a consumer account displaced when its domain adopted Workspace. Clearing re-arms the one-time email binding, so the next successful Google sign-in on that address claims the account with its data intact; the row itself, and everything referencing its id, is untouched. Because the next sign-in wins the account, the action is confirmed and Admin-only. A subject can only ever be *cleared* here, never entered: subjects are written solely by a sign-in that verified them against Google's JWKS. Recovery is transactional: clearing the binding also increments the session version and revokes every PAT and OAuth grant for that account. Internal content is retained. The confirmation explains that browsers must sign in again and integrations must reconnect; a normal browser sign-out still leaves independent MCP credentials untouched.
 
 <a id="fr-1-11"></a>
 
@@ -137,3 +136,36 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-12-5"></a>
 
 - **FR-12.5 (M):** Display name and avatar — whether still Google-sourced or user-overridden — are shown wherever an account's identity is surfaced elsewhere in the app: shared Notes (FR-11.7), the Admin's Authorized Users list, and any other author/attribution UI.
+
+
+### Browser and Google boundary rollout
+
+Cookie-authenticated unsafe REST requests require the configured application Origin
+(or a matching Referer when Origin is absent). JSON endpoints reject safelisted
+non-JSON media types; binary image uploads and public OAuth/MCP protocol endpoints
+keep their separate validation. Cookie-backed scripts must send the trusted Origin.
+
+Production Google start and callback require a canonical HTTPS APP_BASE_URL and
+an exact request URL origin match, independent of forwarded headers. HTTP is
+allowed only for explicitly configured development loopback origins. Google state
+includes a nonce; ID-token validation requires matching nonce, RS256, audience and
+applicable authorized party (azp). In-flight older login flows must restart.
+
+HTTPS session and Google state cookies use the __Host- prefix (Secure, Path=/,
+no Domain). Unprefixed legacy cookies are not accepted on HTTPS: existing browser
+sessions must sign in again once after rollout. Development HTTP uses unprefixed
+cookies only when ENVIRONMENT=development. This does not rotate the session secret
+or alter already-issued independent MCP grants; see MCP policy migration guidance.
+
+
+Recovery and logout affect PrepDeck credentials, not the external provider's own
+session. In AUTH_MODE=access, an otherwise valid Access JWT can still authenticate
+by email after a Google binding reset. Recovery of a compromised external provider
+session requires separately authorized Google/Cloudflare Access session revocation
+or keeping the application account revoked; clearing a Google link is not a
+substitute. The UI warning refers to PrepDeck browser sessions in cookie mode.
+
+Google enforces authorized-party (azp) rules for ID tokens; Cloudflare Access uses
+its own audience contract and does not require the OIDC azp claim. Both providers
+require RS256 signatures, a matching configured audience, unexpired exp, and valid
+nbf/iat when present (at most 60 seconds future clock skew).

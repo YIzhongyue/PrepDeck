@@ -5,7 +5,7 @@
 // credentials for that audience — an admin's Admin MCP tokens are personal
 // access tokens bound to their own account, not a shared service credential.
 
-import { TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
+import { MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS, MCP_TOKEN_MAX_EXPIRES_IN_DAYS, TURNSTILE_ACTIONS, type McpCredentialSummary } from "@prepdeck/shared";
 import { createMcpCredentialRequestSchema } from "@prepdeck/shared/schemas";
 import { createRouter } from "../context";
 import { readBody } from "../lib/requestBody";
@@ -43,11 +43,11 @@ export function createMcpTokensRouter(audience: McpAudience) {
     const parsed = await readBody(c, createMcpCredentialRequestSchema);
     if (!parsed.ok) return parsed.response;
     const { name, expiresInDays } = parsed.data;
-    // No expiresInDays (or null) means "never expires".
-    const expiresAt = expiresInDays == null ? null : Date.now() + expiresInDays * DAY_MS;
+    // Older clients may omit expiry or send null: use the finite default.
+    const expiresAt = Date.now() + (expiresInDays ?? MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS) * DAY_MS;
 
     try {
-      const issued = await issueMcpCredential(c.env.DB, { userId, audience, name, expiresAt });
+      const issued = await issueMcpCredential(c.env.DB, { userId, sessionVersion: c.get("sessionVersion"), audience, name, expiresAt });
       return c.json({ credential: freshSummary(issued), token: issued.token }, 201);
     } catch (err) {
       if (err instanceof McpApplicationError) return c.json({ error: "Could not issue this token" }, 400);
@@ -88,10 +88,10 @@ export function createMcpTokensRouter(audience: McpAudience) {
     const claimed = await revokeMcpCredential(c.env.DB, { id, userId, audience });
     if (!claimed) return c.json({ error: "This token is already revoked" }, 409);
 
-    const durationMs = existing.expiresAt !== null ? existing.expiresAt - existing.createdAt : null;
-    const expiresAt = durationMs !== null ? Date.now() + durationMs : null;
+    const durationMs = existing.expiresAt !== null ? existing.expiresAt - existing.createdAt : MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS * DAY_MS;
+    const expiresAt = Date.now() + Math.min(durationMs, MCP_TOKEN_MAX_EXPIRES_IN_DAYS * DAY_MS);
     try {
-      const issued = await issueMcpCredential(c.env.DB, { userId, audience, name: existing.name, expiresAt });
+      const issued = await issueMcpCredential(c.env.DB, { userId, sessionVersion: c.get("sessionVersion"), audience, name: existing.name, expiresAt });
       return c.json({ credential: freshSummary(issued), token: issued.token }, 201);
     } catch {
       // The predecessor is already revoked and cannot be un-revoked from

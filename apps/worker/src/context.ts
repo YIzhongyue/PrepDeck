@@ -15,6 +15,8 @@ export interface AuthUser {
 
 export interface Variables {
   user: AuthUser;
+  /** Admission snapshot for issuing durable credentials; never client supplied. */
+  sessionVersion: number;
   mcpObservation?: McpObservation;
 }
 

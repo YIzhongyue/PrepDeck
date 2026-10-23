@@ -20,8 +20,8 @@ complete; [authoring](../guides/question-bank-authoring.md) defines safe retry.
 ## Security and privacy
 
 Google identity and invitation/role checks are server-side. The allow-list is D1
-data, not an environment-variable secret. Browser auth can use a 600-second KV
-cache, so it is not a globally immediate revocation guarantee. MCP validates the
+data, not an environment-variable secret. Browser auth reads role, status and session version from the D1 primary on each
+request instead of an eventually consistent identity cache. MCP validates the
 current account and audience in D1 every request. Local password login requires
 two explicit development switches and is disabled in production.
 

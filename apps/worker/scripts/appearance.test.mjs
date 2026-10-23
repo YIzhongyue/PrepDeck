@@ -34,7 +34,7 @@ function fixture(t) {
   }
   async function request({ style, raw, user, method = style === undefined && raw === undefined ? "GET" : "PUT", publicPath = method === "GET", app = application() } = {}) {
     const headers = { "Content-Type": "application/json" };
-    if (user) headers.Cookie = `pd_session=${await createSessionToken(user, 0, env)}`;
+    if (user) headers.Cookie = `__Host-pd_session=${await createSessionToken(user, 0, env)}`;
     const response = await app.request(`https://test/api/${publicPath ? "" : "admin/"}appearance`, {
       method, headers, body: raw ?? (style === undefined ? undefined : JSON.stringify({ mascotStyle: style })),
     }, env);
