@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 import MediaDialog from "./MediaDialog";
+import { t as translate, useI18n } from "../../i18n";
 
 let renderQueue = Promise.resolve();
 const MAX_SOURCE_LENGTH = 12000;
@@ -21,6 +22,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
   const [mode, setMode] = useState<"preview" | "source">("preview");
   const [large, setLarge] = useState(false);
   const [theme, setTheme] = useState("neutral");
+  const { t } = useI18n();
 
   useEffect(() => {
     const host = hostRef.current?.closest("[data-pd-theme]");
@@ -35,7 +37,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
   useEffect(() => {
     let cancelled = false;
     if (source.length > MAX_SOURCE_LENGTH || source.split("\n").length > 250) {
-      setSvg(null); setError("Diagram is too large. Use at most 12,000 characters and 250 lines."); return;
+      setSvg(null); setError(translate("kp.diagram.tooLarge")); return;
     }
     // Debounced so retyping a diagram's source while it's open doesn't fire
     // overlapping mermaid.render() calls.
@@ -52,7 +54,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
         .catch((err: unknown) => {
           if (cancelled) return;
           setSvg(null);
-          setError(err instanceof Error ? err.message : "Diagram failed to render");
+          setError(err instanceof Error ? err.message : translate("kp.diagram.failed"));
         });
       });
     }, 300);
@@ -75,7 +77,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
         }}
       >
         {error ? (
-          <span style={{ fontSize: 12, fontWeight: 600 }}>Diagram didn&rsquo;t render — {error}</span>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>{t("kp.diagram.didNotRender", { error })}</span>
         ) : (
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>mermaid</span>
         )}
@@ -89,7 +91,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
               background: mode === "preview" && !error ? "var(--color-accent)" : "transparent", color: mode === "preview" && !error ? "var(--color-bg)" : "inherit", opacity: error ? 0.5 : 1,
             }}
           >
-            Preview
+            {t("kp.diagram.preview")}
           </button>
           <button
             type="button"
@@ -99,7 +101,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
               background: showSource ? "var(--color-accent)" : "transparent", color: showSource ? "var(--color-bg)" : "inherit",
             }}
           >
-            Source
+            {t("kp.diagram.source")}
           </button>
         </div>
       </div>
@@ -113,8 +115,8 @@ export default function MermaidDiagram({ source }: { source: string }) {
         // against this one. Exactly one instance is ever mounted.
         <div style={{ padding: 18, overflowX: "auto" }} dangerouslySetInnerHTML={large ? undefined : { __html: svg! }} />
       )}
-      {svg && <button type="button" className="btn btn-secondary" onClick={() => setLarge(true)}>View larger diagram</button>}
-      {large && svg && <MediaDialog label="diagram" onClose={() => setLarge(false)}>
+      {svg && <button type="button" className="btn btn-secondary" onClick={() => setLarge(true)}>{t("kp.diagram.viewLarger")}</button>}
+      {large && svg && <MediaDialog kind="diagram" onClose={() => setLarge(false)}>
         <div style={{ minWidth: 700 }} dangerouslySetInnerHTML={{ __html: svg }} />
       </MediaDialog>}
     </div>

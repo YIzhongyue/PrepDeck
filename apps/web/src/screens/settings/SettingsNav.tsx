@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { isModifiedClick } from "../../store/urlRouting";
+import { useI18n } from "../../i18n";
 
 // The Settings screen is one long page in three groups. Wide screens index it
 // with a sticky list beside the content; narrow ones with a sticky row of chips
 // under the top bar. Both follow the scroll position and jump on click.
 
-export type SectionId = "profile" | "session" | "appearance" | "marks" | "notes" | "timezone" | "email" | "ai" | "mcp";
+export type SectionId = "profile" | "session" | "appearance" | "language" | "marks" | "notes" | "timezone" | "email" | "ai" | "mcp";
 
 // A short status shown beside a section's name, such as whether the daily
 // email is on.
@@ -14,19 +15,14 @@ export interface SectionMeta {
   dot: string;
 }
 
-const GROUPS: { label: string; items: { id: SectionId; label: string }[] }[] = [
-  { label: "Account", items: [{ id: "profile", label: "Profile" }, { id: "session", label: "Sign out" }] },
-  {
-    label: "Study",
-    items: [
-      { id: "appearance", label: "Appearance" }, { id: "marks", label: "Mark aliases" }, { id: "notes", label: "Shared notes" },
-      { id: "timezone", label: "Time zone" }, { id: "email", label: "Daily email" }
-    ]
-  },
-  { label: "AI & integrations", items: [{ id: "ai", label: "AI explanations" }, { id: "mcp", label: "MCP access" }] }
+// Names come from the `settings.groups` and `settings.nav` messages.
+const GROUPS: { id: "account" | "study" | "integrations"; items: SectionId[] }[] = [
+  { id: "account", items: ["profile", "session"] },
+  { id: "study", items: ["appearance", "language", "marks", "notes", "timezone", "email"] },
+  { id: "integrations", items: ["ai", "mcp"] }
 ];
 
-const SECTION_IDS = GROUPS.flatMap((g) => g.items.map((item) => item.id));
+const SECTION_IDS = GROUPS.flatMap((g) => g.items);
 
 export const sectionDomId = (id: SectionId) => `settings-${id}`;
 
@@ -108,7 +104,9 @@ interface NavProps {
 }
 
 // A chip has room for the status dot only; its text stays for screen readers.
-function SectionLink({ id, label, active, meta, onJump, chip = false }: NavProps & { id: SectionId; label: string; chip?: boolean }) {
+function SectionLink({ id, active, meta, onJump, chip = false }: NavProps & { id: SectionId; chip?: boolean }) {
+  const { t } = useI18n();
+  const label = t(`settings.nav.${id}`);
   const m = meta[id];
   const dot = m && <span className="settings-dot" style={{ background: m.dot }} aria-hidden="true" />;
   return (
@@ -136,13 +134,14 @@ function SectionLink({ id, label, active, meta, onJump, chip = false }: NavProps
 }
 
 export function SettingsToc(props: NavProps) {
+  const { t } = useI18n();
   return (
-    <nav aria-label="Settings sections" className="settings-toc">
+    <nav aria-label={t("settings.nav.sections")} className="settings-toc">
       {GROUPS.map((group) => (
-        <div key={group.label} className="settings-toc-group">
-          <p className="settings-toc-heading">{group.label}</p>
-          {group.items.map((item) => (
-            <SectionLink key={item.id} {...props} id={item.id} label={item.label} />
+        <div key={group.id} className="settings-toc-group">
+          <p className="settings-toc-heading">{t(`settings.groups.${group.id}`)}</p>
+          {group.items.map((id) => (
+            <SectionLink key={id} {...props} id={id} />
           ))}
         </div>
       ))}
@@ -152,6 +151,7 @@ export function SettingsToc(props: NavProps) {
 
 export function SettingsChips({ barRef, inset, ...props }: NavProps & { barRef: RefObject<HTMLElement | null>; inset: { top: number; inline: number } }) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   // Keep the current chip in view as the page scrolls past its section.
   useEffect(() => {
     const track = trackRef.current;
@@ -166,13 +166,13 @@ export function SettingsChips({ barRef, inset, ...props }: NavProps & { barRef: 
     // Pulled out of the shell's padding so the bar runs edge to edge.
     <nav
       ref={barRef}
-      aria-label="Settings sections"
+      aria-label={t("settings.nav.sections")}
       className="settings-chips"
       style={{ marginTop: -inset.top, marginInline: -inset.inline }}
     >
       <div ref={trackRef} className="settings-chips-track" style={{ paddingInline: inset.inline }}>
-        {GROUPS.flatMap((group) => group.items).map((item) => (
-          <SectionLink key={item.id} {...props} id={item.id} label={item.label} chip />
+        {GROUPS.flatMap((group) => group.items).map((id) => (
+          <SectionLink key={id} {...props} id={id} chip />
         ))}
       </div>
     </nav>

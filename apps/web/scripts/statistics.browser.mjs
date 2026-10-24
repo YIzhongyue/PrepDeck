@@ -349,12 +349,13 @@ try {
   await page.getByText(/\d+ days left/).waitFor();
   await page.getByText(/% of goal/).waitFor();
 
-  // --- The date field stays English whatever language the browser is in ---
+  // --- The date field follows the interface language, not the browser's ---
   // A native `<input type="date">` takes its placeholders and its calendar
   // from the browser's UI language, not from `<html lang>`, so in a Chinese
-  // Chrome it read 年/月/日 inside this English-only app. Its replacement
-  // renders both itself, pinned to en-US — which only a non-English browser
-  // can actually prove, hence the separate context.
+  // Chrome it read 年/月/日 inside the English interface. Its replacement
+  // renders both itself in PrepDeck's own interface language (issue #191),
+  // English here — which only a non-English browser can actually prove,
+  // hence the separate context.
   const zh = await browser.newPage({ viewport: { width: 1280, height: 1100 }, locale: "zh-CN" });
   try {
     await zh.clock.setFixedTime(new Date("2026-09-19T12:00:00Z"));

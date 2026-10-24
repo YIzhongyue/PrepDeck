@@ -39,7 +39,7 @@ const schemaFiles = [
   "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
   "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql",
   "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0029_question_mutation_audit.sql",
-  "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
+  "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql", "0037_user_session_version.sql",
   "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql", "0045_mcp_oauth.sql", "0047_admin_mcp_import_created_tags.sql",
 ];
 
@@ -63,10 +63,10 @@ export async function fixture(t) {
     DB, ENVIRONMENT: "production", APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie",
   };
   const expiresAt = Date.now() + 60_000;
-  const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "alice's token", expiresAt });
-  const bob = await issueMcpCredential(DB, { userId: "bob", audience: "user", name: "bob's token", expiresAt });
-  const admin = await issueMcpCredential(DB, { userId: "admin", audience: "admin", name: "admin's token", expiresAt });
-  const adminUser = await issueMcpCredential(DB, { userId: "admin", audience: "user", name: "admin's user token", expiresAt });
+  const alice = await issueMcpCredential(DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "alice's token", expiresAt });
+  const bob = await issueMcpCredential(DB, { sessionVersion: 0, userId: "bob", audience: "user", name: "bob's token", expiresAt });
+  const admin = await issueMcpCredential(DB, { sessionVersion: 0, userId: "admin", audience: "admin", name: "admin's token", expiresAt });
+  const adminUser = await issueMcpCredential(DB, { sessionVersion: 0, userId: "admin", audience: "user", name: "admin's user token", expiresAt });
   return {
     sqlite, DB, env, metrics, queries, alice, bob, admin, adminUser,
     limits: env.RATE_LIMITER.calls, kvInvalidations: env.KV.deletes, bucketObjects: env.BUCKET.objects,

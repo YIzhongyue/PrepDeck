@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
+import { useI18n } from "../i18n";
 
 // Keyed by exam and URL below so an image failure cannot leak into another
 // exam (or a replacement badge). Use the existing same-origin badge URL.
@@ -35,6 +36,8 @@ function ExamBadge({ src }: { src: string | null | undefined }) {
 export default function ExamSelector({ compact = false }: { compact?: boolean }) {
   const state = useWorkspaceState();
   const { setExamId } = useWorkspaceActions();
+  const { t } = useI18n();
+  const other = t("exams.otherProvider");
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -79,8 +82,8 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
         type="button"
         className="exam-selector__trigger"
         aria-label={compact
-          ? `Select exam${activeExam ? `, current exam: ${activeExam.name}` : ""}`
-          : activeExam ? `${activeExam.slug} — Select exam, current exam: ${activeExam.name}` : "Select an exam"}
+          ? (activeExam ? t("exams.selectCurrent", { name: activeExam.name }) : t("exams.select"))
+          : activeExam ? t("exams.selectCurrentWithSlug", { slug: activeExam.slug, name: activeExam.name }) : t("exams.selectAnExam")}
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-controls={menuId}
@@ -88,19 +91,19 @@ export default function ExamSelector({ compact = false }: { compact?: boolean })
         onClick={() => setOpen((value) => !value)}
       >
         <ExamBadge key={`${activeExam?.id}:${activeExam?.badgeIconUrl}`} src={activeExam?.badgeIconUrl} />
-        {!compact && <span className="exam-selector__name">{activeExam?.slug ?? "Select an exam"}</span>}
+        {!compact && <span className="exam-selector__name">{activeExam?.slug ?? t("exams.selectAnExam")}</span>}
         <svg className="exam-selector__chevrons" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="m4 5 3-3 3 3M10 9l-3 3-3-3" />
         </svg>
       </button>
 
       {open && (
-        <div id={menuId} className="exam-selector__menu" role="listbox" aria-label="Exams">
-          <span className="exam-selector__label">Exams</span>
+        <div id={menuId} className="exam-selector__menu" role="listbox" aria-label={t("exams.title")}>
+          <span className="exam-selector__label">{t("exams.title")}</span>
           {groupedExams.map((exam, index) => {
             const selected = exam.id === state.examId;
-            const group = exam.providers.map((p) => p.shortName).join(" · ") || "Other";
-            const previousGroup = index > 0 ? (groupedExams[index - 1]!.providers.map((p) => p.shortName).join(" · ") || "Other") : null;
+            const group = exam.providers.map((p) => p.shortName).join(" · ") || other;
+            const previousGroup = index > 0 ? (groupedExams[index - 1]!.providers.map((p) => p.shortName).join(" · ") || other) : null;
             return (
               <div key={exam.id}>
               {group !== previousGroup && <span className="exam-selector__label">{group}</span>}

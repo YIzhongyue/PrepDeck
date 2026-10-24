@@ -8,6 +8,7 @@ import { RadioButton, RadioGroup } from "@/components/base/radio-buttons/radio-b
 import { Select } from "@/components/base/select/select";
 import { cx } from "@/utils/cx";
 import { sectionAnchor } from "./SettingsNav";
+import { useI18n } from "../../i18n";
 
 // A key already loaded this session is "done"; one saved but still encrypted
 // (encrypted storage, browser refreshed) is "locked"; anything else needs setup.
@@ -38,12 +39,14 @@ export default function AiExplanationsCard() {
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey
   } = useAccountActions();
+  const { t } = useI18n();
 
   const curatedModels = CURATED_MODELS[state.provider];
   const isCustomModel = !curatedModels.some((m) => m.id === state.model);
+  const customModelLabel = t("settings.ai.customModel");
   const modelOptions = useMemo(
-    () => [...curatedModels.map((m) => ({ id: m.id, label: m.label })), { id: "__custom", label: "Custom model id…" }],
-    [curatedModels]
+    () => [...curatedModels.map((m) => ({ id: m.id, label: m.label })), { id: "__custom", label: customModelLabel }],
+    [curatedModels, customModelLabel]
   );
 
   const [keyDraft, setKeyDraft] = useState("");
@@ -70,11 +73,11 @@ export default function AiExplanationsCard() {
   const saveKey = async () => {
     setKeyError(null);
     const key = keyDraft.trim();
-    if (!key) { setKeyError("Enter an API key first."); return; }
+    if (!key) { setKeyError(t("settings.ai.errors.noKey")); return; }
     setKeyBusy(true);
     try {
       if (state.keyMode === "encrypted") {
-        if (!passphraseDraft) { setKeyError("Choose a passphrase to encrypt the key."); return; }
+        if (!passphraseDraft) { setKeyError(t("settings.ai.errors.noPassphrase")); return; }
         await saveEncryptedApiKey(key, passphraseDraft);
       } else {
         loadSessionApiKey(key);
@@ -84,7 +87,7 @@ export default function AiExplanationsCard() {
       setKeyManaging(false);
       setKeyStep(1);
     } catch {
-      setKeyError("Could not save the encrypted key.");
+      setKeyError(t("settings.ai.errors.saveFailed"));
     } finally {
       setKeyBusy(false);
     }
@@ -97,7 +100,7 @@ export default function AiExplanationsCard() {
       await unlockSessionKey(unlockDraft);
       setUnlockDraft("");
     } catch {
-      setKeyError("Wrong passphrase, or no saved key.");
+      setKeyError(t("settings.ai.errors.unlockFailed"));
     } finally {
       setKeyBusy(false);
     }
@@ -108,17 +111,17 @@ export default function AiExplanationsCard() {
   // through to the setup stepper. "Manage" / "Use a different key" force the
   // stepper open even when a key is loaded or locked.
   const providerLabel = state.provider === "anthropic" ? "Anthropic" : "OpenAI";
-  const storageLabel = state.keyMode === "encrypted" ? "Encrypted in this browser" : "Memory only";
+  const storageLabel = t(state.keyMode === "encrypted" ? "settings.ai.storage.encrypted" : "settings.ai.storage.memoryShort");
   const keyStatus = aiKeyStatus(state);
   const showKeyDone = keyStatus === "done" && !keyManaging;
   const showKeyLocked = keyStatus === "locked" && !keyManaging;
   const showKeySetup = !showKeyDone && !showKeyLocked;
   const tone = showKeyDone ? "done" : showKeyLocked ? "locked" : "setup";
-  const statusTitle = showKeyDone
-    ? "Key loaded for this session"
+  const statusTitle = t(showKeyDone
+    ? "settings.ai.status.loaded"
     : showKeyLocked
-    ? "Unlock your saved key"
-    : keyManaging ? "Change your key setup" : keyStep === 2 ? "Setting up your key" : "Not set up yet";
+    ? "settings.ai.status.locked"
+    : keyManaging ? "settings.ai.status.changing" : keyStep === 2 ? "settings.ai.status.settingUp" : "settings.ai.status.notSetUp");
 
   const keyErrorBox = keyError && (
     <div className="settings-error-box">
@@ -138,17 +141,17 @@ export default function AiExplanationsCard() {
           )}
         </span>
         <div className="settings-ai-heading">
-          <h3 className="settings-ai-kicker">AI explanations</h3>
+          <h3 className="settings-ai-kicker">{t("settings.nav.ai")}</h3>
           <p className="settings-ai-title">{statusTitle}</p>
         </div>
-        {showKeyDone && <Button color="secondary" size="md" onClick={() => openKeyManager(1)}>Manage</Button>}
+        {showKeyDone && <Button color="secondary" size="md" onClick={() => openKeyManager(1)}>{t("settings.ai.manage")}</Button>}
       </div>
 
       {showKeyDone && (
         <dl className="settings-ai-spec">
-          <div><dt>Provider</dt><dd>{providerLabel}</dd></div>
-          <div><dt>Model</dt><dd>{state.model}</dd></div>
-          <div><dt>Key storage</dt><dd>{storageLabel}</dd></div>
+          <div><dt>{t("settings.ai.provider")}</dt><dd>{providerLabel}</dd></div>
+          <div><dt>{t("settings.ai.model")}</dt><dd>{state.model}</dd></div>
+          <div><dt>{t("settings.ai.keyStorage")}</dt><dd>{storageLabel}</dd></div>
         </dl>
       )}
 
@@ -159,18 +162,18 @@ export default function AiExplanationsCard() {
             <Input
               className="flex-1"
               type="password"
-              aria-label="Passphrase"
-              placeholder="Passphrase"
+              aria-label={t("settings.ai.passphrase")}
+              placeholder={t("settings.ai.passphrase")}
               value={unlockDraft}
               onChange={setUnlockDraft}
               isInvalid={!!keyError}
             />
-            <Button size="md" isDisabled={keyBusy || !unlockDraft} isLoading={keyBusy} onClick={unlockKey}>Unlock</Button>
+            <Button size="md" isDisabled={keyBusy || !unlockDraft} isLoading={keyBusy} onClick={unlockKey}>{t("settings.ai.unlock")}</Button>
           </div>
           {keyErrorBox}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <Button color="link-color" size="sm" onClick={() => openKeyManager(2)}>Use a different key</Button>
-            <Button color="link-destructive" size="sm" onClick={forgetStoredApiKey}>Forget saved key</Button>
+            <Button color="link-color" size="sm" onClick={() => openKeyManager(2)}>{t("settings.ai.useDifferentKey")}</Button>
+            <Button color="link-destructive" size="sm" onClick={forgetStoredApiKey}>{t("settings.ai.forgetKey")}</Button>
           </div>
         </div>
       )}
@@ -178,15 +181,15 @@ export default function AiExplanationsCard() {
       {showKeySetup && (
         <div className="settings-ai-body">
           <div className="settings-steps">
-            <span className="settings-step is-on"><StepDot n={1} on />Configure</span>
+            <span className="settings-step is-on"><StepDot n={1} on />{t("settings.ai.stepConfigure")}</span>
             <span className={cx("settings-step-line", keyStep >= 2 && "is-on")} />
-            <span className={cx("settings-step", keyStep >= 2 && "is-on")}><StepDot n={2} on={keyStep >= 2} />Key</span>
+            <span className={cx("settings-step", keyStep >= 2 && "is-on")}><StepDot n={2} on={keyStep >= 2} />{t("settings.ai.stepKey")}</span>
           </div>
 
           {keyStep === 1 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <p id="settings-ai-provider" className="settings-field-label">Provider</p>
+                <p id="settings-ai-provider" className="settings-field-label">{t("settings.ai.provider")}</p>
                 <div role="group" aria-labelledby="settings-ai-provider" className="settings-seg settings-seg-wide">
                   {([{ id: "anthropic", label: "Anthropic" }, { id: "openai", label: "OpenAI" }] as const).map((o) => (
                     <button key={o.id} type="button" aria-pressed={state.provider === o.id} onClick={() => setProvider(o.id)}>
@@ -197,7 +200,7 @@ export default function AiExplanationsCard() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Select
-                  label="Model"
+                  label={t("settings.ai.model")}
                   selectedKey={isCustomModel ? "__custom" : state.model}
                   onSelectionChange={(key) => setModel(key === "__custom" ? "" : String(key))}
                   items={modelOptions}
@@ -206,25 +209,25 @@ export default function AiExplanationsCard() {
                 </Select>
                 {isCustomModel && (
                   <Input
-                    aria-label="Exact model id"
-                    placeholder="Exact model id"
+                    aria-label={t("settings.ai.exactModel")}
+                    placeholder={t("settings.ai.exactModel")}
                     value={state.model}
                     onChange={setModel}
                   />
                 )}
               </div>
               <div>
-                <p className="settings-field-label">Key storage</p>
+                <p className="settings-field-label">{t("settings.ai.keyStorage")}</p>
                 <RadioGroup
-                  aria-label="Key storage"
+                  aria-label={t("settings.ai.keyStorage")}
                   size="md"
                   value={state.keyMode}
                   onChange={(value) => setKeyMode(value as KeyMode)}
                   className="flex flex-col gap-2"
                 >
                   {([
-                    { id: "memory" as const, title: "Memory only (default)", body: "Cleared the moment you refresh or close the tab. Nothing touches disk." },
-                    { id: "encrypted" as const, title: "Encrypted in this browser", body: "AES-GCM ciphertext in IndexedDB, unlocked with a passphrase each visit." }
+                    { id: "memory" as const, title: t("settings.ai.storage.memory"), body: t("settings.ai.storage.memoryBody") },
+                    { id: "encrypted" as const, title: t("settings.ai.storage.encrypted"), body: t("settings.ai.storage.encryptedBody") }
                   ]).map((k) => (
                     <RadioButton
                       key={k.id}
@@ -238,22 +241,22 @@ export default function AiExplanationsCard() {
                 </RadioGroup>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <Button size="md" onClick={() => setKeyStep(2)}>Continue</Button>
-                <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Step 1 of 2</span>
+                <Button size="md" onClick={() => setKeyStep(2)}>{t("settings.ai.continue")}</Button>
+                <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{t("settings.ai.stepOf", { step: 1, total: 2 })}</span>
                 {keyManaging && (
-                  <Button color="link-gray" size="md" className="ml-auto" onClick={() => setKeyManaging(false)}>Cancel</Button>
+                  <Button color="link-gray" size="md" className="ml-auto" onClick={() => setKeyManaging(false)}>{t("common.cancel")}</Button>
                 )}
               </div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
-                <p style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 600 }}>Paste your {providerLabel} key</p>
-                <p className="settings-row-desc">Sent to this app's server only, relayed once per request, never stored.</p>
+                <p style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 600 }}>{t("settings.ai.pasteKey", { provider: providerLabel })}</p>
+                <p className="settings-row-desc">{t("settings.ai.pasteKeyDesc")}</p>
               </div>
               <Input
                 type="password"
-                label={state.hasSessionKey ? "Replace API key" : "API key"}
+                label={t(state.hasSessionKey ? "settings.ai.replaceKey" : "settings.ai.apiKey")}
                 placeholder={state.provider === "anthropic" ? "sk-ant-…" : "sk-…"}
                 value={keyDraft}
                 onChange={(value) => { setKeyDraft(value); setKeyError(null); }}
@@ -262,19 +265,19 @@ export default function AiExplanationsCard() {
               {state.keyMode === "encrypted" && (
                 <Input
                   type="password"
-                  label="Passphrase"
-                  placeholder="Choose a passphrase"
+                  label={t("settings.ai.passphrase")}
+                  placeholder={t("settings.ai.choosePassphrase")}
                   value={passphraseDraft}
                   onChange={setPassphraseDraft}
-                  hint="Encrypted with AES-GCM and stored only in this browser. We can never recover it — lose the passphrase and the saved key is gone."
+                  hint={t("settings.ai.passphraseHint")}
                 />
               )}
               {keyErrorBox}
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <Button size="md" isDisabled={keyBusy || !keyDraft.trim()} isLoading={keyBusy} onClick={saveKey}>
-                  {state.keyMode === "encrypted" ? "Save & encrypt" : "Load key"}
+                  {t(state.keyMode === "encrypted" ? "settings.ai.saveEncrypt" : "settings.ai.loadKey")}
                 </Button>
-                <Button color="secondary" size="md" onClick={() => setKeyStep(1)}>Back</Button>
+                <Button color="secondary" size="md" onClick={() => setKeyStep(1)}>{t("common.back")}</Button>
                 {state.hasSessionKey && (
                   <Button
                     color="link-gray"
@@ -282,7 +285,7 @@ export default function AiExplanationsCard() {
                     className="ml-auto"
                     onClick={() => { clearSessionApiKey(); setKeyManaging(false); setKeyStep(1); }}
                   >
-                    Clear loaded key
+                    {t("settings.ai.clearKey")}
                   </Button>
                 )}
               </div>
@@ -292,7 +295,7 @@ export default function AiExplanationsCard() {
       )}
 
       <p className="settings-card-note">
-        Your key is only ever sent to this app's own server, which relays it to {providerLabel} for a single request and never stores it.
+        {t("settings.ai.note", { provider: providerLabel })}
       </p>
     </div>
   );

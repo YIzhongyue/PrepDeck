@@ -18,9 +18,10 @@ import { requireAccessUser } from "../middleware/access";
 import { turnstileRemoteIp, turnstileSiteKey, verifyTurnstileToken, type TurnstileFailure } from "../lib/turnstile";
 import { verifyPassword } from "../lib/password";
 import { isDevPasswordLoginEnabled } from "../lib/devPasswordLogin";
-import { issueSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
+import { createSessionToken, buildSessionCookie, clearSessionCookie, readSessionCookie, verifySessionToken } from "../lib/session";
 import { invalidateCachedUser } from "../lib/userCache";
 import { safeReturnTo } from "../lib/returnTo";
+import { configuredApplicationOrigin } from "../lib/trustedOrigin";
 import { authorizeIdentity } from "../lib/authorizeIdentity";
 import {
   buildGoogleAuthUrl,
@@ -40,6 +41,7 @@ interface UserRow {
   display_name: string | null;
   avatar_url: string | null;
   password_hash: string | null;
+  session_version: number;
 }
 
 // POST /login, the local-dev fallback below; only scripts/local.mjs and the
@@ -52,8 +54,17 @@ const loginRequestSchema = z.object({
 
 export const authRouter = createRouter();
 
-function googleRedirectUri(c: { req: { url: string } }): string {
-  return `${new URL(c.req.url).origin}/api/auth/google/callback`;
+function googleCallbackConfiguration(c: Context<AppEnv>):
+  | { ok: true; redirectUri: string; secure: boolean }
+  | { ok: false; response: Response } {
+  const origin = configuredApplicationOrigin(c.env);
+  if (c.env.AUTH_MODE !== "cookie" || !origin) {
+    return { ok: false, response: c.json({ error: "Google sign-in requires cookie authentication and a valid trusted APP_BASE_URL (HTTPS outside development)" }, 503) };
+  }
+  if (new URL(c.req.url).origin !== origin) {
+    return { ok: false, response: c.json({ error: "Google sign-in request origin is not allowed" }, 403) };
+  }
+  return { ok: true, redirectUri: `${origin}/api/auth/google/callback`, secure: origin.startsWith("https:") };
 }
 
 // The Turnstile site key the login screen renders its widget with (issue
@@ -93,13 +104,8 @@ async function startGoogleSignIn(
   c: Context<AppEnv>,
   input: { returnTo: unknown; turnstileToken: unknown },
 ) {
-  // The direct OAuth callback creates a PrepDeck session cookie. Access mode
-  // deliberately ignores that cookie and requires Cf-Access-Jwt-Assertion,
-  // so allowing this flow in Access mode can only end in a confusing 401.
-  if (c.env.AUTH_MODE !== "cookie") {
-    console.error("auth.google.start.invalid_mode", { authMode: c.env.AUTH_MODE });
-    return c.json({ error: "Direct Google sign-in requires AUTH_MODE=cookie" }, 503);
-  }
+  const config = googleCallbackConfiguration(c);
+  if (!config.ok) return config.response;
 
   // Where to land after signing in (issues #41 and #52): the page a signed-out
   // learner opened, for example from a review email. Same-origin paths only.
@@ -115,15 +121,15 @@ async function startGoogleSignIn(
   }
 
   const state = randomBase64Url(24);
+  const nonce = randomBase64Url(24);
   const codeVerifier = randomBase64Url(48);
   const codeChallenge = await pkceChallengeFromVerifier(codeVerifier);
 
-  const secure = new URL(c.req.url).protocol === "https:";
-  c.header("Set-Cookie", await buildOAuthStateCookie(c.env, state, codeVerifier, secure, returnTo));
+  const { secure, redirectUri } = config;
+  c.header("Set-Cookie", await buildOAuthStateCookie(c.env, state, codeVerifier, secure, returnTo, nonce));
 
-  const redirectUri = googleRedirectUri(c);
   console.info("auth.google.start", { redirectUri });
-  return c.redirect(buildGoogleAuthUrl(c.env, redirectUri, state, codeChallenge), redirectStatus);
+  return c.redirect(buildGoogleAuthUrl(c.env, redirectUri, state, codeChallenge, nonce), redirectStatus);
 }
 
 authRouter.get("/google/start", (c) => startGoogleSignIn(c, { returnTo: c.req.query("returnTo"), turnstileToken: null }));
@@ -145,7 +151,9 @@ authRouter.post(
 // to the SPA shell with a `?auth=` flag so screens/Login.tsx can render the
 // matching state; it never renders anything itself.
 authRouter.get("/google/callback", async (c) => {
-  const secure = new URL(c.req.url).protocol === "https:";
+  const config = googleCallbackConfiguration(c);
+  if (!config.ok) return config.response;
+  const { secure, redirectUri } = config;
   const clearOAuthCookie = clearOAuthStateCookie(secure);
 
   // `conflict` is a denial like `denied`, but the two need opposite advice on
@@ -177,7 +185,7 @@ authRouter.get("/google/callback", async (c) => {
 
   // Signed and expiring (issue #82): a cookie this Worker did not issue from
   // /google/start, where Turnstile is checked, is refused here.
-  const stored = await readOAuthStateCookie(c.env, c.req.header("Cookie") ?? null);
+  const stored = await readOAuthStateCookie(c.env, c.req.header("Cookie") ?? null, secure);
   if (!stored || stored.state !== state) {
     console.warn("auth.google.callback.invalid_state", { hasStateCookie: !!stored });
     return fail("error");
@@ -185,7 +193,7 @@ authRouter.get("/google/callback", async (c) => {
 
   let identity: { email: string; sub: string; name: string | null; picture: string | null };
   try {
-    identity = await exchangeCodeForIdentity(c.env, code, googleRedirectUri(c), stored.codeVerifier);
+    identity = await exchangeCodeForIdentity(c.env, code, redirectUri, stored.codeVerifier, stored.nonce);
   } catch (error) {
     console.error("auth.google.callback.exchange_failed", {
       message: error instanceof Error ? error.message : "Unknown token exchange error"
@@ -208,7 +216,9 @@ authRouter.get("/google/callback", async (c) => {
   }
   if (!result.ok) return fail(result.reason === "subject_conflict" ? "conflict" : "denied", result.email);
 
-  const token = await issueSessionToken(c.env, result.user.id);
+  // Pin issuance to the admission snapshot: a concurrent recovery/revoke
+  // must not mint this old identity a session at the newer version.
+  const token = await createSessionToken(result.user.id, result.sessionVersion, c.env);
   c.header("Set-Cookie", buildSessionCookie(token, secure));
   c.header("Set-Cookie", clearOAuthCookie, { append: true });
   return c.redirect(stored.returnTo ?? "/", 302);
@@ -230,7 +240,7 @@ authRouter.post("/login", async (c) => {
 
   const email = body.email.toLowerCase();
   const row = await c.env.DB.prepare(
-    "SELECT id, email, role, status, display_name, avatar_url, password_hash FROM users WHERE email = ?"
+    "SELECT id, email, role, status, display_name, avatar_url, password_hash, session_version FROM users WHERE email = ?"
   )
     .bind(email)
     .first<UserRow>();
@@ -240,9 +250,11 @@ authRouter.post("/login", async (c) => {
   }
 
   const now = new Date().toISOString();
-  await c.env.DB.prepare("UPDATE users SET status = 'active', last_login_at = ? WHERE id = ?").bind(now, row.id).run();
+  const active = await c.env.DB.prepare("UPDATE users SET status = 'active', last_login_at = ? WHERE id = ? AND status IN ('invited', 'active') AND session_version = ? RETURNING id")
+    .bind(now, row.id, row.session_version).first();
+  if (!active) return c.json({ error: "Invalid email or password" }, 401);
 
-  const token = await issueSessionToken(c.env, row.id);
+  const token = await createSessionToken(row.id, row.session_version, c.env);
   const secure = new URL(c.req.url).protocol === "https:";
   c.header("Set-Cookie", buildSessionCookie(token, secure));
   return c.json({ user: { id: row.id, email: row.email, role: row.role, displayName: row.display_name, avatarUrl: row.avatar_url } });
@@ -255,8 +267,8 @@ authRouter.post("/login", async (c) => {
 // token cannot be used to sign the account out elsewhere. MCP tokens are
 // separate credentials and are not affected.
 authRouter.post("/logout", async (c) => {
-  const secure = new URL(c.req.url).protocol === "https:";
-  const token = c.env.AUTH_MODE === "cookie" ? readSessionCookie(c.req.header("Cookie") ?? null) : null;
+  const secure = c.env.ENVIRONMENT !== "development" || new URL(c.req.url).protocol === "https:";
+  const token = c.env.AUTH_MODE === "cookie" ? readSessionCookie(c.req.header("Cookie") ?? null, secure) : null;
   const session = token ? await verifySessionToken(token, c.env) : null;
   if (session) {
     const row = await c.env.DB.prepare(

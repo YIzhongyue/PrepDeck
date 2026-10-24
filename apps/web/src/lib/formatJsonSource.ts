@@ -1,4 +1,5 @@
 import { applyEdits, format, type Edit } from "jsonc-parser";
+import { t } from "../i18n/runtime";
 
 export interface JsonSelection {
   start: number;
@@ -31,7 +32,7 @@ export function formatJsonSource(text: string, selection: JsonSelection) {
   // replacements; raw-token regression tests also cover whitespace in strings.
   const whitespace = /^[\t\r\n ]*$/;
   if (edits.some(edit => !whitespace.test(text.slice(edit.offset, edit.offset + edit.length)) || !whitespace.test(edit.content))) {
-    throw new Error("Could not format JSON without changing its content. Your source has been kept.");
+    throw new Error(t("authoring.json.formatChanges"));
   }
   return {
     text: applyEdits(text, edits),

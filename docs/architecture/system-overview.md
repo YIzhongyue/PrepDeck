@@ -70,7 +70,7 @@ MCP proposal/revision/audit semantics live in [MCP architecture](mcp.md).
 
 | Cache | Key scope | Expiration / invalidation |
 | --- | --- | --- |
-| Browser authorization row | User ID and email | 600 seconds; role/status/profile edits delete keys. KV propagation can leave stale authorization. |
+| Browser authorization row | User ID / verified identity | Not cached; direct primary D1 read for role/status/session version on each request. Legacy KV entries are ignored. |
 | Access JWKS | Access signing keys | One hour; only relevant to optional Access auth. |
 | Statistics | User + exam + payload schema version | One hour; attempt completion invalidates, and each read compares a cheap activity marker (graded-answer count, latest session close) with the one stored with the entry, recomputing on a mismatch, so a practice answer shows on the next visit without a KV write per answer. A payload cached under an older schema version is never served, so adding response fields needs no migration. |
 | Practice question catalog | Exam only | One hour; bank mutations invalidate. Personal collections are queried separately. |

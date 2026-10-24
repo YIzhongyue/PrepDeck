@@ -421,3 +421,23 @@ matches the configured production branch (default `master`). The web-only build
 avoids that hook.
 Cloudflare WAF/DNS/email-domain configuration is external to this repository and
 must not be reported as deployed based solely on the checked-in files.
+
+### Browser authentication security rollout
+
+HTTPS now uses `__Host-pd_session` and `__Host-pd_oauth`, with `Secure`,
+`HttpOnly`, `Path=/`, `SameSite=Lax`, and no `Domain` attribute. Secure requests
+do not accept the previous unprefixed names, and duplicate matching cookie names
+are refused. Deploying this change requires existing users to sign in once again;
+an in-flight Google sign-in started before deployment must be restarted. The
+old cookies may remain in the browser until expiry but are ignored. Only explicit
+HTTP development uses `pd_session` and `pd_oauth`; do not restore the legacy
+fallback on HTTPS to avoid this migration.
+
+Cookie-authenticated unsafe requests require an exact `Origin` matching the
+configured `APP_BASE_URL`, or a matching `Referer` when `Origin` is absent.
+Missing or invalid application-origin configuration fails closed. Set production
+`APP_BASE_URL` to the canonical HTTPS origin and keep it aligned with the Google
+redirect registration. JSON mutation bodies require `application/json`; the
+explicit image upload endpoints retain their binary formats. Local login and
+smoke tools send the configured development browser origin. Public bearer MCP
+and OAuth protocol endpoints retain their independent authentication rules.

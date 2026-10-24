@@ -17,6 +17,7 @@ import {
 } from "@prepdeck/shared";
 import type { Question, WrongEntry } from "../types";
 import { needsFocusedPractice } from "./practiceEligibility";
+import { formatDate as formatLocaleDate, t } from "../i18n/runtime";
 
 export interface StatisticsSources {
   stats: ExamStatsResponse | null;
@@ -262,32 +263,32 @@ export function formatDuration(seconds: number | null): string {
   if (seconds == null) return "?";
   if (seconds <= 0) return "—";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return t("stats.duration.minutes", { minutes });
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+  return rest === 0 ? t("stats.duration.hours", { hours }) : t("stats.duration.hoursMinutes", { hours, minutes: rest });
 }
 
 /** An instant, as the date it fell on in `timeZone` (the browser's when omitted). */
 export function formatDate(iso: string, timeZone?: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone });
+  return formatLocaleDate(iso, { month: "short", day: "numeric", timeZone });
 }
 
 /** A "YYYY-MM-DD" calendar date. Read as a date, not as an instant, so no
  *  zone can move it to the day before. */
 export function formatDateKey(key: string): string {
-  return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  return formatLocaleDate(`${key}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 /** "Tokyo time" for "Asia/Tokyo", "New York time" for "America/New_York",
  *  "UTC" for UTC: short enough for a footnote. */
 export function timeZoneLabel(timeZone: string): string {
   if (timeZone === "UTC" || timeZone === "Etc/UTC") return "UTC";
-  return `${(timeZone.split("/").pop() ?? timeZone).replace(/_/g, " ")} time`;
+  return t("stats.zoneTime", { city: (timeZone.split("/").pop() ?? timeZone).replace(/_/g, " ") });
 }
 
 export function formatSignedPoints(deltaPts: number): string {
-  return `${deltaPts > 0 ? "+" : deltaPts < 0 ? "−" : "±"}${Math.abs(deltaPts)} pts`;
+  return t("stats.signedPoints", { sign: deltaPts > 0 ? "+" : deltaPts < 0 ? "−" : "±", count: Math.abs(deltaPts) });
 }
 
 /** The one sentence under the readiness ring. Deliberately makes no claim
@@ -298,24 +299,20 @@ export function readinessNarrative(model: StatisticsModel, examName: string | nu
   if (!readiness.available) {
     switch (readiness.reason) {
       case "no-bank":
-        return "This exam has no questions yet, so there is nothing to measure.";
+        return t("stats.readiness.noBank");
       case "no-attempts":
-        return "Answer some questions and a readiness estimate will appear here.";
+        return t("stats.readiness.noAttempts");
       default:
-        return `Readiness needs at least ${readiness.sample.minAnsweredQuestions} answered questions; `
-          + `you are at ${readiness.sample.answeredQuestions}. Until then this shows bank coverage only.`;
+        return t("stats.readiness.smallSample", { min: readiness.sample.minAnsweredQuestions, answered: readiness.sample.answeredQuestions });
     }
   }
-  const subject = examName ?? "this exam";
+  const subject = examName ?? t("stats.readiness.thisExam");
   if (passMarkPct == null) {
-    return `Difficulty-weighted estimate across the ${coverage.pct}% of ${subject} you have seen. `
-      + "This exam has no pass mark set, so there is no line to compare against.";
+    return t("stats.readiness.noPassMark", { pct: coverage.pct, subject });
   }
   const gap = readiness.scorePct - passMarkPct;
   if (gap >= 0) {
-    return `You are ${gap} point${gap === 1 ? "" : "s"} above the ${passMarkPct}% pass line. `
-      + "Keep the weak tags below from slipping.";
+    return t("stats.readiness.above", { count: gap, pass: passMarkPct });
   }
-  return `You are ${-gap} point${gap === -1 ? "" : "s"} below the ${passMarkPct}% pass line. `
-    + "The weak tags below are where the distance is.";
+  return t("stats.readiness.below", { count: -gap, pass: passMarkPct });
 }

@@ -10,6 +10,7 @@ import { type CommonProps, SelectContext, type SelectItemType, sizes } from "@/c
 import { useResizeObserver } from "@/hooks/use-resize-observer";
 import { cx } from "@/utils/cx";
 import { isReactComponent } from "@/utils/is-react-component";
+import { t } from "@/i18n/runtime";
 
 interface ComboBoxProps extends Omit<AriaComboBoxProps<SelectItemType>, "children" | "items">, RefAttributes<HTMLDivElement>, CommonProps {
     shortcut?: boolean;
@@ -103,7 +104,7 @@ const ComboBoxValue = ({ size, shortcut, placeholder, shortcutClassName, icon: I
 };
 
 export const ComboBox = ({
-    placeholder = "Search",
+    placeholder = t("common.search"),
     shortcut = true,
     size = "md",
     children,

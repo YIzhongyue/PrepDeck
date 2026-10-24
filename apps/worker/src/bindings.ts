@@ -74,11 +74,15 @@ export interface Env {
   // PATs keep working unchanged. Issuer and resource URLs derive from
   // APP_BASE_URL, which must be the public origin clients use.
   MCP_OAUTH_ENABLED?: "true" | "false";
+  /** JSON array of exact, operator-reviewed HTTPS metadata client IDs. Empty/unset denies metadata fetches. */
+  MCP_OAUTH_METADATA_CLIENT_ALLOWLIST?: string;
   // implementation — daily review email. The scheduled job that sends these runs
   // outside any request context, so absolute links (CTA, unsubscribe, logo)
   // can't be derived from a request origin the way routes/auth.ts derives
   // its OAuth redirect URI; this is the explicit source of truth instead.
   APP_BASE_URL: string;
+  /** Explicit HTTP loopback preview origin; honored only in opt-in local development. */
+  DEV_WORKER_ORIGIN?: string;
   // Must be an address on a domain onboarded via
   // `wrangler email sending enable <domain>`, or sends fail with
   // E_SENDER_NOT_VERIFIED.

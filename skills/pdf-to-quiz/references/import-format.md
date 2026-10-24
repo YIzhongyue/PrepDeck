@@ -4,6 +4,8 @@ This reference owns legacy 1.0 imports. For structured content use the separate
 [2.0 component contract](component-format.md); do not add component fields to a
 1.0 file. Both versions use the same Web UI/Admin MCP import workflow.
 
+For plain-text `single_choice` or `multiple_choice` questions with no tables, charts, diagrams or images, prefer the existing Markdown-compatible representation when it preserves the complete content and answer structure faithfully. For imports, use `schemaVersion: "1.0"` with Markdown in question text inside the required JSON envelope, retaining exam metadata and required fields; do not send a raw `.md` file. For direct question creation, keep the discovered JSON payload schema. Preserve source wording, option IDs/labels/order, correct-answer mappings, explanations and required metadata. For visual/structured content, other question types or any content this representation cannot preserve reliably, use the appropriate existing supported format, including 2.0 components; never discard content to fit Markdown. This is format-selection advice only: retain validation, preview, approval, conflict handling, revision checks and replay safeguards.
+
 Use this self-contained contract when producing the final JSON. Unknown extra fields are tolerated by PrepDeck, but omit them unless the user needs them.
 
 ## Top-level object
@@ -34,7 +36,15 @@ Optional fields:
 
 Each option is `{ "id": "A", "text": "..." }`. IDs must be unique within the question. Every choice-based `correctAnswers` value must exactly equal an option ID. A `single_choice` has exactly one answer. A `multiple_choice` has at least two distinct answers. A `true_false` has exactly the two options with IDs `true` and `false`, and exactly one matching answer. A `fill_blank` has one or more source-backed accepted answer strings and no `options` field.
 
-## Example
+## Synthetic format-selection examples
+
+The first two questions below are eligible for Markdown-first: a `single_choice`
+and a `multiple_choice` with no visual or structured material. The `fill_blank`
+example is outside that recommendation and keeps its existing supported 1.0
+representation; other question types do not become choice questions. All content
+is synthetic. These are JSON imports, not standalone Markdown files.
+
+### Plain-text choice questions and an excluded question type
 
 ```json
 {
@@ -56,17 +66,69 @@ Each option is `{ "id": "A", "text": "..." }`. IDs must be unique within the que
       "type": "single_choice",
       "stem": "Which protocol resolves an IPv4 address to a MAC address?",
       "options": [
-        { "id": "A", "text": "ARP" },
-        { "id": "B", "text": "DNS" },
-        { "id": "C", "text": "DHCP" }
+        {
+          "id": "A",
+          "text": "ARP"
+        },
+        {
+          "id": "B",
+          "text": "DNS"
+        },
+        {
+          "id": "C",
+          "text": "DHCP"
+        }
       ],
-      "correctAnswers": ["A"],
+      "correctAnswers": [
+        "A"
+      ],
       "explanation": "ARP performs IPv4-to-MAC address resolution.",
+      "points": 1
+    },
+    {
+      "externalId": "Q2",
+      "type": "multiple_choice",
+      "stem": "Select **two** even integers.",
+      "options": [
+        {
+          "id": "A",
+          "text": "2"
+        },
+        {
+          "id": "B",
+          "text": "3"
+        },
+        {
+          "id": "C",
+          "text": "4"
+        }
+      ],
+      "correctAnswers": [
+        "A",
+        "C"
+      ],
+      "explanation": "2 and 4 are divisible by 2; 3 is not.",
+      "points": 1
+    },
+    {
+      "externalId": "Q3",
+      "type": "fill_blank",
+      "stem": "Complete the sequence: 1, 2, __.",
+      "correctAnswers": [
+        "3"
+      ],
+      "explanation": "Each integer increases by one.",
       "points": 1
     }
   ]
 }
 ```
+
+A table, chart, diagram or image is also outside the Markdown-first rule, even
+when its interaction is single- or multiple-choice. Retain that material using
+the [2.0 component workflow](component-format.md); never flatten or omit it just
+to qualify for 1.0. Shared passages and unsupported answer structures likewise
+keep the appropriate existing supported path.
 
 The final file must contain only the JSON object. Keep extraction uncertainties in the separate review artifact described in `SKILL.md`.
 

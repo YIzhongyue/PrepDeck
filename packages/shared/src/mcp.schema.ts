@@ -10,6 +10,6 @@ const EXPIRES = `expiresInDays must be an integer between 1 and ${MCP_TOKEN_MAX_
 export const createMcpCredentialRequestSchema = z.object({
   // Stored trimmed.
   name: z.string(NAME).trim().min(1, NAME).max(MCP_TOKEN_NAME_MAX_LENGTH, NAME),
-  // Days from now until expiry. Omit (or send null) for a token that never expires.
+  // Days from now until expiry. Omit (or send null) for the finite server default.
   expiresInDays: z.int(EXPIRES).min(1, EXPIRES).max(MCP_TOKEN_MAX_EXPIRES_IN_DAYS, EXPIRES).nullish(),
 }, "Invalid JSON body");

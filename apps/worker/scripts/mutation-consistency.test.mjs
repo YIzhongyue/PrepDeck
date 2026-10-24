@@ -234,7 +234,7 @@ test("activation caches the committed profile and role", async (t) => {
 
 test("malformed cookies are unauthenticated and valid signed sessions still work", async (t) => {
   const f = fixture(t);
-  for (const cookie of ["pd_session=%", "pd_session=alice.0.!", "pd_session=alice.0."]) {
+  for (const cookie of ["__Host-pd_session=%", "__Host-pd_session=alice.0.!", "__Host-pd_session=alice.0."]) {
     const result = await authRouter.request("https://example.test/me", { headers: { Cookie: cookie } }, f.env);
     assert.equal(result.status, 401);
   }

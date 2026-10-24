@@ -1,5 +1,5 @@
 import type { McpObservation } from "./observability";
-import type { McpCredentialSummary, McpOAuthScope } from "@prepdeck/shared";
+import { MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS, MCP_TOKEN_MAX_EXPIRES_IN_DAYS, type McpCredentialSummary, type McpOAuthScope } from "@prepdeck/shared";
 import type { Env } from "../bindings";
 import { McpApplicationError } from "./errors";
 import { isMcpOAuthEnabled, parseStoredScopes, type McpAudience } from "./oauth/config";
@@ -64,19 +64,20 @@ function toSummary(row: McpCredentialRow, now: number): McpCredentialSummary {
  * authenticated and authorized itself to act as `input.userId` — this
  * function independently re-checks account status/role but performs no
  * authentication of its own. `expiresAt` (epoch ms) is optional; omit it
- * (or pass null) for a token that never expires.
+ * (or pass null) for the finite default lifetime. Legacy stored nonexpiring tokens remain valid.
  * The returned token is a one-time secret; persist only id and token_hash.
  */
 export async function issueMcpCredential(
   db: D1Database,
-  input: { userId: string; audience: McpAudience; name: string; expiresAt?: number | null },
+  input: { userId: string; sessionVersion: number; audience: McpAudience; name: string; expiresAt?: number | null },
 ): Promise<{ id: string; token: string; name: string; createdAt: number; expiresAt: number | null }> {
   const now = Date.now();
   const name = input.name.trim();
-  const expiresAt = input.expiresAt ?? null;
+  const expiresAt = input.expiresAt ?? now + MCP_TOKEN_DEFAULT_EXPIRES_IN_DAYS * 86_400_000;
   if (
-    !["user", "admin"].includes(input.audience) || !input.userId || !name || name.length > 100
-    || (expiresAt !== null && (!Number.isSafeInteger(expiresAt) || expiresAt <= now))
+    !Number.isSafeInteger(input.sessionVersion) || input.sessionVersion < 0
+    || !["user", "admin"].includes(input.audience) || !input.userId || !name || name.length > 100
+    || (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + MCP_TOKEN_MAX_EXPIRES_IN_DAYS * 86_400_000)
   ) {
     throw new McpApplicationError("invalid_input");
   }
@@ -87,8 +88,8 @@ export async function issueMcpCredential(
   const result = await db.prepare(`
     INSERT INTO mcp_credentials (id, user_id, server, name, token_hash, created_at, expires_at)
     SELECT ?, id, ?, ?, ?, ?, ? FROM users
-    WHERE id = ? AND status = 'active' AND (? = 'user' OR role = 'admin')
-  `).bind(id, input.audience, name, await hashMcpToken(token), now, expiresAt, input.userId, input.audience).run();
+    WHERE id = ? AND session_version = ? AND status = 'active' AND (? = 'user' OR role = 'admin')
+  `).bind(id, input.audience, name, await hashMcpToken(token), now, expiresAt, input.userId, input.sessionVersion, input.audience).run();
   if (result.meta.changes !== 1) throw new McpApplicationError("unauthorized");
   return { id, token, name, createdAt: now, expiresAt };
 }

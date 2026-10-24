@@ -500,7 +500,7 @@ try {
     options: [{ id: "ア", text: "1" }, { id: "イ", text: "2" }], correctAnswers: ["イ"],
   }] };
   await page.getByLabel("Question import JSON file").setInputFiles({ name: "sg-import.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(converted)) });
-  await page.getByText("1 incoming questions · 0 conflicts", { exact: true }).waitFor();
+  await page.getByText("1 incoming question · 0 conflicts", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Import with selected resolutions" }).click();
   await page.getByText("Created 1 · Updated 0 · Skipped / conflicting 0 · Failed 0", { exact: true }).waitFor();
   assert.deepEqual(importedFile.questions, converted.questions);

@@ -10,6 +10,7 @@ import { copyText } from "../lib/practicePrompt";
 import { buildUserMcpSetupPrompt, isFreshMcpSecretUsable, type FreshMcpSecret } from "../lib/mcpSetupPrompt";
 import { isHumanVerificationRefusal, turnstileHeaders, useTurnstileConfig } from "../lib/turnstile";
 import TurnstileWidget, { TurnstileConfigError } from "./TurnstileWidget";
+import { formatDate, formatTime, t as translate, useI18n } from "../i18n";
 // implementation — shared Untitled UI primitives; docs/guides/ui-components.md.
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
@@ -17,23 +18,27 @@ import { TextArea } from "@/components/base/textarea/textarea";
 import "./McpTokensCard.css";
 
 const DANGER = "var(--color-danger)";
-const EXPIRY_OPTIONS = [["never", "Never"], ["30", "30 days"], ["90", "90 days"], ["365", "1 year"]] as const;
+const EXPIRY_OPTIONS = ["30", "90"] as const;
+type CopyKind = "token" | "prompt";
 const STATUS_TAG_CLASS: Record<McpCredentialSummary["status"], string> = { active: "tag-accent-2", revoked: "tag-neutral", expired: "tag-neutral" };
 
 // "today, 8:02 AM" for today, "Sep 12" this year, "Sep 12, 2025" before that.
-function formatWhen(ms: number, withTime: boolean): string {
+export function formatWhen(ms: number, withTime: boolean): string {
   const date = new Date(ms);
   const now = new Date();
   if (date.toDateString() === now.toDateString()) {
-    return withTime ? `today, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "today";
+    return withTime ? translate("common.todayAt", { time: formatTime(date, { hour: "numeric", minute: "2-digit" }) }) : translate("common.today");
   }
-  return date.toLocaleDateString([], { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
+  return formatDate(date, { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }) });
 }
 
-function tokenMeta(t: McpCredentialSummary): string {
-  const parts = [`Created ${formatWhen(t.createdAt, false)}`, t.lastUsedAt === null ? "Never used" : `Last used ${formatWhen(t.lastUsedAt, true)}`];
-  if (t.expiresAt !== null) parts.push(`${t.expiresAt <= Date.now() ? "Expired" : "Expires"} ${formatWhen(t.expiresAt, false)}`);
-  else if (t.status === "active") parts.push("Never expires");
+function tokenMeta(token: McpCredentialSummary): string {
+  const parts = [
+    translate("mcp.tokens.created", { when: formatWhen(token.createdAt, false) }),
+    token.lastUsedAt === null ? translate("mcp.tokens.neverUsed") : translate("mcp.tokens.lastUsed", { when: formatWhen(token.lastUsedAt, true) })
+  ];
+  if (token.expiresAt !== null) parts.push(translate(token.expiresAt <= Date.now() ? "mcp.tokens.expired" : "mcp.tokens.expires", { when: formatWhen(token.expiresAt, false) }));
+  else if (token.status === "active") parts.push(translate("mcp.tokens.neverExpires"));
   return parts.join(" · ");
 }
 
@@ -49,13 +54,14 @@ export default function McpTokensCard({
   // for a summary shown outside the card (Settings' section index).
   onActiveCountChange?: (count: number) => void;
 }) {
+  const { t: tr } = useI18n();
   const [tokens, setTokens] = useState<McpCredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [expiresDraft, setExpiresDraft] = useState<(typeof EXPIRY_OPTIONS)[number][0]>("never");
+  const [expiresDraft, setExpiresDraft] = useState<(typeof EXPIRY_OPTIONS)[number]>("30");
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -87,7 +93,7 @@ export default function McpTokensCard({
   const [showToken, setShowToken] = useState(false);
   const [copyOk, setCopyOk] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const [copyFallback, setCopyFallback] = useState<{ text: string; label: string } | null>(null);
+  const [copyFallback, setCopyFallback] = useState<{ text: string; kind: CopyKind } | null>(null);
   const copyGeneration = useRef(0);
   // Explicit opt-in plus an audience guard protects this shared Admin component.
   const userSetupEnabled = enableSetupPrompt && apiBase === "/api/mcp-tokens";
@@ -117,7 +123,7 @@ export default function McpTokensCard({
     setLoading(true);
     apiFetch<ListMcpCredentialsResponse>(apiBase)
       .then(({ credentials }) => { if (active) setTokens(credentials); })
-      .catch(() => { if (active) setLoadError("Could not load tokens."); })
+      .catch(() => { if (active) setLoadError(translate("mcp.tokens.loadFailed")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; copyGeneration.current += 1; revealedRef.current = null; };
   }, [apiBase]);
@@ -135,22 +141,22 @@ export default function McpTokensCard({
 
   const create = async () => {
     const name = nameDraft.trim();
-    if (!name) { setCreateError("Name is required."); return; }
+    if (!name) { setCreateError(translate("mcp.tokens.nameRequired")); return; }
     if (awaitingHumanToken) return;
     setCreateBusy(true);
     setCreateError(null);
     try {
-      const expiresInDays = expiresDraft === "never" ? undefined : Number(expiresDraft);
+      const expiresInDays = Number(expiresDraft);
       const { credential, token } = await apiFetch<CreateMcpCredentialResponse>(apiBase, {
         method: "POST", body: JSON.stringify({ name, expiresInDays }), headers: turnstileHeaders(createHumanToken)
       });
       setTokens((prev) => [credential, ...prev]);
       reveal({ token, id: credential.id, name: credential.name, expiresAt: credential.expiresAt });
       setNameDraft("");
-      setExpiresDraft("never");
+      setExpiresDraft("30");
       setCreating(false);
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Could not create this token.");
+      setCreateError(err instanceof ApiError ? err.message : translate("mcp.tokens.createFailed"));
       noteRefusal(err);
     } finally {
       setCreateBusy(false);
@@ -159,21 +165,21 @@ export default function McpTokensCard({
   };
 
   const revoke = (t: McpCredentialSummary) => {
-    if (!window.confirm(`Revoke "${t.name}"? Anything using this token stops working immediately.`)) return;
+    if (!window.confirm(translate("mcp.tokens.revokeConfirm", { name: t.name }))) return;
     if (revealedRef.current?.id === t.id) reveal(null);
     if (verifyingRotation?.id === t.id) setVerifyingRotation(null);
     setBusyId(t.id);
     setRowError(null);
     apiFetch(`${apiBase}/${t.id}/revoke`, { method: "POST" })
       .then(() => setTokens((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: "revoked" as const, revokedAt: Date.now() } : x))))
-      .catch((err) => setRowError(err instanceof ApiError ? err.message : "Could not revoke this token."))
+      .catch((err) => setRowError(err instanceof ApiError ? err.message : translate("mcp.tokens.revokeFailed")))
       .finally(() => setBusyId(null));
   };
 
   const rotate = (t: McpCredentialSummary) => {
     setRowError(null);
     if (verificationOff) {
-      if (!window.confirm(`Rotate "${t.name}"? The current token stops working immediately and a new one takes its place.`)) return;
+      if (!window.confirm(translate("mcp.tokens.rotateConfirm", { name: t.name }))) return;
       rotateVerified(t, null);
       return;
     }
@@ -194,11 +200,11 @@ export default function McpTokensCard({
         setTokens((prev) => [credential, ...prev.map((x) => (x.id === t.id ? { ...x, status: "revoked" as const, revokedAt: Date.now() } : x))]);
         reveal({ token, id: credential.id, name: credential.name, expiresAt: credential.expiresAt });
       })
-      .catch((err) => { setRowError(err instanceof ApiError ? err.message : "Could not rotate this token."); noteRefusal(err); })
+      .catch((err) => { setRowError(err instanceof ApiError ? err.message : translate("mcp.tokens.rotateFailed")); noteRefusal(err); })
       .finally(() => setBusyId(null));
   };
 
-  const copyValue = async (text: string, label: string, secretId?: string) => {
+  const copyValue = async (text: string, kind: CopyKind, secretId?: string) => {
     const generation = ++copyGeneration.current;
     setCopyOk(false);
     setCopyMessage(null);
@@ -208,17 +214,17 @@ export default function McpTokensCard({
     try {
       await copyText(text);
       if (!current()) return;
-      setCopyOk(label === "Token");
-      setCopyMessage(`${label} copied.`);
+      setCopyOk(kind === "token");
+      setCopyMessage(translate(kind === "token" ? "mcp.tokens.tokenCopied" : "mcp.tokens.promptCopied"));
     } catch {
       if (!current()) return;
-      setCopyFallback({ text, label });
+      setCopyFallback({ text, kind });
     }
   };
 
   const copyToken = () => {
     if (!isFreshMcpSecretUsable(revealedRef.current)) { reveal(null); return; }
-    void copyValue(revealedRef.current.token, "Token", revealedRef.current.id);
+    void copyValue(revealedRef.current.token, "token", revealedRef.current.id);
   };
 
   const copySetupPrompt = (includeToken: boolean) => {
@@ -226,7 +232,7 @@ export default function McpTokensCard({
     const secret = revealedRef.current;
     if (includeToken && !isFreshMcpSecretUsable(secret)) { reveal(null); return; }
     void copyValue(buildUserMcpSetupPrompt(window.location.origin, includeToken ? secret!.token : undefined),
-      "Setup prompt", includeToken ? secret!.id : undefined);
+      "prompt", includeToken ? secret!.id : undefined);
   };
 
   return (
@@ -236,14 +242,14 @@ export default function McpTokensCard({
           <h3>{title}</h3>
           <p>{description}</p>
           {userSetupEnabled && (
-            <p>Copy the setup prompt into your AI chatbot to connect PrepDeck. Enter your token securely in the client when prompted.</p>
+            <p>{tr("mcp.tokens.setupIntro")}</p>
           )}
         </div>
         <div className="mcp-head-actions">
           {userSetupEnabled && (
-            <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(false)}>Copy setup prompt</Button>
+            <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(false)}>{tr("mcp.tokens.copySetupPrompt")}</Button>
           )}
-          {!creating && <Button size="md" onClick={() => setCreating(true)}>+ Create token</Button>}
+          {!creating && <Button size="md" onClick={() => setCreating(true)}>{tr("mcp.tokens.createButton")}</Button>}
         </div>
       </div>
 
@@ -252,17 +258,17 @@ export default function McpTokensCard({
         {creating && (
           <div className="mcp-panel">
             <Input
-              label="Name"
-              placeholder={namePlaceholder ?? "e.g. local-cli"}
+              label={tr("mcp.tokens.name")}
+              placeholder={namePlaceholder ?? tr("mcp.tokens.namePlaceholder")}
               maxLength={MCP_TOKEN_NAME_MAX_LENGTH}
               value={nameDraft}
               onChange={(value) => { setNameDraft(value); setCreateError(null); }}
               isInvalid={!!createError}
             />
             <div>
-              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>Expiration</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>{tr("mcp.tokens.expiration")}</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {EXPIRY_OPTIONS.map(([id, label]) => {
+                {EXPIRY_OPTIONS.map((id) => {
                   const on = expiresDraft === id;
                   return (
                     <button
@@ -273,7 +279,7 @@ export default function McpTokensCard({
                         border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
                       }}
                     >
-                      {label}
+                      {tr("mcp.tokens.expiry.days", { count: Number(id) })}
                     </button>
                   );
                 })}
@@ -283,52 +289,52 @@ export default function McpTokensCard({
             {createError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{createError}</p>}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Button size="md" isDisabled={createBusy || !nameDraft.trim() || awaitingHumanToken} isLoading={createBusy} showTextWhileLoading onClick={create}>
-                {createBusy ? "Creating…" : "Create token"}
+                {createBusy ? tr("mcp.tokens.creating") : tr("mcp.tokens.create")}
               </Button>
-              <Button color="secondary" size="md" onClick={() => { setCreating(false); setCreateError(null); }}>Cancel</Button>
+              <Button color="secondary" size="md" onClick={() => { setCreating(false); setCreateError(null); }}>{tr("common.cancel")}</Button>
             </div>
           </div>
         )}
 
         {revealed && (
           <div className="mcp-panel mcp-panel-reveal">
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Copy &quot;{revealed.name}&quot; now — it won&apos;t be shown again</p>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{tr("mcp.tokens.copyNow", { name: revealed.name })}</p>
             <div className="mcp-secret-actions">
               <Input
                 className="mcp-secret-field"
-                aria-label="New MCP token"
+                aria-label={tr("mcp.tokens.newToken")}
                 isReadOnly
                 type={showToken ? "text" : "password"}
                 value={revealed.token}
                 inputClassName={showToken ? "font-mono text-xs" : undefined}
                 onFocus={(e) => e.currentTarget.select()}
               />
-              <Button color="secondary" size="md" onClick={() => setShowToken((v) => !v)}>{showToken ? "Hide" : "Show"}</Button>
-              <Button color="secondary" size="md" onClick={copyToken}>{copyOk ? "Copied" : "Copy"}</Button>
+              <Button color="secondary" size="md" onClick={() => setShowToken((v) => !v)}>{showToken ? tr("mcp.tokens.hide") : tr("mcp.tokens.show")}</Button>
+              <Button color="secondary" size="md" onClick={copyToken}>{copyOk ? tr("common.copied") : tr("common.copy")}</Button>
             </div>
             {userSetupEnabled && (
               <div className="mcp-setup-actions">
-                <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(true)}>Copy setup prompt with token</Button>
-                <p>Includes a secret. Pasting this shares your token with the selected AI service.</p>
+                <Button color="secondary" size="md" className="mcp-setup-button" onClick={() => copySetupPrompt(true)}>{tr("mcp.tokens.copySetupPromptWithToken")}</Button>
+                <p>{tr("mcp.tokens.includesSecret")}</p>
               </div>
             )}
-            <Button color="link-color" size="sm" className="self-start" onClick={() => reveal(null)}>Done</Button>
+            <Button color="link-color" size="sm" className="self-start" onClick={() => reveal(null)}>{tr("common.done")}</Button>
           </div>
         )}
 
         {copyMessage && <p role="status" style={{ margin: 0, fontSize: 12.5 }}>{copyMessage}</p>}
         {copyFallback && (
           <div className="mcp-setup-actions">
-            <p role="alert">Could not copy to the clipboard. Select and copy the {copyFallback.label.toLowerCase()} below.</p>
-            <TextArea className="mcp-setup-fallback" aria-label={`${copyFallback.label} to copy manually`} isReadOnly
+            <p role="alert">{tr(copyFallback.kind === "token" ? "mcp.tokens.copyFailedToken" : "mcp.tokens.copyFailedPrompt")}</p>
+            <TextArea className="mcp-setup-fallback" aria-label={tr(copyFallback.kind === "token" ? "mcp.tokens.copyManuallyToken" : "mcp.tokens.copyManuallyPrompt")} isReadOnly
               rows={6} value={copyFallback.text} textAreaClassName="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
           </div>
         )}
 
         {loadError && <p style={{ margin: 0, fontSize: 13, color: DANGER }}>{loadError}</p>}
-        {loading && !loadError && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>Loading…</p>}
+        {loading && !loadError && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>{tr("common.loading")}</p>}
         {!loading && !loadError && tokens.length === 0 && !creating && (
-          <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>No tokens yet.</p>
+          <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>{tr("mcp.tokens.empty")}</p>
         )}
         {rowError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{rowError}</p>}
       </div>
@@ -339,26 +345,26 @@ export default function McpTokensCard({
           <div className="mcp-token-text">
             <div className="mcp-token-name-row">
               <span className="mcp-token-name">{t.name}</span>
-              <span className={`tag ${STATUS_TAG_CLASS[t.status]}`}>{t.status}</span>
+              <span className={`tag ${STATUS_TAG_CLASS[t.status]}`}>{tr(`mcp.tokens.status.${t.status}`)}</span>
             </div>
             <div className="mcp-token-meta">{tokenMeta(t)}</div>
           </div>
           {t.status !== "revoked" && (
             <div className="mcp-token-actions">
-              <Button color="secondary" size="sm" isDisabled={busyId === t.id || verifyingRotation?.id === t.id} isLoading={busyId === t.id} onClick={() => rotate(t)}>Rotate</Button>
-              <Button color="link-destructive" size="sm" isDisabled={busyId === t.id} onClick={() => revoke(t)}>Revoke</Button>
+              <Button color="secondary" size="sm" isDisabled={busyId === t.id || verifyingRotation?.id === t.id} isLoading={busyId === t.id} onClick={() => rotate(t)}>{tr("mcp.tokens.rotate")}</Button>
+              <Button color="link-destructive" size="sm" isDisabled={busyId === t.id} onClick={() => revoke(t)}>{tr("mcp.tokens.revoke")}</Button>
             </div>
           )}
           {verifyingRotation?.id === t.id && (
             <div className="mcp-token-verify">
               <p>
-                Rotating &quot;{t.name}&quot; stops the current token immediately and issues a new one.
-                {turnstileSiteKey && " Complete the check, then rotate."}
+                {tr("mcp.tokens.rotating", { name: t.name })}
+                {turnstileSiteKey && ` ${tr("mcp.tokens.completeCheck")}`}
               </p>
               {turnstileSlot(setRotationHumanToken)}
               <div className="mcp-token-verify-actions">
-                <Button size="sm" isDisabled={!verificationOff && !rotationHumanToken} onClick={() => rotateVerified(t, rotationHumanToken)}>Rotate token</Button>
-                <Button color="secondary" size="sm" onClick={() => setVerifyingRotation(null)}>Cancel</Button>
+                <Button size="sm" isDisabled={!verificationOff && !rotationHumanToken} onClick={() => rotateVerified(t, rotationHumanToken)}>{tr("mcp.tokens.rotateToken")}</Button>
+                <Button color="secondary" size="sm" onClick={() => setVerifyingRotation(null)}>{tr("common.cancel")}</Button>
               </div>
             </div>
           )}

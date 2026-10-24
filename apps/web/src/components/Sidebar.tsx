@@ -5,6 +5,7 @@ import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import BrandLogo from "./BrandLogo";
 import ExamSelector from "./ExamSelector";
 import ProfileAvatar from "./ProfileAvatar";
+import { useI18n } from "../i18n";
 
 export default function Sidebar({ rail }: { rail: boolean }) {
   const state = useWorkspaceState();
@@ -12,6 +13,7 @@ export default function Sidebar({ rail }: { rail: boolean }) {
   const lists = { ...useReviewListsState(), catalogBy };
   const { go } = useWorkspaceActions();
   const hrefFor = useScreenHref();
+  const { t } = useI18n();
   const wrongCount = reviewIds(lists, "wrong").length;
   const bmCount = reviewIds(lists, "bm").length;
 
@@ -34,19 +36,21 @@ export default function Sidebar({ rail }: { rail: boolean }) {
 
       <ExamSelector compact={!rail} />
 
-      <nav aria-label="Main navigation" style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 0" }}>
+      <nav aria-label={t("nav.mainNavigation")} style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 0" }}>
         {NAV_GROUPS.map((group) => {
           const groupItems = items.filter((item) => group.ids.includes(item.id));
           if (groupItems.length === 0) return null;
+          const groupLabel = t(`nav.groups.${group.id}`);
           return (
-            <div key={group.label} role="group" aria-label={group.label} style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, marginTop: group.label === "System" ? "auto" : undefined }}>
+            <div key={group.id} role="group" aria-label={groupLabel} style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, marginTop: group.id === "system" ? "auto" : undefined }}>
               {rail && groupItems.length > 1 && (
                 <div aria-hidden="true" style={{ padding: "0 10px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: "var(--color-text-muted)" }}>
-                  {group.label}
+                  {groupLabel}
                 </div>
               )}
               {groupItems.map((item) => {
                 const on = state.screen === item.id;
+                const label = t(`nav.screens.${item.id}`);
                 const badge = item.id === "wrong" ? String(wrongCount) : item.id === "bookmarks" ? String(bmCount) : "";
                 const showBadge = badge && badge !== "0" && rail;
                 // A link, so it can be opened in a new tab (issue #41); a plain
@@ -54,14 +58,14 @@ export default function Sidebar({ rail }: { rail: boolean }) {
                 return (
                   <a
                     key={item.id}
-                    href={hrefFor(item.id as typeof state.screen)}
+                    href={hrefFor(item.id)}
                     aria-current={on ? "page" : undefined}
                     onClick={(event) => {
                       if (isModifiedClick(event)) return;
                       event.preventDefault();
-                      go(item.id as typeof state.screen);
+                      go(item.id);
                     }}
-                    title={item.label}
+                    title={label}
                     style={{
                       display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px", boxSizing: "border-box",
                       border: 0, borderRadius: 999, cursor: "pointer", font: "inherit", fontSize: 14, textAlign: "left", textDecoration: "none",
@@ -71,7 +75,7 @@ export default function Sidebar({ rail }: { rail: boolean }) {
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", opacity: 0.9 }}>
                       <path d={item.d} />
                     </svg>
-                    <span style={{ display: rail ? "inline" : "none", whiteSpace: "nowrap" }}>{item.label}</span>
+                    <span style={{ display: rail ? "inline" : "none", whiteSpace: "nowrap" }}>{label}</span>
                     {showBadge && (
                       <span style={{ marginLeft: "auto", display: "inline-block", fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "var(--color-accent-200)", color: "var(--color-accent-800)" }}>
                         {badge}
@@ -89,10 +93,10 @@ export default function Sidebar({ rail }: { rail: boolean }) {
         <ProfileAvatar profile={state.me} />
         <span style={{ display: rail ? "inline" : "none", minWidth: 0 }}>
           <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {state.me?.displayName || state.me?.email || "Loading…"}
+            {state.me?.displayName || state.me?.email || t("common.loading")}
           </span>
-          <span style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", textTransform: "capitalize" }}>
-            {state.me?.role || ""}
+          <span style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)" }}>
+            {state.me?.role ? t(`common.roles.${state.me.role}`) : ""}
           </span>
         </span>
       </div>

@@ -5,11 +5,13 @@ import LengthHint from "./LengthHint";
 import MarkdownHighlightedText from "./MarkdownHighlightedText";
 import { useNotesActions } from "../store/PrepDeckContext";
 import type { Note } from "../types";
+import { t as translate, useI18n } from "../i18n";
 
 // FR-11.7: always show the author's display name and avatar (falling back to
 // initials when avatarUrl is unavailable). FR-11.3: only the author (n.me) gets edit/delete controls.
 export default function NoteCard({ note }: { note: Note }) {
   const { updateNote, removeNote } = useNotesActions();
+  const { t: tr } = useI18n();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.text);
@@ -18,7 +20,7 @@ export default function NoteCard({ note }: { note: Note }) {
   const [error, setError] = useState<string | null>(null);
   const save = useCallback(async () => {
     const t = draft.trim();
-    if (!t) throw new Error("A question note cannot be empty.");
+    if (!t) throw new Error(translate("notes.emptyError"));
     await updateNote(note.id, t, draftVis);
     setError(null);
     setEditing(false);
@@ -49,12 +51,12 @@ export default function NoteCard({ note }: { note: Note }) {
             className="tag"
             style={{ fontSize: 9.5, padding: "1px 7px", background: note.vis === "shared" ? "var(--color-accent-200)" : "var(--color-neutral-200)", color: note.vis === "shared" ? "var(--color-accent-800)" : "var(--color-neutral-800)" }}
           >
-            {note.vis}
+            {tr(note.vis === "shared" ? "notes.visibility.shared" : "notes.visibility.private")}
           </span>
           {note.me && !editing && (
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setEditing(true)} style={{ fontSize: 11, padding: "2px 8px" }}>Edit</button>
-              <button type="button" className="btn btn-ghost" onClick={() => removeNote(note.id)} style={{ fontSize: 11, padding: "2px 8px" }}>Delete</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setEditing(true)} style={{ fontSize: 11, padding: "2px 8px" }}>{tr("common.edit")}</button>
+              <button type="button" className="btn btn-ghost" onClick={() => removeNote(note.id)} style={{ fontSize: 11, padding: "2px 8px" }}>{tr("common.delete")}</button>
             </span>
           )}
         </span>
@@ -67,7 +69,7 @@ export default function NoteCard({ note }: { note: Note }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {error && <p role="alert">{error}</p>}
             <textarea
-              className="input" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_NOTE_LENGTH} aria-label="Edit note"
+              className="input" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_NOTE_LENGTH} aria-label={tr("notes.editNote")}
               style={{ minHeight: 60, borderRadius: 14, fontSize: 12.5 }}
             />
             <LengthHint length={draft.length} max={MAX_NOTE_LENGTH} />
@@ -84,13 +86,13 @@ export default function NoteCard({ note }: { note: Note }) {
                         border: `1.5px solid ${on ? "var(--color-accent)" : "var(--color-divider)"}`
                       }}
                     >
-                      {v === "private" ? "Private" : "Shared"}
+                      {tr(v === "private" ? "notes.visibility.privateLabel" : "notes.visibility.sharedLabel")}
                     </button>
                   );
                 })}
               </div>
-              <button type="button" className="btn btn-ghost" onClick={cancel} style={{ fontSize: 11.5 }}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={() => { void save().catch(() => setError("Could not save. Your draft is retained; please retry.")); }} style={{ fontSize: 11.5, padding: "6px 12px" }}>Save</button>
+              <button type="button" className="btn btn-ghost" onClick={cancel} style={{ fontSize: 11.5 }}>{tr("common.cancel")}</button>
+              <button type="button" className="btn btn-primary" onClick={() => { void save().catch(() => setError(translate("notes.saveFailed"))); }} style={{ fontSize: 11.5, padding: "6px 12px" }}>{tr("common.save")}</button>
             </div>
           </div>
         )}

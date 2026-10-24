@@ -436,7 +436,7 @@ test("import replay binds file, resolutions, exam and administrator identity", a
     assert.equal((await callAdminToolExpectingError(f, "admin_execute_import", { ...args, ...changed })).code, "conflict");
   }
   f.sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = 'bob'").run();
-  const otherAdmin = await issueMcpCredential(f.DB, { userId: "bob", audience: "admin", name: "synthetic second admin", expiresAt: Date.now() + 60_000 });
+  const otherAdmin = await issueMcpCredential(f.DB, { sessionVersion: 0, userId: "bob", audience: "admin", name: "synthetic second admin", expiresAt: Date.now() + 60_000 });
   assert.equal((await callAdminToolExpectingError({ ...f, admin: otherAdmin }, "admin_execute_import", args)).code, "conflict");
   assert.deepEqual(f.sqlite.prepare("SELECT * FROM questions").all(), rows);
 });

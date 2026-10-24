@@ -108,9 +108,9 @@ test("Cloudflare's test keys are accepted in development only", async t => {
 
 // --- Google sign-in -------------------------------------------------------
 
-const AUTH_ENV = { AUTH_MODE: "cookie", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", SESSION_SECRET: "synthetic-test-session-key" };
+const AUTH_ENV = { APP_BASE_URL: "https://prepdeck.test", AUTH_MODE: "cookie", GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", SESSION_SECRET: "synthetic-test-session-key" };
 const startForm = fields => ({ method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
-const startsGoogle = response => response.headers.get("Location")?.startsWith("https://accounts.google.com/") && /pd_oauth=/.test(response.headers.get("Set-Cookie") ?? "");
+const startsGoogle = response => response.headers.get("Location")?.startsWith("https://accounts.google.com/") && /__Host-pd_oauth=/.test(response.headers.get("Set-Cookie") ?? "");
 
 test("the login screen learns the site key, and nothing when Turnstile is off", async () => {
   const off = await authRouter.request("https://prepdeck.test/turnstile", {}, AUTH_ENV);
@@ -125,7 +125,7 @@ test("without Turnstile, sign-in starts from the form POST as it did from GET", 
   const response = await authRouter.request("https://prepdeck.test/google/start", startForm({ returnTo: "/settings" }), AUTH_ENV);
   assert.equal(response.status, 303);
   assert.ok(startsGoogle(response));
-  const payload = response.headers.get("Set-Cookie").split(";")[0].slice("pd_oauth=".length).split(".")[0];
+  const payload = response.headers.get("Set-Cookie").split(";")[0].slice("__Host-pd_oauth=".length).split(".")[0];
   assert.equal(JSON.parse(Buffer.from(payload, "base64url").toString()).returnTo, "/settings");
   assert.equal((await authRouter.request("https://prepdeck.test/google/start", {}, AUTH_ENV)).status, 302);
   assert.equal(calls.length, 0);
@@ -186,24 +186,24 @@ test("the callback refuses OAuth state /google/start did not issue: forged, tamp
     const before = requests.length;
     const response = await callback(cookie);
     assert.equal(response.headers.get("Location"), "/?auth=error", label);
-    assert.doesNotMatch(response.headers.get("Set-Cookie") ?? "", /pd_session=/, label);
+    assert.doesNotMatch(response.headers.get("Set-Cookie") ?? "", /__Host-pd_session=/, label);
     assert.equal(requests.length, before, `${label}: no Google token exchange, no Siteverify`);
   };
 
-  await refused(`pd_oauth=${encodeURIComponent(JSON.stringify({ state: "s", codeVerifier: "v" }))}`, "the first version's unsigned cookie");
+  await refused(`__Host-pd_oauth=${encodeURIComponent(JSON.stringify({ state: "s", codeVerifier: "v" }))}`, "the first version's unsigned cookie");
 
   // A genuine cookie, issued after a verified token, for comparison.
   const start = await authRouter.request("https://prepdeck.test/google/start", startForm({ "cf-turnstile-response": TOKEN }), env);
   const issued = start.headers.get("Set-Cookie").split(";")[0];
   const state = new URL(start.headers.get("Location")).searchParams.get("state");
-  const [payload, signature] = issued.slice("pd_oauth=".length).split(".");
+  const [payload, signature] = issued.slice("__Host-pd_oauth=".length).split(".");
   const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
   assert.equal(claims.state, state);
 
   const forgedPayload = Buffer.from(JSON.stringify({ ...claims, state: "s" })).toString("base64url");
-  await refused(`pd_oauth=${forgedPayload}.${signature}`, "a payload changed under the old signature");
-  await refused(`pd_oauth=${payload}.${"A".repeat(43)}`, "a made-up signature");
-  await refused(`pd_oauth=${payload}`, "no signature");
+  await refused(`__Host-pd_oauth=${forgedPayload}.${signature}`, "a payload changed under the old signature");
+  await refused(`__Host-pd_oauth=${payload}.${"A".repeat(43)}`, "a made-up signature");
+  await refused(`__Host-pd_oauth=${payload}`, "no signature");
 
   const genuine = await authRouter.request(`https://prepdeck.test/google/callback?code=c&state=${state}`, { headers: { Cookie: issued } }, env);
   assert.equal(genuine.headers.get("Location"), "/?auth=error", "Google refuses the made-up code");
@@ -239,7 +239,7 @@ function mcpApp(env) {
   db.prepare("INSERT INTO users(id, email, role, status, created_at) VALUES ('alice', 'alice@test', 'admin', 'active', '2026-09-09')").run();
   const DB = createD1(db);
   const app = new Hono();
-  app.use("*", async (c, next) => { c.set("user", { id: "alice", role: "admin" }); await next(); });
+  app.use("*", async (c, next) => { c.set("user", { id: "alice", role: "admin" }); c.set("sessionVersion", 0); await next(); });
   app.route("/mcp-tokens", createMcpTokensRouter("user"));
   app.route("/admin/mcp-tokens", createMcpTokensRouter("admin"));
   const request = async (path, { token, body } = {}) => {

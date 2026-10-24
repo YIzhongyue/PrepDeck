@@ -34,6 +34,8 @@ import MetricCard from "../components/statistics/MetricCard";
 import FocusTagsCard from "../components/statistics/FocusTagsCard";
 import FirstSessionCard from "../components/statistics/FirstSessionCard";
 import "../components/statistics/statistics.css";
+import { formatList, t as translate, useI18n } from "../i18n";
+import { difficultyLabel } from "../lib/labels";
 
 // Recharts only arrives with these two cards. Splitting them out keeps the
 // readiness card and the metric row painting without waiting for that chunk —
@@ -49,11 +51,12 @@ const FIRST_SESSION_SIZE = 10;
 const MINUTES_PER_QUESTION = 1.5;
 
 function DataUnavailable({ title, failed }: { title: string; failed: boolean }) {
+  const { t } = useI18n();
   return (
     <section className="pd-stats-card" role="status" aria-label={title}>
       <h3>{title}</h3>
       <p className="pd-stats-muted" style={{ margin: 0 }}>
-        {failed ? "Unavailable. Retry to load this data." : "Loading…"}
+        {failed ? t("stats.unavailableRetry") : t("common.loading")}
       </p>
     </section>
   );
@@ -62,7 +65,7 @@ function DataUnavailable({ title, failed }: { title: string; failed: boolean }) 
 function ChartPlaceholder({ label }: { label: string }) {
   return (
     <section className="pd-stats-card" style={{ minHeight: 320, justifyContent: "center" }} role="status">
-      <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>Loading {label}…</p>
+      <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>{label}</p>
     </section>
   );
 }
@@ -86,7 +89,7 @@ function heatCells(activity: StudyActivityResponse | null, timeZone: string) {
     cells.push({
       key: i,
       bg: heatColor(questions),
-      title: `${iso}: ${questions > 0 ? `${questions} questions` : "no practice"}`
+      title: questions > 0 ? translate("stats.heatmap.day", { date: iso, count: questions }) : translate("stats.heatmap.noPractice", { date: iso })
     });
   }
   return cells;
@@ -124,7 +127,7 @@ export default function Dashboard() {
   const { go } = useWorkspaceActions();
   const { openPracticeWithFilters } = usePracticeActions();
   const { practiceList } = useReviewListsActions();
-
+  const { t } = useI18n();
 
   const examUrl = state.examId ? `/api/exams/${state.examId}` : null;
   const statsRequest = useStatisticsResource<ExamStatsResponse>(examUrl && `${examUrl}/stats`, state.activityRevision);
@@ -154,7 +157,7 @@ export default function Dashboard() {
 
   const savePlan = async (patch: UpdateExamStudyPreferencesRequest) => {
     const examId = state.examId;
-    if (!examId || !preferences) throw new Error("Load your study plan before editing it.");
+    if (!examId || !preferences) throw new Error(translate("stats.plan.loadFirst"));
     const saved = await apiFetch<ExamStudyPreferencesResponse>(`/api/exams/${examId}/preferences`, {
       method: "PATCH", body: JSON.stringify(patch),
     });
@@ -190,9 +193,9 @@ export default function Dashboard() {
     return (
       <div className="pd-stats">
         <section className="pd-stats-card" role="status">
-          <h2>No exam selected</h2>
+          <h2>{t("stats.noExam")}</h2>
           <p className="pd-stats-muted" style={{ margin: 0, fontSize: 14 }}>
-            Choose an exam from the workspace switcher to see your statistics.
+            {t("stats.noExamBody")}
           </p>
         </section>
       </div>
@@ -200,13 +203,13 @@ export default function Dashboard() {
   }
 
   if (!stats && !activity && !preferences && !statsError && !activityError && !preferencesError) {
-    return <div className="pd-stats-card" role="status"><p style={{ margin: 0 }}>Loading statistics…</p></div>;
+    return <div className="pd-stats-card" role="status"><p style={{ margin: 0 }}>{t("stats.loading")}</p></div>;
   }
 
   const failures = [
-    statsError && "statistics",
-    activityError && "study activity",
-    preferencesError && "your study plan",
+    statsError && t("stats.failures.statistics"),
+    activityError && t("stats.failures.activity"),
+    preferencesError && t("stats.failures.plan"),
   ].filter(Boolean) as string[];
 
   const heat = heatCells(activity, model.timeZone);
@@ -219,7 +222,7 @@ export default function Dashboard() {
   return (
     <div className="pd-stats">
       <StatisticsHeader
-        greetingName={state.me?.displayName || "there"}
+        greetingName={state.me?.displayName || null}
         examName={activeExam?.name ?? null}
         countdown={model.countdown}
         planStatus={preferencesRequest.status}
@@ -232,13 +235,13 @@ export default function Dashboard() {
       {failures.length > 0 && (
         <div className="pd-stats-card pd-stats-card--tight" role="alert" style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
           <p style={{ margin: 0, fontSize: 13, flex: "1 1 240px" }}>
-            Could not load {failures.join(" or ")}. Everything else on this page is unaffected.
+            {t("stats.loadFailed", { what: formatList(failures, "disjunction") })}
           </p>
           <Button size="sm" color="secondary" onClick={() => {
             if (statsError) statsRequest.retry();
             if (activityError) activityRequest.retry();
             if (preferencesError) preferencesRequest.retry();
-          }}>Retry</Button>
+          }}>{t("common.retry")}</Button>
         </div>
       )}
 
@@ -258,19 +261,19 @@ export default function Dashboard() {
           canStartMock={state.catalog.length > 0}
           onPracticeWeakTags={() => practiceTags(model.weakTags)}
           onStartMock={() => go("mock", { newMock: true })}
-        /> : <DataUnavailable title="Exam readiness" failed={statsError} />}
+        /> : <DataUnavailable title={t("stats.readiness.title")} failed={statsError} />}
 
         <div className="pd-stats-metrics">
           {stats ? <MetricCard
-            icon={CheckDone01} tone="brand" label="Answered"
-            value={answered.questions} suffix={`/ ${answered.bankSize}`}
-            footer={`+${answered.newThisWeek} new in ${answered.windowDays} days · ${answered.unseen} unseen`}
+            icon={CheckDone01} tone="brand" label={t("stats.answered.label")}
+            value={answered.questions} suffix={t("stats.answered.suffix", { total: answered.bankSize })}
+            footer={t("stats.answered.footer", { added: answered.newThisWeek, days: answered.windowDays, unseen: answered.unseen })}
           >
-            <ProgressBarBase value={coverage.pct} aria-label={`${coverage.pct} percent of the bank answered`} />
-          </MetricCard> : <DataUnavailable title="Answered" failed={statsError} />}
+            <ProgressBarBase value={coverage.pct} aria-label={t("stats.answered.progress", { pct: coverage.pct })} />
+          </MetricCard> : <DataUnavailable title={t("stats.answered.label")} failed={statsError} />}
 
           {stats ? <MetricCard
-            icon={TrendUp02} tone="success" label="Accuracy"
+            icon={TrendUp02} tone="success" label={t("stats.accuracy.label")}
             value={measured ? `${accuracy.accuracyPct}%` : "—"}
             badge={accuracy.deltaPts != null && (
               <Badge type="pill-color" size="sm" color={accuracy.deltaPts >= 0 ? "success" : "error"}>
@@ -278,27 +281,27 @@ export default function Dashboard() {
               </Badge>
             )}
             footer={!measured
-              ? accuracy.passMarkPct == null ? "Not measured yet" : `Not measured yet · ${accuracy.passMarkPct}% pass line`
+              ? accuracy.passMarkPct == null ? t("stats.accuracy.notMeasured") : t("stats.accuracy.notMeasuredPass", { pass: accuracy.passMarkPct })
               : accuracy.passMarkPct == null
-              ? `${accuracy.answerEvents} answers · no pass mark set`
-              : `${accuracy.answerEvents} answers · vs ${accuracy.passMarkPct}% pass line`}
+              ? t("stats.accuracy.answersNoPass", { count: accuracy.answerEvents })
+              : t("stats.accuracy.answersVsPass", { count: accuracy.answerEvents, pass: accuracy.passMarkPct })}
           >
             <Sparkline values={model.trend.points.map((p) => p.accuracyPct)} />
-          </MetricCard> : <DataUnavailable title="Accuracy" failed={statsError} />}
+          </MetricCard> : <DataUnavailable title={t("stats.accuracy.label")} failed={statsError} />}
 
           <MetricCard
-            icon={AlertTriangle} tone="error" label="Wrong book"
-            value={wrongBook.saved} suffix="saved"
+            icon={AlertTriangle} tone="error" label={t("stats.wrongBook.label")}
+            value={wrongBook.saved} suffix={t("stats.wrongBook.suffix")}
             footer={wrongBook.saved === 0
-              ? "Nothing saved yet"
-              : `${wrongBook.repeated} missed more than once · ${wrongBook.recent} in the last 7 days`}
+              ? t("stats.wrongBook.empty")
+              : t("stats.wrongBook.footer", { repeated: wrongBook.repeated, recent: wrongBook.recent })}
             footerTone={wrongBook.repeated > 0 ? "error" : undefined}
           >
             {/* Severity, not a schedule: PrepDeck has no review-scheduling
                 model, so this deliberately does not claim anything is "due". */}
             {wrongBook.strip.length > 0 && (
               <div className="pd-stats-strip" role="img"
-                aria-label={`${wrongBook.saved} unmastered questions, ${wrongBook.repeated} of them missed more than once`}>
+                aria-label={t("stats.wrongBook.strip", { saved: wrongBook.saved, repeated: wrongBook.repeated })}>
                 {wrongBook.strip.map((e) => (
                   <span key={e.id} style={{
                     background: e.misses >= 3 ? "var(--color-danger)"
@@ -311,20 +314,20 @@ export default function Dashboard() {
           </MetricCard>
 
           {stats ? <MetricCard
-            icon={Trophy01} tone="success" label="Best mock"
+            icon={Trophy01} tone="success" label={t("stats.bestMock.label")}
             value={bestMock.best ? `${Math.round(bestMock.best.score)}%` : "—"}
             badge={bestMock.best?.passed != null && (
               <Badge type="pill-color" size="sm" color={bestMock.best.passed ? "success" : "error"}>
-                {bestMock.best.passed ? "Passed" : "Below line"}
+                {t(bestMock.best.passed ? "stats.passed" : "stats.belowLine")}
               </Badge>
             )}
             footer={bestMock.best
-              ? `${formatDate(bestMock.best.completedAt, model.timeZone)} · ${bestMock.attempts} attempt${bestMock.attempts === 1 ? "" : "s"}`
-              : "No mock exams completed yet"}
+              ? t("stats.bestMock.footer", { date: formatDate(bestMock.best.completedAt, model.timeZone), count: bestMock.attempts })
+              : t("stats.bestMock.empty")}
           >
             {bestMock.recent.length > 0 && (
               <div className="pd-stats-mockbars" role="img"
-                aria-label={`Scores of the last ${bestMock.recent.length} mock exams: ${bestMock.recent.map((m) => `${Math.round(m.score)}%`).join(", ")}`}>
+                aria-label={t("stats.bestMock.bars", { count: bestMock.recent.length, scores: bestMock.recent.map((m) => `${Math.round(m.score)}%`).join(", ") })}>
                 {bestMock.recent.map((m) => (
                   <span key={m.attemptId} style={{
                     height: `${Math.max(12, Math.min(100, m.score))}%`,
@@ -335,82 +338,83 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
-          </MetricCard> : <DataUnavailable title="Best mock" failed={statsError} />}
+          </MetricCard> : <DataUnavailable title={t("stats.bestMock.label")} failed={statsError} />}
         </div>
       </div>
 
       {/* The actions come before the charts: what to study next matters more
           than how the last sessions went. */}
       {stats ? <FocusTagsCard focus={model.focus} passMarkPct={model.passMarkPct} onPracticeTag={practiceTag} />
-        : <DataUnavailable title="Where to focus" failed={statsError} />}
+        : <DataUnavailable title={t("stats.focus.title")} failed={statsError} />}
 
       {!firstSession && <div className="pd-stats-row">
-        {stats ? <Suspense fallback={<ChartPlaceholder label="the accuracy trend" />}>
+        {stats ? <Suspense fallback={<ChartPlaceholder label={t("stats.trend.loading")} />}>
           <AccuracyTrendCard trend={model.trend} timeZone={model.timeZone} />
-        </Suspense> : <DataUnavailable title="Accuracy trend" failed={statsError} />}
-        {activity ? <Suspense fallback={<ChartPlaceholder label="study time" />}>
+        </Suspense> : <DataUnavailable title={t("stats.trend.title")} failed={statsError} />}
+        {activity ? <Suspense fallback={<ChartPlaceholder label={t("stats.studyTime.loading")} />}>
           <StudyTimeCard week={model.week} timeZone={model.timeZone} weeklyGoalMinutes={model.weeklyGoalMinutes} planStatus={preferencesRequest.status} onEditPlan={() => setPlanOpen(true)} />
-        </Suspense> : <DataUnavailable title="Study time" failed={activityError} />}
+        </Suspense> : <DataUnavailable title={t("stats.studyTime.title")} failed={activityError} />}
       </div>}
 
       {/* Everything the screen showed before #151 that the concept does not
           have a place for. Kept reachable rather than dropped. */}
       <details className="pd-stats-card pd-stats-detail">
-        <summary>More detail: difficulty, mock history and long-range activity</summary>
+        <summary>{t("stats.detail.summary")}</summary>
 
         <div className="pd-stats-row" style={{ marginBottom: 24 }}>
           <div>
-            <h3 style={{ marginBottom: 14 }}>By difficulty</h3>
+            <h3 style={{ marginBottom: 14 }}>{t("stats.detail.byDifficulty")}</h3>
             {stats && stats.byDifficulty.length ? stats.byDifficulty.map((d) => (
               <div key={d.difficulty} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
-                  <span style={{ textTransform: "capitalize" }}>{d.difficulty}</span>
+                  <span>{difficultyLabel(d.difficulty)}</span>
                   <span className="pd-stats-muted" style={{ fontVariantNumeric: "tabular-nums" }}>{d.accuracyPct}% ({d.correct}/{d.attempted})</span>
                 </div>
-                <ProgressBarBase value={d.accuracyPct} aria-label={`${d.difficulty}: ${d.accuracyPct} percent`} />
+                <ProgressBarBase value={d.accuracyPct} aria-label={t("stats.detail.difficultyProgress", { difficulty: difficultyLabel(d.difficulty), pct: d.accuracyPct })} />
               </div>
-            )) : <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>{stats ? "No attempts yet." : statsError ? "Unavailable" : "Loading…"}</p>}
+            )) : <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>{stats ? t("stats.detail.noAttempts") : statsError ? t("stats.unavailable") : t("common.loading")}</p>}
           </div>
 
           <div>
-            <h3 style={{ marginBottom: 14 }}>Mock exam history</h3>
+            <h3 style={{ marginBottom: 14 }}>{t("stats.detail.mockHistory")}</h3>
             {stats && stats.mockScoreHistory.length ? (
               <div className="pd-stats-data-scroll">
                 <table className="table">
-                  <thead><tr><th scope="col">Completed</th><th scope="col">Score</th><th scope="col">Questions</th><th scope="col">Result</th></tr></thead>
+                  <thead><tr><th scope="col">{t("stats.detail.completed")}</th><th scope="col">{t("stats.detail.score")}</th><th scope="col">{t("stats.detail.questions")}</th><th scope="col">{t("stats.detail.result")}</th></tr></thead>
                   <tbody>
                     {stats.mockScoreHistory.slice().reverse().map((m) => (
                       <tr key={m.attemptId}>
                         <td>{formatDate(m.completedAt, model.timeZone)}</td>
                         <td style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(m.score)}%</td>
                         <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.totalQuestions}</td>
-                        <td>{m.passed == null ? "—" : m.passed ? "Passed" : "Below line"}</td>
+                        <td>{m.passed == null ? "—" : t(m.passed ? "stats.passed" : "stats.belowLine")}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>{stats ? "No mock exams completed yet." : statsError ? "Unavailable" : "Loading…"}</p>}
+            ) : <p className="pd-stats-muted" style={{ margin: 0, fontSize: 13 }}>{stats ? t("stats.detail.noMocks") : statsError ? t("stats.unavailable") : t("common.loading")}</p>}
           </div>
         </div>
 
-        <h3 style={{ marginBottom: 6 }}>Study activity</h3>
+        <h3 style={{ marginBottom: 6 }}>{t("stats.detail.activity")}</h3>
         <p className="pd-stats-muted" style={{ margin: "0 0 14px", fontSize: 12 }}>
           {activity
-            ? `Last ${HEATMAP_DAYS} days · ${activity.activeDayCount} active days · `
-              + `${activity.sessionsWithDuration} of ${activity.sessionsCompleted} sessions recorded a duration · `
-              + `avg session ${Math.round(activity.averageSessionSeconds / 60)} min`
-            : activityError ? "Unavailable" : "Loading…"}
+            ? t("stats.detail.activitySummary", {
+              days: HEATMAP_DAYS, active: activity.activeDayCount, withDuration: activity.sessionsWithDuration,
+              sessions: activity.sessionsCompleted, minutes: Math.round(activity.averageSessionSeconds / 60)
+            })
+            : activityError ? t("stats.unavailable") : t("common.loading")}
         </p>
         {activity && <><div className="pd-stats-heatmap">
           {heat.map((c) => <span key={c.key} title={c.title} style={{ background: c.bg }} />)}
         </div>
         <div className="pd-stats-muted" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, fontSize: 11 }}>
-          <span>Less</span>
+          <span>{t("stats.heatmap.less")}</span>
           {["var(--color-neutral-200)", "var(--color-accent-2-200)", "var(--color-accent-2-400)", "var(--color-accent-2-600)"].map((bg) => (
             <span key={bg} style={{ width: 12, height: 12, borderRadius: 4, background: bg }} />
           ))}
-          <span>More</span>
+          <span>{t("stats.heatmap.more")}</span>
         </div></>}
       </details>
 

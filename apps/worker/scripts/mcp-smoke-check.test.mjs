@@ -176,7 +176,7 @@ test("end-to-end against a real bundled Worker: every check passes for a healthy
     "0020_admin_mcp_create_idempotency.sql", "0021_admin_mcp_audit_log_targets.sql", "0022_question_bank_tags.sql",
     "0023_admin_mcp_import_jobs.sql", "0024_admin_mcp_import_committed_items.sql", "0025_kp_order_scopes.sql",
     "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0029_question_mutation_audit.sql",
-    "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql",
+    "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql", "0037_user_session_version.sql",
     "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql", "0045_mcp_oauth.sql",
   ];
   const schema = migrationSql({ only: schemaFiles });
@@ -195,8 +195,8 @@ test("end-to-end against a real bundled Worker: every check passes for a healthy
     ...createBindings(),
   };
   const expiresAt = Date.now() + 60_000;
-  const alice = await issueMcpCredential(DB, { userId: "alice", audience: "user", name: "smoke", expiresAt });
-  const admin = await issueMcpCredential(DB, { userId: "admin", audience: "admin", name: "smoke", expiresAt });
+  const alice = await issueMcpCredential(DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "smoke", expiresAt });
+  const admin = await issueMcpCredential(DB, { sessionVersion: 0, userId: "admin", audience: "admin", name: "smoke", expiresAt });
 
   const fetchImpl = (url, init) => worker.fetch(new Request(url, init), env);
 

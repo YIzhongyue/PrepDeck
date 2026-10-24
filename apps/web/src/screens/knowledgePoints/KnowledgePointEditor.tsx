@@ -14,15 +14,17 @@ import DeleteKnowledgePointDialog from "../../components/knowledgePoints/DeleteK
 import { Dropdown, MenuItem } from "../../components/knowledgePoints/EditorMenu";
 import { prepareMarkdown } from "../../components/knowledgePoints/editorMarkdown";
 import "./KnowledgePointEditor.css";
+import { formatDate, formatTime, useI18n } from "../../i18n";
 
-const timeOf = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const timeOf = (iso: string) => formatTime(iso, { hour: "2-digit", minute: "2-digit" });
 
 // One quiet line replaces the old status pill, sync card and error card.
 function SaveStatus({ status, lastSavedAt, uploading }: { status: string; lastSavedAt: string | null; uploading: number }) {
-  if (status === "saving") return <span className="kp-save"><span className="kp-dot" />{uploading ? "Waiting for image…" : "Saving…"}</span>;
-  if (status === "error") return <span className="kp-save kp-save-bad"><span className="kp-dot" />Not saved</span>;
-  if (status === "saved") return <span className="kp-save"><span className="kp-dot kp-dot-ok" />Saved{lastSavedAt ? ` · ${timeOf(lastSavedAt)}` : ""}</span>;
-  if (status === "unsaved") return <span className="kp-save"><span className="kp-dot" />Unsaved changes</span>;
+  const { t } = useI18n();
+  if (status === "saving") return <span className="kp-save"><span className="kp-dot" />{uploading ? t("kp.editor.waitingImage") : t("common.saving")}</span>;
+  if (status === "error") return <span className="kp-save kp-save-bad"><span className="kp-dot" />{t("kp.editor.notSaved")}</span>;
+  if (status === "saved") return <span className="kp-save"><span className="kp-dot kp-dot-ok" />{lastSavedAt ? t("kp.editor.savedAt", { time: timeOf(lastSavedAt) }) : t("kp.editor.saved")}</span>;
+  if (status === "unsaved") return <span className="kp-save"><span className="kp-dot" />{t("kp.editor.unsaved")}</span>;
   return null;
 }
 
@@ -53,6 +55,7 @@ export default function KnowledgePointEditor({
 }) {
   const kp = useKnowledgePoints();
   const { goToQuestionForReview } = useWorkspaceActions();
+  const { t } = useI18n();
 
   const { state, openNote } = kp;
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -79,28 +82,28 @@ export default function KnowledgePointEditor({
 
   const backToList = async () => {
     try { await kp.flushEditor(); kp.closeEditor(); kp.refreshList(); onBack(); }
-    catch (error) { setNavigationError(error instanceof Error ? error.message : "Your note could not be saved. Please retry before leaving."); }
+    catch (error) { setNavigationError(error instanceof Error ? error.message : t("kp.editor.leaveFailed")); }
   };
 
   const openOther = async (id: string) => {
     try { await kp.flushEditor(); setNavigationError(null); onOpenNote(id); }
-    catch (error) { setNavigationError(error instanceof Error ? error.message : "Your note could not be saved. Please retry before leaving."); }
+    catch (error) { setNavigationError(error instanceof Error ? error.message : t("kp.editor.leaveFailed")); }
   };
 
-  if (state.editorError) return <div role="alert"><p>{state.editorError}</p><button type="button" className="btn btn-primary" onClick={() => kp.openNote(noteId)}>Retry loading note</button><button type="button" className="btn btn-secondary" onClick={onBack}>All notes</button></div>;
+  if (state.editorError) return <div role="alert"><p>{state.editorError}</p><button type="button" className="btn btn-primary" onClick={() => kp.openNote(noteId)}>{t("kp.editor.retryLoad")}</button><button type="button" className="btn btn-secondary" onClick={onBack}>{t("kp.list.allNotes")}</button></div>;
   if (state.editorLoading || !editing) {
     return (
-      <div className="kp-skeleton" aria-busy="true" aria-label="Loading note">
+      <div className="kp-skeleton" aria-busy="true" aria-label={t("kp.editor.loading")}>
         <span style={{ width: "62%", height: 34 }} /><span style={{ width: 220, height: 30 }} /><span style={{ height: 44 }} />
         <span style={{ width: "96%" }} /><span style={{ width: "88%" }} /><span style={{ width: "70%" }} />
       </div>
     );
   }
 
-  const groupLabel = editing.groupName ?? "Ungrouped";
-  const markdownFile = () => `# ${state.title.trim() || "Untitled knowledge point"}\n\n${state.bodyMarkdown}`;
+  const groupLabel = editing.groupName ?? t("kp.ungrouped");
+  const markdownFile = () => `# ${state.title.trim() || t("kp.untitled")}\n\n${state.bodyMarkdown}`;
   const copyMarkdown = () => {
-    navigator.clipboard?.writeText(markdownFile()).then(() => setNotice("Markdown copied"), () => setNotice("Could not copy. Use Markdown mode to select the text."));
+    navigator.clipboard?.writeText(markdownFile()).then(() => setNotice(t("kp.editor.copied")), () => setNotice(t("kp.editor.copyFailed")));
   };
   const downloadMarkdown = () => {
     const url = URL.createObjectURL(new Blob([markdownFile()], { type: "text/markdown;charset=utf-8" }));
@@ -120,24 +123,24 @@ export default function KnowledgePointEditor({
       <input
         type="text"
         className="kp-title-input"
-        aria-label="Knowledge point title"
+        aria-label={t("kp.editor.titleLabel")}
         aria-invalid={!state.title.trim()}
         value={state.title}
         onChange={(e) => kp.setTitle(e.target.value)}
         onCompositionStart={() => kp.setComposing(true)}
         onCompositionEnd={() => kp.setComposing(false)}
-        placeholder="Untitled knowledge point"
+        placeholder={t("kp.untitled")}
       />
-      {!state.title.trim() && <p role="alert" className="kp-title-error">A title is required before this note can be saved.</p>}
+      {!state.title.trim() && <p role="alert" className="kp-title-error">{t("kp.editor.titleRequired")}</p>}
       <div className="kp-props">
         <GroupPicker groups={state.groups} groupId={editing.groupId} groupName={editing.groupName} onSelect={kp.setNoteGroup} onCreate={kp.createGroup} />
-        {editing.tags.map((t) => (
-          <span key={t.id} className="kp-chip kp-chip-tag">
-            {t.name}
-            <button type="button" className="kp-chip-x" onClick={() => kp.removeTag(t.id)} aria-label={`Remove tag ${t.name}`}><XClose size={14} aria-hidden="true" /></button>
+        {editing.tags.map((tag) => (
+          <span key={tag.id} className="kp-chip kp-chip-tag">
+            {tag.name}
+            <button type="button" className="kp-chip-x" onClick={() => kp.removeTag(tag.id)} aria-label={t("kp.editor.removeTag", { name: tag.name })}><XClose size={14} aria-hidden="true" /></button>
           </span>
         ))}
-        <TagPicker existingTags={state.tags} currentTagIds={editing.tags.map((t) => t.id)} onAdd={kp.addTag} />
+        <TagPicker existingTags={state.tags} currentTagIds={editing.tags.map((tag) => tag.id)} onAdd={kp.addTag} />
       </div>
     </>
   );
@@ -154,8 +157,8 @@ export default function KnowledgePointEditor({
       )}
 
       <div className="kp-topbar">
-        <nav className="kp-crumbs" aria-label="Breadcrumb">
-          <a href="#" onClick={(e) => { e.preventDefault(); backToList(); }}><ArrowLeft size={16} aria-hidden="true" />All notes</a>
+        <nav className="kp-crumbs" aria-label={t("nav.breadcrumb")}>
+          <a href="#" onClick={(e) => { e.preventDefault(); backToList(); }}><ArrowLeft size={16} aria-hidden="true" />{t("kp.list.allNotes")}</a>
           <span aria-hidden="true">/</span>
           <span className="kp-crumb-group">{groupLabel}</span>
         </nav>
@@ -164,19 +167,19 @@ export default function KnowledgePointEditor({
           {inSequence && (
             <>
               <span className="kp-tb-sep" aria-hidden="true" />
-              <span className="kp-count">{idx + 1} of {state.items.length}</span>
-              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!prevId} onClick={() => prevId && openOther(prevId)} aria-label={`Previous in ${groupLabel}`} title={`Previous in ${groupLabel}`}><ChevronLeft size={18} /></button>
-              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!nextId} onClick={() => nextId && openOther(nextId)} aria-label={`Next in ${groupLabel}`} title={`Next in ${groupLabel}`}><ChevronRight size={18} /></button>
+              <span className="kp-count">{t("learning.live.position", { n: idx + 1, total: state.items.length })}</span>
+              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!prevId} onClick={() => prevId && openOther(prevId)} aria-label={t("kp.editor.previousIn", { group: groupLabel })} title={t("kp.editor.previousIn", { group: groupLabel })}><ChevronLeft size={18} /></button>
+              <button type="button" className="kp-icon-btn kp-icon-btn-lg" disabled={!nextId} onClick={() => nextId && openOther(nextId)} aria-label={t("kp.editor.nextIn", { group: groupLabel })} title={t("kp.editor.nextIn", { group: groupLabel })}><ChevronRight size={18} /></button>
             </>
           )}
           <span className="kp-tb-sep" aria-hidden="true" />
-          <button type="button" className="kp-icon-btn kp-icon-btn-lg kp-focus-toggle" aria-pressed={focusMode} aria-label="Focus mode" title="Focus mode: hide the sidebar" onClick={() => setFocusMode((f) => !f)}><Maximize01 size={18} /></button>
-          <Dropdown label="More actions" menuLabel="More actions" triggerClassName="kp-icon-btn kp-icon-btn-lg" align="end" width={240} trigger={<DotsHorizontal size={18} aria-hidden="true" />}>
+          <button type="button" className="kp-icon-btn kp-icon-btn-lg kp-focus-toggle" aria-pressed={focusMode} aria-label={t("kp.editor.focusMode")} title={t("kp.editor.focusModeTitle")} onClick={() => setFocusMode((f) => !f)}><Maximize01 size={18} /></button>
+          <Dropdown label={t("kp.editor.moreActions")} menuLabel={t("kp.editor.moreActions")} triggerClassName="kp-icon-btn kp-icon-btn-lg" align="end" width={240} trigger={<DotsHorizontal size={18} aria-hidden="true" />}>
             {(close) => <>
-              <MenuItem icon={<Copy01 size={16} aria-hidden="true" />} title="Copy as Markdown" onSelect={() => { close(); copyMarkdown(); }} />
-              <MenuItem icon={<Download01 size={16} aria-hidden="true" />} title="Download .md file" onSelect={() => { close(); downloadMarkdown(); }} />
+              <MenuItem icon={<Copy01 size={16} aria-hidden="true" />} title={t("kp.editor.copyMarkdown")} onSelect={() => { close(); copyMarkdown(); }} />
+              <MenuItem icon={<Download01 size={16} aria-hidden="true" />} title={t("kp.editor.download")} onSelect={() => { close(); downloadMarkdown(); }} />
               <div className="kp-menu-sep" role="separator" />
-              <MenuItem danger icon={<Trash01 size={16} aria-hidden="true" />} title="Delete note…" onSelect={() => { close(); setShowDeleteDialog(true); }} />
+              <MenuItem danger icon={<Trash01 size={16} aria-hidden="true" />} title={t("kp.editor.deleteNote")} onSelect={() => { close(); setShowDeleteDialog(true); }} />
             </>}
           </Dropdown>
         </div>
@@ -190,20 +193,20 @@ export default function KnowledgePointEditor({
             {state.conflict && (
               <div className="kp-banner kp-banner-warning" role="alert">
                 <AlertTriangle size={18} aria-hidden="true" />
-                <span className="kp-banner-msg"><strong>This note was saved from another tab or device since you started editing.</strong> Keep your local changes (overwriting the other save) or reload the latest version (discarding yours).</span>
+                <span className="kp-banner-msg"><strong>{t("kp.editor.conflictTitle")}</strong> {t("kp.editor.conflictBody")}</span>
                 <span className="kp-banner-actions">
-                  <button type="button" className="kp-pill-btn" onClick={kp.reloadAfterConflict}>Reload latest</button>
-                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.keepMineAfterConflict}>Keep mine</button>
+                  <button type="button" className="kp-pill-btn" onClick={kp.reloadAfterConflict}>{t("kp.editor.reloadLatest")}</button>
+                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.keepMineAfterConflict}>{t("kp.editor.keepMine")}</button>
                 </span>
               </div>
             )}
             {state.saveStatus === "error" && !state.conflict && !state.uploadError && (
               <div className="kp-banner kp-banner-danger" role="alert">
                 <AlertTriangle size={18} aria-hidden="true" />
-                <span className="kp-banner-msg"><strong>Save failed.</strong> Your text is safe in the editor. {state.saveErrorMessage}</span>
+                <span className="kp-banner-msg"><strong>{t("kp.editor.saveFailed")}</strong> {t("kp.editor.textSafe")} {state.saveErrorMessage}</span>
                 <span className="kp-banner-actions">
-                  {state.metadataError && <button type="button" className="kp-pill-btn" onClick={kp.discardFailedMetadata}>Discard failed metadata change</button>}
-                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.retryNow}>Retry now</button>
+                  {state.metadataError && <button type="button" className="kp-pill-btn" onClick={kp.discardFailedMetadata}>{t("kp.editor.discardMetadata")}</button>}
+                  <button type="button" className="kp-pill-btn kp-pill-solid" onClick={kp.retryNow}>{t("kp.editor.retryNow")}</button>
                 </span>
               </div>
             )}
@@ -212,11 +215,11 @@ export default function KnowledgePointEditor({
         </main>
 
         {!focusMode && (
-          <aside className="kp-aside" aria-label="Note details">
+          <aside className="kp-aside" aria-label={t("kp.editor.details")}>
             {outline.length > 0 && (
               <section className="kp-side-card">
-                <span className="kp-kicker">On this page</span>
-                <nav className="kp-toc" aria-label="Outline">
+                <span className="kp-kicker">{t("kp.editor.onThisPage")}</span>
+                <nav className="kp-toc" aria-label={t("kp.editor.outline")}>
                   {outline.map((h, i) => (
                     <button key={i} type="button" className={`kp-toc-l${h.level}`} onClick={() => jumpTo(i)}>{h.text}</button>
                   ))}
@@ -226,7 +229,7 @@ export default function KnowledgePointEditor({
 
             <section className="kp-side-card">
               <div className="kp-side-head">
-                <span className="kp-kicker">Related questions</span>
+                <span className="kp-kicker">{t("kp.editor.relatedQuestions")}</span>
                 <span className="kp-count">{editing.linkedQuestions.length}</span>
               </div>
               {editing.linkedQuestions.filter((l) => l.accessible).map((l) => (
@@ -234,23 +237,23 @@ export default function KnowledgePointEditor({
                   <span className="kp-q-meta">{l.examSlug} · {l.externalId ?? l.questionId.slice(0, 8)}</span>
                   <p className="kp-q-stem">{l.stemExcerpt}</p>
                   <span className="kp-q-actions">
-                    <button type="button" className="kp-ghost-btn" onClick={() => l.examId && goToQuestionForReview(l.examId, l.questionId)} title="Opens in Learning mode for review. No attempt is recorded.">Review in Learning</button>
-                    <button type="button" className="kp-ghost-btn kp-ghost-muted" onClick={() => { void kp.unlinkQuestion(l.questionId).catch(() => {}); }}>Unlink</button>
+                    <button type="button" className="kp-ghost-btn" onClick={() => l.examId && goToQuestionForReview(l.examId, l.questionId)} title={t("kp.reviewInLearningTitle")}>{t("kp.reviewInLearning")}</button>
+                    <button type="button" className="kp-ghost-btn kp-ghost-muted" onClick={() => { void kp.unlinkQuestion(l.questionId).catch(() => {}); }}>{t("kp.unlink")}</button>
                   </span>
                 </article>
               ))}
               {unavailable > 0 && (
-                <p className="kp-q-gone"><InfoCircle size={16} aria-hidden="true" />{unavailable} linked question{unavailable === 1 ? " is" : "s are"} no longer available to you.</p>
+                <p className="kp-q-gone"><InfoCircle size={16} aria-hidden="true" />{t("kp.editor.unavailable", { count: unavailable })}</p>
               )}
-              {editing.linkedQuestions.length === 0 && <p className="kp-side-empty">Link the questions this note explains, so you can review them together.</p>}
+              {editing.linkedQuestions.length === 0 && <p className="kp-side-empty">{t("kp.editor.linkHint")}</p>}
               <button type="button" onClick={() => setShowLinkModal(true)} className="btn btn-secondary btn-block">
                 <Plus size={16} aria-hidden="true" />
-                Link a question
+                {t("kp.editor.linkQuestion")}
               </button>
             </section>
 
             <p className="kp-side-meta">
-              Created {new Date(editing.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Edited {timeOf(editing.updatedAt)}
+              {t("kp.editor.meta", { created: formatDate(editing.createdAt, { month: "short", day: "numeric" }), edited: timeOf(editing.updatedAt) })}
             </p>
           </aside>
         )}

@@ -1,8 +1,10 @@
 import { optionText, type QuestionContentModel } from "@prepdeck/shared";
+import { useI18n } from "../i18n";
 
 export default function StructuredResponse({ content, selected, onChange, disabled = false, correct }: {
   content: QuestionContentModel; selected: string[]; onChange: (answer: string[]) => void; disabled?: boolean; correct?: string[];
 }) {
+  const { t } = useI18n();
   const i = content.interaction;
   if (i.type !== "order" && i.type !== "match") return null;
   const options = i.type === "order" ? i.options : i.left;
@@ -12,10 +14,10 @@ export default function StructuredResponse({ content, selected, onChange, disabl
     try { const [l, r] = JSON.parse(a); return `${optionText(i.left.find(o => o.id === l)!, content)} → ${optionText(i.right.find(o => o.id === r)!, content)}`; } catch { return a; }
   }).join("; ");
   return <fieldset disabled={disabled} style={{ border: 0, padding: 0, minWidth: 0 }}>
-    <legend>{i.type === "order" ? "Choose each item in order" : "Choose a match for each item"}</legend>
+    <legend>{t(i.type === "order" ? "study.structured.orderLegend" : "study.structured.matchLegend")}</legend>
     {options.map((o, index) => <label key={o.id} style={{ display: "block", margin: "12px 0" }}>
-      {i.type === "order" ? `Position ${index + 1}` : optionText(o, content)}
-      <select className="input" aria-label={i.type === "order" ? `Position ${index + 1}` : `Match ${o.id}`} value={i.type === "order" ? selected[index] ?? "" : pairs.get(o.id) ?? ""} onChange={e => {
+      {i.type === "order" ? t("study.structured.position", { n: index + 1 }) : optionText(o, content)}
+      <select className="input" aria-label={i.type === "order" ? t("study.structured.position", { n: index + 1 }) : t("study.structured.match", { id: o.id })} value={i.type === "order" ? selected[index] ?? "" : pairs.get(o.id) ?? ""} onChange={e => {
         if (i.type === "order") {
           const next = Array.from({ length: options.length }, (_, n) => selected[n] ?? ""); next[index] = e.target.value;
           onChange(next.every(x => !x) ? [] : next);
@@ -23,8 +25,8 @@ export default function StructuredResponse({ content, selected, onChange, disabl
           if (e.target.value) pairs.set(o.id, e.target.value); else pairs.delete(o.id);
           onChange(i.left.filter(l => pairs.has(l.id)).map(l => JSON.stringify([l.id, pairs.get(l.id)])));
         }
-      }}><option value="">Select…</option>{(i.type === "order" ? i.options : i.right).map(candidate => <option key={candidate.id} value={candidate.id}>{optionText(candidate, content)}</option>)}</select>
+      }}><option value="">{t("study.structured.select")}</option>{(i.type === "order" ? i.options : i.right).map(candidate => <option key={candidate.id} value={candidate.id}>{optionText(candidate, content)}</option>)}</select>
     </label>)}
-    {correct && <p>Correct response: {displayed(correct)}</p>}
+    {correct && <p>{t("study.structured.correctResponse", { response: displayed(correct) })}</p>}
   </fieldset>;
 }

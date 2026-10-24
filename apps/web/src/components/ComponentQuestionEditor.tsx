@@ -7,6 +7,7 @@ import { inspectAnswerControls } from "../lib/componentAnswerControls";
 import ComponentAnswerControls, { AnswerOption } from "./ComponentAnswerControls";
 import QuestionContent from "./QuestionContent";
 import { useQuestionDraftGuard } from "./QuestionDraftGuard";
+import { t as translate, useI18n, type TranslationKey } from "../i18n";
 
 type ComponentQuestionEditorProps = {
   examId: string; question: Question; onClose: () => void; onSaved: (q: Question, next: boolean) => void;
@@ -17,19 +18,19 @@ function packageText(examId: string, question: Question) {
   return JSON.stringify(exportComponentPackage({ id: examId, name: examId }, [{ ...question, externalId: question.externalId ?? question.id, options: question.options ?? undefined }]), null, 2);
 }
 function changedFields(before: Question, after: Question) {
-  const fields: [string, unknown, unknown][] = [
-    ["External ID", before.externalId, after.externalId],
-    ["Question body", before.content?.body, after.content?.body],
-    ["Interaction", before.content?.interaction, after.content?.interaction],
-    ["Shared material", before.content?.stimuli, after.content?.stimuli],
-    ["Assets", before.content?.assets, after.content?.assets],
-    ["Correct response", before.correctAnswers, after.correctAnswers],
-    ["Official explanation", before.explanation, after.explanation],
-    ["Tags", before.tags, after.tags], ["Difficulty", before.difficulty, after.difficulty],
-    ["Needs review", before.needsReview, after.needsReview], ["Points", before.points, after.points],
-    ["Archive status", before.archivedAt, after.archivedAt]
+  const fields: [TranslationKey, unknown, unknown][] = [
+    ["authoring.fields.externalId", before.externalId, after.externalId],
+    ["authoring.component.fields.body", before.content?.body, after.content?.body],
+    ["authoring.component.fields.interaction", before.content?.interaction, after.content?.interaction],
+    ["authoring.component.fields.stimuli", before.content?.stimuli, after.content?.stimuli],
+    ["authoring.component.fields.assets", before.content?.assets, after.content?.assets],
+    ["authoring.component.fields.correctResponse", before.correctAnswers, after.correctAnswers],
+    ["authoring.fields.explanation", before.explanation, after.explanation],
+    ["authoring.fields.tags", before.tags, after.tags], ["authoring.fields.difficulty", before.difficulty, after.difficulty],
+    ["authoring.fields.needsReview", before.needsReview, after.needsReview], ["authoring.fields.points", before.points, after.points],
+    ["authoring.component.fields.archive", before.archivedAt, after.archivedAt]
   ];
-  return fields.filter(([, a, b]) => JSON.stringify(a) !== JSON.stringify(b)).map(([label]) => label);
+  return fields.filter(([, a, b]) => JSON.stringify(a) !== JSON.stringify(b)).map(([label]) => translate(label));
 }
 function restoreJsonPosition(field: HTMLTextAreaElement, pane: HTMLDivElement | null, position: JsonPosition) {
   field.focus({ preventScroll: true });
@@ -55,6 +56,7 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const recovery = useRef<HTMLDivElement>(null), serverFeedback = useRef<HTMLDivElement>(null);
   const requestFailed = useRef(false);
   const feedback = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const textarea = useRef<HTMLTextAreaElement>(null), pane = useRef<HTMLDivElement>(null);
   const editScroll = useRef<{ top: number; left: number; paneTop: number } | null>(null);
   const [mode, setMode] = useState<"json" | "answers">("json");
@@ -107,12 +109,12 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       field.focus({ preventScroll: true });
       if (command === "insertText") field.setSelectionRange(0, field.value.length);
       const applied = typeof document.execCommand === "function" && document.execCommand(command, false, next);
-      if (!applied && command === "insertText") throw new Error("Could not change the answer while preserving undo history. Your source has been kept. Edit the answer in JSON.");
+      if (!applied && command === "insertText") throw new Error(translate("authoring.component.answerEditFailed"));
       setText(field.value); setError("");
-      if (applied && command !== "insertText") setAnswerMessage(command === "undo" ? "Previous draft restored." : "Next draft restored.");
+      if (applied && command !== "insertText") setAnswerMessage(translate(command === "undo" ? "authoring.component.previousRestored" : "authoring.component.nextRestored"));
       return applied;
     } catch {
-      setError("Could not change the answer while preserving undo history. Your source has been kept. Edit the answer in JSON.");
+      setError(translate("authoring.component.answerEditFailed"));
       return false;
     } finally {
       field.setSelectionRange(position.start, position.end, position.direction);
@@ -146,14 +148,14 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
         // through React would clear that history. There is no value-setter fallback.
         let applied = false;
         try { applied = typeof document.execCommand === "function" && document.execCommand("insertText", false, result.text); } catch { /* Report unsupported native editing below. */ }
-        if (!applied) throw new Error("Could not format JSON while preserving undo history. Your source has been kept.");
+        if (!applied) throw new Error(translate("authoring.component.formatUndoFailed"));
         setText(field.value);
       }
       restoreJsonPosition(field, pane.current, position);
       if (result) setError("");
     } catch (e) {
       restoreJsonPosition(field, pane.current, { ...selection, ...scroll });
-      setError(e instanceof Error ? e.message : "Could not format JSON. Your source has been kept.");
+      setError(e instanceof Error ? e.message : translate("authoring.component.formatFailed"));
     }
   };
   const close = async () => { if (await guard.requestDiscard()) onClose(); };
@@ -179,7 +181,7 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       initial.current = text; onSaved(result.question, false);
     } catch (e) { if (mounted.current) {
       requestFailed.current = true;
-      setError(e instanceof Error ? e.message : "Could not save question");
+      setError(e instanceof Error ? e.message : translate("authoring.component.saveFailed"));
       setStale(e instanceof ApiError && e.status === 409 && (e.body as { code?: string } | null)?.code === "stale_question");
     } }
     finally { saving.current = false; if (mounted.current) setBusy(false); }
@@ -187,7 +189,7 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
   const guard = useQuestionDraftGuard(dirty, saving, () => { void save(); });
   const loadLatest = async (keepDraft: boolean) => {
     if (saving.current) return;
-    if (!keepDraft && !await guard.requestDiscard({ title: "Discard edits and load latest?", description: "Your raw JSON will be replaced with the latest saved question.", action: "Discard and load latest" })) return;
+    if (!keepDraft && !await guard.requestDiscard({ title: translate("authoring.editor.discardLatestTitle"), description: translate("authoring.component.discardLatestBody"), action: translate("authoring.editor.discardLatestAction") })) return;
     if (saving.current || !mounted.current) return;
     saving.current = true; setBusy(true);
     try {
@@ -198,10 +200,17 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
       const latestText = packageText(examId, latest), changed = changedFields(base, latest);
       initial.current = latestText; setBase(latest); setError(""); setStale(false);
       if (!keepDraft) setText(latestText);
-      setRebased(`Loaded revision ${latest.revision}. ${changed.length ? `Changed since revision ${base.revision}: ${changed.join(", ")}.` : `No content changes since revision ${base.revision}.`} ${keepDraft ? "Your raw JSON is kept." : "Your draft now matches the latest saved question."} Review the question, then Save when ready.`);
+      setRebased([
+        translate("authoring.editor.loadedRevision", { revision: String(latest.revision) }),
+        changed.length
+          ? translate("authoring.component.changedSinceRevision", { revision: String(base.revision), fields: changed.join(translate("common.listSeparator")) })
+          : translate("authoring.component.noChangesSince", { revision: String(base.revision) }),
+        translate(keepDraft ? "authoring.component.rawKept" : "authoring.component.draftMatches"),
+        translate("authoring.component.reviewThenSave"),
+      ].join(" "));
     } catch (e) { if (mounted.current) {
       requestFailed.current = true;
-      setError(`Could not load the latest version: ${e instanceof Error ? e.message : "Please try again."}`);
+      setError(translate("authoring.editor.loadLatestFailedReason", { reason: e instanceof Error ? e.message : translate("authoring.component.tryAgain") }));
     } }
     finally { saving.current = false; if (mounted.current) setBusy(false); }
   };
@@ -219,21 +228,21 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
     }}>
     <div className="question-drawer question-editor">
       <header className="question-drawer-header">
-        <div className="authoring-toolbar"><h3 id={titleId} className="dialog-title">Edit component question</h3>
-          <button type="button" className="btn btn-ghost question-drawer-close" aria-label="Close question editor" disabled={busy} onClick={close}>×</button></div>
-        <p className="authoring-identifier component-editor-identity"><span>#{base.sequenceNumber}</span><span className="authoring-external-id" title={base.id}>ID: {base.id}</span><span>revision {base.revision}</span></p>
+        <div className="authoring-toolbar"><h3 id={titleId} className="dialog-title">{t("authoring.component.title")}</h3>
+          <button type="button" className="btn btn-ghost question-drawer-close" aria-label={t("authoring.editor.close")} disabled={busy} onClick={close}>×</button></div>
+        <p className="authoring-identifier component-editor-identity"><span>#{base.sequenceNumber}</span><span className="authoring-external-id" title={base.id}>{t("authoring.list.id", { id: base.id })}</span><span>{t("authoring.editor.revision", { revision: String(base.revision) })}</span></p>
       </header>
       <div ref={pane} className="question-drawer-body" tabIndex={-1}>
-      <p>Edit the structured package. The preview updates when the question is valid.</p>
+      <p>{t("authoring.component.intro")}</p>
       <div ref={recovery} tabIndex={-1} hidden={!rebased}><p role="status" className="authoring-rebased">{rebased}</p></div>
-      {(error || stale) && <div ref={serverFeedback} role="alert" className="authoring-errors" tabIndex={-1}><p>{error || "This question has changed."}{stale && " Your raw JSON is kept."}</p>
+      {(error || stale) && <div ref={serverFeedback} role="alert" className="authoring-errors" tabIndex={-1}><p>{error || t("authoring.component.changed")}{stale && ` ${t("authoring.component.rawKept")}`}</p>
         {stale && <div className="authoring-toolbar">
-          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => loadLatest(true)}>Load latest and keep my edits</button>
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>Discard my edits</button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => loadLatest(true)}>{t("authoring.editor.loadKeep")}</button>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => loadLatest(false)}>{t("authoring.editor.discardMine")}</button>
         </div>}</div>}
-      <div role="group" aria-label="Editing view" className="authoring-toolbar component-view-toggle">
+      <div role="group" aria-label={t("authoring.component.view")} className="authoring-toolbar component-view-toggle">
         <button type="button" className="btn btn-secondary" aria-pressed={!showAnswers} disabled={busy} onClick={() => switchMode("json")}>JSON</button>
-        <button type="button" className="btn btn-secondary" aria-pressed={showAnswers} disabled={busy || !controls.preview} onClick={() => switchMode("answers")}>Answer controls</button>
+        <button type="button" className="btn btn-secondary" aria-pressed={showAnswers} disabled={busy || !controls.preview} onClick={() => switchMode("answers")}>{t("authoring.component.answerControls")}</button>
       </div>
       {!controls.preview && <p>{controls.reason}</p>}
       <div ref={answersView} hidden={!showAnswers} tabIndex={-1} onBlurCapture={event => { answerFocus.current = event.target as HTMLElement; }} onKeyDown={event => {
@@ -242,21 +251,23 @@ function ComponentQuestionEditorSession({ examId, question, onClose, onSaved }: 
         }
       }}><ComponentAnswerControls state={controls} raw={text} disabled={busy} change={next => nativeAnswerEdit("insertText", next)} message={answerMessage} announce={setAnswerMessage} /></div>
       <div ref={jsonView} hidden={showAnswers}>
-      <div><button type="button" className="btn btn-secondary" disabled={busy} onClick={formatText}>Format JSON</button></div>
-      <label>Question package JSON<textarea ref={textarea} className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId}
+      <div><button type="button" className="btn btn-secondary" disabled={busy} onClick={formatText}>{t("authoring.component.formatJson")}</button></div>
+      <label>{t("authoring.component.packageJson")}<textarea ref={textarea} className="input" rows={18} style={{ width: "100%", fontFamily: "monospace" }} value={text} disabled={busy} aria-invalid={invalid} aria-describedby={feedbackId}
         onBlur={e => { editScroll.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft, paneTop: pane.current?.scrollTop ?? 0 }; }}
         onChange={e => { setText(e.target.value); setAnswerMessage(""); }} /></label>
       </div>
-      <div ref={feedback} id={feedbackId} className="authoring-errors" role="region" aria-label="Question package errors" tabIndex={-1} aria-live="polite" hidden={!invalid}>
-        {syntaxError && <p>JSON syntax error{syntaxError.line !== undefined && syntaxError.column !== undefined ? ` at line ${syntaxError.line}, column ${syntaxError.column}` : ""}: {syntaxError.message}</p>}
-        {issues.length > 0 && <><p>Package validation errors:</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
+      <div ref={feedback} id={feedbackId} className="authoring-errors" role="region" aria-label={t("authoring.component.packageErrors")} tabIndex={-1} aria-live="polite" hidden={!invalid}>
+        {syntaxError && <p>{syntaxError.line !== undefined && syntaxError.column !== undefined
+          ? t("authoring.component.syntaxErrorAt", { line: String(syntaxError.line), column: String(syntaxError.column), message: syntaxError.message })
+          : t("authoring.component.syntaxError", { message: syntaxError.message })}</p>}
+        {issues.length > 0 && <><p>{t("authoring.component.validationErrors")}</p><ul>{issues.map((issue, index) => <li key={index}><code>{issue.path}</code>: {issue.message}</li>)}</ul></>}
       </div>
-      <section className="component-editor-preview" aria-label="Component question preview">
-        <p role="status" hidden={Boolean(preview)}>{shownPreview ? "Preview is out of date. Showing the most recent valid draft." : "No valid preview yet. Correct the package errors to see a preview."}</p>
+      <section className="component-editor-preview" aria-label={t("authoring.component.preview")}>
+        <p role="status" hidden={Boolean(preview)}>{t(shownPreview ? "authoring.component.previewStale" : "authoring.component.previewNone")}</p>
         {shownPreview && <><QuestionContent src={shownPreview.stem} content={shownPreview.content} />{shownPreview.content?.interaction.type === "match" ?
-          ([["Left", shownPreview.content.interaction.left], ["Right", shownPreview.content.interaction.right]] as const).map(([side, options]) => <section key={side} aria-label={`${side} preview items`}>{options.map(option => <div key={option.id}><strong>{side} ID: {option.id}</strong><AnswerOption option={option} content={shownPreview.content!} /></div>)}</section>) :
-          shownPreview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={shownPreview.content} optionId={o.id} /></div>)}<p>Correct response: {formatAnswerText(shownPreview, shownPreview.correctAnswers)}</p></>}
+          ([["left", shownPreview.content.interaction.left], ["right", shownPreview.content.interaction.right]] as const).map(([side, options]) => <section key={side} aria-label={t(`authoring.component.${side}PreviewItems`)}>{options.map(option => <div key={option.id}><strong>{t(`authoring.answers.${side}Id`, { id: option.id })}</strong><AnswerOption option={option} content={shownPreview.content!} /></div>)}</section>) :
+          shownPreview.options?.map(o => <div key={o.id}><strong>{o.id}</strong><QuestionContent src={o.text} content={shownPreview.content} optionId={o.id} /></div>)}<p>{t("study.structured.correctResponse", { response: formatAnswerText(shownPreview, shownPreview.correctAnswers) })}</p></>}
       </section>
-    </div><footer className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{dirty ? "Unsaved changes" : "No unsaved changes"}</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>Cancel</button><button type="button" className="btn btn-primary" disabled={busy} onClick={save}>Save</button></div></footer></div>
+    </div><footer className="question-drawer-footer"><div className="dialog-actions"><p role="status" className="authoring-save-status">{t(dirty ? "kp.editor.unsaved" : "authoring.editor.noUnsaved")}</p><button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{t("common.save")}</button></div></footer></div>
   </dialog>{guard.confirmation}</>;
 }

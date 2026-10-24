@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AuthoringNavigationEvent } from "../lib/questionAuthoring";
 import ModalLayer from "./ModalLayer";
+import { t, useI18n } from "../i18n";
 
 type DiscardPrompt = { title: string; description: string; action: string };
-const dismissal: DiscardPrompt = {
-  title: "Discard unsaved changes?", description: "Your question changes have not been saved. Discard them to continue.", action: "Discard changes"
-};
+const dismissal = (): DiscardPrompt => ({
+  title: t("authoring.guard.title"), description: t("authoring.guard.body"), action: t("authoring.guard.action")
+});
 
 function editingLocation() {
   const active = document.activeElement;
@@ -32,7 +33,7 @@ export function useQuestionDraftGuard(dirty: boolean, saving: { current: boolean
   const [prompt, setPrompt] = useState<DiscardPrompt | null>(null);
   const pending = useRef<((allowed: boolean) => void) | null>(null);
   const restore = useRef<(() => void) | null>(null), restoreAfter = useRef(false);
-  const requestDiscard = useCallback((message = dismissal): Promise<boolean> => {
+  const requestDiscard = useCallback((message = dismissal()): Promise<boolean> => {
     if (saving.current || pending.current) return Promise.resolve(false);
     if (!dirty) return Promise.resolve(true);
     restore.current = editingLocation();
@@ -86,6 +87,7 @@ export function useQuestionDraftGuard(dirty: boolean, saving: { current: boolean
 }
 
 function DiscardConfirmation({ prompt, onDecision }: { prompt: DiscardPrompt; onDecision: (allowed: boolean) => void }) {
+  const { t: tr } = useI18n();
   const id = useId(), keep = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     keep.current?.focus({ preventScroll: true });
@@ -104,7 +106,7 @@ function DiscardConfirmation({ prompt, onDecision }: { prompt: DiscardPrompt; on
       <h3 className="dialog-title" id={`${id}-title`}>{prompt.title}</h3>
       <p id={`${id}-body`}>{prompt.description}</p>
       <div className="dialog-actions">
-        <button ref={keep} type="button" className="btn btn-secondary" onClick={() => onDecision(false)}>Keep editing</button>
+        <button ref={keep} type="button" className="btn btn-secondary" onClick={() => onDecision(false)}>{tr("authoring.guard.keep")}</button>
         <button type="button" className="btn btn-primary" onClick={() => onDecision(true)}>{prompt.action}</button>
       </div>
     </div>

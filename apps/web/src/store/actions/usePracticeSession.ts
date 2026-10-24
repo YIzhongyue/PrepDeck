@@ -9,6 +9,7 @@ import type { Question } from "../../types";
 import { without } from "../storeHelpers";
 import type { CatalogQueries } from "./useCatalogQueries";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // A live Practice attempt: answering, grading, moving between questions and
 // bookmarks.
@@ -32,7 +33,7 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
       body: JSON.stringify({ mode: "practice", questionIds: ids })
     })).then(({ attemptId }) => {
       update({ screen: "practice", pStage: "live", queue: ids, idx: 0, sel: {}, done: {}, graded: {}, attemptId });
-    }).catch(() => update({ actionError: "Could not start practice. Please try again." }));
+    }).catch(() => update({ actionError: t("errors.practice.start") }));
   }, [stateRef, requests, scopedState]);
 
   const pick = useCallback((q: Question, oid: string | string[]) => {
@@ -94,8 +95,8 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
     void savePracticeAnswer(qid, s.attemptId, s.sel[qid] ?? [])
       .catch((error) => update({ actionError: error instanceof ApiError && error.status === 409
         // Closed as idle when a newer session started (issue #40): retrying cannot help.
-        ? "This practice session has ended, so this answer was not saved. Your earlier answers are kept; start a new session to continue."
-        : "Could not save your answer. Please submit it again." }));
+        ? t("errors.practice.ended")
+        : t("errors.practice.answer") }));
   }, [stateRef, requests, scopedState, savePracticeAnswer]);
 
   const completeAttempt = useCallback(async (attemptId: string | null) => {
@@ -109,7 +110,7 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
     if (stateRef.current.switching || movingQuestion.current) return;
     movingQuestion.current = true;
     void beforeWorkspaceNavigation().then(() => saveQuestionDraftRef.current()).then(move)
-      .catch(() => setState({ actionError: "Could not save your question note. Your draft is retained; retry before changing questions." }))
+      .catch(() => setState({ actionError: t("errors.practice.note") }))
       .finally(() => { movingQuestion.current = false; });
   }, [setState, stateRef]);
   const endSession = useCallback(() => {
@@ -118,7 +119,7 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
     const attemptId = stateRef.current.attemptId;
     navigateQuestion(() => completeAttempt(attemptId).then(() => update(s => s.attemptId !== attemptId ? {} : {
       pStage: "setup", attemptId: null, activityRevision: s.activityRevision + 1
-    })).catch(() => update({ actionError: "Could not finish this practice. Please retry; your session is retained." })));
+    })).catch(() => update({ actionError: t("errors.practice.finish") })));
   }, [stateRef, scopedState, navigateQuestion, completeAttempt]);
   const next = useCallback(() => {
     const s = stateRef.current;
@@ -137,7 +138,7 @@ export function usePracticeSession(core: StoreCore, deps: Pick<CatalogQueries, "
     const previous = !!s.bookmarks[id];
     setState(current => ({ bookmarks: { ...current.bookmarks, [id]: next } }));
     void requests.write(`bookmark:${s.me?.id}:${id}`, () => apiFetch(`/api/questions/${id}/bookmark`, { method: next ? "PUT" : "DELETE" }))
-      .catch(() => update(current => ({ bookmarks: { ...current.bookmarks, [id]: previous }, actionError: "Could not save bookmark changes. Please retry." })));
+      .catch(() => update(current => ({ bookmarks: { ...current.bookmarks, [id]: previous }, actionError: t("errors.practice.bookmark") })));
   }, [requests, scopedState, setState, stateRef]);
 
   // No id -> bookmark the question currently being answered in live practice

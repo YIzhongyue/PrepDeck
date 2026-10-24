@@ -9,6 +9,7 @@ import type { Question } from "../../types";
 import { isExpiredAttempt, isCompletedElsewhere, isClosedAttempt, isRejectedDraft, remainingSeconds } from "../storeHelpers";
 import type { CatalogQueries } from "./useCatalogQueries";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // Timed mock exams: setup, answering and flags with draft saves, and
 // submission (including the deadline's automatic one).
@@ -61,7 +62,7 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
         mockAttemptId: attemptId, mLeft: serverLimit ?? timeLimitSeconds,
         mockDeadline: new Date(startedAt).getTime() + (serverLimit ?? timeLimitSeconds) * 1000, mConfirm: false
       });
-    }).catch(() => update({ actionError: "Could not start this mock exam. Please retry." }));
+    }).catch(() => update({ actionError: t("errors.mock.start") }));
   }, [stateRef, requests, scopedState, setState]);
 
   const saveMockChange = useCallback((attemptId: string, path: string, body: unknown) => {
@@ -83,7 +84,7 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
 
   resaveMockDraftRef.current = (attemptId, qid, sel) => {
     saveMockChange(attemptId, `/api/attempts/${attemptId}/answers/${qid}`, { selectedAnswer: sel })
-      .catch(() => setState({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." }));
+      .catch(() => setState({ actionError: t("errors.mock.answerPending") }));
   };
 
   const mockPick = useCallback((q: Question, oid: string | string[]) => {
@@ -108,20 +109,20 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
         // a skewed clock, or a request that took too long to arrive. Submit now
         // rather than leave the user answering a paper that is no longer open.
         if (isExpiredAttempt(error)) {
-          update({ actionError: "Time is up. This mock exam has been submitted with the answers saved before the deadline." });
+          update({ actionError: t("errors.mock.timeUp") });
           finishMockRef.current();
           return;
         }
         if (isCompletedElsewhere(error)) {
-          update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
+          update({ actionError: t("errors.mock.alreadySubmitted") });
           finishMockRef.current();
           return;
         }
         if (isRejectedDraft(error)) {
-          update({ actionError: "This answer could not be saved, so your last saved answer to this question stands. The question may have changed; reload to see its current version." });
+          update({ actionError: t("errors.mock.answerRejected") });
           return;
         }
-        update({ actionError: "Mock answer is not saved yet. It will be retried before switching or submitting." });
+        update({ actionError: t("errors.mock.answerPending") });
       });
     }
   }, [stateRef, scopedState, setState, saveMockChange]);
@@ -143,11 +144,11 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
     setState((s) => ({ mFlag: { ...s.mFlag, [q.id]: flagged } }));
     saveMockChange(attemptId, `/api/attempts/${attemptId}/flags/${q.id}`, { flagged }).catch((error) => {
       if (isCompletedElsewhere(error)) {
-        update({ actionError: "This mock exam was already submitted from another tab or device. Showing its result." });
+        update({ actionError: t("errors.mock.alreadySubmitted") });
         finishMockRef.current();
         return;
       }
-      update({ actionError: "Mock flag is not saved yet. It will be retried before switching or submitting." });
+      update({ actionError: t("errors.mock.flagPending") });
     });
   }, [stateRef, scopedState, setState, saveMockChange]);
 
@@ -205,7 +206,7 @@ export function useMockExam(core: StoreCore, deps: Pick<CatalogQueries, "applySt
       });
       // Submission reconciles studied statuses on the server (issue #119).
       refreshStudyStatuses();
-    }).catch(() => update({ actionError: "Could not submit this mock exam. Your answers are retained; please retry." })).finally(() => { finishingMock.current = false; });
+    }).catch(() => update({ actionError: t("errors.mock.submit") })).finally(() => { finishingMock.current = false; });
   }, [stateRef, scopedState, persistMockDraft, refreshStudyStatuses]);
   finishMockRef.current = finishMock;
   return {

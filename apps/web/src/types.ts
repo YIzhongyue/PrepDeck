@@ -103,8 +103,7 @@ export type KeyMode = "memory" | "encrypted";
 
 export interface ThemeOption {
   id: ThemeId;
-  name: string;
-  hint: string;
+  // Name and hint come from the `settings.themes` messages.
   bg: string;
   accent: string;
   accent2: string;

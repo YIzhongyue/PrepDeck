@@ -9,6 +9,7 @@ import { ExamsPanel } from "./admin/ExamsPanel";
 import { useAdminOverview, StatusPill, OverviewPanel } from "./admin/OverviewPanel";
 import { UsersPanel } from "./admin/UsersPanel";
 import type { Tab } from "./admin/shared";
+import { useI18n } from "../i18n";
 
 // docs/requirements/question-bank-management.md — the `/admin` console. Navigation here is this app's
 // internal `screen` state machine (there is no URL router elsewhere in the
@@ -20,6 +21,7 @@ import type { Tab } from "./admin/shared";
 export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
   const state = useWorkspaceState();
   const { go } = useWorkspaceActions();
+  const { t } = useI18n();
 
   const [tab, setTab] = useState<Tab>("overview");
   const [userCount, setUserCount] = useState<number | null>(null);
@@ -36,11 +38,11 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
   if (!isAdmin || !state.me) return null;
 
   const tabs: { id: Tab; label: string; count: number | null }[] = [
-    { id: "overview", label: "Overview", count: null },
-    { id: "users", label: "People", count: userCount },
-    { id: "exams", label: "Content", count: examCount },
-    { id: "mcp", label: "MCP tokens", count: null },
-    { id: "appearance", label: "Appearance", count: null }
+    { id: "overview", label: t("admin.tabs.overview"), count: null },
+    { id: "users", label: t("admin.tabs.users"), count: userCount },
+    { id: "exams", label: t("admin.tabs.exams"), count: examCount },
+    { id: "mcp", label: t("admin.tabs.mcp"), count: null },
+    { id: "appearance", label: t("admin.tabs.appearance"), count: null }
   ];
 
   // `backwards`, not `both` — see the note on `@keyframes pd-rise` in app.css.
@@ -48,27 +50,27 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
     <div className="admin-shell" style={{ animation: "pd-rise .28s ease backwards" }}>
       <header className="admin-header">
         <div className="admin-header-copy">
-          <div className="admin-header-eyebrow"><span className="admin-header-eyebrow-icon"><AdminIcon name="shield" /></span> Admin workspace</div>
-          <h1>Access &amp; content</h1>
-          <p>Invite the people who study here, and keep the exam library tidy.</p>
+          <div className="admin-header-eyebrow"><span className="admin-header-eyebrow-icon"><AdminIcon name="shield" /></span> {t("admin.header.eyebrow")}</div>
+          <h1>{t("admin.header.title")}</h1>
+          <p>{t("admin.header.intro")}</p>
         </div>
         <StatusPill health={overview.health} />
       </header>
 
-      <nav className="admin-tabs" aria-label="Admin sections">
-        {tabs.map((t) => {
-          const on = tab === t.id;
+      <nav className="admin-tabs" aria-label={t("admin.tabs.label")}>
+        {tabs.map((item) => {
+          const on = tab === item.id;
           return (
             <button
-              key={t.id}
+              key={item.id}
               type="button"
               // A selected tab that sits past the edge of the scrolled row comes into view.
-              onClick={(e) => { setTab(t.id); e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}
+              onClick={(e) => { setTab(item.id); e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}
               className={on ? "admin-tab is-active" : "admin-tab"}
               aria-current={on ? "page" : undefined}
             >
-              {t.label}
-              {t.count !== null && <span className="admin-tab-badge">{t.count}</span>}
+              {item.label}
+              {item.count !== null && <span className="admin-tab-badge">{item.count}</span>}
             </button>
           );
         })}
@@ -90,18 +92,19 @@ export default function Admin({ bp: _bp }: { bp: Breakpoints }) {
 // the exact same card as Settings' User MCP tokens, pointed at the
 // admin-only /api/admin/mcp-tokens namespace.
 function McpTokensPanel() {
+  const { t } = useI18n();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <McpTokensCard
-        title="Admin MCP tokens"
-        description="Privileged tokens for admin-side AI clients (e.g. local-codex, chatgpt-admin) that need question-bank management access. These are separate from, and cannot be used as, User MCP tokens."
+        title={t("admin.mcp.title")}
+        description={t("admin.mcp.desc")}
         apiBase="/api/admin/mcp-tokens"
-        namePlaceholder="e.g. local-codex"
+        namePlaceholder={t("admin.mcp.namePlaceholder")}
       />
       {/* Issue #102 — Admin MCP connections approved through Google sign-in. */}
       <McpConnectionsCard
-        title="Connected admin apps"
-        description="Clients you connected to Admin MCP by signing in and approving administrative access. They lose access at once if you disconnect them or stop being an administrator."
+        title={t("admin.mcp.connectionsTitle")}
+        description={t("admin.mcp.connectionsDesc")}
         apiBase="/api/admin/mcp-connections"
       />
     </div>

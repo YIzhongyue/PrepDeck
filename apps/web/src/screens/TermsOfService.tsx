@@ -24,7 +24,7 @@ export default function TermsOfService() {
   return <div className="terms-page" data-pd-theme="light">
     <LegalHeader />
 
-    <main>
+    <main lang="en">
       <section className="terms-hero">
         <div className="terms-hero-copy">
           <span className="terms-kicker"><span>Legal, made readable</span></span>

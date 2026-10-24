@@ -3,6 +3,7 @@ import type { AdminOverviewResponse } from "@prepdeck/shared";
 import { AdminIcon } from "../../components/AdminModal";
 import { apiFetch, ApiError } from "../../lib/api";
 import { type Tab, DANGER, countOf } from "./shared";
+import { formatNumber, formatTime, t as translate, useI18n } from "../../i18n";
 
 // The admin console's Overview tab and the header status pill fed by the same request.
 
@@ -33,7 +34,7 @@ export function useAdminOverview(enabled: boolean) {
         setHealth({ kind: "ok", slow: performance.now() - started > SLOW_OVERVIEW_MS, at: new Date() });
       })
       .catch((error) => {
-        if (!cancelled) setHealth({ kind: "failed", message: error instanceof ApiError ? error.message : "The request did not complete." });
+        if (!cancelled) setHealth({ kind: "failed", message: error instanceof ApiError ? error.message : translate("admin.overview.requestFailed") });
       });
     return () => { cancelled = true; };
   }, [enabled, attempt]);
@@ -41,11 +42,12 @@ export function useAdminOverview(enabled: boolean) {
 }
 
 export function StatusPill({ health }: { health: OverviewHealth }) {
+  const { t } = useI18n();
   const [label, tone, detail] =
-    health.kind === "checking" ? ["Checking status…", "checking", "Loading the admin overview."]
-    : health.kind === "failed" ? ["Status unavailable", "down", `The admin overview failed to load: ${health.message}`]
-    : health.slow ? ["Slow to respond", "slow", `The admin overview took more than ${SLOW_OVERVIEW_MS / 1000} s (${health.at.toLocaleTimeString()}).`]
-    : ["Operational", "ok", `The admin overview loaded at ${health.at.toLocaleTimeString()}.`];
+    health.kind === "checking" ? [t("admin.status.checking"), "checking", t("admin.status.checkingDetail")]
+    : health.kind === "failed" ? [t("admin.status.unavailable"), "down", t("admin.status.failedDetail", { message: health.message })]
+    : health.slow ? [t("admin.status.slow"), "slow", t("admin.status.slowDetail", { seconds: SLOW_OVERVIEW_MS / 1000, time: formatTime(health.at) })]
+    : [t("admin.status.ok"), "ok", t("admin.status.okDetail", { time: formatTime(health.at) })];
   return (
     <div className={`admin-status-pill is-${tone}`} role="status" title={detail}>
       <span className="admin-live-dot" aria-hidden="true" /> {label}
@@ -61,20 +63,21 @@ export function OverviewPanel({ data, health, onRetry, onNavigate }: {
   onRetry: () => void;
   onNavigate: (tab: Tab) => void;
 }) {
+  const { t } = useI18n();
   if (health.kind === "failed") {
     return (
       <p style={{ fontSize: 13, color: DANGER, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        Could not load the overview.
-        <button type="button" className="btn btn-secondary" onClick={onRetry}>Retry</button>
+        {t("admin.overview.loadFailed")}
+        <button type="button" className="btn btn-secondary" onClick={onRetry}>{t("common.retry")}</button>
       </p>
     );
   }
-  if (!data) return <p style={{ fontSize: 13, opacity: 0.7 }}>Loading…</p>;
+  if (!data) return <p style={{ fontSize: 13, opacity: 0.7 }}>{t("common.loading")}</p>;
 
   const stat = (label: string, value: number, tone: string, note: string) => (
     <div key={label} className={`admin-stat admin-stat-${tone}`}>
       <div className="admin-stat-top"><span>{label}</span><i /></div>
-      <strong>{value.toLocaleString()}</strong>
+      <strong>{formatNumber(value)}</strong>
       <small>{note}</small>
     </div>
   );
@@ -83,17 +86,17 @@ export function OverviewPanel({ data, health, onRetry, onNavigate }: {
 
   return (
     <div className="admin-overview">
-      <div className="admin-section-heading"><div><span>At a glance</span><h2>Workspace overview</h2></div><p>Live totals across your PrepDeck workspace.</p></div>
+      <div className="admin-section-heading"><div><span>{t("admin.overview.kicker")}</span><h2>{t("admin.overview.title")}</h2></div><p>{t("admin.overview.intro")}</p></div>
       <div className="admin-stat-grid">
-        {stat("Active learners", data.users.active, "blue", `${data.users.total.toLocaleString()} authorized total`)}
-        {stat("Question library", data.questions.total, "violet", `Across ${countOf(data.exams.total, "exam")}`)}
-        {stat("Attempts recorded", data.attempts.total, "green", "All-time activity")}
-        {stat("Pending invites", data.users.invited, "amber", `${data.users.revoked} access revoked`)}
+        {stat(t("admin.overview.activeLearners"), data.users.active, "blue", t("admin.overview.authorizedTotal", { count: data.users.total }))}
+        {stat(t("admin.overview.library"), data.questions.total, "violet", t("admin.overview.across", { exams: countOf(data.exams.total, "exam") }))}
+        {stat(t("admin.overview.attempts"), data.attempts.total, "green", t("admin.overview.allTime"))}
+        {stat(t("admin.overview.invites"), data.users.invited, "amber", t("admin.overview.revoked", { count: data.users.revoked }))}
       </div>
       <div className="admin-overview-grid">
       <div className="admin-panel">
-        <div className="admin-panel-head"><div><span className="admin-panel-kicker">Content coverage</span><h3>Questions by exam</h3></div><button type="button" onClick={() => onNavigate("exams")}>Manage content <AdminIcon name="arrow" /></button></div>
-        {data.questions.byExam.length === 0 && <p style={{ margin: 0, fontSize: 13, opacity: 0.7 }}>No exams yet.</p>}
+        <div className="admin-panel-head"><div><span className="admin-panel-kicker">{t("admin.overview.coverage")}</span><h3>{t("admin.overview.byExam")}</h3></div><button type="button" onClick={() => onNavigate("exams")}>{t("admin.overview.manageContent")} <AdminIcon name="arrow" /></button></div>
+        {data.questions.byExam.length === 0 && <p style={{ margin: 0, fontSize: 13, opacity: 0.7 }}>{t("admin.overview.noExams")}</p>}
         {data.questions.byExam.map((row) => (
           <div key={row.examId} className="admin-coverage-row">
             <div><span>{row.examName}</span><strong>{row.questionCount}</strong></div>
@@ -102,9 +105,9 @@ export function OverviewPanel({ data, health, onRetry, onNavigate }: {
         ))}
       </div>
       <aside className="admin-panel admin-quick-panel">
-        <span className="admin-panel-kicker">Quick actions</span><h3>What would you like to do?</h3>
-        <button type="button" onClick={() => onNavigate("users")}><span><AdminIcon name="users" /></span><div><strong>Invite a teammate</strong><small>Grant workspace access</small></div><AdminIcon name="arrow" /></button>
-        <button type="button" onClick={() => onNavigate("exams")}><span><AdminIcon name="exams" /></span><div><strong>Add an exam</strong><small>Grow the content library</small></div><AdminIcon name="arrow" /></button>
+        <span className="admin-panel-kicker">{t("admin.overview.quick")}</span><h3>{t("admin.overview.quickTitle")}</h3>
+        <button type="button" onClick={() => onNavigate("users")}><span><AdminIcon name="users" /></span><div><strong>{t("admin.overview.invite")}</strong><small>{t("admin.overview.inviteDesc")}</small></div><AdminIcon name="arrow" /></button>
+        <button type="button" onClick={() => onNavigate("exams")}><span><AdminIcon name="exams" /></span><div><strong>{t("admin.overview.addExam")}</strong><small>{t("admin.overview.addExamDesc")}</small></div><AdminIcon name="arrow" /></button>
       </aside>
       </div>
     </div>

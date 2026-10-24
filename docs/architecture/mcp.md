@@ -130,15 +130,20 @@ internal provisioning primitive**. It is not reachable from MCP directly; the
 only callers are the self-service routes in `src/routes/mcpTokens.ts` (see
 "Token lifecycle" below), which authorize the caller and derive the owner from
 their own authenticated context before calling it — `userId` is never a client
-capability.
+capability. The required `sessionVersion` is the nonnegative safe integer
+captured by authentication, not a value supplied by the client or reloaded
+after a reset. The INSERT compares it with the current users row so an old
+request cannot recreate a PAT after account recovery. OAuth consent uses
+the same atomic version check when inserting its grant.
 
 ```ts
 // Inside trusted provisioning code with a D1 binding and an authorized owner:
 const credential = await issueMcpCredential(env.DB, {
   userId: authorizedOwner.id,
+  sessionVersion: authorizedSessionVersion, // captured from D1 when this request authenticated
   audience: "user", // "admin" additionally requires a currently active admin
   name: "claude-desktop",
-  expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // omit/null: never expires
+  expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // omit/null: 30-day default; maximum 90 days
 });
 // Deliver credential.token once via a secure channel. Never log it.
 // Use credential.id for subsequent management/auditing.
@@ -277,8 +282,8 @@ another's credential, and a 404 is returned identically for "not found" and
   (id, name, createdAt, expiresAt, lastUsedAt, revokedAt, computed `status`).
   Never includes the token or its hash.
 - `POST /` — body `{ name, expiresInDays? }`. `name` is required (1-100
-  chars); `expiresInDays` is optional (omit for a token that never expires)
-  and bounded to `[1, MCP_TOKEN_MAX_EXPIRES_IN_DAYS]` (3650). Returns
+  chars); `expiresInDays` is optional (omit/null for the 30-day default)
+  and bounded to `[1, MCP_TOKEN_MAX_EXPIRES_IN_DAYS]` (90). Returns
   `{ credential, token }` — the **only** response that ever includes the raw
   token.
 - `POST /:id/revoke` — sets `revoked_at`; 404 if not found/not owned, 200 on success; a second call returns 404 because the token is already revoked.
@@ -384,7 +389,8 @@ days. `/api/oauth/token` uses the ordinary write class.
   annotated `readOnlyHint: true`; a write scope allows every tool of its
   audience (write includes read). The annotation is required on every tool,
   so no tool falls outside the mapping. A request without `scope` asks for
-  both scopes of its audience; unknown scope names are ignored. When a client
+  read-only access for its audience; any explicit unknown scope rejects the
+  request. An empty scope also requests read only. When a client
   supplies `resource` and requests the authorization server's full advertised
   scope list, only the requested scopes belonging to that resource appear on
   the consent screen and grant. The token response reports the actual granted
@@ -393,7 +399,8 @@ days. `/api/oauth/token` uses the ordinary write class.
   rather than falling back to full access. Mixed User/Admin scopes without an
   explicit resource remain ambiguous and are refused.
 - **Client onboarding.** Both Client ID Metadata Documents (an `https` URL
-  client_id whose JSON document PrepDeck fetches — no redirects, 5 KB, 5 s,
+  client_id on the operator's exact metadata URL allowlist whose JSON document
+  PrepDeck fetches — no redirects, 5 KB, 5 s,
   must name itself, cached for an hour and used stale for up to a day if the
   host is down; see *Metadata document fetches* below) and Dynamic Client Registration (most clients released before
   the 2025-11-25 specification only support this). Pre-registration is not
@@ -405,7 +412,10 @@ days. `/api/oauth/token` uses the ordinary write class.
   names are self-asserted either way and the consent screen marks them
   "unverified".
 - **Metadata document fetches.** Fetching `client_id` is an outbound request
-  chosen by the caller, so it is narrowed before and during the fetch. The URL
+  chosen by the caller, so it is narrowed before and during the fetch. The exact
+  URL must be listed in `MCP_OAUTH_METADATA_CLIENT_ALLOWLIST` (default deny),
+  including for cached clients. This trusts reviewed hosts; it does not claim
+  DNS address pinning or private-address rejection for an allowed host. The URL
   must be canonical `https` on the default port, with a path and no
   credentials, query or fragment, and its host must be a public-looking DNS
   name: IP literals (including numeric spellings the URL parser normalizes,
@@ -418,13 +428,13 @@ days. `/api/oauth/token` uses the ordinary write class.
   valid. The fetch is bounded to 5 KB and 5 seconds, and only a JSON document
   naming itself as `client_id` with valid redirect URIs is accepted;
   nothing from a failed fetch is returned to the
-  caller. DNS is resolved by Cloudflare's network for the Worker, which has no
-  route to the deployment's own private network: a hostname that resolves to a
-  private or link-local address (including through DNS rebinding) reaches no
-  internal service of PrepDeck, and Cloudflare refuses Worker subrequests to
-  its own internal addresses. Name-based checks are therefore defense in depth,
-  not the boundary. A deployment that adds Workers VPC or service bindings to
-  private networks must not route this fetch through them.
+  caller. The exact operator-reviewed URL allowlist is the application boundary;
+  name syntax checks are additional defense. The Worker cannot pin or inspect
+  resolved addresses here. Private/link-local reachability and DNS rebinding
+  behavior depend on the runtime and its network configuration; no guarantee
+  about those destinations is inferred from hostname validation. Verify the
+  deployment's outbound restrictions, including any VPC or service bindings,
+  before rollout, and never route these fetches into private networks.
 - **Redirect URIs.** `https`; `http` only on a loopback host (any port, per
   RFC 8252 §7.3); or a private-use scheme for desktop clients. Never a
   fragment, credentials, or `javascript:`/`data:`/`file:`-style schemes.
@@ -446,9 +456,12 @@ The validated request is stored (`mcp_oauth_requests`) and bound to the
 initiating browser: a random binding secret goes into an `HttpOnly`,
 `SameSite=Lax` cookie scoped to `Path=/api/oauth/requests/<id>`, and only its
 digest is stored. The consent endpoints require both that cookie and a signed
-in session, and refuse a cross-origin `Origin`. The MCP client's `state` is
+in session, and require the configured application Origin (or matching
+Referer when Origin is absent) on unsafe methods; missing/null/foreign origins
+are refused. The MCP client's `state` is
 never interpreted, and Google's own `state`/PKCE remain the separate, signed
-`pd_oauth` cookie of the website sign-in.
+`__Host-pd_oauth` cookie of HTTPS website sign-in (`pd_oauth` only on
+local development HTTP).
 
 `/connect?request=<id>` sits behind the SPA's ordinary login gate. A signed out
 user gets the usual Google sign-in, with Turnstile when configured; its
@@ -993,8 +1006,8 @@ and reject nonempty catalog cursors.
 Both endpoints ship as part of the single `prepdeck` Worker
 (`apps/worker/wrangler.toml`) — there is no separate MCP deployment step.
 
-**Bindings/vars this surface needs** (all declared in `wrangler.toml`,
-typed in `src/bindings.ts`):
+**Bindings/vars this surface needs** (typed in `src/bindings.ts`; optional
+metadata allowlist must be configured explicitly for the deployment):
 
 | Name | Kind | Purpose |
 | --- | --- | --- |
@@ -1007,6 +1020,7 @@ typed in `src/bindings.ts`):
 | `APP_BASE_URL` | var | trusted Origin/URL check (see above) and absolute-URL construction. |
 | `ENVIRONMENT` | var | `"development"` additionally allows the local Worker origins above. |
 | `MCP_OAUTH_ENABLED` | var | `"true"` enables OAuth authorization alongside PATs (issue #102); anything else disables it. See [Turning OAuth on or off](#turning-oauth-on-or-off). |
+| `MCP_OAUTH_METADATA_CLIENT_ALLOWLIST` | optional var | JSON array of exact reviewed canonical HTTPS metadata client IDs; missing/malformed denies CIMD authorization. Dynamic registration and existing grants remain usable. |
 | `MCP_USER_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_RATE_LIMIT_PER_MINUTE`, `MCP_ADMIN_MUTATION_RATE_LIMIT_PER_MINUTE`, `MCP_KP_WRITE_RATE_LIMIT_PER_MINUTE`, `MCP_STUDY_WRITE_RATE_LIMIT_PER_MINUTE` | vars | optional; see "Request safety and limits" for defaults if unset/non-numeric. |
 | `CIRCUIT_MODE`, `EMERGENCY_ADMIN_IPS` | vars | cost-containment circuit breaker (`src/middleware/circuitBreaker.ts`), shared with REST — see `docs/operations/cloudflare-cost-containment.md`. |
 
@@ -1151,3 +1165,56 @@ adapter (applying the actual migrations, not a hand-rolled schema):
 No remote migrations or deployments are performed by any of these tests —
 see "Deployment" above for the post-deployment smoke check that exercises
 an actual deployed environment.
+
+
+## Credential policy migration (security hardening)
+
+New PATs have a 30-day default and a 90-day maximum. Older clients that omit
+`expiresInDays` or send null receive the default; explicit values above 90 are
+rejected. The browser creation form offers 30 or 90 days. Existing stored PATs
+(including nonexpiring ones) continue to authenticate until their existing
+expiry, revocation or account disablement. Rotation issues a finite successor:
+a legacy nonexpiring PAT becomes 30 days, and an overlong lifetime is capped
+at 90 days. Operators should review legacy tokens and owners should rotate them;
+this change does not silently revoke existing integrations. Ordinary browser
+logout remains distinct from explicit account-security reset/revoke-all, which
+revokes independent credentials as documented by that action. This concerns
+PrepDeck sessions and credentials; it does not revoke upstream Google or
+Cloudflare Access sessions. Provider-side sessions must be addressed separately
+when recovering a compromised identity.
+
+New OAuth authorizations with omitted/empty scopes ask for read-only access.
+Any explicit unknown scope rejects the request with `invalid_scope`, including
+mixed valid/invalid lists. Clients needing writes must request the relevant
+`mcp:user:write` or `mcp:admin:write` scope and obtain consent. Existing grants
+retain their approved scopes; refresh does not upgrade them.
+
+### Client metadata outbound fetch policy
+
+Client ID Metadata Document (CIMD) discovery is disabled unless the exact
+canonical HTTPS metadata client URL is operator-reviewed and included in
+`MCP_OAUTH_METADATA_CLIENT_ALLOWLIST`, a JSON array (maximum 100 entries), e.g.
+`["https://trusted-client.example/oauth/client.json"]`. This is an illustrative
+hostname, not an approved production client. Missing, malformed, wildcard or
+host-only configuration fails closed. Removal applies even to cached metadata
+on new authorization requests. Dynamic client registration remains available;
+existing issued grants can still exchange/refresh tokens without metadata
+fetching, and disabling CIMD does not revoke those grants.
+
+**Release gate: configure all approved metadata client identifiers before
+rolling out this code.** Enumerate required clients from deployment-owned
+records, verify their exact URLs and ownership, and configure only trusted
+public HTTPS endpoints. Existing client registrations/cached documents alone
+do not bypass the policy: reconnecting or authorizing again is blocked unless
+the exact client ID is configured. Already-issued grants and their token
+refreshes continue; users who need a new grant will otherwise see an invalid
+client error. An unset allowlist intentionally disables new CIMD authorization,
+so rollout without an approved list must be an explicit operator decision,
+not an unnoticed loss of existing client support. Never allow arbitrary user-supplied URLs or hosts under
+untrusted DNS control. No live configuration is changed by this patch.
+Cloudflare Workers fetch does not provide resolved IP pinning here: this
+allowlist deliberately reduces outbound requests to operator-trusted endpoints;
+it does **not** claim DNS rebinding/private-address protection for a compromised
+allowed host. Existing manual redirect rejection, five-second timeout and
+5 KiB response cap remain. Retain platform egress restrictions as defense in
+depth and review the allowlist when client ownership changes.

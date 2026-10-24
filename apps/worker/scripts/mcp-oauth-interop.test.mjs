@@ -48,7 +48,7 @@ function setup(t) {
 
 /** An in-memory OAuthClientProvider whose "browser" is signed in to PrepDeck and approves. */
 async function signedInProvider(f) {
-  const session = `pd_session=${encodeURIComponent(await issueSessionToken(f.env, "alice"))}`;
+  const session = `__Host-pd_session=${encodeURIComponent(await issueSessionToken(f.env, "alice"))}`;
   const store = { approvals: 0 };
   const provider = {
     get redirectUrl() { return CALLBACK; },
@@ -166,7 +166,7 @@ test("the SDK client steps up from a read-only grant when a write tool answers 4
 
 test("the same SDK connects with a manually configured personal access token and no OAuth", async (t) => {
   const f = setup(t);
-  const pat = await issueMcpCredential(f.env.DB, { userId: "alice", audience: "user", name: "manual" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "manual" });
   const client = new Client({ name: "prepdeck-pat", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), {
     fetch: f.workerFetch, requestInit: { headers: { Authorization: `Bearer ${pat.token}` } },

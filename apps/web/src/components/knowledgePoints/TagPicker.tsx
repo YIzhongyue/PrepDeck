@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgePointTag } from "@prepdeck/shared";
 import { useClampToViewport } from "./EditorMenu";
+import { useI18n } from "../../i18n";
 
 export default function TagPicker({
   existingTags,
@@ -14,6 +15,7 @@ export default function TagPicker({
   const [value, setValue] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!open) return;
@@ -27,8 +29,8 @@ export default function TagPicker({
   const suggestions = useMemo(() => {
     const q = value.trim().toLowerCase();
     return existingTags
-      .filter((t) => !currentTagIds.includes(t.id))
-      .filter((t) => !q || t.name.toLowerCase().includes(q))
+      .filter((tag) => !currentTagIds.includes(tag.id))
+      .filter((tag) => !q || tag.name.toLowerCase().includes(q))
       .slice(0, 8);
   }, [existingTags, currentTagIds, value]);
 
@@ -40,7 +42,7 @@ export default function TagPicker({
     setOpen(false);
   };
 
-  const exactMatch = existingTags.some((t) => t.name.toLowerCase() === value.trim().toLowerCase());
+  const exactMatch = existingTags.some((tag) => tag.name.toLowerCase() === value.trim().toLowerCase());
   const menuShown = open && (!!value.trim() || suggestions.length > 0);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useClampToViewport(menuRef, menuShown);
@@ -50,9 +52,9 @@ export default function TagPicker({
       <input
         type="text"
         className="kp-chip kp-chip-add"
-        aria-label="Add tag"
+        aria-label={t("kp.tagPicker.add")}
         value={value}
-        placeholder="Add tag…"
+        placeholder={t("kp.tagPicker.placeholder")}
         onFocus={() => setOpen(true)}
         onChange={(e) => { setValue(e.target.value); setOpen(true); }}
         onKeyDown={(e) => {
@@ -64,10 +66,10 @@ export default function TagPicker({
         <div ref={menuRef} className="kp-menu kp-menu-pop" style={{ left: 0, width: 240 }}>
           {suggestions.length > 0 && (
             <>
-              <span className="kp-menu-label">Your tags</span>
-              {suggestions.map((t) => (
-                <button key={t.id} type="button" className="kp-menu-item" onClick={() => submit(t.name)}>
-                  <span className="kp-mi-text"><span className="kp-mi-title">{t.name}</span></span>
+              <span className="kp-menu-label">{t("kp.tagPicker.yours")}</span>
+              {suggestions.map((tag) => (
+                <button key={tag.id} type="button" className="kp-menu-item" onClick={() => submit(tag.name)}>
+                  <span className="kp-mi-text"><span className="kp-mi-title">{tag.name}</span></span>
                 </button>
               ))}
             </>
@@ -76,7 +78,7 @@ export default function TagPicker({
             <>
               {suggestions.length > 0 && <div className="kp-menu-sep" />}
               <button type="button" className="kp-menu-item" style={{ color: "var(--color-accent)" }} onClick={() => submit(value)}>
-                <span className="kp-mi-text"><span className="kp-mi-title">Create &ldquo;{value.trim()}&rdquo;</span></span>
+                <span className="kp-mi-text"><span className="kp-mi-title">{t("kp.tagPicker.create", { name: value.trim() })}</span></span>
               </button>
             </>
           )}

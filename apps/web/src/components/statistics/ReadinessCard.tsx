@@ -16,6 +16,7 @@ import { ProgressBarCircle } from "@/components/base/progress-indicators/progres
 import { ProgressBarBase } from "@/components/base/progress-indicators/progress-indicators";
 import type { StatisticsModel } from "../../lib/statistics";
 import { readinessNarrative } from "../../lib/statistics";
+import { useI18n } from "../../i18n";
 
 const RING_BOX = 176; // progress-circles "xs": 2 * (72 + 16/2)
 
@@ -43,12 +44,13 @@ export default function ReadinessCard({
   onStartMock: () => void;
   canStartMock: boolean;
 }) {
+  const { t, formatList } = useI18n();
   const { readiness, coverage, passMarkPct } = model;
   const ringValue = readiness.available ? readiness.scorePct : coverage.pct;
-  const ringLabel = readiness.available ? "ready" : "covered";
+  const ringLabel = t(readiness.available ? "stats.readiness.ringReady" : "stats.readiness.ringCovered");
   const ringDescription = readiness.available
-    ? `Readiness ${readiness.scorePct}%${passMarkPct == null ? "" : `, against a ${passMarkPct}% pass line`}`
-    : `Readiness is not available yet. Bank coverage is ${coverage.pct}%.`;
+    ? passMarkPct == null ? t("stats.readiness.ringValue", { pct: readiness.scorePct }) : t("stats.readiness.ringValuePass", { pct: readiness.scorePct, pass: passMarkPct })
+    : t("stats.readiness.ringUnavailable", { pct: coverage.pct });
 
   return (
     <section className="pd-stats-card" aria-labelledby="pd-stats-readiness-title">
@@ -56,19 +58,18 @@ export default function ReadinessCard({
         <span className="pd-stats-metric-icon" style={{ background: "var(--color-neutral-200)" }}>
           <Target04 className="size-4" style={{ color: "var(--color-text)" }} aria-hidden="true" />
         </span>
-        <span className="pd-stats-kicker">Exam readiness</span>
+        <span className="pd-stats-kicker">{t("stats.readiness.title")}</span>
       </div>
 
       <div className="pd-stats-readiness">
         <div className="pd-stats-readiness-copy">
-          <h2 id="pd-stats-readiness-title">{examName ?? "No exam selected"}</h2>
+          <h2 id="pd-stats-readiness-title">{examName ?? t("stats.noExam")}</h2>
           <p className="pd-stats-muted" style={{ margin: "8px 0 0", fontSize: 14 }}>
             {readinessNarrative(model, examName)}
           </p>
           {readiness.available && (
             <p className="pd-stats-muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-              Difficulty-weighted method v{readiness.version}, from {readiness.sample.answerEvents} answers
-              across {readiness.sample.answeredQuestions} questions. Not a predicted exam score.
+              {t("stats.readiness.method", { version: String(readiness.version), answers: readiness.sample.answerEvents, questions: readiness.sample.answeredQuestions })}
             </p>
           )}
         </div>
@@ -77,7 +78,7 @@ export default function ReadinessCard({
             wrapper left the progressbar inside it unnamed. */}
         <div className="pd-stats-ring">
           <ProgressBarCircle
-            aria-label={readiness.available ? "Readiness" : "Question bank covered"}
+            aria-label={t(readiness.available ? "stats.readiness.ringAriaReady" : "stats.readiness.covered")}
             aria-valuetext={ringDescription}
             size="xs"
             value={ringValue}
@@ -94,12 +95,12 @@ export default function ReadinessCard({
 
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, fontSize: 13, flexWrap: "wrap" }}>
-          <span>Question bank covered</span>
+          <span>{t("stats.readiness.covered")}</span>
           <span className="pd-stats-muted" style={{ fontVariantNumeric: "tabular-nums" }}>
-            {coverage.total > 0 ? `${coverage.seen} / ${coverage.total} · ${coverage.pct}%` : "No questions in this bank yet"}
+            {coverage.total > 0 ? t("stats.readiness.coverageValue", { seen: coverage.seen, total: coverage.total, pct: coverage.pct }) : t("stats.readiness.emptyBank")}
           </span>
         </div>
-        <ProgressBarBase value={coverage.pct} aria-label={`Bank coverage ${coverage.pct} percent`} />
+        <ProgressBarBase value={coverage.pct} aria-label={t("stats.readiness.coverageAria", { pct: coverage.pct })} />
       </div>
 
       <div className="pd-stats-actions">
@@ -111,13 +112,13 @@ export default function ReadinessCard({
           isDisabled={model.weakTags.length === 0}
           // Disabled is not self-explanatory, so the reason is on the element.
           title={model.weakTags.length === 0
-            ? "No tag has both enough answered questions to judge and questions left to practise."
-            : `Practises ${model.weakTags.join(", ")}`}
+            ? t("stats.readiness.noWeakTags")
+            : t("stats.readiness.practises", { tags: formatList(model.weakTags) })}
         >
-          Practice weak tags
+          {t("stats.readiness.practiceWeak")}
         </Button>}
         <Button size="md" color="secondary" onClick={onStartMock} isDisabled={!canStartMock}>
-          Start mock exam
+          {t("stats.readiness.startMock")}
         </Button>
       </div>
     </section>

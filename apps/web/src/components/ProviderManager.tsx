@@ -3,6 +3,7 @@ import type { Provider } from "@prepdeck/shared";
 import { AdminModal } from "./AdminModal";
 import { apiFetch, ApiError } from "../lib/api";
 import { IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "../lib/avatar";
+import { useI18n } from "../i18n";
 
 type Props = {
   mode: "new" | "manage";
@@ -18,12 +19,13 @@ export default function ProviderManager({ mode, providers, onChange, onDelete, o
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
   const close = () => { if (!busy) onClose(); };
-  const title = editing ? selected ? "Edit provider" : "New provider" : "Manage providers";
+  const title = t(editing ? selected ? "admin.providers.edit" : "admin.providers.new" : "admin.providers.manage");
   const edit = (provider: Provider | null) => { setSelected(provider); setError(null); setEditing(true); };
 
   const act = async (provider: Provider, action: "archive" | "unarchive" | "delete") => {
-    if (action === "delete" && !window.confirm(`Permanently delete "${provider.name}"? This cannot be undone. Providers assigned to exams cannot be deleted; archive them instead.`)) return;
+    if (action === "delete" && !window.confirm(t("admin.providers.deleteConfirm", { name: provider.name }))) return;
     setBusy(true); setError(null);
     try {
       if (action === "delete") {
@@ -34,21 +36,21 @@ export default function ProviderManager({ mode, providers, onChange, onDelete, o
         onChange(result.provider);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not update this provider. Please retry.");
+      setError(err instanceof ApiError ? err.message : t("admin.providers.updateFailed"));
     } finally { setBusy(false); }
   };
 
   return (
     <AdminModal icon="shield" title={title} onClose={close} closeDisabled={busy}
-      subtitle={editing ? "Providers group exams in menus and selectors." : "Archive providers to hide them from selectors while keeping their exams and questions."}>
+      subtitle={t(editing ? "admin.providers.editSubtitle" : "admin.providers.manageSubtitle")}>
       {editing ? (
         <ProviderEditor key={selected?.id ?? "new"} provider={selected} onBusy={setBusy} onChange={onChange}
           onClose={() => { if (mode === "new") onClose(); else setEditing(false); }} />
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived providers</label>
-            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(null)}>New provider</button>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> {t("admin.providers.showArchived")}</label>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(null)}>{t("admin.providers.new")}</button>
           </div>
           {error && <p role="alert" style={{ color: "var(--color-danger)", overflowWrap: "anywhere" }}>{error}</p>}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -60,16 +62,16 @@ export default function ProviderManager({ mode, providers, onChange, onDelete, o
                     <strong>{provider.name}</strong>
                     <div style={{ fontSize: 13 }}>{provider.shortName}</div>
                   </div>
-                  <span className={`tag ${provider.archivedAt ? "tag-neutral" : "tag-accent-2"}`}>{provider.archivedAt ? "archived" : "active"}</span>
+                  <span className={`tag ${provider.archivedAt ? "tag-neutral" : "tag-accent-2"}`}>{t(provider.archivedAt ? "admin.exams.archived" : "admin.exams.active")}</span>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(provider)}>Edit</button>
-                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(provider, provider.archivedAt ? "unarchive" : "archive")}>{provider.archivedAt ? "Restore" : "Archive"}</button>
-                  <button type="button" className="btn btn-secondary" style={{ color: "var(--color-danger)" }} disabled={busy} onClick={() => void act(provider, "delete")}>Delete</button>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => edit(provider)}>{t("common.edit")}</button>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(provider, provider.archivedAt ? "unarchive" : "archive")}>{t(provider.archivedAt ? "admin.users.restore" : "admin.exams.archive")}</button>
+                  <button type="button" className="btn btn-secondary" style={{ color: "var(--color-danger)" }} disabled={busy} onClick={() => void act(provider, "delete")}>{t("common.delete")}</button>
                 </div>
               </section>
             ))}
-            {!providers.some((p) => showArchived || !p.archivedAt) && <p>No {showArchived ? "" : "active "}providers.</p>}
+            {!providers.some((p) => showArchived || !p.archivedAt) && <p>{t(showArchived ? "admin.providers.noneAtAll" : "admin.providers.noneActive")}</p>}
           </div>
         </>
       )}
@@ -93,6 +95,7 @@ function ProviderEditor({ provider, onBusy, onChange, onClose }: {
   const [removeIcon, setRemoveIcon] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +104,7 @@ function ProviderEditor({ provider, onBusy, onChange, onClose }: {
     let savedMetadata: Provider | null = null;
     try {
       if (icon && (!IMAGE_UPLOAD_TYPES.has(icon.type) || icon.size > MAX_IMAGE_UPLOAD_BYTES)) {
-        setError("Choose a JPEG, PNG, or WebP icon no larger than 2 MB.");
+        setError(t("admin.providers.iconRules"));
         return;
       }
       const result = await apiFetch<{ provider: Provider }>(saved ? `/api/providers/${saved.id}` : "/api/providers", {
@@ -123,30 +126,30 @@ function ProviderEditor({ provider, onBusy, onChange, onClose }: {
     } catch (err) {
       // The metadata did save, so the parent still has to reflect it.
       if (savedMetadata) onChange(savedMetadata);
-      const message = err instanceof ApiError ? err.message : "Please retry.";
-      setError(`${savedMetadata ? "Provider saved, but its icon could not be updated." : "Could not save provider."} ${message}`);
+      const message = err instanceof ApiError ? err.message : t("admin.providers.pleaseRetry");
+      setError(`${t(savedMetadata ? "admin.providers.iconFailed" : "admin.providers.saveFailed")} ${message}`);
     } finally { setBusy(false); onBusy(false); }
   };
 
   return (
     <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <fieldset disabled={busy} className="admin-modal-fields" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-        <div className="field" style={{ flex: "1 1 100%" }}><label htmlFor="provider-name">Name</label><input id="provider-name" className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} placeholder="Amazon Web Services" /></div>
-        <div className="field" style={{ flex: "1 1 140px" }}><label htmlFor="provider-short-name">Short name</label><input id="provider-short-name" className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} required maxLength={80} placeholder="AWS" /></div>
-        <div className="field" style={{ flex: "1 1 220px" }}><label htmlFor="provider-website">Official URL</label><input id="provider-website" type="url" className="input" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://…" /></div>
+        <div className="field" style={{ flex: "1 1 100%" }}><label htmlFor="provider-name">{t("admin.exams.name")}</label><input id="provider-name" className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} placeholder="Amazon Web Services" /></div>
+        <div className="field" style={{ flex: "1 1 140px" }}><label htmlFor="provider-short-name">{t("admin.providers.shortName")}</label><input id="provider-short-name" className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} required maxLength={80} placeholder="AWS" /></div>
+        <div className="field" style={{ flex: "1 1 220px" }}><label htmlFor="provider-website">{t("admin.providers.website")}</label><input id="provider-website" type="url" className="input" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://…" /></div>
         <div className="field" style={{ flex: "1 1 100%" }}>
-          <label htmlFor="provider-icon">Icon</label>
-          {saved?.iconUrl && !removeIcon && <img src={saved.iconUrl} alt="Current provider icon" width={48} height={48} style={{ objectFit: "contain" }} />}
+          <label htmlFor="provider-icon">{t("admin.providers.icon")}</label>
+          {saved?.iconUrl && !removeIcon && <img src={saved.iconUrl} alt={t("admin.providers.currentIcon")} width={48} height={48} style={{ objectFit: "contain" }} />}
           <input id="provider-icon" type="file" accept="image/jpeg,image/png,image/webp" style={{ maxWidth: "100%" }} onChange={(e) => { setIcon(e.target.files?.[0] ?? null); setRemoveIcon(false); }} />
-          <small>JPEG, PNG, or WebP · up to 2 MB</small>
-          {saved?.iconUrl && !icon && <label><input type="checkbox" checked={removeIcon} onChange={(e) => setRemoveIcon(e.target.checked)} /> Remove current icon</label>}
+          <small>{t("admin.providers.iconHint")}</small>
+          {saved?.iconUrl && !icon && <label><input type="checkbox" checked={removeIcon} onChange={(e) => setRemoveIcon(e.target.checked)} /> {t("admin.providers.removeIcon")}</label>}
         </div>
       </fieldset>
       {error && <p role="alert" style={{ margin: 0, color: "var(--color-danger)" }}>{error}</p>}
       <div className="admin-modal-foot">
-        <p>Assign exams from any exam’s detail page.</p>
-        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={busy || !name.trim() || !shortName.trim()}>{busy ? "Saving…" : saved ? "Save provider" : "Add provider"}</button>
+        <p>{t("admin.providers.assignHint")}</p>
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>{t("common.cancel")}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy || !name.trim() || !shortName.trim()}>{busy ? t("common.saving") : t(saved ? "admin.providers.save" : "admin.providers.add")}</button>
       </div>
     </form>
   );

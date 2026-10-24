@@ -29,7 +29,7 @@ export default function PrivacyPolicy() {
     <div className="privacy-page" data-pd-theme="light">
       <LegalHeader />
 
-      <main>
+      <main lang="en">
         <section className="privacy-hero">
           <div className="privacy-hero-copy">
             <span className="privacy-eyebrow"><span>●</span> Your privacy, clearly explained</span>

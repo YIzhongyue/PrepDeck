@@ -4,7 +4,10 @@
 // included by default: the option narrows a session, and a learner who never
 // touches it keeps the whole bank, with every such question marked.
 
-export const UNDER_REVIEW_NOTICE = "This question is currently under review and may contain disputed or uncertain content.";
+import { t } from "../i18n/runtime";
+
+/** What "Under review" means, in the interface language. */
+export const underReviewNotice = () => t("study.underReview.notice");
 
 type Reviewable = { needsReview?: boolean };
 

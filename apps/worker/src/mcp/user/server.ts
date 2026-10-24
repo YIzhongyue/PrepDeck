@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH, MAX_ATTEMPT_QUESTIONS, MAX_ANSWER_VALUES, MAX_ANSWER_TEXT_LENGTH, MAX_TIME_SPENT_SECONDS } from "@prepdeck/shared";
+import { QUESTION_IMPORT_GUIDANCE, getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH, MAX_ATTEMPT_QUESTIONS, MAX_ANSWER_VALUES, MAX_ANSWER_TEXT_LENGTH, MAX_TIME_SPENT_SECONDS } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -54,7 +54,7 @@ export function userMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "user_get_import_schemas",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Get supported question components, interactions and JSON import schemas to prepare a reviewed import locally with pdf-to-quiz. Saving questions to the shared bank requires an administrator.",
+      "Get supported question components, interactions and JSON import schemas to prepare a reviewed import locally with pdf-to-quiz. Saving questions to the shared bank requires an administrator. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({}), () => getImportSchemas()),
 
     // --- Learning overview and statistics -----------------------------------

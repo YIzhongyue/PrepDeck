@@ -3,6 +3,7 @@
 // and a way to switch the animations off when the viewer asked for that.
 
 import { useEffect, useState, type ReactNode } from "react";
+import { useI18n } from "../../i18n";
 
 /** Live: a viewer who changes the OS setting gets the new behaviour without a
  *  reload, which matters because the charts re-render on every data refresh. */
@@ -35,11 +36,12 @@ export function ChartData({
   columns: string[];
   rows: ReactNode[][];
 }) {
+  const { t } = useI18n();
   return (
     <>
       <p className="sr-only">{summary}</p>
       <details className="pd-stats-data">
-        <summary>Show the numbers</summary>
+        <summary>{t("stats.table.show")}</summary>
         <div className="pd-stats-data-scroll">
           <table>
             <caption className="sr-only">{caption}</caption>
@@ -48,7 +50,7 @@ export function ChartData({
             </thead>
             <tbody>
               {rows.length === 0
-                ? <tr><td colSpan={columns.length}>No data yet.</td></tr>
+                ? <tr><td colSpan={columns.length}>{t("stats.table.empty")}</td></tr>
                 : rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}
             </tbody>
           </table>

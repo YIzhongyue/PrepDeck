@@ -79,21 +79,16 @@ export function parseStoredScopes(value: string): McpOAuthScope[] {
   return value.split(" ").filter(isMcpOAuthScope);
 }
 
-/**
- * The scopes an authorization request asks for, for the audience its
- * resource names. Unknown scope names (a client's generic "openid", say) are
- * ignored rather than granted; none left means the audience's full set, which
- * the account's role still bounds. Clients may request the authorization
- * server's entire advertised scope list; retain only requested scopes for
- * the selected resource (RFC 6749 section 3.3). A request containing known
- * scopes but none for this audience is refused, never upgraded to defaults.
- * The route rejects mixed audiences without an explicit resource first.
+/** Explicit unknown scopes fail closed. Omitted/empty scopes request read only.
+ * Known issuer-wide scope lists are narrowed to the selected resource, and
+ * a known list containing no scope for that resource is refused.
  */
 export function requestedScopes(raw: string | undefined, audience: McpAudience): McpOAuthScope[] | null {
-  const known = (raw ?? "").split(" ").filter(isMcpOAuthScope);
+  const requested = (raw ?? "").split(" ").filter(Boolean);
   const allowed = audienceScopes(audience);
-  if (!known.length) return allowed;
-  const selected = allowed.filter((scope) => known.includes(scope));
+  if (!requested.length) return allowed.slice(0, 1);
+  if (!requested.every(isMcpOAuthScope)) return null;
+  const selected = allowed.filter((scope) => requested.includes(scope));
   return selected.length ? selected : null;
 }
 

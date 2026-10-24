@@ -3,6 +3,7 @@ import type { NoteResponse, NotesListResponse } from "@prepdeck/shared";
 import { apiFetch } from "../../lib/api";
 import { fromSharedNote } from "../../lib/notes";
 import type { StoreCore } from "./useStoreCore";
+import { t } from "../../i18n/runtime";
 
 // Personal and shared question notes.
 export type QuestionNotes = ReturnType<typeof useQuestionNotes>;
@@ -27,7 +28,7 @@ export function useQuestionNotes(core: StoreCore) {
     })).then(({ note }) => update(current => ({
       notes: current.notes.concat(fromSharedNote(note)), noteDraft: current.noteDraft.trim() === content ? "" : current.noteDraft,
       noteDraftQuestionId: current.noteDraft.trim() === content ? null : current.noteDraftQuestionId
-    }))).catch(() => update({ actionError: "Could not save your note. Your draft is retained; please retry." }));
+    }))).catch(() => update({ actionError: t("errors.notes.save") }));
   }, [requests, scopedState, stateRef]);
 
   const updateNote = useCallback(async (id: string, content: string, visibility: "private" | "shared") => {
@@ -39,7 +40,7 @@ export function useQuestionNotes(core: StoreCore) {
     const update = scopedState();
     void requests.write(`note:${id}`, () => apiFetch(`/api/notes/${id}`, { method: "DELETE" }))
       .then(() => update(s => ({ notes: s.notes.filter(n => n.id !== id) })))
-      .catch(() => update({ actionError: "Could not delete this note. Please retry." }));
+      .catch(() => update({ actionError: t("errors.notes.delete") }));
   }, [requests, scopedState]);
 
   // FR-11.4: persisted server-side (so it applies from any device/session),

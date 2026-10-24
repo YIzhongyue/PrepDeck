@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getImportSchemas } from "@prepdeck/shared";
+import { QUESTION_IMPORT_GUIDANCE, getImportSchemas } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -90,7 +90,7 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "admin_get_import_schemas",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Get supported question components, interactions, limits, and JSON import schemas. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON.",
+      "Get supported question components, interactions, limits, and JSON import schemas. PDFs are converted locally with pdf-to-quiz; review the evidence, then use admin_preview_import and admin_execute_import for the resulting JSON. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({}), () => getImportSchemas()),
 
     defineMcpTool(
@@ -206,7 +206,7 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "admin_preview_component_question",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Preview one schemaVersion 2.0 component item with its referenced stimuli/assets. The server validates and derives type/stem/options; do not supply those projections yourself. Optional id previews an edit, preserving omitted metadata. Submit the returned payload unchanged to admin_create_question with proposalToken/proposalId, or admin_update_question with proposalToken/currentRevision as expectedRevision. No question is saved by this preview.",
+      "Preview one schemaVersion 2.0 component item with its referenced stimuli/assets. The server validates and derives type/stem/options; do not supply those projections yourself. Optional id previews an edit, preserving omitted metadata. Submit the returned payload unchanged to admin_create_question with proposalToken/proposalId, or admin_update_question with proposalToken/currentRevision as expectedRevision. No question is saved by this preview. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({
         examId: examIdSchema, id: questionIdSchema.optional(), question: z.record(z.string(), z.unknown()),
         stimuli: z.array(z.unknown()).max(200).optional(), assets: z.array(z.unknown()).max(100).optional(),
@@ -216,14 +216,14 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "admin_validate_question_payload",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Preview a question create or edit without saving it. Validates the payload with the same rules as Admin/imports, and (with id) returns a before/after diff and whether the answer key would be revised. On success, returns a proposalToken that admin_create_question/admin_update_question require to commit this exact reviewed payload.",
+      "Preview a question create or edit without saving it. Validates the payload with the same rules as Admin/imports, and (with id) returns a before/after diff and whether the answer key would be revised. On success, returns a proposalToken that admin_create_question/admin_update_question require to commit this exact reviewed payload. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({ examId: examIdSchema, id: questionIdSchema.optional(), payload: questionPayloadSchema }),
       (input) => services.validateQuestionPayload(input),
     ),
     defineMcpTool(
       "admin_create_question",
       { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Create a question from a payload already reviewed via admin_validate_question_payload. proposalToken must match that exact payload, or the call is rejected as stale. proposalId is a caller-scoped idempotency key from the same preview call: retrying with the same proposalId returns the question already created instead of inserting a duplicate.",
+      "Create a question from a payload already reviewed via admin_validate_question_payload. proposalToken must match that exact payload, or the call is rejected as stale. proposalId is a caller-scoped idempotency key from the same preview call: retrying with the same proposalId returns the question already created instead of inserting a duplicate. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({
         examId: examIdSchema, payload: questionPayloadSchema,
         proposalToken: proposalTokenSchema, proposalId: proposalIdSchema,
@@ -265,7 +265,7 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "admin_batch_create_questions",
       { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      `Create up to ${MAX_BATCH_MUTATION_ITEMS} questions in one call. Each item must carry a proposalToken and proposalId from admin_validate_question_payload for its exact payload. Returns per-item outcomes (each tagged with inputIndex, matching the item's position in the submitted array) plus created/skipped/failed counts; never partially applies an item that failed validation or token binding. Retrying an item with the same proposalId returns its already-created question instead of inserting a duplicate.`,
+      `Create up to ${MAX_BATCH_MUTATION_ITEMS} questions in one call. Each item must carry a proposalToken and proposalId from admin_validate_question_payload for its exact payload. Returns per-item outcomes (each tagged with inputIndex, matching the item's position in the submitted array) plus created/skipped/failed counts; never partially applies an item that failed validation or token binding. Retrying an item with the same proposalId returns its already-created question instead of inserting a duplicate. ${QUESTION_IMPORT_GUIDANCE}`,
       z.strictObject({
         examId: examIdSchema,
         items: z.array(z.strictObject({
@@ -315,21 +315,21 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     defineMcpTool(
       "admin_validate_import",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Schema-validate a Question Import file without touching the database (no conflict/duplicate lookup). For a full create/update/skip/conflict breakdown against the current question bank, use admin_preview_import instead.",
+      "Schema-validate a Question Import file without touching the database (no conflict/duplicate lookup). For a full create/update/skip/conflict breakdown against the current question bank, use admin_preview_import instead. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({ examId: examIdSchema, file: importFileSchema }),
       (input) => services.validateImport(input),
     ),
     defineMcpTool(
       "admin_preview_import",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Validate a Question Import file and classify every row as a create, a candidate update, an identical skip, or a conflict needing explicit resolution, without writing anything. Returns importId/importToken that admin_execute_import requires to commit this exact reviewed file.",
+      "Validate a Question Import file and classify every row as a create, a candidate update, an identical skip, or a conflict needing explicit resolution, without writing anything. Returns importId/importToken that admin_execute_import requires to commit this exact reviewed file. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({ examId: examIdSchema, file: importFileSchema }),
       (input) => services.previewImport(input),
     ),
     defineMcpTool(
       "admin_execute_import",
       { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-      "Execute a Question Import already reviewed via admin_preview_import. importToken must match that exact file, or the call is rejected as stale. conflictResolutions apply only to the exact previously-previewed {questionId, expectedRevision, incomingToken} triples — a broad \"overwrite everything\" is never authorized. Retrying with the same importId and the same conflictResolutions replays the original result instead of re-applying; the same importId with different conflictResolutions is rejected as a conflict.",
+      "Execute a Question Import already reviewed via admin_preview_import. importToken must match that exact file, or the call is rejected as stale. conflictResolutions apply only to the exact previously-previewed {questionId, expectedRevision, incomingToken} triples — a broad \"overwrite everything\" is never authorized. Retrying with the same importId and the same conflictResolutions replays the original result instead of re-applying; the same importId with different conflictResolutions is rejected as a conflict. " + QUESTION_IMPORT_GUIDANCE,
       z.strictObject({
         examId: examIdSchema, file: importFileSchema, importId: importIdSchema, importToken: importTokenSchema,
         conflictResolutions: z.array(conflictResolutionSchema).max(1000).optional(),

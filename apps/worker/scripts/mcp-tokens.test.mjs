@@ -26,6 +26,7 @@ function setup() {
 
   const app = new Hono();
   app.use("*", async (c, next) => {
+    c.set("sessionVersion", 0);
     c.set("user", { id: c.req.header("x-user") ?? "alice", role: c.req.header("x-role") ?? "user" });
     await next();
   });
@@ -48,7 +49,7 @@ test("a user can create, list, and revoke their own User MCP token", async () =>
   assert.equal(create.status, 201);
   assert.equal(create.body.credential.name, "local-cli");
   assert.equal(create.body.credential.status, "active");
-  assert.equal(create.body.credential.expiresAt, null);
+  assert.ok(Math.abs(create.body.credential.expiresAt - create.body.credential.createdAt - 30 * 86_400_000) < 100);
   assert.match(create.body.token, /^pd_mcp_user_[a-f0-9]{64}$/);
 
   const list = await request("/mcp-tokens");
@@ -90,12 +91,12 @@ test("name is required and bounded; expiresInDays is optional and validated", as
     const res = await request("/mcp-tokens", { method: "POST", body });
     assert.equal(res.status, 400, JSON.stringify(body));
   }
-  for (const expiresInDays of [0, -1, 1.5, "30", 3651]) {
+  for (const expiresInDays of [0, -1, 1.5, "30", 91, 3651]) {
     const res = await request("/mcp-tokens", { method: "POST", body: { name: "x", expiresInDays } });
     assert.equal(res.status, 400, JSON.stringify(expiresInDays));
   }
   const noExpiry = await request("/mcp-tokens", { method: "POST", body: { name: "no expiry" } });
-  assert.equal(noExpiry.body.credential.expiresAt, null);
+  assert.ok(Math.abs(noExpiry.body.credential.expiresAt - noExpiry.body.credential.createdAt - 30 * 86_400_000) < 100);
 
   const before = Date.now();
   const withExpiry = await request("/mcp-tokens", { method: "POST", body: { name: "30 days", expiresInDays: 30 } });
@@ -235,4 +236,17 @@ test("Admin MCP token routes require admin authorization and use a separate name
   const adminAdminTokens = await request("/admin/mcp-tokens", { user: "admin", role: "admin" });
   assert.equal(adminAdminTokens.body.credentials.length, 1);
   assert.equal(adminAdminTokens.body.credentials[0].name, "local-codex");
+});
+
+
+test("rotating legacy permanent or overlong PATs applies the finite lifetime policy", async () => {
+  const { db, request } = setup();
+  for (const legacyDays of [null, 365]) {
+    const { body: { credential } } = await request("/mcp-tokens", { method: "POST", body: { name: "legacy" } });
+    db.prepare("UPDATE mcp_credentials SET expires_at = ? WHERE id = ?").run(legacyDays === null ? null : credential.createdAt + legacyDays * 86_400_000, credential.id);
+    const rotated = await request(`/mcp-tokens/${credential.id}/rotate`, { method: "POST" });
+    assert.equal(rotated.status, 201);
+    const next = rotated.body.credential;
+    assert.ok(Math.abs(next.expiresAt - next.createdAt - (legacyDays === null ? 30 : 90) * 86_400_000) < 100);
+  }
 });

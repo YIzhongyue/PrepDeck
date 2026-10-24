@@ -5,6 +5,7 @@ import { STUDY_FILTERS } from "../../lib/studyStatus";
 import type { ScreenId } from "../../types";
 import { IC, Icon } from "./StudyKit";
 import "./setup.css";
+import { t as translate, useI18n } from "../../i18n";
 
 // Shared pieces of the Practice, Mock and Learning setup screens. Styles live in
 // setup.css, on the `.pd-study` tokens from study.css.
@@ -83,13 +84,13 @@ export function ChoiceCard({ icon, label, count, desc, on, onSelect }: {
 export function UnderReviewRow({ count, skip, onChange, layout }: {
   count: number; skip: boolean; onChange: (skip: boolean) => void; layout: SetupLayout;
 }) {
+  const { t } = useI18n();
   if (!count) return null;
-  const some = count === 1 ? "1 question in this exam is" : `${count} questions in this exam are`;
   return (
-    <SetupRow title="Questions under review" desc={`${some} still being reviewed and may contain disputed or uncertain content.`} cols={layout.rowCols}>
+    <SetupRow title={t("setup.underReview.title")} desc={t("setup.underReview.desc", { count })} cols={layout.rowCols}>
       <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
-        <ChoiceCard icon={IC.alert} label="Include" count={count} desc="They can appear, each marked as under review" on={!skip} onSelect={() => onChange(false)} />
-        <ChoiceCard icon={IC.eyeOff} label="Skip" desc="Leave them out of this session" on={skip} onSelect={() => onChange(true)} />
+        <ChoiceCard icon={IC.alert} label={t("setup.underReview.include")} count={count} desc={t("setup.underReview.includeDesc")} on={!skip} onSelect={() => onChange(false)} />
+        <ChoiceCard icon={IC.eyeOff} label={t("setup.underReview.skip")} desc={t("setup.underReview.skipDesc")} on={skip} onSelect={() => onChange(true)} />
       </div>
     </SetupRow>
   );
@@ -107,10 +108,11 @@ export function StudyStatusRow({ value, counts, onChange, layout, unavailable = 
   /** The statuses failed to load, so the counts may treat studied questions as unstudied. */
   unavailable?: boolean;
 }) {
+  const { t } = useI18n();
   return (
-    <SetupRow title="Study status" desc="Studied means shown in Learning or answered in Practice or Mock, not mastered." cols={layout.rowCols}>
+    <SetupRow title={t("setup.studyStatus.title")} desc={t("setup.studyStatus.desc")} cols={layout.rowCols}>
       {unavailable && (
-        <p className="st-start-hint" role="status">Your study status could not be loaded, so questions may show as unstudied. Refresh the exam to try again.</p>
+        <p className="st-start-hint" role="status">{t("setup.studyStatus.unavailable")}</p>
       )}
       <div className="st-cards" style={{ gridTemplateColumns: layout.cardCols }}>
         {STUDY_FILTERS.map((f) => (
@@ -129,17 +131,18 @@ export function StudyStatusRow({ value, counts, onChange, layout, unavailable = 
 export function MoreOptions({ summary, defaultOpen, cols, children }: { summary: string; defaultOpen: boolean; cols: string; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
+  const { t } = useI18n();
   return (
     <div className="st-more-opts">
       <div className="st-row st-more-row" style={{ gridTemplateColumns: cols }}>
         <div className="st-row-label">
-          <div className="st-row-title">More options</div>
-          <div className="st-row-desc">Optional. The defaults suit most sessions.</div>
+          <div className="st-row-title">{t("setup.moreOptions.title")}</div>
+          <div className="st-row-desc">{t("setup.moreOptions.desc")}</div>
         </div>
         <div className="st-row-body">
           <button type="button" className="st-more-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((o) => !o)}>
             <span className="st-more-summary">{summary}</span>
-            <span className="st-more-action">{open ? "Hide" : "Customize"}<Icon d={IC.chevDown} size={16} strokeWidth={2.25} /></span>
+            <span className="st-more-action">{open ? t("setup.moreOptions.hide") : t("setup.moreOptions.customize")}<Icon d={IC.chevDown} size={16} strokeWidth={2.25} /></span>
           </button>
         </div>
       </div>
@@ -183,14 +186,17 @@ export function SummaryRow({ icon, label, value }: { icon: string; label: string
 
 const DIFF_LEVEL = { all: 0, easy: 1, medium: 2, hard: 3 } as const;
 export type DifficultyChoice = keyof typeof DIFF_LEVEL;
-const DIFF_OPTS: { id: DifficultyChoice; label: string }[] = [
-  { id: "all", label: "Any" }, { id: "easy", label: "Easy" }, { id: "medium", label: "Medium" }, { id: "hard", label: "Hard" }
-];
+const DIFF_OPTS: DifficultyChoice[] = ["all", "easy", "medium", "hard"];
+
+/** "Any", "Easy", … in the interface language. */
+export const difficultyChoiceLabel = (choice: DifficultyChoice) => translate(choice === "all" ? "setup.difficulty.any" : `common.difficulty.${choice}`);
 
 export function DifficultyPicker({ value, counts, onChange }: { value: DifficultyChoice; counts: Record<DifficultyChoice, number>; onChange: (d: DifficultyChoice) => void }) {
+  const { t } = useI18n();
   return (
-    <div className="st-diffs" role="group" aria-label="Difficulty">
-      {DIFF_OPTS.map((o) => {
+    <div className="st-diffs" role="group" aria-label={t("setup.difficulty.label")}>
+      {DIFF_OPTS.map((id) => {
+        const o = { id, label: difficultyChoiceLabel(id) };
         const level = DIFF_LEVEL[o.id];
         return (
           <button key={o.id} type="button" className="st-diff" aria-pressed={value === o.id} onClick={() => onChange(o.id)}>
@@ -199,7 +205,7 @@ export function DifficultyPicker({ value, counts, onChange }: { value: Difficult
             </span>
             <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <span className="st-diff-label">{o.label}</span>
-              <span className="st-diff-count">{counts[o.id]} {counts[o.id] === 1 ? "question" : "questions"}</span>
+              <span className="st-diff-count">{t("setup.questions", { count: counts[o.id] })}</span>
             </span>
           </button>
         );
@@ -219,7 +225,7 @@ export function tagCounts(questions: readonly { tags: readonly string[] }[]) {
 
 /* Short text for a summary: "All", "A, B" or "A, B +3". */
 export function domainSummary(selected: readonly string[]) {
-  if (!selected.length) return "All";
+  if (!selected.length) return translate("common.all");
   return selected.length <= 2 ? selected.join(", ") : `${selected.slice(0, 2).join(", ")} +${selected.length - 2}`;
 }
 
@@ -241,17 +247,18 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const hintId = useId();
+  const { t } = useI18n();
   const tags = useMemo(() => tagCounts(questions), [questions]);
   const query = search.trim().toLocaleLowerCase();
   const visible = query ? tags.filter(({ name }) => name.toLocaleLowerCase().includes(query)) : tags;
   const big = tags.length > BIG_DOMAIN_SET;
   const collapsed = big && !query && !expanded;
   const selectedQuestions = useMemo(
-    () => (selected.length ? questions.filter((q) => q.tags.some((t) => selected.includes(t))).length : 0),
+    () => (selected.length ? questions.filter((q) => q.tags.some((tag) => selected.includes(tag))).length : 0),
     [questions, selected]
   );
 
-  if (!tags.length) return <p className="st-muted">This exam has no domains yet.</p>;
+  if (!tags.length) return <p className="st-muted">{t("setup.domains.none")}</p>;
 
   return (
     <>
@@ -259,23 +266,23 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
         <label className="st-search">
           <Icon d={IC.search} size={18} />
           <input
-            type="search" placeholder={`Search ${tags.length} domains`} aria-label="Search domains"
+            type="search" placeholder={t("setup.domains.searchPlaceholder", { count: tags.length })} aria-label={t("setup.domains.search")}
             aria-describedby={query && onSelectResults ? hintId : undefined}
             value={search} onChange={(e) => setSearch(e.target.value)}
           />
           {!!search && (
-            <button type="button" className="st-search-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+            <button type="button" className="st-search-clear" aria-label={t("setup.domains.clearSearch")} onClick={() => setSearch("")}>
               <Icon d={IC.x} size={14} />
             </button>
           )}
         </label>
       )}
       <div className="st-chips-wrap" style={{ maxHeight: collapsed ? (phone ? 148 : 80) : undefined }}>
-        <div className="st-chips" role="group" aria-label="Domain filters">
+        <div className="st-chips" role="group" aria-label={t("setup.domains.filters")}>
           {visible.map(({ name, count }) => (
             <button
               key={name} type="button" className="st-chip" aria-pressed={selected.includes(name)}
-              aria-label={`${name} ${count} ${count === 1 ? "question" : "questions"}`}
+              aria-label={`${name} ${t("setup.questions", { count })}`}
               onClick={() => onToggle(name)}
             >
               <span className="st-chip-name">{name}</span>
@@ -287,13 +294,13 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
         {collapsed && <span className="st-chips-fade" />}
       </div>
       {query && !visible.length && (
-        <div className="st-chip-empty" role="status"><Icon d={IC.search} />No domains match “{search.trim()}”.</div>
+        <div className="st-chip-empty" role="status"><Icon d={IC.search} />{t("setup.domains.noMatch", { query: search.trim() })}</div>
       )}
       {(big || selected.length > 0) && (
         <div className="st-chip-bar">
           {big && !query && (
             <button type="button" className="st-link st-link--brand st-more" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
-              {expanded ? "Show fewer" : `Show all ${tags.length} domains`}<Icon d={IC.chevDown} size={14} strokeWidth={2.25} />
+              {expanded ? t("setup.domains.showFewer") : t("setup.domains.showAll", { count: tags.length })}<Icon d={IC.chevDown} size={14} strokeWidth={2.25} />
             </button>
           )}
           {query && onSelectResults && (
@@ -301,19 +308,19 @@ export function DomainPicker({ questions, selected, onToggle, onSelectResults, o
               type="button" className="st-link st-link--brand st-bulk" disabled={!visible.length} aria-describedby={hintId}
               onClick={() => { if (visible.length) onSelectResults(visible.map(({ name }) => name)); }}
             >
-              <Icon d={IC.check} size={14} />Select all results ({visible.length})
+              <Icon d={IC.check} size={14} />{t("setup.domains.selectResults", { count: visible.length })}
             </button>
           )}
           <span className="st-spacer" />
           {selected.length > 0 && (
             <span className="st-chip-sel">
-              <span>{selected.length} selected · {selectedQuestions} {selectedQuestions === 1 ? "question" : "questions"}</span>
-              {onClear && <button type="button" className="st-link" onClick={onClear}><Icon d={IC.x} size={14} />Clear</button>}
+              <span>{t("setup.domains.selected", { count: selected.length })} · {t("setup.questions", { count: selectedQuestions })}</span>
+              {onClear && <button type="button" className="st-link" onClick={onClear}><Icon d={IC.x} size={14} />{t("common.clear")}</button>}
             </span>
           )}
         </div>
       )}
-      {query && onSelectResults && <span id={hintId} className="sr-only">Select all results replaces your current domain selection.</span>}
+      {query && onSelectResults && <span id={hintId} className="sr-only">{t("setup.domains.selectResultsHint")}</span>}
     </>
   );
 }

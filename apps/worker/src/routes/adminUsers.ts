@@ -111,23 +111,32 @@ adminUsersRouter.patch("/:id", async (c) => {
   if (body.status !== undefined) {
     fields.push("status = ?");
     values.push(body.status);
-    // A revoke also ends the account's sessions (issue #46), so it holds even
-    // where a cached user row has not caught up yet.
-    if (body.status === "revoked") fields.push("session_version = session_version + 1");
+
   }
-  // FR-1.9 recovery: re-arms the one-time email-based binding, so the next
-  // successful Google sign-in on this address adopts whichever account signs
-  // in. The row — and everything hanging off its id — stays exactly as it is.
+  // FR-1.9 recovery re-arms binding while retiring every existing credential.
+  // Keep the internal account and content; never let the prior identity keep
+  // access through a browser session, PAT or connected OAuth application.
   if (body.googleSub === null) {
     fields.push("google_sub = NULL");
   }
-  await c.env.DB.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`)
-    .bind(...values, id)
-    .run();
+  const retireCredentials = body.googleSub === null || body.status === "revoked";
+  if (retireCredentials) fields.push("session_version = session_version + 1");
+  const update = c.env.DB.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).bind(...values, id);
+  if (retireCredentials) {
+    const now = Date.now();
+    // D1 batch is transactional: recovery is all-or-nothing. Revoked grants
+    // also invalidate their outstanding access/refresh tokens and auth codes.
+    await c.env.DB.batch([
+      update,
+      c.env.DB.prepare("UPDATE mcp_credentials SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").bind(now, id),
+      c.env.DB.prepare("UPDATE mcp_oauth_grants SET revoked_at = ?, revoke_reason = 'user' WHERE user_id = ? AND revoked_at IS NULL").bind(now, id),
+    ]);
+  } else {
+    await update.run();
+  }
 
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
-  // A role change or revoke must take effect immediately, not after the
-  // auth cache's TTL (see lib/userCache.ts) expires.
+  // Delete legacy cache entries; security checks use current D1 rows.
   if (row) await invalidateCachedUser(c.env, row.id, row.email);
   return c.json({ user: toUser(row!) });
 });

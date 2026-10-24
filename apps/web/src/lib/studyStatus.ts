@@ -2,14 +2,22 @@
 // exposure, not mastery: it is independent of `attempted`, the wrong book and
 // bookmarks, and combines with them as one more filter.
 import { isStudied, matchesStudyFilter, newerStudyStatus, type QuestionStudyStatusEntry, type StudyStatusFilter } from "@prepdeck/shared";
+import { t } from "../i18n/runtime";
 
 type Statuses = Record<string, QuestionStudyStatusEntry>;
 
-export const STUDY_FILTERS: readonly { id: StudyStatusFilter; label: string; desc: string }[] = [
-  // Not "All questions": Practice's source row already has a card of that name.
-  { id: "all", label: "Any status", desc: "Studied and unstudied questions alike" },
-  { id: "unstudied", label: "Unstudied only", desc: "Never shown in Learning or answered, or marked unstudied" },
-  { id: "studied", label: "Studied only", desc: "Shown in Learning, or answered in Practice or Mock" },
+// Not "All questions": Practice's source row already has a card of that name.
+// The label and description are read in the interface language when shown.
+const studyFilter = (id: StudyStatusFilter) => ({
+  id,
+  get label() { return t(`study.filters.${id}.label`); },
+  get desc() { return t(`study.filters.${id}.desc`); },
+});
+
+export const STUDY_FILTERS: readonly { id: StudyStatusFilter; readonly label: string; readonly desc: string }[] = [
+  studyFilter("all"),
+  studyFilter("unstudied"),
+  studyFilter("studied"),
 ];
 
 export function isQuestionStudied(statuses: Statuses, id: string): boolean {

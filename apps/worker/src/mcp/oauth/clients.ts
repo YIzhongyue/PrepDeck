@@ -196,6 +196,19 @@ export function isMetadataDocumentClientId(value: string): boolean {
   return host.includes(".");
 }
 
+/** Workers fetch does not expose a resolved address to pin or validate. Only
+ * operator-reviewed exact metadata URLs may initiate outbound requests. This
+ * is a trust allowlist, not a claim to prevent rebinding by an allowed host.
+ * No wildcard, host-only, malformed or implicit cached-client exceptions.
+ */
+function metadataClientAllowed(env: Pick<Env, "MCP_OAUTH_METADATA_CLIENT_ALLOWLIST">, clientId: string): boolean {
+  let configured: unknown;
+  try { configured = JSON.parse(env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST ?? "[]"); } catch { return false; }
+  return Array.isArray(configured) && configured.length <= 100
+    && configured.every((value) => typeof value === "string" && isMetadataDocumentClientId(value))
+    && configured.includes(clientId);
+}
+
 async function readBounded(response: Response): Promise<string | null> {
   const reader = response.body?.getReader();
   if (!reader) return null;
@@ -282,10 +295,12 @@ async function storedClient(db: D1Database, clientId: string): Promise<ClientRow
  * metadata document when the client_id is a URL. Null for an unknown id or a
  * document that cannot be fetched and validated.
  */
-export async function resolveClient(env: Pick<Env, "DB">, clientId: string): Promise<OAuthClient | null> {
+export async function resolveClient(env: Pick<Env, "DB" | "MCP_OAUTH_METADATA_CLIENT_ALLOWLIST">, clientId: string): Promise<OAuthClient | null> {
   if (!clientId || clientId.length > MAX_URI_LENGTH) return null;
+  const metadata = isMetadataDocumentClientId(clientId);
+  if (metadata && !metadataClientAllowed(env, clientId)) return null;
   const row = await storedClient(env.DB, clientId);
-  if (!isMetadataDocumentClientId(clientId)) return row && row.kind === "dynamic" ? toClient(row) : null;
+  if (!metadata) return row && row.kind === "dynamic" ? toClient(row) : null;
 
   const now = Date.now();
   if (row && row.fetched_at !== null && now - row.fetched_at < METADATA_REFRESH_MS) return toClient(row);

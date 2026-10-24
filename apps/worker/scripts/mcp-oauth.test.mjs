@@ -45,7 +45,7 @@ function setup(t, overrides = {}) {
     ...overrides,
   };
   const fetchWorker = (path, init = {}) => worker.fetch(new Request(path.startsWith("http") ? path : `${BASE}${path}`, {
-    ...init, headers: { "CF-Connecting-IP": "192.0.2.1", ...(init.headers ?? {}) },
+    ...init, headers: { "CF-Connecting-IP": "192.0.2.1", Origin: BASE, ...(init.headers ?? {}) },
   }), env);
   return { db, env, queries, limits: RATE_LIMITER.calls, metrics, fetchWorker };
 }
@@ -66,7 +66,7 @@ async function register(f, metadata = {}) {
 }
 
 async function session(f, userId) {
-  return `pd_session=${encodeURIComponent(await issueSessionToken(f.env, userId))}`;
+  return `__Host-pd_session=${encodeURIComponent(await issueSessionToken(f.env, userId))}`;
 }
 
 function authorizeUrl(params) {
@@ -208,7 +208,7 @@ test("with OAuth switched off, PATs work, OAuth endpoints are absent and the cha
   const refused = await rpc(f, "user", tokens.access_token);
   assert.equal(refused.status, 401, "outstanding OAuth tokens are refused while OAuth is off");
   assert.equal(refused.headers.get("WWW-Authenticate"), 'Bearer realm="PrepDeck MCP", error="invalid_token"');
-  const pat = await issueMcpCredential(f.env.DB, { userId: "alice", audience: "user", name: "cli" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "cli" });
   assert.equal((await rpc(f, "user", pat.token)).status, 200);
   f.env.MCP_OAUTH_ENABLED = "true";
   assert.equal((await rpc(f, "user", tokens.access_token)).status, 200, "and resume, unexpired, when it is switched back on");
@@ -221,7 +221,7 @@ test("an OAuth client completes registration, consent, PKCE code exchange and an
   assert.match(tokens.refresh_token, /^pd_ort_user_[a-f0-9]{64}$/);
   assert.equal(tokens.token_type, "Bearer");
   assert.equal(tokens.expires_in, 3600);
-  assert.equal(tokens.scope, "mcp:user:read mcp:user:write");
+  assert.equal(tokens.scope, "mcp:user:read");
 
   const call = await payload(await rpc(f, "user", tokens.access_token, "tools/call", { name: "user_get_identity", arguments: {} }));
   assert.deepEqual(call.result.structuredContent, { ok: true, data: { userId: "alice", server: "user" } });
@@ -258,6 +258,8 @@ test("authorization requests are validated before anything is shown or redirecte
     [{ code_challenge_method: "plain" }, "invalid_request"],
     [{ resource: "https://elsewhere.example/mcp" }, "invalid_target"],
     [{ scope: "mcp:admin:read" }, "invalid_scope"],
+    [{ scope: "typo:read" }, "invalid_scope"],
+    [{ scope: "mcp:user:read typo:write" }, "invalid_scope"],
     [{ resource: `${BASE}/admin-mcp`, scope: "mcp:user:read" }, "invalid_scope"],
     [{ resource: undefined, scope: "mcp:user:read mcp:admin:read" }, "invalid_scope"],
     [{ resource: "" }, "invalid_target"],
@@ -376,6 +378,7 @@ test("dynamic registration issues a public client and refuses unusable metadata"
 test("a Client ID Metadata Document client is fetched, must name itself, and is cached", async (t) => {
   const f = setup(t);
   const clientId = "https://client.example/oauth/client.json";
+  f.env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST = JSON.stringify([clientId, "https://client.example/oauth/impostor.json"]);
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   let fetches = 0;
@@ -421,6 +424,7 @@ test("a metadata document client is accepted when the methods it supports includ
   const { verifier, challenge } = await pkce();
   for (const [index, [methods, accepted]] of cases.entries()) {
     const clientId = `https://client.example/oauth/client-${index}.json`;
+    f.env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST = JSON.stringify([clientId]);
     globalThis.fetch = async (_url, init) => {
       // Node accepts redirect: "error", but the deployed Workers runtime
       // throws before making the request. Model that runtime boundary here.
@@ -438,6 +442,7 @@ test("a metadata document client is accepted when the methods it supports includ
 
   // The Codex-shaped client completes the flow as a public client.
   const clientId = "https://client.example/oauth/client-0.json";
+  f.env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST = JSON.stringify([clientId]);
   const request = await startAuthorization(f, { clientId, challenge });
   const decision = await consent(f, request, await session(f, "alice"));
   assert.equal(decision.response.status, 200, JSON.stringify(decision.body));
@@ -445,6 +450,11 @@ test("a metadata document client is accepted when the methods it supports includ
   const exchanged = await token(f, { grant_type: "authorization_code", code, client_id: clientId, redirect_uri: REDIRECT, code_verifier: verifier, resource: `${BASE}/mcp` });
   assert.equal(exchanged.response.status, 200, JSON.stringify(exchanged.body));
   assert.match(exchanged.body.access_token, /^pd_oat_user_/);
+  delete f.env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST;
+  globalThis.fetch = async () => { throw new Error("refresh must not fetch client metadata"); };
+  const refreshed = await token(f, { grant_type: "refresh_token", refresh_token: exchanged.body.refresh_token, client_id: clientId });
+  assert.equal(refreshed.response.status, 200, "allowlist removal does not silently revoke an issued grant");
+  assert.equal((await rpc(f, "user", refreshed.body.access_token)).status, 200);
 });
 
 test("CIMD redirects are rejected without following Location or storing the response document", async (t) => {
@@ -454,6 +464,7 @@ test("CIMD redirects are rejected without following Location or storing the resp
   const { challenge } = await pkce();
   for (const status of [301, 302, 303, 307, 308]) {
     const clientId = `https://client.example/oauth/redirect-${status}.json`;
+    f.env.MCP_OAUTH_METADATA_CLIENT_ALLOWLIST = JSON.stringify([clientId]);
     const calls = [];
     globalThis.fetch = async (url, init) => {
       calls.push({ url: String(url), redirect: init.redirect });
@@ -496,7 +507,7 @@ test("the consent screen needs the signed-in browser that started the request", 
   assert.equal(body.eligible, true);
 
   // A bearer token can never stand in for the browser session.
-  const pat = await issueMcpCredential(f.env.DB, { userId: "alice", audience: "user", name: "cli" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "cli" });
   assert.equal((await f.fetchWorker(`/api/oauth/requests/${request.requestId}`, { headers: { Cookie: request.binding, Authorization: `Bearer ${pat.token}` } })).status, 401);
   // A cross-site form post is refused even with the cookies.
   const crossSite = await f.fetchWorker(`/api/oauth/requests/${request.requestId}/approve`, { method: "POST", headers: { Cookie: `${alice}; ${request.binding}`, Origin: "https://attacker.example" } });
@@ -679,7 +690,7 @@ test("Admin MCP authorization is for active administrators only, and the audienc
   const request = await startAuthorization(f, { clientId: client.client_id, audience: "admin", challenge });
   const view = await (await f.fetchWorker(`/api/oauth/requests/${request.requestId}`, { headers: { Cookie: `${alice}; ${request.binding}` } })).json();
   assert.equal(view.audience, "admin");
-  assert.deepEqual(view.scopes, ["mcp:admin:read", "mcp:admin:write"]);
+  assert.deepEqual(view.scopes, ["mcp:admin:read"]);
   assert.equal(view.eligible, false, "the consent screen offers a non-admin no approval");
   const approved = await consent(f, request, alice);
   assert.equal(new URL(approved.body.redirectTo).searchParams.get("error"), "access_denied");
@@ -731,7 +742,7 @@ test("scopes map to tools: a read-only grant lists no write tools and a write ca
 
 test("PATs keep working beside OAuth, and both credential types share one account quota", async (t) => {
   const f = setup(t);
-  const pat = await issueMcpCredential(f.env.DB, { userId: "alice", audience: "user", name: "cli" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "cli" });
   const { tokens } = await connect(f);
   f.limits.length = 0;
   assert.equal((await rpc(f, "user", pat.token)).status, 200);
@@ -772,7 +783,7 @@ test("users list and revoke their own connected applications, separately from PA
   assert.equal(grant.clientName, "Test Client");
   assert.equal(grant.clientId, client.client_id);
   assert.equal(grant.audience, "user");
-  assert.deepEqual(grant.scopes, ["mcp:user:read", "mcp:user:write"]);
+  assert.deepEqual(grant.scopes, ["mcp:user:read"]);
   assert.equal(grant.status, "active");
   assert.ok(!JSON.stringify(list).includes(tokens.access_token) && !JSON.stringify(list).includes(tokens.refresh_token));
   assert.deepEqual((await (await f.fetchWorker("/api/mcp-tokens", { headers: { Cookie: alice } })).json()).credentials, [], "not a PAT");
@@ -792,7 +803,7 @@ test("users list and revoke their own connected applications, separately from PA
 test("signing out of the browser leaves OAuth grants and PATs working", async (t) => {
   const f = setup(t);
   const { tokens } = await connect(f);
-  const pat = await issueMcpCredential(f.env.DB, { userId: "alice", audience: "user", name: "cli" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "alice", audience: "user", name: "cli" });
   const out = await f.fetchWorker("/api/auth/logout", { method: "POST", headers: { Cookie: await session(f, "alice") } });
   assert.equal(out.status, 200);
   assert.equal((await rpc(f, "user", tokens.access_token)).status, 200);
@@ -812,7 +823,7 @@ test("RFC 7009 revocation by the client disconnects the grant; a foreign client 
 
 test("Admin MCP mutations through OAuth are audited against the grant", async (t) => {
   const f = setup(t);
-  const { tokens } = await connect(f, { userId: "root", audience: "admin" });
+  const { tokens } = await connect(f, { userId: "root", audience: "admin", scope: "mcp:admin:write" });
   const created = await payload(await rpc(f, "admin", tokens.access_token, "tools/call", { name: "admin_create_tag", arguments: { name: "oauth-tag" } }));
   assert.equal(created.result.structuredContent.ok, true, JSON.stringify(created));
   const audit = f.db.prepare("SELECT credential_id, oauth_grant_id, admin_user_id, tool FROM admin_mcp_audit_log").get();
@@ -821,7 +832,7 @@ test("Admin MCP mutations through OAuth are audited against the grant", async (t
   const view = f.db.prepare("SELECT credential_id, oauth_grant_id FROM content_mutation_audit WHERE entry_point = 'admin_mcp'").get();
   assert.equal(view.oauth_grant_id, grant.id);
 
-  const pat = await issueMcpCredential(f.env.DB, { userId: "root", audience: "admin", name: "cli" });
+  const pat = await issueMcpCredential(f.env.DB, { sessionVersion: 0, userId: "root", audience: "admin", name: "cli" });
   await payload(await rpc(f, "admin", pat.token, "tools/call", { name: "admin_create_tag", arguments: { name: "pat-tag" } }));
   const patAudit = f.db.prepare("SELECT credential_id, oauth_grant_id FROM admin_mcp_audit_log WHERE credential_id IS NOT NULL").get();
   assert.deepEqual({ ...patAudit }, { credential_id: pat.id, oauth_grant_id: null });

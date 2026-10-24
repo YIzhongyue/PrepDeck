@@ -3,11 +3,10 @@ import { MORE_ICON_D, NAV } from "../data/constants";
 import { useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import { isModifiedClick, useScreenHref } from "../store/urlRouting";
 import type { ScreenId } from "../types";
+import { useI18n } from "../i18n";
 
-const TAB_IDS: ScreenId[] = ["dash", "practice", "mock", "wrong"];
-const TAB_LABELS: Record<string, string> = {
-  dash: "Home", practice: "Practice", mock: "Mock", wrong: "Wrong"
-};
+// Short labels from the `nav.tabs` messages fit the phone's tab bar.
+const TAB_IDS = ["dash", "practice", "mock", "wrong"] as const satisfies ScreenId[];
 const MORE_IDS: ScreenId[] = ["learning", "bookmarks", "notes", "knowledgePoints", "settings"];
 
 export default function TabBar({ onHeightChange }: { onHeightChange: (height: number) => void }) {
@@ -24,6 +23,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
   const state = useWorkspaceState();
   const { go, openMore } = useWorkspaceActions();
   const hrefFor = useScreenHref();
+  const { t } = useI18n();
   // The screens without a tab of their own live behind More, so it stands in
   // for them while one is open.
   const moreOn = state.more || MORE_IDS.includes(state.screen) || state.screen === "admin";
@@ -31,7 +31,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
   return (
     <nav
       ref={navRef}
-      aria-label="Main navigation"
+      aria-label={t("nav.mainNavigation")}
       style={{
         position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "var(--color-bg)",
         borderTop: "1px solid var(--color-divider)", padding: "8px 6px calc(8px + env(safe-area-inset-bottom))"
@@ -60,7 +60,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
               <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d={n.d} />
               </svg>
-              <span>{TAB_LABELS[id]}</span>
+              <span>{t(`nav.tabs.${id}`)}</span>
             </a>
           );
         })}
@@ -76,7 +76,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
             <path d={MORE_ICON_D} />
           </svg>
-          <span>More</span>
+          <span>{t("nav.more")}</span>
         </button>
       </div>
     </nav>
@@ -86,6 +86,7 @@ export default function TabBar({ onHeightChange }: { onHeightChange: (height: nu
 export function MoreSheet() {
   const state = useWorkspaceState();
   const { go, closeMore } = useWorkspaceActions();
+  const { t } = useI18n();
 
   const hrefFor = useScreenHref();
   if (!state.more) return null;
@@ -94,7 +95,7 @@ export function MoreSheet() {
   return (
     <div onClick={closeMore} className="dialog-backdrop" style={{ alignItems: "flex-end", zIndex: 60 }}>
       <div className="dialog" style={{ width: "100%", maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
-        <span className="dialog-title">More</span>
+        <span className="dialog-title">{t("nav.more")}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {moreIds.map((id) => {
             const n = NAV.find((x) => x.id === id)!;
@@ -119,7 +120,7 @@ export function MoreSheet() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d={n.d} />
                 </svg>
-                <span>{n.label}</span>
+                <span>{t(`nav.screens.${n.id}`)}</span>
               </a>
             );
           })}
