@@ -12,7 +12,8 @@ async function sha256Hex(material: string): Promise<string> {
 // "Same file (and tag taxonomy) as preview" fingerprint — same
 // canonical-hash idiom as lib/questionProposals.ts's proposalToken.
 // admin_execute_import recomputes this from the resubmitted file AND the
-// file's tag names re-resolved against CURRENT catalog state, and rejects a
+// file's tag names re-resolved against CURRENT catalog state (reconstructing
+// missing entries only from this job's atomic tag-creation evidence), and rejects a
 // mismatch as stale. implementation called this "binding execution to a
 // validated/reviewed payload"; implementation extends it to also bind the reviewed
 // TAG RESOLUTION — `tagSnapshot` (lib/questionBankTags.ts's

@@ -883,6 +883,22 @@ Also in `src/mcp/admin/server.ts`/`createAdminMcpAdapter`:
 
   Re-import conflict classification (`lib/importConflicts.ts`) compares current linked tag IDs with `import_baseline_tag_ids_json`, rather than display names. A merge remaps and deduplicates the baseline IDs in the same guarded transaction as live associations; it does not change question content or answer revisions. This is the only part of a merge that writes question rows at all, and it is the only unbounded work in that transaction: the statement has no index-usable predicate, so it leads with `import_baseline_tag_ids_json IS NOT NULL` to drop every never-imported question before expanding a JSON array per row. Renames preserve identity. Both operations therefore avoid false `locally_edited` conflicts while retaining genuine manual-edit conflicts. Separately, `admin_preview_import`'s `importToken` binds the current name-to-ID resolution (`tagResolutionSnapshot`); execution rejects a taxonomy change after preview instead of silently committing a different identity.
 
+Import replay and stale-claim recovery keep the original preview token. The internal
+`admin_mcp_import_created_tags` ledger (`0047_admin_mcp_import_created_tags.sql`)
+records only normalized names and IDs actually created by that import, atomically
+with each tag insertion. Verification reconstructs the preview's missing-tag
+entries from this evidence; changed existing tags, renamed/merged/deleted created
+tags, other requests and other administrators still fail closed. Verification is
+repeated after tag resolution before question writes. This is not a transaction
+locking the entire catalog: an external mutation after that check remains outside
+this bounded recovery guarantee.
+
+Apply migration 0047 before deploying this adapter. It is additive and may remain
+when rolling code back. Existing jobs without evidence are not backfilled from the
+current catalog: if their original token no longer matches, recovery/replay is
+rejected rather than guessing tag ownership. Failed empty jobs retain their job ID,
+archive and evidence when reclaimed. No public tool schema or token format changes.
+
 Tests: `apps/worker/scripts/mcp-admin-mutations.test.mjs`, `apps/worker/scripts/mcp-admin-imports.test.mjs`,
 `apps/worker/scripts/question-bank-tags.test.mjs`.
 
@@ -1031,7 +1047,8 @@ here. MCP-specific migrations as of this writing:
 `0023_admin_mcp_import_jobs.sql`, `0024_admin_mcp_import_committed_items.sql`,
 `0025_kp_order_scopes.sql`, `0026_question_tag_links.sql`,
 `0027_drop_questions_tags_json.sql`, `0045_mcp_oauth.sql` (OAuth clients,
-requests, grants, codes and tokens, and the audit log's `oauth_grant_id`) — plus the earlier, REST-shared
+requests, grants, codes and tokens, and the audit log's `oauth_grant_id`),
+`0047_admin_mcp_import_created_tags.sql` — plus the earlier, REST-shared
 `0014_knowledge_points.sql` that User MCP's Knowledge Point tools also
 depend on. Until `0017`/`0018` are applied, neither endpoint grants access
 (no credentials table to authenticate against); until `0025` is applied,
