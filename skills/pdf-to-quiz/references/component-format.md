@@ -1,5 +1,7 @@
 # Component import 2.0
 
+Before selecting 2.0, apply the [Markdown-first format-selection rule](import-format.md): prefer 1.0 Markdown content inside JSON for plain-text `single_choice` or `multiple_choice` questions with no tables, charts, diagrams or images only when all content and answer structure remain faithful. Otherwise retain the appropriate supported workflow below; never discard structured or visual material to qualify for Markdown.
+
 Use [the executable JSON Schema](component-import.schema.json) for structured
 questions. The legacy [1.0 contract](import-format.md) remains supported.
 This format is independent of PDF source, language and exam provider.
