@@ -13,12 +13,28 @@
 //   RENDER_COUNTS=print node apps/web/scripts/render-counts.browser.mjs
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { readBody, waitUntil } from "./browser-fixture.mjs";
+import { assertRenderCounts } from "./render-counts.assertions.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 
-const { outputFiles } = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
+// Negative controls alter only this synthetic bundle / hook, never source on
+// disk. They run through the same interactions and assertions as the baseline.
+const negativeControl = process.env.RENDER_COUNTS_NEGATIVE_CONTROL ?? "";
+assert.ok(["", "hot-shell", "disabled-collector"].includes(negativeControl), "Unknown render-count negative control");
+const plugins = negativeControl === "hot-shell" ? [{ name: "hot-shell-subscription", setup(builder) {
+  builder.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, ({ path }) => {
+    const source = readFileSync(path, "utf8");
+    assert.ok(source.includes("function ShellContent() {"), "Cannot install ShellContent negative control");
+    return { loader: "tsx", contents: `import { usePrepDeck as useHotState } from "./store/PrepDeckContext";\n` +
+      source.replace("function ShellContent() {", "function ShellContent() { useHotState();") };
+  });
+} }] : [];
+
+const { outputFiles } = await build({ plugins, stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
 import {PrepDeckProvider,usePrepDeck} from './src/store/PrepDeckContext'; import {Shell} from './src/App';
 function Probe(){window.store=usePrepDeck();return null;}
 createRoot(document.getElementById('root')).render(<PrepDeckProvider><Probe/><Shell/></PrepDeckProvider>);`,
@@ -104,15 +120,6 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 
-// What each interaction may re-render at most, after the slice split: the
-// screen that shows the change, and none of the navigation around it.
-const LIMITS = {
-  "pick a practice option": { never: ["Shell", "Sidebar", "ExamSelector"] },
-  "check a practice answer": { never: ["Shell", "Sidebar", "ExamSelector"] },
-  "type 20 characters of a note": { never: ["Shell", "Sidebar", "PracticeLive", "ExplanationPanel", "OptionRow"] },
-  "mock countdown, 3 ticks": { never: ["Shell", "Sidebar", "ExamSelector", "MockLive", "OptionRow", "QuestionContent"] },
-};
-
 let browser;
 const results = {};
 try {
@@ -138,6 +145,15 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.waitForFunction(() => window.store?.state.workspaceStatus === "ready");
   await page.getByRole("heading").first().waitFor();
+  const counter = await page.evaluate(() => ({
+    renderers: window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers.size ?? 0,
+    shellRenders: window.__renders?.ShellContent ?? 0,
+  }));
+  assert.ok(counter.renderers > 0, "React did not register with the render counter");
+  assert.ok(counter.shellRenders > 0, "Render counter did not observe the initial ShellContent render");
+  if (negativeControl === "disabled-collector") {
+    await page.evaluate(() => { window.__REACT_DEVTOOLS_GLOBAL_HOOK__.onCommitFiberRoot = () => {}; });
+  }
 
   await invoke("go", "practice");
   await invoke("begin", ["q1", "q2", "q3"]);
@@ -176,14 +192,31 @@ try {
   }
   if (process.env.RENDER_COUNTS_JSON) console.log(JSON.stringify(results));
   if (process.env.RENDER_COUNTS !== "print") {
-    for (const [label, { never }] of Object.entries(LIMITS)) {
-      const rendered = never.filter(name => results[label][name]);
-      assert.deepEqual(rendered, [], `${label} re-rendered ${rendered.join(", ")}`);
-    }
+    assertRenderCounts(results);
     console.log("PASS answering, note typing and the mock countdown re-render only what they change");
   }
   assert.deepEqual(errors, []);
 } finally {
   await browser?.close();
   server.close();
+}
+
+// These must fail for the intended assertion, not for an unrelated setup,
+// browser, or network error. The normal regression runner therefore exercises
+// real hot-field subscriptions and broken collection on every checked run.
+if (!negativeControl && process.env.RENDER_COUNTS !== "print") {
+  for (const [control, expectedFailure] of [
+    ["hot-shell", /pick a practice option re-rendered ShellContent/],
+    ["disabled-collector", /pick a practice option did not record PracticeLive/],
+  ]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+      env: { ...process.env, RENDER_COUNTS_NEGATIVE_CONTROL: control, RENDER_COUNTS: "" },
+      encoding: "utf8", timeout: 120_000,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, `${control} was interrupted`);
+    assert.notEqual(result.status, 0, `${control} unexpectedly passed`);
+    assert.match(result.stdout + result.stderr, expectedFailure, `${control} failed for an unrelated reason`);
+    console.log(`PASS negative control: ${control} was rejected by the render assertions`);
+  }
 }
