@@ -37,7 +37,11 @@ export interface NoteResponse {
 
 export interface NotesListResponse {
   notes: NoteWithAuthor[];
+  /** Opaque continuation for the same scope. null means the last page. */
+  nextCursor: string | null;
 }
+
+export const NOTES_PAGE_SIZE = 25;
 
 // Length limits (issue #45), in UTF-16 code units, the unit of a textarea's
 // maxLength and of String.length. A shared note is sent to every member who

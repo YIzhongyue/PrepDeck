@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildKnowledgePointsListQuery } from "./knowledgePointsQuery.ts";
 
+test("search bounds apply before SQL construction and trimming", () => {
+  for (const q of ["x".repeat(200), "界".repeat(200), "😀".repeat(200)]) {
+    assert.ok(buildKnowledgePointsListQuery("u1", { q }));
+    assert.equal(buildKnowledgePointsListQuery("u1", { q: q + "x" }), null);
+  }
+  assert.ok(buildKnowledgePointsListQuery("u1", { tagIds: Array(20).fill("t") }));
+  assert.equal(buildKnowledgePointsListQuery("u1", { tagIds: Array(21).fill("t") }), null);
+  assert.equal(buildKnowledgePointsListQuery("u1", { tagIds: ["t".repeat(201)] }), null);
+  assert.deepEqual(buildKnowledgePointsListQuery("u1", { q: "%_" })?.binds, ["u1", "%%_%", "%%_%"]);
+});
+
 test("no params defaults to updated DESC, unfiltered beyond owner", () => {
   const q = buildKnowledgePointsListQuery("u1", {});
   assert.equal(q?.where, "kp.user_id = ?");

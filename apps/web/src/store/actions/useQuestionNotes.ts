@@ -1,7 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { NoteResponse, NotesListResponse } from "@prepdeck/shared";
 import { apiFetch } from "../../lib/api";
-import { fromSharedNote } from "../../lib/notes";
+import { fromSharedNote, sortNotes } from "../../lib/notes";
 import type { StoreCore } from "./useStoreCore";
 import { t } from "../../i18n/runtime";
 
@@ -10,6 +10,35 @@ export type QuestionNotes = ReturnType<typeof useQuestionNotes>;
 
 export function useQuestionNotes(core: StoreCore) {
   const { requests, scopedState, setState, stateRef } = core;
+  const visibilityGeneration = useRef(0);
+  const changingVisibility = useRef(false);
+
+  const loadNotesPage = useCallback((questionId?: string) => {
+    const s = stateRef.current;
+    if (!s.examId || s.switching || changingVisibility.current) return;
+    const key = questionId ? `question:${questionId}` : "exam";
+    const page = s.notesPages[key];
+    if (page?.status === "loading" || (page?.status === "ready" && !page.cursor)) return;
+    const update = scopedState();
+    const generation = visibilityGeneration.current;
+    const cursor = page?.cursor ?? null;
+    setState(current => ({ notesPages: { ...current.notesPages, [key]: { cursor, status: "loading" } } }));
+    const query = new URLSearchParams(questionId ? {} : { examId: s.examId });
+    if (cursor) query.set("cursor", cursor);
+    const path = questionId ? `/api/questions/${encodeURIComponent(questionId)}/notes` : "/api/notes";
+    void apiFetch<NotesListResponse>(`${path}?${query}`).then(result => {
+      if (generation !== visibilityGeneration.current) return;
+      update(current => {
+        const byId = new Map(current.notes.map(note => [note.id, note]));
+        for (const note of result.notes) byId.set(note.id, fromSharedNote(note));
+        return { notes: sortNotes([...byId.values()]), notesPages: { ...current.notesPages,
+          [key]: { cursor: result.nextCursor ?? null, status: "ready" } } };
+      });
+    }).catch(() => {
+      if (generation !== visibilityGeneration.current) return;
+      update(current => ({ notesPages: { ...current.notesPages, [key]: { cursor, status: "error" } } }));
+    });
+  }, [scopedState, setState, stateRef]);
 
   const setNoteDraft = useCallback((v: string) => setState(s => ({ noteDraft: v,
     noteDraftQuestionId: v ? (s.noteDraftQuestionId ?? (s.screen === "learning" ? s.lQueue[s.lIdx] : s.queue[s.idx]) ?? null) : null
@@ -26,7 +55,7 @@ export function useQuestionNotes(core: StoreCore) {
     void requests.write("note-draft", () => apiFetch<NoteResponse>(`/api/questions/${qid}/notes`, {
       method: "POST", body: JSON.stringify({ content, visibility: s.noteVis })
     })).then(({ note }) => update(current => ({
-      notes: current.notes.concat(fromSharedNote(note)), noteDraft: current.noteDraft.trim() === content ? "" : current.noteDraft,
+      notes: sortNotes(current.notes.concat(fromSharedNote(note))), noteDraft: current.noteDraft.trim() === content ? "" : current.noteDraft,
       noteDraftQuestionId: current.noteDraft.trim() === content ? null : current.noteDraftQuestionId
     }))).catch(() => update({ actionError: t("errors.notes.save") }));
   }, [requests, scopedState, stateRef]);
@@ -46,15 +75,23 @@ export function useQuestionNotes(core: StoreCore) {
   // FR-11.4: persisted server-side (so it applies from any device/session),
   // then re-fetch notes since the visible set of others' shared notes changes.
   const toggleShared = useCallback(() => {
+    if (changingVisibility.current) return;
     const setState = scopedState("toggleShared");
-    const examId = stateRef.current.examId;
     const next = !stateRef.current.showShared;
+    const generation = ++visibilityGeneration.current;
+    changingVisibility.current = true;
     setState({ showShared: next });
-    apiFetch("/api/settings", { method: "PATCH", body: JSON.stringify({ showSharedNotes: next }) })
-      .then(() => apiFetch<NotesListResponse>(`/api/notes?examId=${encodeURIComponent(examId ?? "")}`))
-      .then(({ notes }) => setState({ notes: notes.map(fromSharedNote) }))
-      .catch(() => {});
-  }, [scopedState, stateRef]);
+    void requests.write("shared-notes-setting", () => apiFetch("/api/settings", { method: "PATCH", body: JSON.stringify({ showSharedNotes: next }) }))
+      .then(() => {
+        if (generation !== visibilityGeneration.current) return;
+        changingVisibility.current = false;
+        setState({ notes: [], notesPages: {} });
+      }).catch(() => {
+        if (generation !== visibilityGeneration.current) return;
+        changingVisibility.current = false;
+        setState({ showShared: !next, notes: [], notesPages: {} });
+      });
+  }, [requests, scopedState, stateRef]);
 
-  return { setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared };
+  return { setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, loadNotesPage };
 }

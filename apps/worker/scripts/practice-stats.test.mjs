@@ -42,6 +42,19 @@ function setup(t) {
   return { db, env, kvWrites: KV.writes, request, startPractice, answer, attemptRow };
 }
 
+test("completion stays successful during a KV outage and writes no invalidation", async t => {
+  const { env, request, startPractice, answer, attemptRow } = setup(t);
+  const attempt = await startPractice(["q1"]);
+  await answer(attempt, "q1", "A");
+  env.KV.failures.delete = new Error("synthetic cache outage");
+  const completed = await request(`/attempts/${attempt}/complete`, "POST");
+  assert.equal(completed.status, 200);
+  assert.ok(attemptRow(attempt).completed_at);
+  assert.equal(env.KV.deletes.length, 0);
+  assert.equal((await request(`/attempts/${attempt}/complete`, "POST")).status, 200);
+  assert.equal(env.KV.deletes.length, 0);
+});
+
 test("graded practice answers count in every statistic before the session is ended", async t => {
   const { db, env, startPractice, answer } = setup(t);
   const attempt = await startPractice(["q1", "q2", "q3"]);

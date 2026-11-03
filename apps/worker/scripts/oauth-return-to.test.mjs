@@ -21,9 +21,21 @@ test("returnTo accepts same-origin paths only", () => {
     ["/settings#frag", "/settings"],
   ]) assert.equal(safeReturnTo(input), expected, input);
   for (const input of ["//evil.example/x", "/\\evil.example", "https://evil.example/", "javascript:alert(1)", "evil", "", "/api/auth/me",
-    "/mcp", "/admin-mcp/x", "/cdn-cgi/x", "/a\nb", `/${"x".repeat(2100)}`, 42, null]) {
+    "/mcp", "/admin-mcp/x", "/cdn-cgi/x", "/a\nb", "/a/..//example.invalid", "/a/%2e%2e//example.invalid", `/${"x".repeat(2100)}`, 42, null]) {
     assert.equal(safeReturnTo(input), null, JSON.stringify(input));
   }
+});
+
+test("normalized returnTo is idempotent and Turnstile GET remains same-origin", async t => {
+  for (const input of ["/a/../settings?x=1&auth=error", "/a/%2e%2e/settings", "/settings?next=%2F%2Fexample.invalid"]) {
+    const result = safeReturnTo(input);
+    assert.equal(safeReturnTo(result), result);
+    assert.equal(new URL(result, "https://prepdeck.test").origin, "https://prepdeck.test");
+  }
+  const env = { ...environment(t), TURNSTILE_SITE_KEY: "synthetic-site-key" };
+  const response = await authRouter.request("https://prepdeck.test/google/start?returnTo=%2Fa%2F..%2F%2Fexample.invalid", {}, env);
+  assert.equal(response.status, 302);
+  assert.equal(new URL(response.headers.get("Location"), "https://prepdeck.test").origin, "https://prepdeck.test");
 });
 
 async function signingKey() {

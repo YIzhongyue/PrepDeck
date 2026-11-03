@@ -227,9 +227,14 @@ test("issue #89: MCP practice persists in browser history, fresh cached stats an
   assert.equal(history.history[0].isCorrect, false);
   assert.equal((await webCall(f, "bob", "/questions/q1/learning-detail")).history.length, 0);
 
+  const statsKey = statsKeys().find(key => key.includes(":alice:"));
+  const markerBeforeCompletion = JSON.parse(f.kvStore.get(statsKey)).marker;
   const completed = await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId });
   assert.deepEqual([completed.mode, completed.score, completed.totalQuestions, completed.correctCount], ["practice", 50, 2, 1]);
-  assert.equal(statsKeys().some(key => key.includes(":alice:")), false, "same eager cache invalidation as REST completion");
+  assert.equal(JSON.parse(f.kvStore.get(statsKey)).marker, markerBeforeCompletion, "completion performs no redundant KV delete");
+  const afterCompletion = await webCall(f, "alice", "/exams/exam1/stats");
+  assert.equal(afterCompletion.totalAnswers, 2);
+  assert.notEqual(JSON.parse(f.kvStore.get(statsKey)).marker, markerBeforeCompletion, "authoritative completion marker refreshes the next stats read");
   assert.deepEqual(await webCall(f, "alice", `/attempts/${attemptId}/complete`, "POST"), completed);
   assert.deepEqual(await callUserTool(f, f.alice.token, "user_complete_practice", { attemptId }), completed);
   assert.equal((await callUserTool(f, f.alice.token, "user_list_attempts", { completedOnly: true })).items[0].id, attemptId);

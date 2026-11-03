@@ -540,7 +540,7 @@ export function KnowledgePointsProvider({ children, activeExamId = null }: { chi
       setState(s => ({ editing: s.editing ? { ...s.editing, images: [...s.editing.images, image] } : null }));
       return image.url;
     } catch (error) {
-      if (generation === generationRef.current) setState({ uploadError: t("errors.kp.uploadFailed"), saveStatus: "error" });
+      if (generation === generationRef.current) setState({ uploadError: error instanceof ApiError && (error.body as { code?: string } | null)?.code === "quota_exceeded" ? error.message : t("errors.kp.uploadFailed"), saveStatus: "error" });
       throw error;
     } finally {
       uploadsRef.current.delete(upload);

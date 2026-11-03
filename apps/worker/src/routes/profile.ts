@@ -4,6 +4,8 @@
 // elsewhere — see middleware/access.ts and routes/notes.ts respectively.
 
 import { createRouter } from "../context";
+import { streamBodyLimit } from "../lib/streamBodyLimit";
+import { hasValidImageContent, type IconContentType } from "../lib/imageValidation";
 import { invalidateCachedUser } from "../lib/userCache";
 import { readBody } from "../lib/requestBody";
 import { updateProfileRequestSchema } from "@prepdeck/shared/schemas";
@@ -33,6 +35,10 @@ profileRouter.patch("/", async (c) => {
   if (!parsed.ok) return parsed.response;
   const { displayName } = parsed.data;
 
+  const current = await c.env.DB.prepare("SELECT id, email, role, display_name, avatar_url FROM users WHERE id = ?")
+    .bind(userId).first<ProfileRow>();
+  if (current?.display_name === displayName) return c.json({ user: toProfile(current) });
+
   await c.env.DB.prepare("UPDATE users SET display_name = ? WHERE id = ?").bind(displayName, userId).run();
   await invalidateCachedUser(c.env, userId, c.get("user").email);
   const row = await c.env.DB.prepare("SELECT id, email, role, display_name, avatar_url FROM users WHERE id = ?")
@@ -46,7 +52,7 @@ profileRouter.patch("/", async (c) => {
 // raw binary body with its real image Content-Type (no multipart parsing
 // needed for a single-file upload); size and type are re-validated here
 // since the client-side check is a UX nicety, not a security boundary.
-profileRouter.post("/avatar", async (c) => {
+profileRouter.post("/avatar", streamBodyLimit(MAX_AVATAR_BYTES, "Avatar must be 2 MB or smaller"), async (c) => {
   const userId = c.get("user").id;
   const contentType = c.req.header("Content-Type") ?? "";
   if (!ALLOWED_AVATAR_TYPES.has(contentType)) {
@@ -56,6 +62,9 @@ profileRouter.post("/avatar", async (c) => {
   const body = await c.req.arrayBuffer();
   if (body.byteLength === 0) return c.json({ error: "Empty upload" }, 400);
   if (body.byteLength > MAX_AVATAR_BYTES) return c.json({ error: "Avatar must be 2 MB or smaller" }, 413);
+  if (!hasValidImageContent(body, contentType as IconContentType)) {
+    return c.json({ error: "File content does not match the declared image type or safe dimensions" }, 400);
+  }
 
   // One active avatar per user — a re-upload overwrites the previous object
   // at the same key. The `v` query param is cache-busting only (the GET

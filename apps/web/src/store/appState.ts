@@ -171,6 +171,7 @@ export interface AppState {
   anns: Annotation[];
   markAliases: Record<MarkStyle, string>;
   notes: Note[];
+  notesPages: Record<string, { cursor: string | null; status: "loading" | "ready" | "error" }>;
   noteDraft: string;
   noteDraftQuestionId: string | null;
   noteVis: "private" | "shared";
@@ -212,7 +213,7 @@ export const initialState: AppState = {
 
   listMode: "wrong",
   bookmarks: {}, wrong: {}, attempted: {}, mastered: {}, studyStatus: {}, studyStatusError: false, ai: {}, anns: [], markAliases: { ...DEFAULT_MARK_ALIASES }, notes: [],
-  noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, timeZone: null, emailSettings: null,
+  notesPages: {}, noteDraft: "", noteDraftQuestionId: null, noteVis: "private", showShared: true, timeZone: null, emailSettings: null,
   provider: "anthropic", model: CURATED_MODELS.anthropic[0]!.id,
   // Both are per account (issue #46), so they are read once the account is known.
   keyMode: "memory", hasSessionKey: false, hasStoredKey: false,

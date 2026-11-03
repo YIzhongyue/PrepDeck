@@ -21,7 +21,7 @@ const UNUSED_CLIENT_MS = 30 * DAY_MS;
 const SWEEPS: ReadonlyArray<{ sql: string; cutoff: (now: number) => number }> = [
   { sql: "DELETE FROM mcp_oauth_tokens WHERE id IN (SELECT id FROM mcp_oauth_tokens WHERE expires_at < ? LIMIT ?)", cutoff: (now) => now },
   { sql: "DELETE FROM mcp_oauth_codes WHERE code_hash IN (SELECT code_hash FROM mcp_oauth_codes WHERE expires_at < ? LIMIT ?)", cutoff: (now) => now - DAY_MS },
-  { sql: "DELETE FROM mcp_oauth_requests WHERE id IN (SELECT id FROM mcp_oauth_requests WHERE expires_at < ? LIMIT ?)", cutoff: (now) => now - DAY_MS },
+  { sql: "DELETE FROM mcp_oauth_requests WHERE id IN (SELECT id FROM mcp_oauth_requests WHERE expires_at <= ? LIMIT ?)", cutoff: (now) => now },
   {
     sql: `DELETE FROM mcp_oauth_clients WHERE id IN (
       SELECT c.id FROM mcp_oauth_clients c WHERE c.created_at < ?

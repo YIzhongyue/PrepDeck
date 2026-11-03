@@ -44,7 +44,7 @@ export function classifyRequest(method: string, path: string): RateLimitClass {
   // authorization request, or a new dynamically registered client. The token
   // endpoint keeps the ordinary write budget, since clients refresh routinely.
   if (path === "/api/oauth/authorize" || path === "/api/oauth/register") return "auth";
-  if (path === "/api/ai/generate") return "ai";
+  if (method === "POST" && path === "/api/ai/generate") return "ai";
   if (method === "PUT" && (DRAFT_SAVE_PATH.test(path) || KP_AUTOSAVE_PATH.test(path))) return "draft";
   return method === "GET" || method === "HEAD" ? "read" : "write";
 }
@@ -127,7 +127,7 @@ export const generalRateLimit: MiddlewareHandler<AppEnv> = async (c, next) => {
   const limit = LIMITS[kind];
   const ip = trustedClientKey(c.req.raw.headers);
   const keys: Array<[string, Limit]> = [[`${kind}:ip:${ip}`, limit]];
-  if (kind === "ai") keys.push(["ai:global", { windowSeconds: 60, max: 200 }]);
+
 
   try {
     for (const [key, keyLimit] of keys) {
@@ -160,5 +160,15 @@ export const authenticatedRateLimit: MiddlewareHandler<AppEnv> = async (c, next)
     return c.json({ error: "Rate-limit service unavailable" }, 503);
   }
   if (!result.allowed) return rejected(c, result.retryAfter);
+  // Only authenticated POST generation requests can consume the shared budget.
+  // Charge the account first so an exhausted account cannot drain this pool.
+  if (kind === "ai") {
+    const global = await consumeRateLimit(c.env, "ai:global", { windowSeconds: 60, max: 200 }).catch(() => null);
+    if (!global) {
+      c.header("Retry-After", "30");
+      return c.json({ error: "Rate-limit service unavailable" }, 503);
+    }
+    if (!global.allowed) return rejected(c, global.retryAfter);
+  }
   await next();
 };

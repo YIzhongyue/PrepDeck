@@ -4,6 +4,11 @@
 
 OpenAI and Anthropic are supported through a same-origin BYOK relay. Provider keys
 default to browser memory, with optional passphrase-encrypted IndexedDB storage.
+Memory keys are bound to the resolved account. Logout, session loss, account
+changes and restored pages invalidate them; a non-secret localStorage marker
+propagates revocation across tabs. Generation rechecks the current identity
+before sending a key. Pending encryption or unlock cannot restore a revoked
+memory key. These checks preserve other accounts' encrypted records.
 The [AI route](../../apps/worker/src/routes/ai.ts),
 [prompt template](../../apps/worker/prompts/explanation.njk) and
 [key storage](../../apps/web/src/lib/keyStorage.ts) are the implementation sources.
@@ -86,6 +91,11 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 <a id="fr-7-7"></a>
 
 - **FR-7.7 (S):** Admin (or the original requester) can force-regenerate a specific cached `(question_id, provider, model)` entry, or manually edit its stored text.
+
+  Manual edits accept at most 32,768 Unicode code points before trimming and a
+  512 KiB (524,288-byte) streamed JSON request. The request ceiling allows
+  JSON escaping without changing the content ceiling. Oversized requests
+  return 413; oversized content returns 400 without updating the row.
 
 <a id="fr-7-8"></a>
 

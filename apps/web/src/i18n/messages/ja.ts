@@ -6,6 +6,7 @@
 import type { LocaleMessages } from "./en";
 
 const messages: LocaleMessages = {
+  quota: { usage: "ナレッジポイント：{notes}/10,000 件 · 本文 {body}/100 MiB · 画像 {images}/5,000 枚、{imageBytes}/500 MiB", near: "保存容量の上限に近づいています。閲覧、エクスポート、削除、使用量を増やさない編集は引き続き利用できます。" },
   common: {
     loading: "読み込み中…",
     retry: "再試行",

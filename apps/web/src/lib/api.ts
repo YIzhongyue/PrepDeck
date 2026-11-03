@@ -4,6 +4,7 @@
 // relative path works in both cases.
 
 import { t } from "../i18n/runtime";
+import { clearSessionKey } from "./keyStorage";
 
 export class ApiError extends Error {
   status: number;
@@ -31,9 +32,11 @@ let sessionLoss: "expired" | "revoked" | null = null;
 function announceSessionLoss(path: string, status: number, body: unknown): void {
   if (sessionLoss || path.startsWith("/api/auth/") || typeof window === "undefined") return;
   if (status === 401) {
+    clearSessionKey();
     sessionLoss = "expired";
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
   } else if (status === 403 && body && typeof body === "object" && "email" in body) {
+    clearSessionKey();
     // Only the session check puts `email` on a 403; an admin-only refusal does not.
     sessionLoss = "revoked";
     window.dispatchEvent(new CustomEvent(ACCESS_REVOKED_EVENT, { detail: { email: (body as { email: unknown }).email } }));

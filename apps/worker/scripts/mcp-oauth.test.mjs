@@ -14,11 +14,12 @@ import { openDatabase } from "../../../tests/support/migrations.mjs";
 import { createKv } from "../../../tests/support/kv.mjs";
 import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
-const { worker, issueSessionToken, issueMcpCredential, runMcpOAuthPrune, validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } =
+const { worker, issueSessionToken, issueMcpCredential, runMcpOAuthPrune, validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId, createAuthorizationRequest } =
   await importTs({
   contents: `export { default as worker } from './src/index.ts';
       export { issueSessionToken } from './src/lib/session.ts';
       export { issueMcpCredential } from './src/mcp/credentials.ts';
+      export { createAuthorizationRequest } from './src/mcp/oauth/grants.ts';
       export { runMcpOAuthPrune } from './src/scheduled/pruneMcpOAuth.ts';
       export { validRedirectUri, redirectUriAllowed, isMetadataDocumentClientId } from './src/mcp/oauth/clients.ts';`,
   resolveDir: new URL("..", import.meta.url),
@@ -875,4 +876,53 @@ test("the daily prune clears sealed rotation results once their window has passe
   await runMcpOAuthPrune(f.env, () => Date.now() + 2 * 60 * 1000);
   assert.equal(sealed(), 0);
   assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_tokens").get().n, 4, "unexpired tokens stay");
+});
+
+test("authorization admission is atomic at its backlog cap and reclaims only expired requests", async (t) => {
+  const f = setup(t);
+  const { body: client } = await register(f);
+  // Execute the production SQL on SQLite with a two-row boundary, avoiding
+  // a load test. Only the two cap bind values are scaled; SQL is unmodified.
+  const db = { prepare(sql) {
+    const statement = f.env.DB.prepare(sql);
+    return { bind(...args) {
+      if (sql.includes("INSERT INTO mcp_oauth_requests")) args.splice(-2, 2, 2, 2);
+      return statement.bind(...args);
+    } };
+  } };
+  const input = { client: { id: client.client_id }, redirectUri: REDIRECT, audience: "user", scopes: ["mcp:user:read"], state: null, codeChallenge: "a".repeat(43) };
+  const results = await Promise.all(Array.from({ length: 3 }, () => createAuthorizationRequest(db, input)));
+  assert.equal(results.filter(Boolean).length, 2);
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_requests").get().n, 2);
+  // Route admission refuses without issuing a binding cookie or inserting.
+  const originalDb = f.env.DB;
+  f.env.DB = { ...originalDb, prepare(sql) {
+    if (!sql.includes("INSERT INTO mcp_oauth_requests")) return originalDb.prepare(sql);
+    const statement = originalDb.prepare(sql);
+    return { bind(...args) { args.splice(-2, 2, 2, 2); return statement.bind(...args); } };
+  } };
+  const refused = await f.fetchWorker(authorizeUrl({ client_id: client.client_id, redirect_uri: REDIRECT,
+    response_type: "code", code_challenge: "a".repeat(43), code_challenge_method: "S256", resource: `${BASE}/mcp` }));
+  assert.equal(refused.status, 302);
+  assert.equal(new URL(refused.headers.get("Location")).searchParams.get("error"), "temporarily_unavailable");
+  assert.equal(refused.headers.get("Set-Cookie"), null);
+  f.env.DB = originalDb;
+  const expired = results.find(Boolean).id;
+  f.db.prepare("UPDATE mcp_oauth_requests SET expires_at = ? WHERE id = ?").run(Date.now() - 1, expired);
+  assert.ok(await createAuthorizationRequest(db, input));
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_requests WHERE id = ?").get(expired).n, 0);
+  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM mcp_oauth_requests").get().n, 2);
+  assert.equal(await createAuthorizationRequest(db, input), null);
+});
+
+test("OAuth credentials cannot dispatch a legacy batch", async (t) => {
+  const f = setup(t);
+  const { tokens } = await connect(f);
+  const response = await f.fetchWorker("/mcp", {
+    method: "POST", headers: { Authorization: `Bearer ${tokens.access_token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
+    body: JSON.stringify([{ jsonrpc: "2.0", id: 1, method: "tools/list" }, { jsonrpc: "2.0", id: 2, method: "tools/list" }]),
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await payload(response)).error.code, "invalid_input");
+  assert.equal((await rpc(f, "user", tokens.access_token)).status, 200);
 });

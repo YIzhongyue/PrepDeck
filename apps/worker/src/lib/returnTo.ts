@@ -18,6 +18,9 @@ export function safeReturnTo(value: unknown): string | null {
   let url: URL;
   try { url = new URL(value, "https://prepdeck.invalid"); } catch { return null; }
   if (url.origin !== "https://prepdeck.invalid") return null;
+  // Dot-segment normalization can turn /a/..//host into //host. The
+  // serialized Location must itself remain a same-origin reference.
+  if (url.pathname.startsWith("//")) return null;
   if (RESERVED_PREFIXES.some((prefix) => url.pathname === prefix.replace(/\/$/, "") || url.pathname.startsWith(prefix))) return null;
   // Drop a fragment and any `auth` flag: the flag is how the callback reports
   // failures, never something to replay after a success.

@@ -1,3 +1,4 @@
+import NotesPagination from "../NotesPagination";
 import { createContext, useContext, useLayoutEffect, useRef, useState, type CSSProperties, type DependencyList, type KeyboardEvent, type ReactNode } from "react";
 import { CURATED_MODELS, MAX_NOTE_LENGTH, formatAnswerText } from "@prepdeck/shared";
 import {
@@ -487,6 +488,7 @@ export function NotesPanel({ qid }: { qid: string }) {
   return (
     <div className="st-panel">
       {notes.length > 0 && <div className="st-notes">{notes.map((n) => <NoteCard key={n.id} note={n} />)}</div>}
+      <NotesPagination questionId={qid} />
       <div className="st-compose">
         <textarea
           className="st-textarea" placeholder={t("notes.placeholder")} aria-label={t("notes.forQuestion")}

@@ -112,6 +112,27 @@ export function segsFor(
 /** Same boundary-splitting algorithm as segsFor, but layers a second range
  * source (markdown inline formatting) on top of annotations, scoped to one
  * block's local text — see mdSegsFor below. */
+// Queries must advance in text order. Sorting once and retaining only active
+// ranges avoids rescanning every unrelated range at every block/segment.
+// Original order is retained because later annotations win style precedence.
+// Work is O(n log n) plus active overlaps. Parser-produced inline ranges have
+// bounded nesting (a link may contain emphasis); annotation IDs for genuine
+// overlapping user marks still need to appear on each covered output segment.
+function rangeSweep<T extends { start: number; end: number }>(ranges: T[]) {
+  const pending = ranges.map((range, order) => ({ range, order }))
+    .sort((a, b) => a.range.start - b.range.start || a.order - b.order);
+  const active = new Map<number, T>();
+  let cursor = 0;
+  return (start: number, end: number): T[] => {
+    for (const [order, range] of active) if (range.end <= start) active.delete(order);
+    while (cursor < pending.length && pending[cursor]!.range.start < end) {
+      const { range, order } = pending[cursor++]!;
+      if (range.end > start) active.set(order, range);
+    }
+    return [...active].sort((a, b) => a[0] - b[0]).map(([, range]) => range);
+  };
+}
+
 function mdSegsForBlock(
   blockText: string,
   blockStart: number,
@@ -143,13 +164,15 @@ function mdSegsForBlock(
   localAnns.forEach((a) => { pts[a.start] = 1; pts[a.end] = 1; });
   localInline.forEach((r) => { pts[r.start] = 1; pts[r.end] = 1; });
   const arr = Object.keys(pts).map(Number).sort((x, y) => x - y);
+  const annotationsAt = rangeSweep(localAnns);
+  const inlineAt = rangeSweep(localInline);
 
   const out: TextSegment[] = [];
   for (let i = 0; i < arr.length - 1; i++) {
     const s0 = arr[i]!;
     const e0 = arr[i + 1]!;
     let bg = "transparent", color = "inherit", pad = "0", br = "0", weight = "400", deco = "none", title = "", italic = false, code = false, href: string | undefined;
-    const activeAnns = localAnns.filter((a) => a.start <= s0 && a.end >= e0);
+    const activeAnns = annotationsAt(s0, e0);
     activeAnns.forEach((a) => {
       const highlight = HL[a.style];
       if (highlight) { bg = highlight.background; color = highlight.text; pad = "2px 3px"; br = "6px"; }
@@ -157,7 +180,7 @@ function mdSegsForBlock(
       if (a.style === "bold") weight = "700";
       if (a.note) title = a.note;
     });
-    localInline.filter((r) => r.start <= s0 && r.end >= e0).forEach((r) => {
+    inlineAt(s0, e0).forEach((r) => {
       if (r.kind === "bold") weight = "700";
       if (r.kind === "italic") italic = true;
       if (r.kind === "code") code = true;
@@ -192,10 +215,12 @@ export function mdSegsFor(
   };
   const anns = annotations.filter((a) => a.qid === qid && a.target === target)
     .map(a => offsets ? { ...a, start: lowerBound(a.start), end: lowerBound(a.end) } : a);
+  const inlineAt = rangeSweep(parsed.inline);
+  const annotationsAt = rangeSweep(show ? anns : []);
   return parsed.blocks.map((block) => {
     const blockText = parsed.plainText.slice(block.start, block.end);
-    const inlineHere = parsed.inline.filter((r) => r.start < block.end && r.end > block.start);
-    let segs = mdSegsForBlock(blockText, block.start, anns, inlineHere, show);
+    const inlineHere = inlineAt(block.start, block.end);
+    let segs = mdSegsForBlock(blockText, block.start, annotationsAt(block.start, block.end), inlineHere, show);
     if (offsets) segs = segs.flatMap(seg => {
       const pieces: TextSegment[] = [];
       let start = 0;

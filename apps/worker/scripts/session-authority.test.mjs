@@ -49,6 +49,7 @@ function connections(db) {
 }
 test('binding recovery ends sessions, PATs and OAuth grants atomically',async t=>{
  const {db,env,call}=fixture(t);connections(db);
+ env.KV.failures.delete=new Error('synthetic legacy cleanup outage');
  const old=await issueSessionToken(env,'alice');const admin=await issueSessionToken(env,'root');
  const response=await call('/admin/users/alice',admin,{method:'PATCH',body:JSON.stringify({googleSub:null})});
  assert.equal(response.status,200,await response.text());
@@ -57,6 +58,13 @@ test('binding recovery ends sessions, PATs and OAuth grants atomically',async t=
  assert.equal((await call('/me',old)).status,401);
  assert.ok(Math.abs(Date.now()-db.prepare("SELECT revoked_at FROM mcp_credentials WHERE id='pat'").get().revoked_at)<5000);
  assert.ok(Math.abs(Date.now()-db.prepare("SELECT revoked_at FROM mcp_oauth_grants WHERE id='grant'").get().revoked_at)<5000);
+});
+
+test('D1 admission failure remains fail-closed during a KV outage',async t=>{
+ const {env,call}=fixture(t);const token=await issueSessionToken(env,'alice');
+ env.KV.failures.get=new Error('synthetic KV outage');
+ env.DB={prepare(){throw new Error('synthetic authoritative outage');}};
+ assert.equal((await call('/me',token)).status,500);
 });
 test('recovery rollback preserves all credentials if a batch write fails',async t=>{
  const {db,env,call}=fixture(t);connections(db);

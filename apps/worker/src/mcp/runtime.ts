@@ -63,6 +63,11 @@ export async function serveMcp(
   inspect?: (body: string) => void,
 ): Promise<Response> {
   const body = await readMcpBody(request, maxBodyBytes);
+  // One HTTP account charge authorizes one operation. Legacy SDK transports
+  // accept JSON-RPC batches, so refuse arrays before creating any server/tool.
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { /* SDK handles malformed JSON. */ }
+  if (Array.isArray(parsed)) throw new McpApplicationError("invalid_input");
   observation?.protocol(body);
   // May throw an McpApplicationError (an OAuth scope refusal) before dispatch.
   inspect?.(body);

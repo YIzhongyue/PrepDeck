@@ -324,3 +324,15 @@ test("implementation: User MCP credentials cannot invoke any new Admin MCP tool"
   }
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) c FROM admin_mcp_audit_log").get().c, 0);
 });
+
+test("legacy arrays are rejected before tool dispatch for both audiences", async (t) => {
+  const f = await fixture(t);
+  for (const [audience, token] of [["user", f.alice.token], ["admin", f.admin.token]]) {
+    for (const messages of [[], [{ jsonrpc: "2.0", id: 1, method: "tools/list" }, { jsonrpc: "2.0", id: 2, method: "tools/list" }], [null, 42]]) {
+      const response = await rpc(f.env, audience, token, "tools/list", undefined, { body: JSON.stringify(messages) });
+      assert.equal(response.status, 400);
+      assert.equal((await payload(response)).error.code, "invalid_input");
+    }
+    assert.equal((await rpc(f.env, audience, token)).status, 200);
+  }
+});

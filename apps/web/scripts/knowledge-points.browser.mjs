@@ -90,6 +90,7 @@ const server = createServer(async (req, res) => {
       if (failUpload) return json(503, { error: "Upload temporarily unavailable" });
       return json(201, { image: { id: "uploaded", url: "/api/kp-images/uploaded", status: "pending" } });
     }
+    if (path === "/api/knowledge-points/usage") return json(200, { userId: "me", notes: notes.length, bodyBytes: 1000, images: 1, imageBytes: 100, limits: { notes: 10000, bodyBytes: 104857600, images: 5000, imageBytes: 524288000 } });
     if (path.startsWith("/api/knowledge-points/")) {
       const id = path.split("/")[3], n = notes.find(note => note.id === id);
       if (!n) return json(404, { error: "Not found" });

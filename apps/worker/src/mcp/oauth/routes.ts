@@ -168,6 +168,7 @@ oauthRouter.get("/authorize", async (c) => {
   const request = await createAuthorizationRequest(c.env.DB, {
     client, redirectUri, audience, scopes, state, codeChallenge: param("code_challenge")!,
   });
+  if (!request) return fail("temporarily_unavailable", "Authorization capacity is temporarily full. Try again shortly.");
   c.header("Set-Cookie", bindingCookie(c, request.id, request.binding, Math.ceil((request.expiresAt - Date.now()) / 1000)));
   c.header("Cache-Control", "no-store");
   return c.redirect(`/connect?request=${request.id}`, 302);

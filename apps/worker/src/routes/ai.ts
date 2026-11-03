@@ -13,10 +13,11 @@
 // (FR-7.3).
 
 import { createRouter } from "../context";
+import { streamBodyLimit } from "../lib/streamBodyLimit";
 import { renderExplanationPrompt } from "../lib/prompts";
 import { readBody, validateBody } from "../lib/requestBody";
 import { allContentBlocks, continueListItem, labelledListItem, matchingTargets, promptAnswerParts, promptOptions, type AiExplanationDto, type AiProvider, type QuestionContentModel } from "@prepdeck/shared";
-import { generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "@prepdeck/shared/schemas";
+import { AI_EXPLANATION_EDIT_MAX_BYTES, generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "@prepdeck/shared/schemas";
 
 // Request guard; see docs/requirements/ai-explanations.md for byte-count limitations.
 const MAX_BODY_BYTES = 32 * 1024;
@@ -176,7 +177,7 @@ questionAiExplanationsRouter.get("/", async (c) => {
 
 // FR-7.7: Admin, or whoever's key first generated this entry, may manually
 // edit its stored text.
-questionAiExplanationsRouter.patch("/:provider/:model", async (c) => {
+questionAiExplanationsRouter.patch("/:provider/:model", streamBodyLimit(AI_EXPLANATION_EDIT_MAX_BYTES, "Request too large"), async (c) => {
   const questionId = c.req.param("questionId");
   const provider = c.req.param("provider");
   const model = c.req.param("model");
@@ -214,6 +215,10 @@ export const aiGenerateRouter = createRouter();
 
 
 aiGenerateRouter.post("/", async (c) => {
+  const keyOwner = c.req.header("X-PrepDeck-Key-Owner");
+  if (keyOwner !== undefined && keyOwner !== c.get("user").id) {
+    return c.json({ error: "Account changed. Reload and unlock your API key again." }, 409);
+  }
   const contentLength = Number(c.req.header("content-length") ?? "0");
   if (contentLength > MAX_BODY_BYTES) return c.json({ error: "Request too large" }, 413);
 

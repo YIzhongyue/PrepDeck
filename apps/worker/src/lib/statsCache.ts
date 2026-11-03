@@ -7,9 +7,9 @@
 // out. Deleting the entry on every checked answer would spend a KV write per
 // answer (Workers KV's free tier caps writes and deletes per day). Instead each
 // entry is stored with an activity marker (how many graded answers exist and
-// when a session last closed) and a read recomputes when a cheap marker query
+// how many sessions closed and when the latest closed) and a read recomputes when a cheap marker query
 // no longer matches. An entry is rewritten at most once per visit after study,
-// never per answer. POST /complete still deletes the entry eagerly; the TTL
+// never per answer. Completion changes the marker without a KV delete; the TTL
 // remains a safety net for changes the marker does not see (a bank edit or a
 // new pass rule).
 //
@@ -22,6 +22,7 @@ import type { ExamStatsResponse } from "@prepdeck/shared";
 import { STATS_SCHEMA_VERSION, zonedDateKey } from "@prepdeck/shared";
 import { computeExamStats, GRADED_ANSWER_SQL } from "./learningStats";
 import { loadUserTimeZone } from "./userTimeZone";
+import { optionalCache, cacheSingleFlight } from "./optionalCache";
 
 const TTL_SECONDS = 3600;
 
@@ -44,15 +45,18 @@ export async function examActivityMarker(db: D1Database, userId: string, examId:
   const row = await db.prepare(
     `SELECT (SELECT COUNT(*) FROM attempt_answers aa JOIN attempts a ON a.id = aa.attempt_id
              WHERE a.user_id = ? AND a.exam_id = ? AND ${GRADED_ANSWER_SQL}) AS answers,
-            (SELECT MAX(completed_at) FROM attempts WHERE user_id = ? AND exam_id = ?) AS closed`
+            (SELECT MAX(completed_at) FROM attempts WHERE user_id = ? AND exam_id = ?) AS closed,
+            (SELECT COUNT(*) FROM attempts WHERE user_id = ? AND exam_id = ? AND completed_at IS NOT NULL) AS completions`
   )
-    .bind(userId, examId, userId, examId)
-    .first<{ answers: number; closed: string | null }>();
-  return `${row?.answers ?? 0}|${row?.closed ?? ""}`;
+    .bind(userId, examId, userId, examId, userId, examId)
+    .first<{ answers: number; closed: string | null; completions: number }>();
+  // Multiple sessions can close at the same timestamp; MAX alone would not
+  // detect the second completion after removing eager cache deletion.
+  return `${row?.answers ?? 0}|${row?.completions ?? 0}|${row?.closed ?? ""}`;
 }
 
 async function getCachedExamStats(env: Env, key: string, timeZone: string): Promise<CachedExamStats | null> {
-  const cached = (await env.KV.get(key, "json")) as CachedExamStats | null;
+  const cached = (await optionalCache(env.KV, "stats", "get", null, () => env.KV.get(key, "json"))) as CachedExamStats | null;
   // Belt and braces alongside the versioned key: a payload written by a
   // deployment that shares this key but not this schema is discarded rather
   // than handed to a dashboard that would read `undefined` off it.
@@ -62,7 +66,8 @@ async function getCachedExamStats(env: Env, key: string, timeZone: string): Prom
 }
 
 export async function invalidateExamStats(env: Env, userId: string, examId: string): Promise<void> {
-  await env.KV.delete(cacheKey(userId, examId, await loadUserTimeZone(env.DB, userId)));
+  const key = cacheKey(userId, examId, await loadUserTimeZone(env.DB, userId));
+  await cacheSingleFlight(env.KV, `stats:delete:${key}`, () => optionalCache(env.KV, "stats", "delete", undefined, () => env.KV.delete(key)));
 }
 
 // Shared cache-check/compute/cache-set path for both the REST stats dashboard
@@ -79,9 +84,11 @@ export async function getOrComputeExamStats(env: Env, userId: string, examId: st
   const now = new Date();
   const today = zonedDateKey(now, timeZone);
   if (cached && cached.marker === marker && cached.today === today) return cached.stats;
-  const computed = await computeExamStats(env.DB, userId, examId, now, timeZone);
-  if (!computed) return null;
-  const entry: CachedExamStats = { marker, today, stats: computed };
-  await env.KV.put(key, JSON.stringify(entry), { expirationTtl: TTL_SECONDS });
-  return computed;
+  return cacheSingleFlight(env.DB, JSON.stringify([key, marker, today]), async () => {
+    const computed = await computeExamStats(env.DB, userId, examId, now, timeZone);
+    if (!computed) return null;
+    const entry: CachedExamStats = { marker, today, stats: computed };
+    await optionalCache(env.KV, "stats", "put", undefined, () => env.KV.put(key, JSON.stringify(entry), { expirationTtl: TTL_SECONDS }));
+    return computed;
+  });
 }

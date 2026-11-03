@@ -41,7 +41,7 @@ knowledgePointsRouter.get("/", async (c) => {
     linkedQuestionId: c.req.query("linkedQuestionId"),
     examId: c.req.query("examId"),
   });
-  if (!query) return c.json({ error: "Invalid groupId/tagIds/sort" }, 400);
+  if (!query) return c.json({ error: "Invalid groupId/tagIds/q/sort (q: at most 200 characters; tagIds: at most 20 IDs of 200 characters each)" }, 400);
 
   const groupId = c.req.query("ungrouped") === "true" ? null : c.req.query("groupId");
   const statements = [
@@ -65,10 +65,19 @@ knowledgePointsRouter.post("/", async (c) => {
   const { groupId } = parsed.data;
 
   const result = await createNote(c.env.DB, { userId, groupId });
-  if (!result.ok) return c.json({ error: "Group not found" }, 404);
+  if (!result.ok) return result.reason === "quota_exceeded" ? c.json({ error: "Knowledge Point quota reached. Delete notes or reduce body text to free space.", code: "quota_exceeded" }, 409) : c.json({ error: "Group not found" }, 404);
 
   const detail = await loadDetail(c.env.DB, result.id, userId);
   return c.json({ knowledgePoint: detail }, 201);
+});
+
+// Account-only usage, independent of list filters and pagination.
+knowledgePointsRouter.get("/usage", async (c) => {
+  const userId = c.get("user").id;
+  const notes = await c.env.DB.prepare("SELECT note_count,body_bytes FROM knowledge_point_usage WHERE user_id=?").bind(userId).first<{ note_count: number; body_bytes: number }>();
+  const images = await c.env.DB.prepare("SELECT COUNT(*) AS n,COALESCE(SUM(byte_size),0) AS bytes FROM knowledge_point_image_usage WHERE user_id=?").bind(userId).first<{ n: number; bytes: number }>();
+  return c.json({ userId, notes: notes?.note_count ?? 0, bodyBytes: notes?.body_bytes ?? 0, images: images?.n ?? 0, imageBytes: images?.bytes ?? 0,
+    limits: { notes: 10000, bodyBytes: 104857600, images: 5000, imageBytes: 524288000 } });
 });
 
 knowledgePointsRouter.get("/:id", async (c) => {
@@ -88,6 +97,7 @@ knowledgePointsRouter.put("/:id", async (c) => {
   const result = await applyNoteUpdate(c.env.DB, { id, userId, baseRevision, title, bodyMarkdown });
   if (!result.ok) {
     if (result.reason === "not_found") return c.json({ error: "Knowledge point not found" }, 404);
+    if (result.reason === "quota_exceeded") return c.json({ error: "Knowledge Point body quota reached. Reduce text or delete notes to free space.", code: "quota_exceeded" }, 409);
     const latest = await loadDetail(c.env.DB, id, userId);
     return c.json({ error: "revision_conflict", latest }, 409);
   }

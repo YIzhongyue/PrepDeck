@@ -134,6 +134,7 @@ export function knowledgePointOperations(ctx: UserAdapterContext) {
         maxTags: MAX_TAGS_PER_NOTE, maxLinkedQuestions: MAX_LINKED_QUESTIONS_PER_NOTE,
       });
       if (!result.ok) {
+        if (result.reason === "quota_exceeded") throw new McpApplicationError("quota_exceeded");
         if (result.reason === "group_not_found" || result.reason === "question_not_found") throw new McpApplicationError("not_found");
         throw new McpApplicationError("invalid_input");
       }
@@ -148,6 +149,7 @@ export function knowledgePointOperations(ctx: UserAdapterContext) {
       await consumeKnowledgePointWriteLimit();
       const result = await applyNoteEdit(db, { id: input.id, userId, baseRevision: input.baseRevision, title: input.title, bodyMarkdown: input.bodyMarkdown, groupId: input.groupId });
       if (!result.ok) {
+        if (result.reason === "quota_exceeded") throw new McpApplicationError("quota_exceeded");
         if (result.reason === "not_found" || result.reason === "group_not_found") throw new McpApplicationError("not_found");
         throw new McpApplicationError("conflict");
       }

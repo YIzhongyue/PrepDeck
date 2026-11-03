@@ -144,10 +144,15 @@ export interface UploadedKnowledgePointImage {
   status: "pending" | "attached" | "orphaned";
 }
 
+const uploadRequestKeys = new WeakMap<Blob, Map<string, string>>();
 export function uploadKnowledgePointImage(knowledgePointId: string, file: File | Blob): Promise<{ image: UploadedKnowledgePointImage }> {
+  let keys = uploadRequestKeys.get(file);
+  if (!keys) { keys = new Map(); uploadRequestKeys.set(file, keys); }
+  let requestKey = keys.get(knowledgePointId);
+  if (!requestKey) { requestKey = crypto.randomUUID(); keys.set(knowledgePointId, requestKey); }
   return apiFetch(`/api/kp-images/${knowledgePointId}`, {
     method: "POST",
-    headers: { "Content-Type": file.type },
+    headers: { "Content-Type": file.type, "Idempotency-Key": requestKey },
     body: file,
   });
 }

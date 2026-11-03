@@ -1,7 +1,8 @@
 import { useCallback } from "react";
-import { ApiError } from "../../lib/api";
+import { ApiError, apiFetch } from "../../lib/api";
+import type { ProfileResponse } from "@prepdeck/shared";
 import { fetchCachedExplanations, generateExplanation } from "../../lib/ai";
-import { getSessionKey } from "../../lib/keyStorage";
+import { bindKeyIdentity, clearSessionKey, getSessionKey, keyRevision } from "../../lib/keyStorage";
 import type { AiExplanationEntry, Question } from "../../types";
 import type { StoreCore } from "./useStoreCore";
 import { t } from "../../i18n/runtime";
@@ -12,6 +13,7 @@ export type AiExplanations = ReturnType<typeof useAiExplanations>;
 
 export function useAiExplanations(core: StoreCore) {
   const { scopedState, setState, stateRef } = core;
+  const setAccountState = setState;
 
   // FR-7.2/FR-7.3: check the shared cache (any provider/model) before ever
   // asking for a key. Called once per question as its review panel opens.
@@ -47,8 +49,9 @@ export function useAiExplanations(core: StoreCore) {
   // Worker re-checks this server-side regardless of what the client sends).
   const genAi = useCallback((q: Question, force?: boolean) => {
     const setState = scopedState("genAi" + q.id);
-    const { provider, model } = stateRef.current;
-    const apiKey = getSessionKey();
+    const { provider, model, me } = stateRef.current;
+    const owner = me?.id ?? null;
+    const apiKey = getSessionKey(owner);
     if (!apiKey) {
       setState((s) => ({
         ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: t("errors.ai.noKey") } }
@@ -56,7 +59,21 @@ export function useAiExplanations(core: StoreCore) {
       return;
     }
     setState((s) => ({ ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "generating", error: undefined } } }));
-    generateExplanation(q.id, provider, model, apiKey, force).then(({ explanation, cached }) => {
+    const revision = keyRevision();
+    // Cookies are shared by tabs. Revalidate immediately before releasing a
+    // memory secret, even if this tab missed logout while suspended.
+    apiFetch<ProfileResponse>("/api/auth/me").then(({ user }) => {
+      if (user.id !== owner) {
+        clearSessionKey();
+        bindKeyIdentity(user.id);
+        setAccountState({ me: user, hasSessionKey: false });
+      }
+      if (!owner || user.id !== owner || stateRef.current.me?.id !== owner || keyRevision() !== revision || getSessionKey(owner) !== apiKey) {
+        throw new Error("Account or key changed");
+      }
+      return generateExplanation(q.id, provider, model, apiKey, force, owner);
+    }).then(({ explanation, cached }) => {
+      if (stateRef.current.me?.id !== owner || keyRevision() !== revision) return;
       setState((s) => ({
         ai: {
           ...s.ai,
@@ -67,11 +84,12 @@ export function useAiExplanations(core: StoreCore) {
         }
       }));
     }).catch((err) => {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 409)) clearSessionKey();
       setState((s) => ({
         ai: { ...s.ai, [q.id]: { ...(s.ai[q.id] ?? { status: "idle" }), status: "error", error: err instanceof ApiError ? err.message : t("errors.ai.generateFailed") } }
       }));
     });
-  }, [scopedState, stateRef]);
+  }, [setAccountState, scopedState, stateRef]);
 
   // FR-7.3: show an already-cached explanation from a different provider/
   // model, clearly labeled, instead of generating a fresh one.

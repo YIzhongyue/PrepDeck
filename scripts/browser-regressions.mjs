@@ -24,10 +24,12 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 // not listed because question-authoring and component-annotations import,
 // and so run, them.
 export const SCRIPTS = [
+  ["apps/web/scripts/byok-lifecycle.browser.mjs", 8],
   ["apps/web/scripts/exam-selector-badge.browser.mjs", 20],
   ["apps/web/scripts/exam-workspace.browser.mjs", 35],
   ["apps/web/scripts/url-routing.browser.mjs", 5],
   ["apps/web/scripts/knowledge-points.browser.mjs", 85],
+  ["apps/web/scripts/knowledge-point-quota.browser.mjs", 5],
   ["apps/web/scripts/question-authoring.browser.mjs", 12],
   ["apps/web/scripts/component-preview-context.browser.mjs", 12],
   ["apps/web/scripts/component-answer-controls.browser.mjs", 10],
@@ -46,6 +48,7 @@ export const SCRIPTS = [
   ["apps/web/scripts/answer-state.browser.mjs", 9],
   ["apps/web/scripts/question-card-layout.browser.mjs", 14],
   ["apps/web/scripts/review-lists.browser.mjs", 5],
+  ["apps/web/scripts/notes-pagination.browser.mjs", 5],
   ["apps/web/scripts/under-review.browser.mjs", 5],
   ["apps/web/scripts/study-status.browser.mjs", 5],
   ["apps/web/scripts/setup-layout.browser.mjs", 6],
