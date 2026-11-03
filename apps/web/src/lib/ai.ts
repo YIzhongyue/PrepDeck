@@ -17,10 +17,12 @@ export function generateExplanation(
   provider: Provider,
   model: string,
   apiKey: string,
-  force?: boolean
+  force?: boolean,
+  keyOwner?: string
 ): Promise<GenerateAiExplanationResponse> {
   return apiFetch<GenerateAiExplanationResponse>("/api/ai/generate", {
     method: "POST",
+    headers: keyOwner ? { "X-PrepDeck-Key-Owner": keyOwner } : undefined,
     body: JSON.stringify({ questionId, provider, model, apiKey, force }),
   });
 }

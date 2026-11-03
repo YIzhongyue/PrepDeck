@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Hono } from "hono";
-import { classifyRequest, generalRateLimit, trustedClientKey } from "../src/middleware/rateLimit.ts";
+import { authenticatedRateLimit, classifyRequest, generalRateLimit, trustedClientKey } from "../src/middleware/rateLimit.ts";
 import { RateLimiterObject } from "../src/rateLimiterObject.ts";
 import { createRateLimiter } from "../../../tests/support/rate-limit.mjs";
 
@@ -66,3 +66,34 @@ test("logout shares the stricter auth bucket instead of falling through to write
 // The on/off GLOBAL_CIRCUIT_BREAKER this file used to test here was replaced
 // by the normal/degraded/emergency circuit breaker — see
 // scripts/circuit-breaker.test.mjs for its coverage.
+
+test("only authenticated POST generation consumes global AI budget, after account admission", async () => {
+  const app = new Hono();
+  app.use("*", generalRateLimit);
+  app.use("*", async (c, next) => {
+    if (!c.req.header("Test-User")) return c.json({ error: "unauthorized" }, 401);
+    c.set("user", { id: c.req.header("Test-User") });
+    await next();
+  });
+  app.use("*", authenticatedRateLimit);
+  app.post("/api/ai/generate", (c) => c.text("ok"));
+  const limiter = createRateLimiter();
+  const env = { RATE_LIMITER: limiter };
+  for (const method of ["POST", "GET"]) {
+    assert.equal((await app.request("/api/ai/generate", { method }, env)).status, 401);
+  }
+  await app.request("/api/ai/generate", { headers: { "Test-User": "alice" } }, env);
+  assert.equal(limiter.calls.filter(({ key }) => key === "ai:global").length, 0);
+  assert.equal((await app.request("/api/ai/generate", { method: "POST", headers: { "Test-User": "alice" } }, env)).status, 200);
+  assert.deepEqual(limiter.calls.slice(-2).map(({ key }) => key), ["ai:user:alice", "ai:global"]);
+  limiter.respond = ({ key }) => ({ allowed: key !== "ai:user:alice", retryAfter: 7 });
+  const before = limiter.calls.filter(({ key }) => key === "ai:global").length;
+  assert.equal((await app.request("/api/ai/generate", { method: "POST", headers: { "Test-User": "alice" } }, env)).status, 429);
+  assert.equal(limiter.calls.filter(({ key }) => key === "ai:global").length, before);
+  limiter.respond = ({ key }) => ({ allowed: key !== "ai:global", retryAfter: 9 });
+  const full = await app.request("/api/ai/generate", { method: "POST", headers: { "Test-User": "bob" } }, env);
+  assert.equal(full.status, 429);
+  assert.equal(full.headers.get("Retry-After"), "9");
+  limiter.respond = ({ key }) => { if (key === "ai:global") throw new Error("unavailable"); };
+  assert.equal((await app.request("/api/ai/generate", { method: "POST", headers: { "Test-User": "bob" } }, env)).status, 503);
+});

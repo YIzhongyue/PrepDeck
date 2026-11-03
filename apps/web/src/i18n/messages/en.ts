@@ -12,6 +12,7 @@
 import type { PluralCategory } from "../core";
 
 const en = {
+  quota: { usage: "Knowledge Points: {notes}/10,000 notes · {body}/100 MiB text · {images}/5,000 images · {imageBytes}/500 MiB images", near: "You are approaching your storage limit. Read, export, delete and edits that do not increase usage remain available." },
   common: {
     loading: "Loading…",
     retry: "Retry",

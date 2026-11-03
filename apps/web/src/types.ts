@@ -76,6 +76,7 @@ export interface Annotation {
 
 export interface Note {
   id: string;
+  createdAt: string;
   qid: string;
   authorId: string;
   author: string;

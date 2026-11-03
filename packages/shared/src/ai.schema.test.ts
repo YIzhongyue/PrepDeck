@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { z } from "zod";
-import { generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "./ai.schema.ts";
+import { AI_EXPLANATION_MAX_LENGTH, generateAiExplanationRequestSchema, updateAiExplanationRequestSchema } from "./ai.schema.ts";
 
 // The route's 400 message for `body` (the first issue's; see apps/worker/src/lib/requestBody.ts), or null when it is accepted.
 function error(schema: z.ZodType, body: unknown): string | null {
@@ -10,6 +10,14 @@ function error(schema: z.ZodType, body: unknown): string | null {
 }
 
 const data = <S extends z.ZodType>(schema: S, body: unknown): z.output<S> => schema.parse(body);
+
+test("explanation edit length is bounded before trimming, including Unicode", () => {
+  for (const content of ["a".repeat(AI_EXPLANATION_MAX_LENGTH), "界".repeat(AI_EXPLANATION_MAX_LENGTH), "😀".repeat(AI_EXPLANATION_MAX_LENGTH)]) {
+    assert.equal(error(updateAiExplanationRequestSchema, { content }), null);
+    assert.notEqual(error(updateAiExplanationRequestSchema, { content: content + "a" }), null);
+  }
+  assert.notEqual(error(updateAiExplanationRequestSchema, { content: " ".repeat(AI_EXPLANATION_MAX_LENGTH) + "a" }), null);
+});
 
 test("a body that is missing or not an object gets the route's own message", () => {
   for (const body of [null, "text", 42]) assert.equal(error(generateAiExplanationRequestSchema, body), "questionId is required");

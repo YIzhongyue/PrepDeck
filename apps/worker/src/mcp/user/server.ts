@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { knowledgePointSearchTextSchema, knowledgePointSearchTagsSchema } from "@prepdeck/shared/schemas";
 import { QUESTION_IMPORT_GUIDANCE, getImportSchemas, KNOWLEDGE_POINT_MAX_BODY_LENGTH, KNOWLEDGE_POINT_MAX_TITLE_LENGTH, MAX_ATTEMPT_QUESTIONS, MAX_ANSWER_VALUES, MAX_ANSWER_TEXT_LENGTH, MAX_TIME_SPENT_SECONDS } from "@prepdeck/shared";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
@@ -36,7 +37,7 @@ const knowledgePointListFilters = {
   ungrouped: z.boolean().optional(),
   // Bounds the *query filter* — a different, smaller concern from how many
   // tags one note may carry (see MAX_TAGS_PER_NOTE in mcp/adapters/user/knowledgePoints.ts).
-  tagIds: z.array(knowledgePointTagIdSchema).max(20).optional(),
+  tagIds: knowledgePointSearchTagsSchema.refine((tags) => tags.every((tag) => tag.length > 0), "tag ids must not be empty").optional(),
   sort: knowledgePointSortSchema.optional(),
   linkedQuestionId: questionIdSchema.optional(),
   examId: examIdSchema.optional(),
@@ -271,14 +272,14 @@ export function userMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
       "user_list_knowledge_points",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       "List your own Knowledge Points (personal Markdown notes), optionally filtered by group, ungrouped, tags (AND semantics), linked question, exam, or sort mode. When scoped to exactly one group (or ungrouped) with no other filter, the response includes `orderRevision` — pass it to user_reorder_knowledge_points to reorder within that scope.",
-      z.strictObject({ ...knowledgePointListFilters, q: z.string().min(1).max(200).optional(), ...paginationSchema.shape }),
+      z.strictObject({ ...knowledgePointListFilters, q: knowledgePointSearchTextSchema.min(1).optional(), ...paginationSchema.shape }),
       (input) => services.listKnowledgePoints(input),
     ),
     defineMcpTool(
       "user_search_knowledge_points",
       { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       "Search your own Knowledge Points by title/body text, with the same optional filters as user_list_knowledge_points.",
-      z.strictObject({ ...knowledgePointListFilters, q: z.string().min(1).max(200), ...paginationSchema.shape }),
+      z.strictObject({ ...knowledgePointListFilters, q: knowledgePointSearchTextSchema.min(1), ...paginationSchema.shape }),
       (input) => services.searchKnowledgePoints(input),
     ),
     defineMcpTool(

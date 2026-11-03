@@ -1,6 +1,11 @@
 import type { MdBlock, MdBlockType, MdCell, MdInlineRange, ParsedMarkdown } from "../types";
 import { isProseLine, proseLineSeparator } from "./prose";
 
+// Bound synthetic empty cells independently of input size. Content beyond the
+// layout budget remains readable as ordinary Markdown; it is never truncated.
+export const MAX_TABLE_COLUMNS = 32;
+export const MAX_TABLE_CELLS = 2048;
+
 // Parses a constrained subset of Markdown — headings (#/##/###), bold,
 // italic, inline code, links ([text](url) and bare http(s) URLs), backslash
 // escapes of inline markers, fenced code blocks, unordered/ordered lists, and
@@ -83,9 +88,11 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
   // Open GFM table: column alignments, the next row index, and its id.
   let table: { aligns: MdCell["align"][]; row: number; id: number } | null = null;
   let tableCount = 0;
+  let tableCells = 0;
   let skipDelimiter = false;
   let inTildeFence = false; // ~~~ is not a rendered fence, but its lines never form a table
   const pushRow = (cells: TableCell[], aligns: MdCell["align"][], row: number, id: number) => {
+    tableCells += aligns.length;
     for (let col = 0; col < aligns.length; col++) {
       const cell = cells[col];
       const align = aligns[col];
@@ -126,7 +133,7 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
     else if (table && !inTildeFence) {
       // GFM: the table runs until a blank line or another block structure; a
       // row without pipes is a short row, padded with empty cells.
-      if (!BLOCK_START.test(line)) {
+      if (!BLOCK_START.test(line) && tableCells + table.aligns.length <= MAX_TABLE_CELLS) {
         pushRow(splitTableRow(line, blockOffset), table.aligns, table.row++, table.id);
         continue;
       }
@@ -135,7 +142,8 @@ function parseBlocks(src: string, reflowProse: boolean, legacy: boolean, tables:
     if (tables && !prose && !inTildeFence && !BLOCK_START.test(line) && line.includes("|")) {
       const aligns = tableAligns(lines[lineIndex + 1]);
       const header = aligns && splitTableRow(line, blockOffset);
-      if (aligns && header && header.length === aligns.length) {
+      if (aligns && header && header.length === aligns.length && aligns.length <= MAX_TABLE_COLUMNS
+        && tableCells + aligns.length <= MAX_TABLE_CELLS) {
         table = { aligns, row: 1, id: tableCount++ };
         pushRow(header, aligns, 0, table.id);
         skipDelimiter = true;
@@ -245,14 +253,22 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
     }
   };
   // The next unescaped `marker` after `from` that can close emphasis.
+  const closing = new Map<string, number>();
   const closer = (marker: string, from: number) => {
+    const cached = closing.get(marker);
+    if (cached !== undefined && (cached === -1 || cached >= from)) return cached;
     for (let close = text.indexOf(marker, from); close !== -1; close = text.indexOf(marker, close + 1)) {
-      if (legacy) return close;
+      if (legacy) { closing.set(marker, close); return close; }
       if (isEscaped(text, close)) continue;
-      if (marker[0] !== "_" || canCloseUnderscore(text, close, marker.length)) return close;
+      if (marker[0] !== "_" || canCloseUnderscore(text, close, marker.length)) { closing.set(marker, close); return close; }
     }
+    closing.set(marker, -1);
     return -1;
   };
+  let labelEnd = -2;
+  let labelLineEnd = -2;
+  let linkTail: RegExpExecArray | null = null;
+  const tailPattern = /\]\(<?([^\s()<>]+)>?\)/y;
   let i = 0;
   while (i < text.length) {
     if (!legacy && isEscape(text, i)) {
@@ -297,14 +313,24 @@ function parseInline(text: string, base: number, inline: MdInlineRange[], offset
       }
     }
     if (!legacy && one === "[") {
-      const link = /^\[([^\]\n]+)\]\(<?([^\s()<>]+)>?\)/.exec(text.slice(i));
-      if (link && SAFE_HREF.test(link[2]!)) {
+      if (labelLineEnd < i) {
+        const newline = text.indexOf("\n", i + 1);
+        labelLineEnd = newline < 0 ? text.length : newline;
+      }
+      // All '[' before the same ']' share one tail check, even on failure.
+      if (labelEnd !== -1 && labelEnd < i) {
+        labelEnd = text.indexOf("]", i + 1);
+        tailPattern.lastIndex = labelEnd;
+        linkTail = labelEnd < 0 ? null : tailPattern.exec(text);
+      }
+      if (labelEnd > i + 1 && labelEnd < labelLineEnd && linkTail && SAFE_HREF.test(linkTail[1]!)) {
+        const label = text.slice(i + 1, labelEnd);
         const start = base + out.length;
         // One entry per UTF-16 code unit, matching how parseInline indexes text.
-        const innerOffsets = Array.from({ length: link[1]!.length }, (_, n) => sourceAt(i + 1 + n));
-        out += parseInline(link[1]!, start, inline, offsets, 0, innerOffsets, legacy);
-        inline.push({ start, end: base + out.length, kind: "link", href: link[2]! });
-        i += link[0].length;
+        const innerOffsets = Array.from({ length: label.length }, (_, n) => sourceAt(i + 1 + n));
+        out += parseInline(label, start, inline, offsets, 0, innerOffsets, legacy);
+        inline.push({ start, end: base + out.length, kind: "link", href: linkTail[1]! });
+        i = labelEnd + linkTail[0].length;
         continue;
       }
     }
@@ -362,13 +388,17 @@ const SAFE_HREF = /^(https?:\/\/|mailto:)/i;
 // (e.g. "…/tune-file-size。") isn't swallowed, minus trailing sentence
 // punctuation and any closing paren that has no opener inside the URL.
 function bareUrl(text: string): string | null {
-  let url = /^https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i.exec(text)?.[0];
+  const url = /^https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i.exec(text)?.[0];
   if (!url) return null;
-  for (;;) {
-    const last = url.at(-1)!;
-    if (/[.,;:!?'"*_]/.test(last)) url = url.slice(0, -1);
-    else if (last === ")" && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) url = url.slice(0, -1);
+  let excess = 0;
+  for (const char of url) { if (char === ")") excess++; else if (char === "(") excess--; }
+  let end = url.length;
+  while (end) {
+    const last = url[end - 1]!;
+    if (/[.,;:!?'"*_]/.test(last)) end--;
+    else if (last === ")" && excess > 0) { end--; excess--; }
     else break;
   }
-  return /^https?:\/\/./i.test(url) ? url : null;
+  const trimmed = url.slice(0, end);
+  return /^https?:\/\/./i.test(trimmed) ? trimmed : null;
 }

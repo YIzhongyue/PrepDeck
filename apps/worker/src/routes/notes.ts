@@ -10,6 +10,7 @@ import { createRouter } from "../context";
 import type { NoteVisibility, NoteWithAuthor } from "@prepdeck/shared";
 import { createNoteRequestSchema, updateNoteRequestSchema } from "@prepdeck/shared/schemas";
 import { readBody } from "../lib/requestBody";
+import { notesCursor, parseNotesPage } from "../lib/notesPagination";
 
 interface NoteRow {
   id: string;
@@ -52,12 +53,19 @@ export const questionNotesRouter = createRouter();
 questionNotesRouter.get("/", async (c) => {
   const questionId = c.req.param("questionId");
   const userId = c.get("user").id;
+  const scope = JSON.stringify([userId, "question", questionId]);
+  const page = parseNotesPage(c.req.query("limit"), c.req.query("cursor"), scope);
+  if (!page) return c.json({ error: "Invalid notes pagination" }, 400);
+  const after = page.after ? " AND (n.created_at, n.id) > (?, ?)" : "";
+  const binds = page.after ? [page.after.createdAt, page.after.id] : [];
   const { results } = await c.env.DB.prepare(
-    `${SELECT_NOTE} WHERE n.question_id = ? AND ${VISIBLE_TO_CLAUSE} ORDER BY n.created_at ASC`
+    `${SELECT_NOTE} WHERE n.question_id = ? AND ${VISIBLE_TO_CLAUSE}${after} ORDER BY n.created_at ASC, n.id ASC LIMIT ?`
   )
-    .bind(questionId, userId, userId)
+    .bind(questionId, userId, userId, ...binds, page.size + 1)
     .all<NoteRow>();
-  return c.json({ notes: (results ?? []).map((r) => toNote(r, userId)) });
+  const rows = results ?? [];
+  return c.json({ notes: rows.slice(0, page.size).map((r) => toNote(r, userId)),
+    nextCursor: rows.length > page.size ? notesCursor(scope, rows[page.size - 1]!) : null });
 });
 
 questionNotesRouter.post("/", async (c) => {
@@ -93,10 +101,17 @@ notesRouter.get("/", async (c) => {
   const examId = c.req.query("examId");
   const scope = examId === undefined ? "" : " AND n.question_id IN (SELECT id FROM questions WHERE exam_id = ?)";
   const binds = examId === undefined ? [userId, userId] : [userId, userId, examId];
-  const { results } = await c.env.DB.prepare(`${SELECT_NOTE} WHERE ${VISIBLE_TO_CLAUSE}${scope} ORDER BY n.created_at ASC`)
-    .bind(...binds)
+  const cursorScope = JSON.stringify([userId, "exam", examId ?? null]);
+  const page = parseNotesPage(c.req.query("limit"), c.req.query("cursor"), cursorScope);
+  if (!page) return c.json({ error: "Invalid notes pagination" }, 400);
+  const after = page.after ? " AND (n.created_at, n.id) > (?, ?)" : "";
+  if (page.after) binds.push(page.after.createdAt, page.after.id);
+  const { results } = await c.env.DB.prepare(`${SELECT_NOTE} WHERE ${VISIBLE_TO_CLAUSE}${scope}${after} ORDER BY n.created_at ASC, n.id ASC LIMIT ?`)
+    .bind(...binds, page.size + 1)
     .all<NoteRow>();
-  return c.json({ notes: (results ?? []).map((r) => toNote(r, userId)) });
+  const rows = results ?? [];
+  return c.json({ notes: rows.slice(0, page.size).map((r) => toNote(r, userId)),
+    nextCursor: rows.length > page.size ? notesCursor(cursorScope, rows[page.size - 1]!) : null });
 });
 
 notesRouter.patch("/:id", async (c) => {

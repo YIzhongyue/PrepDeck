@@ -1,3 +1,4 @@
+import KnowledgePointQuotaNotice from "../components/knowledgePoints/KnowledgePointQuotaNotice";
 // implementation — Knowledge Points: personal, concept-level Markdown notes.
 // Top-level screen: owns the feature's own provider and its internal
 // list/editor/groups-and-tags navigation, the same way Practice/Mock/Learning
@@ -48,6 +49,7 @@ export default function KnowledgePoints({ bp }: { bp: Breakpoints }) {
 
   return (
     <KnowledgePointsProvider activeExamId={state.examId}>
+      <KnowledgePointQuotaNotice userId={state.me?.id ?? null} />
       <KnowledgePointsInner bp={bp} />
     </KnowledgePointsProvider>
   );

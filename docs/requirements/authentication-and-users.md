@@ -131,7 +131,7 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 <a id="fr-12-4"></a>
 
-- **FR-12.4 (S):** Avatar uploads accept JPEG, PNG and WebP up to 2 MiB. The client prepares/resizes images before upload. The Worker validates the supported content type and size; avatars are served through the authenticated avatar route.
+- **FR-12.4 (S):** Avatar uploads accept JPEG, PNG and WebP up to 2 MiB. The client prepares/resizes images before upload. The Worker counts streamed bytes and validates the declared format against raster structure and dimensions (at most 16,777,216 pixels) before storage. This structural check does not fully decode/re-encode image pixels. Avatars are served through the authenticated avatar route.
 
 <a id="fr-12-5"></a>
 

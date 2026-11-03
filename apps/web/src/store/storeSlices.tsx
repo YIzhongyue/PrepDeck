@@ -128,6 +128,7 @@ export interface PrepDeckStore {
   updateNote: (id: string, content: string, visibility: "private" | "shared") => Promise<void>;
   removeNote: (id: string) => void;
   toggleShared: () => void;
+  loadNotesPage: (questionId?: string) => void;
   updateTimeZone: (timeZone: string) => Promise<void>;
   updateEmailSettings: (patch: UpdateDailyEmailSettingsRequest) => void;
 
@@ -182,7 +183,7 @@ const MOCK_STATE = [
   "mockMinutes", "mockSkipReview", "mockResult", "activeMockAttempt",
 ] as const satisfies StateKeys;
 const AI_STATE = ["ai"] as const satisfies StateKeys;
-const NOTES_STATE = ["notes", "showShared", "anns", "markAliases"] as const satisfies StateKeys;
+const NOTES_STATE = ["notes", "notesPages", "showShared", "anns", "markAliases"] as const satisfies StateKeys;
 const NOTE_DRAFT_STATE = ["noteDraft", "noteDraftQuestionId", "noteVis"] as const satisfies StateKeys;
 const ACCOUNT_STATE = [
   "provider", "model", "keyMode", "hasSessionKey", "hasStoredKey", "theme", "timeZone", "emailSettings",
@@ -210,7 +211,7 @@ const MOCK_ACTIONS = [
   "mockNext", "mockGoto", "toggleFlag", "askSubmit", "cancelSubmit", "finishMock", "practiceWrong",
 ] as const satisfies ActionKeys;
 const NOTES_ACTIONS = [
-  "setNoteDraft", "setNoteVis", "addNote", "updateNote", "removeNote", "toggleShared", "capture", "apply",
+  "setNoteDraft", "setNoteVis", "addNote", "updateNote", "removeNote", "toggleShared", "loadNotesPage", "capture", "apply",
   "setMarkNote", "saveMarkNote", "removeMark", "updateMarkAlias",
 ] as const satisfies ActionKeys;
 const ACCOUNT_ACTIONS = [

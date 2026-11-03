@@ -7,6 +7,7 @@ import { apiFetch } from "../lib/api";
 import { useCatalogState, useNotesActions, useNotesState, useWorkspaceActions, useWorkspaceState } from "../store/PrepDeckContext";
 import HighlightedText from "../components/HighlightedText";
 import NoteCard from "../components/NoteCard";
+import NotesPagination from "../components/NotesPagination";
 import PageBreadcrumb from "../components/PageBreadcrumb";
 import { useI18n } from "../i18n";
 
@@ -65,6 +66,7 @@ export default function Notes() {
   return (
     <div style={{ animation: "pd-rise .28s ease backwards" }}>
       <PageBreadcrumb screen="notes" />
+      <NotesPagination />
       <h1 style={{ margin: "0 0 6px", fontSize: 34 }}>{t("annotations.title")}</h1>
       <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: 0.7, maxWidth: 620 }}>
         {cardQids.length > 0 && `${t("annotations.selectHint")} `}

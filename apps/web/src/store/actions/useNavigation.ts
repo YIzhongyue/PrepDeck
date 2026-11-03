@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import type { NoteResponse } from "@prepdeck/shared";
 import { apiFetch } from "../../lib/api";
 import { type Route } from "../../lib/routes";
-import { fromSharedNote } from "../../lib/notes";
+import { fromSharedNote, sortNotes } from "../../lib/notes";
 import type { ScreenId } from "../../types";
 import { type AppState, initialState } from "../appState";
 import { errorLeftBehind } from "../storeHelpers";
@@ -36,7 +36,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
     const { note } = await requests.write("note-draft", () => apiFetch<NoteResponse>(`/api/questions/${qid}/notes`, {
       method: "POST", body: JSON.stringify({ content, visibility: s.noteVis })
     }));
-    setState(current => ({ noteDraft: current.noteDraft === content ? "" : current.noteDraft, noteDraftQuestionId: current.noteDraft === content ? null : current.noteDraftQuestionId, notes: current.notes.concat(fromSharedNote(note)) }));
+    setState(current => ({ noteDraft: current.noteDraft === content ? "" : current.noteDraft, noteDraftQuestionId: current.noteDraft === content ? null : current.noteDraftQuestionId, notes: sortNotes(current.notes.concat(fromSharedNote(note))) }));
   }, [requests, setState, stateRef]);
 
   saveQuestionDraftRef.current = saveQuestionDraft;
@@ -100,7 +100,7 @@ export function useNavigation(core: StoreCore, deps: Pick<PracticeSession, "begi
       const keys = ["catalog", "catalogBy", "catalogRevision", "questionContent", "pStage", "source", "diff", "count", "feedback", "tags", "queue", "idx", "sel", "done", "graded", "attemptId",
         "lStage", "lTags", "lDiff", "lStartInput", "lQueue", "lIdx", "lResume", "lDetail", "pendingQuestionJump", "pendingLearningSequence",
         "mStage", "mQueue", "mIdx", "mSel", "mFlag", "mLeft", "mockDeadline", "mConfirm", "mockAttemptId", "mockFormat", "mockCount", "mockMinutes", "mockResult", "activeMockAttempt",
-        "bookmarks", "wrong", "attempted", "mastered", "studyStatus", "studyStatusError", "ai", "anns", "notes", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
+        "bookmarks", "wrong", "attempted", "mastered", "studyStatus", "studyStatusError", "ai", "anns", "notes", "notesPages", "noteDraft", "noteDraftQuestionId", "tsel", "more"] as const;
       for (const key of keys) Object.assign(next, { [key]: initialState[key] });
       setState(s => ({ ...next, examId: id, screen: questionId ? "learning" : original.screen,
         switching: false, workspaceStatus: id ? "loading" : "empty", workspaceError: null,

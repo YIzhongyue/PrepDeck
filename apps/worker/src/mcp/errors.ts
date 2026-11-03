@@ -16,6 +16,7 @@ const STUDY_ERROR_MESSAGES: Record<StudyMutationDetail, string> = {
 };
 
 export const MCP_ERRORS = {
+  quota_exceeded: { status: 409, message: "Personal Knowledge Point capacity reached. Read, export, delete, or reduce existing content to free space." },
   unauthenticated: { status: 401, message: "A valid credential for this MCP server is required." },
   unauthorized: { status: 403, message: "This operation is not authorized." },
   // Issue #102 — a valid OAuth access token whose grant's approved scopes do

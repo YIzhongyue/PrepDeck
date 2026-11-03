@@ -72,7 +72,7 @@ MCP proposal/revision/audit semantics live in [MCP architecture](mcp.md).
 | --- | --- | --- |
 | Browser authorization row | User ID / verified identity | Not cached; direct primary D1 read for role/status/session version on each request. Legacy KV entries are ignored. |
 | Access JWKS | Access signing keys | One hour; only relevant to optional Access auth. |
-| Statistics | User + exam + payload schema version | One hour; attempt completion invalidates, and each read compares a cheap activity marker (graded-answer count, latest session close) with the one stored with the entry, recomputing on a mismatch, so a practice answer shows on the next visit without a KV write per answer. A payload cached under an older schema version is never served, so adding response fields needs no migration. |
+| Statistics | User + exam + time zone + payload schema version | One hour; each read compares a cheap activity marker (graded-answer count, completed-session count, latest session close) with the stored marker. Answers and completion therefore refresh on the next visit without a KV delete per completion. A payload cached under an older schema version is never served. |
 | Practice question catalog | Exam only | One hour; bank mutations invalidate. Personal collections are queried separately. |
 | AI explanations (D1) | Question + provider + model | Content-changing question edits invalidate; generation inserts are revision-bound. |
 
@@ -82,6 +82,23 @@ See [user cache](../../apps/worker/src/lib/userCache.ts),
 [AI behavior](../requirements/ai-explanations.md). KV is never the system of record
 or an atomic rate-limit counter. Cache refreshes/invalidation still consume quota;
 ten users alone does not prove a deployment stays inside its plan.
+
+Practice/statistics KV failures fall back to authoritative computation; optional
+writes and invalidation failures do not fail committed operations. Legacy identity
+key cleanup is also best effort because no current authorization reader uses it.
+D1, session verification and rate-limit errors are not suppressed. Failures emit
+fixed producer/operation metadata, at most one warning per 30 seconds per operation
+in each isolate, without identifiers, payloads or exception messages.
+
+Concurrent refreshes and invalidations coalesce only within one isolate (bounded
+to 256 active keys); this is not a distributed quota. A failed catalog invalidation
+causes that isolate to bypass the catalog cache for its one-hour TTL. Other isolates
+retain KV's eventual-consistency and TTL boundary. A local invalidation waits for
+existing puts, and an older in-flight catalog load cannot repopulate the cache.
+Joining mutations trigger a second drain if needed; continuing mutation churn
+after two passes uses the same bounded TTL bypass rather than an unbounded loop.
+Shared-budget thresholds and abnormal-burst policy still require usage evidence;
+no fixed daily write/delete quota is imposed.
 
 ## Background work and failure boundaries
 

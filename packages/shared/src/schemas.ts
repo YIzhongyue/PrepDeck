@@ -19,6 +19,7 @@ export * from "./dailyEmailSettings.schema.ts";
 export * from "./examPreferences.schema.ts";
 export * from "./exams.schema.ts";
 export * from "./knowledgePoints.schema.ts";
+export * from "./knowledgePointSearch.schema.ts";
 export * from "./mcp.schema.ts";
 export * from "./notes.schema.ts";
 export * from "./profile.schema.ts";

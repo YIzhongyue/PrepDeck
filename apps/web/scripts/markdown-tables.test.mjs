@@ -2,10 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { importTs } from "../../../tests/support/bundle.mjs";
 
-const { parseMarkdown } = await importTs(new URL("../src/lib/markdown.ts", import.meta.url), { platform: "node" });
+const { parseMarkdown, MAX_TABLE_COLUMNS, MAX_TABLE_CELLS } = await importTs(new URL("../src/lib/markdown.ts", import.meta.url), { platform: "node" });
 
 const fixture = "| Option | Why it is incorrect |\n| --- | --- |\n| A | **SHA256** is a one-way hash. |\n| B | Administrators cannot view secrets in plain text. |";
 const cellsOf = (parsed) => parsed.blocks.filter(b => b.cell).map(b => ({ ...b.cell, text: parsed.plainText.slice(b.start, b.end) }));
+
+test("wide tables fall back without dropping content or source coordinates", () => {
+  const header = Array(MAX_TABLE_COLUMNS + 1).fill("header").join("|");
+  const delimiter = Array(MAX_TABLE_COLUMNS + 1).fill("-").join("|");
+  const src = `${header}\n${delimiter}\nlast`;
+  const parsed = parseMarkdown(src, true, false, true);
+  assert.equal(cellsOf(parsed).length, 0);
+  assert.equal(parsed.plainText, header + delimiter + "last");
+  for (let i = 0; i < parsed.plainText.length; i++) assert.equal(parsed.plainText[i], src[parsed.sourceOffsets[i]]);
+});
+
+test("short-row padding has a document-wide cell budget with readable overflow", () => {
+  const width = MAX_TABLE_COLUMNS;
+  const header = Array(width).fill("a").join("|");
+  const delimiter = Array(width).fill("-").join("|");
+  const rows = Array(MAX_TABLE_CELLS / width).fill("x");
+  const src = `${header}\n${delimiter}\n${rows.join("\n")}\n\na|b\n-|-\nlast`;
+  const parsed = parseMarkdown(src, true, false, true);
+  assert.equal(cellsOf(parsed).length, MAX_TABLE_CELLS);
+  assert.ok(parsed.plainText.endsWith("xxa|b-|-last"));
+  assert.equal(parsed.blocks.at(-1).type, "p");
+  const final = parsed.plainText.indexOf("last");
+  assert.equal(parsed.sourceOffsets[final], src.indexOf("last"));
+});
 
 test("a GFM table becomes header and data cells without the delimiter row", () => {
   const parsed = parseMarkdown(fixture, false, false, true);

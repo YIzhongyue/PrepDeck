@@ -1,3 +1,4 @@
+import { isKnowledgePointQuotaError } from "./knowledgePointQuota";
 // implementation — the write side of Knowledge Points, shared by REST
 // (routes/knowledgePoints.ts) and the User MCP adapter. Every function here
 // scopes its own ownership checks (`WHERE id = ? AND user_id = ?`) rather
@@ -39,7 +40,7 @@ export interface CreateNoteInput {
 
 export type CreateNoteResult =
   | { ok: true; id: string }
-  | { ok: false; reason: "group_not_found" | "question_not_found" | "invalid_tag_name" | "too_many_tags" | "too_many_questions" };
+  | { ok: false; reason: "group_not_found" | "question_not_found" | "invalid_tag_name" | "too_many_tags" | "too_many_questions" | "quota_exceeded" };
 
 // REST's own POST / only ever supplies {userId, groupId} (today's
 // blank-note behavior, preserved exactly). The optional title/bodyMarkdown/
@@ -159,13 +160,16 @@ export async function createNote(db: D1Database, input: CreateNoteInput): Promis
     );
   }
 
-  await db.batch(statements);
+  try { await db.batch(statements); } catch (error) {
+    if (isKnowledgePointQuotaError(error)) return { ok: false, reason: "quota_exceeded" };
+    throw error;
+  }
   return { ok: true, id };
 }
 
 // --- Content-only autosave (REST's PUT /:id) ----------------------------------
 
-export type ApplyNoteUpdateResult = { ok: true; detail: Detail } | { ok: false; reason: "not_found" | "conflict" };
+export type ApplyNoteUpdateResult = { ok: true; detail: Detail } | { ok: false; reason: "not_found" | "conflict" | "quota_exceeded" };
 
 export async function applyNoteUpdate(
   db: D1Database,
@@ -222,7 +226,7 @@ export interface ApplyNoteEditInput {
   groupId?: string | null;
 }
 
-export type ApplyNoteEditResult = { ok: true; detail: Detail } | { ok: false; reason: "not_found" | "group_not_found" | "conflict" };
+export type ApplyNoteEditResult = { ok: true; detail: Detail } | { ok: false; reason: "not_found" | "group_not_found" | "conflict" | "quota_exceeded" };
 
 export async function applyNoteEdit(db: D1Database, input: ApplyNoteEditInput): Promise<ApplyNoteEditResult> {
   const { id, userId, baseRevision } = input;
@@ -319,7 +323,11 @@ export async function applyNoteEdit(db: D1Database, input: ApplyNoteEditInput): 
     }
   }
 
-  const results = await db.batch(statements);
+  let results;
+  try { results = await db.batch(statements); } catch (error) {
+    if (isKnowledgePointQuotaError(error)) return { ok: false, reason: "quota_exceeded" };
+    throw error;
+  }
   if (results[0]!.meta.changes === 0) return { ok: false, reason: "conflict" };
 
   const detail = await loadDetail(db, id, userId);

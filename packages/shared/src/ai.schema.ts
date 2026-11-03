@@ -5,6 +5,9 @@ import { z } from "zod";
 
 const MODEL = "model is required";
 const CONTENT = "content is required";
+export const AI_EXPLANATION_MAX_LENGTH = 32 * 1024;
+// Accommodates JSON's worst-case twelve-byte escaping of every Unicode code point.
+export const AI_EXPLANATION_EDIT_MAX_BYTES = 512 * 1024;
 
 // POST /api/ai/generate.
 export const generateAiExplanationRequestSchema = z.object({
@@ -23,5 +26,5 @@ export const generateAiExplanationRequestSchema = z.object({
 
 // PATCH /api/questions/:questionId/ai-explanations/:provider/:model. Stored trimmed.
 export const updateAiExplanationRequestSchema = z.object({
-  content: z.string(CONTENT).trim().min(1, CONTENT),
+  content: z.string(CONTENT).max(AI_EXPLANATION_MAX_LENGTH, `content must be ${AI_EXPLANATION_MAX_LENGTH} characters or fewer`).trim().min(1, CONTENT),
 }, CONTENT);

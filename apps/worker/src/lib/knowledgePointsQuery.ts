@@ -6,6 +6,7 @@
 // and a COUNT(*) query sharing the same filter.
 
 import type { KnowledgePointSort } from "@prepdeck/shared";
+import { knowledgePointSearchTextSchema, knowledgePointSearchTagsSchema } from "@prepdeck/shared/schemas";
 
 const SORTS: readonly KnowledgePointSort[] = ["updated", "title", "created", "custom"];
 
@@ -55,6 +56,8 @@ export function buildKnowledgePointsListQuery(
   userId: string,
   params: KnowledgePointsListParams
 ): KnowledgePointsListQuery | null {
+  if (!knowledgePointSearchTextSchema.safeParse(params.q ?? "").success ||
+      !knowledgePointSearchTagsSchema.safeParse(params.tagIds ?? []).success) return null;
   const conditions = ["kp.user_id = ?"];
   const binds: unknown[] = [userId];
 

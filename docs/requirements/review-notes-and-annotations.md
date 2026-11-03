@@ -164,3 +164,26 @@ text projection. The review-only visibility rules above remain unchanged.
 <a id="fr-11-8"></a>
 
 - **FR-11.8 (C):** Admin can delete any `shared` note (light-touch moderation appropriate for a small trusted group); Admin cannot view or moderate `private` notes belonging to other users.
+
+### Bounded question-note reads
+
+Both `GET /api/notes` (optionally scoped by `examId`) and
+`GET /api/questions/:questionId/notes` return at most 25 notes per request.
+The optional `limit` is an integer from 1 to 25. Responses retain `notes`
+and add `nextCursor`, an opaque continuation token or `null` on the final
+page. Pass it as `cursor` on the same scope; every page rechecks ownership
+and shared-note visibility. Ordering is ascending `(created_at, id)`.
+Deletion of the preceding page's last row does not invalidate its cursor.
+This is a live listing, not a historical snapshot: edits and visibility
+changes may change later pages; refreshing starts a new listing.
+
+Exam bootstrap does not fetch notes. Review surfaces lazily fetch one page;
+additional pages require the learner's “Load more notes” action. Interleaved
+question and exam pages are deduplicated and sorted before rendering.
+
+**Client migration:** older clients that ignore `nextCursor` see only the
+first page. Deploy the updated web client with this API change, and upgrade
+other consumers to follow cursors deliberately. The server does not restore
+an unbounded legacy response. Existing note data is neither truncated nor
+deleted. Migration `0048_notes_pagination_indexes.sql` adds the pagination
+indexes; it must be applied through the normal deployment migration process.

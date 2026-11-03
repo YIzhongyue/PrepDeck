@@ -10,6 +10,8 @@ import {
   loadEncryptedKey,
   clearStoredEncryptedKey,
   deleteLegacyKeystore,
+  keyRevision,
+  bindKeyIdentity,
 } from "../../lib/keyStorage";
 import { clearLegacyKeyMode, storeKeyMode } from "../../lib/keyModeStorage";
 import { storeTheme } from "../../lib/themeStorage";
@@ -58,9 +60,9 @@ export function useAccountSettings(core: StoreCore) {
   // lib/keyStorage.ts) — optionally also persisted encrypted per FR-7.9,
   // which the Settings screen handles itself before calling this.
   const loadSessionApiKey = useCallback((key: string) => {
-    setSessionKey(key);
-    setState({ hasSessionKey: true });
-  }, [setState]);
+    const id = stateRef.current.me?.id;
+    if (id && setSessionKey(id, key)) setState({ hasSessionKey: true });
+  }, [setState, stateRef]);
   const clearSessionApiKey = useCallback(() => {
     clearSessionKey();
     setState({ hasSessionKey: false });
@@ -77,8 +79,10 @@ export function useAccountSettings(core: StoreCore) {
   // FR-7.9: encrypts and stores the key for next visit, and loads it into
   // this session immediately so it's usable right away.
   const saveEncryptedApiKey = useCallback(async (apiKey: string, passphrase: string) => {
-    await saveEncryptedKey(signedInId(), apiKey, passphrase);
-    setSessionKey(apiKey);
+    const id = signedInId();
+    const revision = keyRevision();
+    if (!await saveEncryptedKey(id, apiKey, passphrase, revision)) return;
+    if (signedInId() !== id || !setSessionKey(id, apiKey, revision)) return;
     setState({ hasStoredKey: true, hasSessionKey: true });
   }, [setState, signedInId]);
 
@@ -86,15 +90,18 @@ export function useAccountSettings(core: StoreCore) {
   // or from an inline prompt next to "Generate explanation" once a refresh
   // (or enough idle time) has dropped the in-memory session key.
   const unlockSessionKey = useCallback(async (passphrase: string) => {
-    const key = await loadEncryptedKey(signedInId(), passphrase);
-    setSessionKey(key);
+    const id = signedInId();
+    const revision = keyRevision();
+    const key = await loadEncryptedKey(id, passphrase);
+    if (signedInId() !== id || !setSessionKey(id, key, revision)) return;
     setState({ hasSessionKey: true });
   }, [setState, signedInId]);
 
   const forgetStoredApiKey = useCallback(async () => {
-    await clearStoredEncryptedKey(signedInId());
-    setState({ hasStoredKey: false });
-  }, [setState, signedInId]);
+    const id = signedInId();
+    await clearStoredEncryptedKey(id);
+    if (stateRef.current.me?.id === id) setState({ hasStoredKey: false });
+  }, [setState, signedInId, stateRef]);
 
   // Signing out ends every session of the account (issue #46; the server moves
   // its session version on). This browser also drops the key held in memory,
@@ -103,6 +110,7 @@ export function useAccountSettings(core: StoreCore) {
   const signOut = useCallback(async (opts: { removeSavedKey: boolean }) => {
     const id = stateRef.current.me?.id;
     clearSessionKey();
+    bindKeyIdentity(null);
     if (opts.removeSavedKey && id) await clearStoredEncryptedKey(id).catch(() => {});
     await deleteLegacyKeystore();
     clearLegacyKeyMode();

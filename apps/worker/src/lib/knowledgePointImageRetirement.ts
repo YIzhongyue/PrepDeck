@@ -65,9 +65,10 @@ export async function flushRetiredImages(
       .run();
     return { deleted: 0 };
   }
-  await db
-    .prepare("DELETE FROM knowledge_point_image_deletions WHERE id IN (SELECT value FROM json_each(?))")
-    .bind(ids)
-    .run();
+  await db.batch([
+    db.prepare(`DELETE FROM knowledge_point_image_usage WHERE id IN (SELECT value FROM json_each(?))
+      AND upload_state='ready' AND id IN (SELECT id FROM knowledge_point_image_deletions)` ).bind(ids),
+    db.prepare("DELETE FROM knowledge_point_image_deletions WHERE id IN (SELECT value FROM json_each(?))").bind(ids),
+  ]);
   return { deleted: images.length };
 }

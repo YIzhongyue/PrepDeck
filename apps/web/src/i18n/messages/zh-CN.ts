@@ -6,6 +6,7 @@
 import type { LocaleMessages } from "./en";
 
 const messages: LocaleMessages = {
+  quota: { usage: "知识点：{notes}/10,000 条 · 正文 {body}/100 MiB · 图片 {images}/5,000 张、{imageBytes}/500 MiB", near: "即将达到存储上限。仍可读取、导出、删除，以及进行不增加占用的编辑。" },
   common: {
     loading: "加载中…",
     retry: "重试",

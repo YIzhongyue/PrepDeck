@@ -592,6 +592,21 @@ The daily scheduled job (`src/scheduled/pruneMcpOAuth.ts`) deletes expired
 access/refresh tokens, codes and authorization requests, and dynamically
 registered clients that have had no grant for 30 days. Grants are kept.
 
+Authorization-request admission has a 10,000-row shared backlog safety ceiling
+(`MAX_AUTHORIZATION_REQUESTS`), independent of per-account Knowledge Point
+quotas. Each attempt first reclaims at most one expired request, then atomically
+inserts only while the backlog is below the ceiling. At capacity it returns the
+OAuth `temporarily_unavailable` error to the already-validated redirect URI and
+issues no new binding cookie. Unexpired consent requests are not evicted.
+
+Expired authorization requests are eligible for the bounded daily prune
+immediately at expiry; they no longer have an additional one-day retention.
+A pre-existing backlog above the ceiling is not deleted all at once: expired
+rows drain through admission-time reclamation and the scheduled bounded sweeps.
+New authorizations remain unavailable until there is room. This bounds future
+row admission even if cleanup stalls; it does not establish a production cost
+measurement or eliminate the need to monitor repeated capacity refusals.
+
 ### Client interoperability
 
 | Client | Version | Onboarding | Result |

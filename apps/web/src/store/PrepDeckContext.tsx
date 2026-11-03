@@ -8,7 +8,6 @@ import type {
   AnnotationsListResponse,
   DailyEmailSettingsResponse,
   LearningProgressResponse,
-  NotesListResponse,
   PracticeCatalogResponse,
   ProfileResponse,
   StudyStatusListResponse,
@@ -18,8 +17,7 @@ import { mergeStudyStatuses } from "../lib/studyStatus";
 import { defaultMockFormat, officialFormatOf } from "../lib/mockFormat";
 import { apiFetch } from "../lib/api";
 import { fromSharedAnnotation } from "../lib/annotations";
-import { fromSharedNote } from "../lib/notes";
-import { hasStoredEncryptedKey } from "../lib/keyStorage";
+import { bindKeyIdentity, clearSessionKey, hasSessionKey, hasStoredEncryptedKey, subscribeSessionKey } from "../lib/keyStorage";
 import { getStoredKeyMode } from "../lib/keyModeStorage";
 import { DEFAULT_THEME } from "../lib/themeStorage";
 import type { ExamSummary, KeyMode, Question } from "../types";
@@ -96,6 +94,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         }
         const { exams } = examsResult.value;
         const user = meResult.status === "fulfilled" ? meResult.value.user : null;
+        if (user && stateRef.current.me && user.id !== stateRef.current.me.id) clearSessionKey();
         const previous = stateRef.current.examId;
         // A link names its exam by slug; it wins over the last exam used.
         const linkedSlug = previous ? null : initialRoute.current?.examSlug ?? null;
@@ -136,9 +135,12 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
   // browser sees neither this account's key nor its storage choice.
   const meId = state.me?.id ?? null;
   useEffect(() => {
-    if (!meId) return;
-    setState({ keyMode: getStoredKeyMode(meId) ?? "memory" });
-    hasStoredEncryptedKey(meId).then((v) => setState({ hasStoredKey: v })).catch(() => {});
+    let cancelled = false;
+    bindKeyIdentity(meId);
+    setState({ keyMode: meId ? getStoredKeyMode(meId) ?? "memory" : "memory", hasSessionKey: hasSessionKey(meId), hasStoredKey: false });
+    if (meId) hasStoredEncryptedKey(meId).then((v) => { if (!cancelled) setState({ hasStoredKey: v }); }).catch(() => {});
+    const unsubscribe = subscribeSessionKey(() => setState({ hasSessionKey: hasSessionKey(meId) }));
+    return () => { cancelled = true; unsubscribe(); bindKeyIdentity(null); };
   }, [meId, setState]);
 
   // public/theme-init.js puts the stored scheme on <html> before React mounts,
@@ -187,11 +189,10 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
       apiFetch<{ attempt: ActiveAttemptResponse | null }>(`/api/attempts/active?examId=${examId}&mode=mock`),
       apiFetch<{ progress: LearningProgressResponse }>(`/api/exams/${examId}/learning/progress`),
       apiFetch<AnnotationsListResponse>(`/api/annotations?examId=${encodeURIComponent(examId)}`),
-      apiFetch<NotesListResponse>(`/api/notes?examId=${encodeURIComponent(examId)}`),
       // Not required to open the exam: only the study-status filter needs it.
       apiFetch<StudyStatusListResponse>(`/api/exams/${encodeURIComponent(examId)}/study-status`)
         .then(r => Array.isArray(r?.statuses) ? r.statuses : null, () => null)
-    ]).then(([data, { attempt }, { progress }, { annotations }, { notes }, study]) => {
+    ]).then(([data, { attempt }, { progress }, { annotations }, study]) => {
       if (cancelled) return;
       const toQuestion = (q: PracticeCatalogResponse["questions"][number]): Question => ({
         id: q.id, externalId: q.externalId, sequenceNumber: q.sequenceNumber, type: q.type,
@@ -213,7 +214,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
         studyStatus: study ? mergeStudyStatuses(s.studyStatus, study, pendingStudy.current) : s.studyStatus,
         studyStatusError: !study,
         mockFormat: defaultMockFormat(officialFormatOf(s.exams, s.examId)), mockCount: count, mockMinutes: defaultMockMinutes(count), activeMockAttempt: attempt,
-        lResume: progress.lastSequenceNumber, anns: annotations.map(fromSharedAnnotation), notes: notes.map(fromSharedNote)
+        lResume: progress.lastSequenceNumber, anns: annotations.map(fromSharedAnnotation)
       }));
     }).catch(() => {
       if (!cancelled) update(s => s.workspaceStatus === "ready"
@@ -314,7 +315,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     if (exam) goToQuestionForReview(exam.id, pending.questionId);
   }, [state.pendingSlugQuestionJump, state.exams, setState, goToQuestionForReview, stateRef]);
 
-  const { setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared } = useQuestionNotes(core);
+  const { setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, loadNotesPage } = useQuestionNotes(core);
 
   const {
     updateTimeZone, updateEmailSettings, setProvider, setModel, setKeyMode, loadSessionApiKey,
@@ -380,7 +381,7 @@ export function PrepDeckProvider({ children }: { children: React.ReactNode }) {
     setMockFormat, setMockCount, setMockMinutes, setMockSkipReview, beginMock, mockPick, mockPrev, mockNext, mockGoto, toggleFlag,
     askSubmit, cancelSubmit, finishMock, practiceWrong,
     setListMode, removeBookmark, markMastered, practiceList,
-    setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, updateTimeZone, updateEmailSettings,
+    setNoteDraft, setNoteVis, addNote, updateNote, removeNote, toggleShared, loadNotesPage, updateTimeZone, updateEmailSettings,
     capture, apply, setMarkNote, saveMarkNote, removeMark, updateMarkAlias,
     setProvider, setModel, setKeyMode, loadSessionApiKey, clearSessionApiKey,
     saveEncryptedApiKey, unlockSessionKey, forgetStoredApiKey, signOut, setTheme,

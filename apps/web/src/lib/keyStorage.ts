@@ -10,18 +10,69 @@
 // anywhere; losing it means losing the saved key with no recovery path.
 
 let sessionKey: string | null = null;
+let identity: string | null = null;
+let revision = 0;
+const REVOCATION_KEY = "prepdeck:key-revocation";
+const listeners = new Set<() => void>();
+const readRevocation = () => {
+  try { return localStorage.getItem(REVOCATION_KEY); } catch { return null; }
+};
+let revocation = readRevocation();
 
-export function setSessionKey(key: string): void {
+function clearLocalKey(): void {
+  sessionKey = null;
+  revision++;
+  for (const listener of listeners) listener();
+}
+
+// Read synchronously too: storage events can be delayed while a tab sleeps.
+function syncRevocation(): void {
+  const current = readRevocation();
+  if (current !== revocation) { revocation = current; clearLocalKey(); }
+}
+
+export function bindKeyIdentity(userId: string | null): void {
+  syncRevocation();
+  if (identity === userId) return;
+  identity = userId;
+  clearLocalKey();
+}
+
+export function keyRevision(): number { syncRevocation(); return revision; }
+
+export function subscribeSessionKey(listener: () => void): () => void {
+  listeners.add(listener);
+  const onStorage = (event: StorageEvent) => { if (event.key === REVOCATION_KEY || event.key === null) syncRevocation(); };
+  const onRestore = (event: PageTransitionEvent) => { if (event.persisted) clearLocalKey(); else syncRevocation(); };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener("pageshow", onRestore);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener("pageshow", onRestore);
+  };
+}
+
+export function setSessionKey(userId: string, key: string, expectedRevision = keyRevision()): boolean {
+  syncRevocation();
+  if (userId !== identity || expectedRevision !== revision) return false;
   sessionKey = key;
+  revision++;
+  for (const listener of listeners) listener();
+  return true;
 }
-export function getSessionKey(): string | null {
-  return sessionKey;
+export function getSessionKey(userId: string | null): string | null {
+  syncRevocation();
+  return userId && userId === identity ? sessionKey : null;
 }
-export function hasSessionKey(): boolean {
-  return sessionKey != null;
+export function hasSessionKey(userId: string | null): boolean {
+  return getSessionKey(userId) != null;
 }
 export function clearSessionKey(): void {
-  sessionKey = null;
+  clearLocalKey();
+  // Only a random invalidation marker is shared; never the key or ciphertext.
+  revocation = crypto.randomUUID();
+  try { localStorage.setItem(REVOCATION_KEY, revocation); } catch { /* Per-request identity checks still apply. */ }
 }
 
 // One database per account (issue #46). A single browser-wide database let the
@@ -104,12 +155,14 @@ export async function hasStoredEncryptedKey(userId: string): Promise<boolean> {
   }
 }
 
-export async function saveEncryptedKey(userId: string, apiKey: string, passphrase: string): Promise<void> {
+export async function saveEncryptedKey(userId: string, apiKey: string, passphrase: string, expectedRevision = keyRevision()): Promise<boolean> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(passphrase, salt);
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(apiKey));
+  if (userId !== identity || expectedRevision !== keyRevision()) return false;
   await idbPut(userId, { salt: Array.from(salt), iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) });
+  return true;
 }
 
 export class UnlockError extends Error {}

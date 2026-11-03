@@ -74,18 +74,27 @@ const toRequest = (row: RequestRow): AuthorizationRequest => ({
  * binding secret the caller puts in a cookie; only its digest is stored, so
  * the consent decision can only be made from the browser that started it.
  */
+// Bound even a stalled cleanup job. Admission is one atomic SQLite statement.
+export const MAX_AUTHORIZATION_REQUESTS = 10_000;
+
 export async function createAuthorizationRequest(db: D1Database, input: {
   client: OAuthClient; redirectUri: string; audience: McpAudience; scopes: McpOAuthScope[]; state: string | null; codeChallenge: string;
-}): Promise<{ id: string; binding: string; expiresAt: number }> {
+}): Promise<{ id: string; binding: string; expiresAt: number } | null> {
   const id = randomHex(16);
   const binding = randomHex(32);
   const now = Date.now();
   const expiresAt = now + AUTHORIZATION_REQUEST_TTL_MS;
-  await db.prepare(`
+  // Reclaim one expired row per admission; never invalidate a live consent.
+  // A bounded operation avoids making anonymous requests trigger a full sweep.
+  await db.prepare(`DELETE FROM mcp_oauth_requests WHERE id IN
+    (SELECT id FROM mcp_oauth_requests WHERE expires_at <= ? LIMIT 1)`).bind(now).run();
+  const inserted = await db.prepare(`
     INSERT INTO mcp_oauth_requests (id, client_id, redirect_uri, audience, scopes, state, code_challenge, browser_binding_hash, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE (SELECT COUNT(*) FROM (SELECT 1 FROM mcp_oauth_requests LIMIT ?)) < ?
   `).bind(id, input.client.id, input.redirectUri, input.audience, formatScopes(input.scopes), input.state,
-    input.codeChallenge, await hashMcpToken(binding), now, expiresAt).run();
+    input.codeChallenge, await hashMcpToken(binding), now, expiresAt, MAX_AUTHORIZATION_REQUESTS, MAX_AUTHORIZATION_REQUESTS).run();
+  if (inserted.meta.changes !== 1) return null;
   return { id, binding, expiresAt };
 }
 

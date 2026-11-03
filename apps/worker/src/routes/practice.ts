@@ -9,7 +9,7 @@
 // key before it grades a specific question through the attempts API.
 
 import { createRouter } from "../context";
-import { getCachedPracticeQuestions, setCachedPracticeQuestions } from "../lib/practiceCache";
+import { getOrComputePracticeQuestions } from "../lib/practiceCache";
 import { tagsJsonExpr } from "../lib/questionManagement";
 import type { PracticeCatalogQuestion, PracticeCatalogResponse, PracticeQuestionContentResponse } from "@prepdeck/shared";
 
@@ -61,9 +61,8 @@ practiceCatalogRouter.get("/", async (c) => {
 
   // The per-user lists name active questions only, so every count the client
   // derives from them (bookmarks, wrong book, "new") matches `questions`.
-  const [cachedQuestions, { results: bookmarkRows }, { results: wrongRows }, { results: attemptedRows }, { results: archivedRows }] =
+  const [{ results: bookmarkRows }, { results: wrongRows }, { results: attemptedRows }, { results: archivedRows }] =
     await Promise.all([
-      getCachedPracticeQuestions(c.env, examId),
       c.env.DB.prepare(`SELECT b.question_id FROM bookmarks b JOIN questions q ON q.id = b.question_id
         WHERE b.user_id = ? AND q.exam_id = ? AND q.archived_at IS NULL`).bind(userId, examId).all<{ question_id: string }>(),
       c.env.DB.prepare(`SELECT w.question_id, w.wrong_count, w.last_wrong_at FROM wrong_question_book w
@@ -91,10 +90,7 @@ practiceCatalogRouter.get("/", async (c) => {
         .all<QuestionRow>(),
     ]);
 
-  let questions: PracticeCatalogQuestion[];
-  if (cachedQuestions) {
-    questions = cachedQuestions;
-  } else {
+  const questions = await getOrComputePracticeQuestions(c.env, examId, async () => {
     const { results: questionRows } = await c.env.DB.prepare(
       // FR-14.1: ordered by sequence_number so Learning Mode can walk the
       // exam's questions in order directly off this same catalog. Archiving
@@ -104,10 +100,8 @@ practiceCatalogRouter.get("/", async (c) => {
       .bind(examId)
       .all<QuestionRow>();
 
-    questions = (questionRows ?? []).map(toCatalogQuestion);
-
-    await setCachedPracticeQuestions(c.env, examId, questions);
-  }
+    return (questionRows ?? []).map(toCatalogQuestion);
+  });
 
   const response: PracticeCatalogResponse = {
     questions,

@@ -2,7 +2,6 @@
 // Validation, grading snapshots, locking, wrong-book writes and cache invalidation
 // live here so a client's transport cannot change the recorded study result.
 import type { Env } from "../bindings";
-import { invalidateExamStats } from "./statsCache";
 import { examExists, loadExamPassRule } from "./examManagement";
 import { closeStalePracticeAttempts, PRACTICE_IDLE_ON_START_SECONDS } from "./practiceSessions";
 import { toAttemptBreakdown, loadAttemptBreakdown, type AttemptRow } from "./attemptRecords";
@@ -394,10 +393,8 @@ export async function completeAttempt(env: Env, userId: string, id: string, opti
       if (!current?.completed_at) return failure({ error: "Answers changed during submission. Please submit again." }, "conflict");
     }
 
-    // The Stats dashboard (routes/stats.ts) caches its computed response in
-    // KV; drop it now so the numbers are correct the moment the user gets
-    // there, rather than waiting out the cache's TTL.
-    await invalidateExamStats(env, userId, attempt.exam_id);
+    // Stats validate the authoritative activity marker, including completed_at.
+    // No KV delete is needed after a committed completion.
   }
 
   const [finalAttempt, exam, breakdownRows] = await Promise.all([
