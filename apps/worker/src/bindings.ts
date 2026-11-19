@@ -53,6 +53,8 @@ export interface Env {
   // Comma-separated source IPs/CIDRs are enforced at the Cloudflare WAF. The
   // Worker repeats exact-IP checks here as defence in depth in emergency mode.
   EMERGENCY_ADMIN_IPS?: string;
+  // Additional exact, deployment-approved hosts for exam badge images.
+  EXAM_BADGE_IMAGE_HOSTS?: string;
   // implementation — MCP per-account request quotas (requests per 60s window),
   // deployment-configurable without a code change. String-valued like every
   // other Wrangler var; missing/non-numeric values fall back to the defaults

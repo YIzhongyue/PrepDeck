@@ -3,7 +3,7 @@
 // implementation's "share management logic with the future Admin MCP" and implementation's
 // "reuse existing admin/service-layer query logic where practical".
 
-import type { Exam, ExamPassRule, OfficialMockFormat } from "@prepdeck/shared";
+import type { Exam, ExamBadgeSource, ExamPassRule, OfficialMockFormat } from "@prepdeck/shared";
 
 export interface ExamRow {
   id: string;
@@ -136,18 +136,21 @@ export interface ExamCreateFields {
   language?: string | null;
   passMarkPct?: number | null;
   officialFormat?: OfficialMockFormat | null;
+  badgeSource?: ExamBadgeSource;
 }
 
 export function createExamStatement(db: D1Database, id: string, fields: ExamCreateFields, now: string): D1PreparedStatement {
   return db.prepare(
     `INSERT INTO exams (id, slug, name, subject, description, language, pass_mark_pct,
-       official_question_count, official_time_limit_minutes, official_pass_correct_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       official_question_count, official_time_limit_minutes, official_pass_correct_count, created_at,
+       badge_source_image_url, badge_source_issuer_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, fields.slug, fields.name, fields.subject ?? null, fields.description ?? null,
     fields.language ?? null, fields.passMarkPct ?? null,
     fields.officialFormat?.questionCount ?? null, fields.officialFormat?.timeLimitMinutes ?? null,
     fields.officialFormat?.passCorrectCount ?? null, now,
+    fields.badgeSource?.imageUrl ?? null, fields.badgeSource?.issuerUrl ?? null,
   );
 }
 

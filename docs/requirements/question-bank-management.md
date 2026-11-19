@@ -43,6 +43,23 @@ Priorities: M = Must, S = Should, C = Could; priority is not delivery status.
 
 ## Admin console
 
+### Exam badges
+
+The new exam form and `admin_create_exam` accept a direct HTTPS badge image URL
+and a certification issuer page. PrepDeck records the pair on the exam and
+imports the image on creation. A built-in source covers the `nca-aiio` slug. An
+admin can open a saved exam and choose **Import badge from link** to set or
+correct its source and retry, or **Replace badge from link** to replace an
+existing image. The manual file upload also remains available.
+
+The Worker downloads only from `images.credly.com` and any exact host names
+the operator adds to the comma-separated `EXAM_BADGE_IMAGE_HOSTS` binding.
+The same restrictions apply to redirects. The issuer page is recorded as a
+reference. The server checks the received image format, dimensions and 2 MB
+limit before storing it in private R2, and the exam API reports the outcome
+even when the exam itself was created successfully. Apply migration
+`0049_exam_badge_sources.sql` before deploying the updated Worker.
+
 ### Provider management
 
 Content and individual exam detail pages expose **Manage providers**, with a

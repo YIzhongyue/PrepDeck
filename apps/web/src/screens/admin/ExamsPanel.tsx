@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import type { OfficialMockFormat, Provider } from "@prepdeck/shared";
+import type { CreateExamRequest, ExamBadgeImportResult, OfficialMockFormat, Provider } from "@prepdeck/shared";
 import { AdminIcon, AdminModal } from "../../components/AdminModal";
 import ProviderManager from "../../components/ProviderManager";
 import QuestionsPanel from "../../components/QuestionsPanel";
 import { apiFetch, ApiError } from "../../lib/api";
 import { examListChanged } from "../../lib/questionAuthoring";
 import { ExamMetadataModal, OfficialFormatCard } from "./ExamSettings";
+import { emptyBadgeSource, ExamBadgeImport, ExamBadgeSourceFields } from "./ExamBadgeImport";
 import { type ExamRow, DANGER, countOf } from "./shared";
 import { t as translate, useI18n } from "../../i18n";
 
@@ -26,6 +27,8 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
   const [subject, setSubject] = useState("");
   const [language, setLanguage] = useState("");
   const [badgeIcon, setBadgeIcon] = useState<File | null>(null);
+  const [badgeSource, setBadgeSource] = useState(emptyBadgeSource);
+  const [badgeNotice, setBadgeNotice] = useState<{ examId: string; message: string } | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [providerLoadError, setProviderLoadError] = useState<string | null>(null);
@@ -88,17 +91,25 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
     setCreateBusy(true);
     setCreateError(null);
     try {
-      const { exam } = await apiFetch<{ exam: ExamRow }>("/api/exams", {
+      const imageUrl = badgeSource.imageUrl.trim();
+      const issuerUrl = badgeSource.issuerUrl.trim();
+      const request: CreateExamRequest = {
+        name: name.trim(), slug: slug.trim(), subject: subject.trim() || undefined, language: language.trim() || undefined,
+        badgeSource: imageUrl || issuerUrl ? { imageUrl, issuerUrl } : undefined,
+        importBadge: badgeIcon ? false : undefined,
+      };
+      const { exam, badgeImport } = await apiFetch<{ exam: ExamRow; badgeImport?: ExamBadgeImportResult }>("/api/exams", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), slug: slug.trim(), subject: subject.trim() || undefined, language: language.trim() || undefined })
+        body: JSON.stringify(request),
       });
       let created = exam;
+      let badgeError = badgeImport?.status === "failed" ? t(`admin.exams.badgeImportErrors.${badgeImport.reason}`) : null;
       if (badgeIcon) {
         try {
           const { badgeIconUrl } = await uploadBadge(exam.id, badgeIcon);
           created = { ...created, badgeIconUrl };
         } catch (err) {
-          setCreateError(t("admin.exams.badgeAfterCreate", { reason: err instanceof ApiError ? err.message : t("admin.exams.uploadFailed") }));
+          badgeError = err instanceof ApiError ? err.message : t("admin.exams.uploadFailed");
         }
       }
       setExams((prev) => prev.concat(created));
@@ -107,8 +118,14 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
       setSubject("");
       setLanguage("");
       setBadgeIcon(null);
+      setBadgeSource(emptyBadgeSource);
       form.reset();
-      if (!createError) setModal(null);
+      setModal(null);
+      if (badgeError) {
+        setBadgeNotice({ examId: exam.id, message: t("admin.exams.badgeAfterCreate", { reason: badgeError }) });
+        setSelectedExamId(exam.id);
+      }
+      examListChanged();
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : t("admin.exams.createFailed"));
     } finally {
@@ -124,9 +141,15 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
       .catch((err) => window.alert(err instanceof ApiError ? err.message : t("admin.exams.updateFailed")));
   };
 
+  const badgeSaved = (examId: string, badgeIconUrl: string) => {
+    setExams((prev) => prev.map((x) => x.id === examId ? { ...x, badgeIconUrl } : x));
+    setBadgeNotice((prev) => prev?.examId === examId ? null : prev);
+    examListChanged();
+  };
+
   const replaceBadge = (exam: ExamRow, file: File) => {
     uploadBadge(exam.id, file)
-      .then(({ badgeIconUrl }) => setExams((prev) => prev.map((x) => x.id === exam.id ? { ...x, badgeIconUrl } : x)))
+      .then(({ badgeIconUrl }) => badgeSaved(exam.id, badgeIconUrl))
       .catch((err) => window.alert(err instanceof ApiError ? err.message : t("admin.exams.badgeFailed")));
   };
 
@@ -137,7 +160,9 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
       <>
       {providerLoadError && <p role="alert" style={{ color: DANGER }}>{providerLoadError}</p>}
       <ExamDetail
+        key={selected.id}
         exam={selected}
+        badgeNotice={badgeNotice?.examId === selected.id ? badgeNotice.message : null}
         providers={providers}
         onBack={() => setSelectedExamId(null)}
         onToggleProvider={setProviderExam}
@@ -145,6 +170,7 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
         onManageProviders={() => setModal("providers")}
         onToggleArchive={toggleArchive}
         onReplaceBadge={replaceBadge}
+        onBadgeSaved={(url) => badgeSaved(selected.id, url)}
         onFormatSaved={(officialFormat) => setExams((prev) => prev.map((x) => x.id === selected.id ? { ...x, officialFormat } : x))}
         onMetadataSaved={(updated) => {
           setExams((prev) => prev.map((x) => x.id === updated.id ? { ...x, ...updated } : x));
@@ -261,7 +287,9 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
                   <label>{badgeIcon ? badgeIcon.name : t("admin.exams.browse")}<input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => setBadgeIcon(e.target.files?.[0] ?? null)} /></label>
                 </div>
               </div>
+              <ExamBadgeSourceFields source={badgeSource} onChange={setBadgeSource} disabled={createBusy} />
             </div>
+            <p style={{ margin: 0, fontSize: 12 }}>{t("admin.exams.badgeCreateHint")}</p>
             {createError && <p style={{ margin: 0, fontSize: 12, color: DANGER }}>{createError}</p>}
             <div className="admin-modal-foot">
               <p>{t("admin.exams.addQuestionsAfter")}</p>
@@ -276,9 +304,10 @@ export function ExamsPanel({ onCount }: { onCount: (n: number) => void }) {
 }
 
 function ExamDetail({
-  exam, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onFormatSaved, onMetadataSaved
+  exam, badgeNotice, providers, onBack, onToggleProvider, onNewProvider, onManageProviders, onToggleArchive, onReplaceBadge, onBadgeSaved, onFormatSaved, onMetadataSaved
 }: {
   exam: ExamRow;
+  badgeNotice: string | null;
   providers: Provider[];
   onBack: () => void;
   onToggleProvider: (provider: Provider, exam: ExamRow, assigned: boolean) => void;
@@ -286,10 +315,12 @@ function ExamDetail({
   onManageProviders: () => void;
   onToggleArchive: (exam: ExamRow) => void;
   onReplaceBadge: (exam: ExamRow, file: File) => void;
+  onBadgeSaved: (badgeIconUrl: string) => void;
   onFormatSaved: (format: OfficialMockFormat | null) => void;
   onMetadataSaved: (exam: ExamRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [importingBadge, setImportingBadge] = useState(false);
   const { t } = useI18n();
   return (
     <div style={{ marginTop: 6 }}>
@@ -321,9 +352,16 @@ function ExamDetail({
               e.target.value = "";
             }} />
           </label>
+          <button type="button" className="btn btn-secondary" onClick={() => setImportingBadge(true)}>
+            {t(exam.badgeIconUrl ? "admin.exams.replaceBadgeFromLink" : "admin.exams.importBadge")}
+          </button>
           <button type="button" className="btn btn-secondary" onClick={() => onToggleArchive(exam)}>{t(exam.archivedAt ? "admin.exams.unarchive" : "admin.exams.archive")}</button>
         </div>
       </div>
+      {badgeNotice && <p role="status">{badgeNotice}</p>}
+      {importingBadge && (
+        <ExamBadgeImport examId={exam.id} replace={Boolean(exam.badgeIconUrl)} onClose={() => setImportingBadge(false)} onSaved={onBadgeSaved} />
+      )}
 
       <div className="admin-panel-card">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 13 }}>

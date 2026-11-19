@@ -4,12 +4,18 @@
 
 import { createRouter } from "../context";
 import { requireAdmin } from "../middleware/admin";
-import { createExamRequestSchema, updateExamRequestSchema } from "@prepdeck/shared/schemas";
+import { createExamRequestSchema, importExamBadgeRequestSchema, updateExamRequestSchema } from "@prepdeck/shared/schemas";
 import {
   getExam, listExams,
   createExamStatement, updateExamStatement, archiveExamStatement, unarchiveExamStatement,
 } from "../lib/examManagement";
 import { readBody } from "../lib/requestBody";
+import { jsonBodyLimit } from "../lib/bodyLimit";
+import { streamBodyLimit } from "../lib/streamBodyLimit";
+import {
+  examBadgeObjectKey, getBadgeTarget, importExamBadge, isApprovedBadgeSource, isBadgeContentType,
+  MAX_EXAM_BADGE_BYTES, resolveBadgeSource, storeExamBadge,
+} from "../lib/examBadges";
 
 export const examsRouter = createRouter();
 
@@ -26,10 +32,13 @@ examsRouter.get("/:id", async (c) => {
   return c.json({ exam });
 });
 
-examsRouter.post("/", requireAdmin, async (c) => {
+examsRouter.post("/", requireAdmin, jsonBodyLimit, async (c) => {
   const parsed = await readBody(c, createExamRequestSchema);
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
+  if (body.badgeSource && !isApprovedBadgeSource(body.badgeSource, c.env)) {
+    return c.json({ error: "The badge image host is not approved", code: "source_not_allowed" }, 400);
+  }
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -39,6 +48,7 @@ examsRouter.post("/", requireAdmin, async (c) => {
     return c.json({ error: "An exam with this slug already exists" }, 409);
   }
 
+  const badgeImport = body.importBadge === false ? undefined : await importExamBadge(c.env, id);
   return c.json(
     {
       exam: {
@@ -52,10 +62,11 @@ examsRouter.post("/", requireAdmin, async (c) => {
         archivedAt: null,
         passMarkPct: body.passMarkPct ?? null,
         officialFormat: body.officialFormat ?? null,
-        badgeIconUrl: null,
+        badgeIconUrl: badgeImport && "badgeIconUrl" in badgeImport ? badgeImport.badgeIconUrl : null,
         questionCount: 0,
         providers: [],
       },
+      badgeImport,
     },
     201
   );
@@ -100,35 +111,39 @@ examsRouter.post("/:id/unarchive", requireAdmin, async (c) => {
   return c.json({ archivedAt: null });
 });
 
-const MAX_BADGE_BYTES = 2 * 1024 * 1024;
-const ALLOWED_BADGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+examsRouter.get("/:id/badge-source", requireAdmin, async (c) => {
+  const target = await getBadgeTarget(c.env.DB, c.req.param("id"));
+  return target ? c.json({ source: resolveBadgeSource(target) }) : c.json({ error: "Exam not found" }, 404);
+});
+
+examsRouter.post("/:id/badge/import", requireAdmin, jsonBodyLimit, async (c) => {
+  const parsed = await readBody(c, importExamBadgeRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  return c.json({ badgeImport: await importExamBadge(c.env, c.req.param("id"), parsed.data) });
+});
 
 // Admin-only badge upload. R2 stays private, so the stored database URL points
 // to the authenticated streaming route below rather than directly to a bucket.
-examsRouter.post("/:id/badge", requireAdmin, async (c) => {
+examsRouter.post("/:id/badge", requireAdmin, streamBodyLimit(MAX_EXAM_BADGE_BYTES, "Badge icon must be 2 MB or smaller"), async (c) => {
   const id = c.req.param("id");
   const contentType = c.req.header("Content-Type") ?? "";
-  if (!ALLOWED_BADGE_TYPES.has(contentType)) {
+  if (!isBadgeContentType(contentType)) {
     return c.json({ error: "Badge icon must be a JPEG, PNG, or WebP image" }, 400);
   }
 
-  const existing = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(id).first();
-  if (!existing) return c.json({ error: "Exam not found" }, 404);
+  const target = await getBadgeTarget(c.env.DB, id);
+  if (!target) return c.json({ error: "Exam not found" }, 404);
 
   const body = await c.req.arrayBuffer();
   if (body.byteLength === 0) return c.json({ error: "Empty upload" }, 400);
-  if (body.byteLength > MAX_BADGE_BYTES) return c.json({ error: "Badge icon must be 2 MB or smaller" }, 413);
-
-  await c.env.BUCKET.put(`exam-badges/${id}`, body, { httpMetadata: { contentType } });
-  const badgeIconUrl = `/api/exam-badges/${id}?v=${Date.now()}`;
-  await c.env.DB.prepare("UPDATE exams SET badge_icon_url = ? WHERE id = ?").bind(badgeIconUrl, id).run();
-  return c.json({ badgeIconUrl });
+  const badgeIconUrl = await storeExamBadge(c.env, id, target.badge_icon_url, body, contentType);
+  return badgeIconUrl ? c.json({ badgeIconUrl }) : c.json({ error: "The badge changed. Reload the exam and try again." }, 409);
 });
 
 export const examBadgesRouter = createRouter();
 
 examBadgesRouter.get("/:examId", async (c) => {
-  const object = await c.env.BUCKET.get(`exam-badges/${c.req.param("examId")}`);
+  const object = await c.env.BUCKET.get(examBadgeObjectKey(c.req.param("examId"), c.req.query("v")));
   if (!object) return c.json({ error: "Not found" }, 404);
   return new Response(object.body, {
     headers: {

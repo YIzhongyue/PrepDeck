@@ -5,6 +5,7 @@
 // transformed ancestor, and the Admin screen has an entrance animation, so the
 // bug is invisible to any test that renders the dialog on its own.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -29,6 +30,10 @@ let providerCreates = 0, providerDeletes = 0, failNextIcon = false;
 let heldAssignment = null;
 const assignmentRequests = [];
 const examPatches = [];
+const badgeRequests = [];
+const badgeSource = { imageUrl: "https://images.credly.com/exam-badge.png", issuerUrl: "https://www.credly.com/org/example/badge/exam" };
+const badgePath = "/api/exam-badges/exam?v=fixture";
+const badgeImage = readFileSync(new URL("../../../tests/fixtures/mcp-presentation/response-flow.png", import.meta.url));
 const errors = [];
 const apiRequests = [];
 // The overview drives the header's status pill (issue #49): it can succeed,
@@ -51,6 +56,18 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/exams") return json({ exams: exams.map(exam => ({ ...exam,
     providers: exam.providers.map(p => providers.find(provider => provider.id === p.id)).filter(p => p && (url.searchParams.get("includeArchived") === "true" || !p.archivedAt)),
   })) });
+  if (url.pathname === "/api/exams/exam/badge-source") return json({ source: badgeSource });
+  if (url.pathname === "/api/exams/exam/badge/import" && req.method === "POST") {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    badgeRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+    if (badgeRequests.length === 1) return json({ badgeImport: { status: "failed", reason: "download_failed" } });
+    exams[0].badgeIconUrl = badgePath;
+    return json({ badgeImport: { status: "imported", badgeIconUrl: badgePath } });
+  }
+  if (url.pathname === "/api/exam-badges/exam") {
+    res.writeHead(200, { "Content-Type": "image/png" });
+    return res.end(badgeImage);
+  }
   if (url.pathname.startsWith("/api/exams/") && req.method === "PATCH") {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const patch = JSON.parse(Buffer.concat(chunks).toString());
@@ -415,6 +432,32 @@ try {
   assert.deepEqual(examPatches.at(-1), { subject: null, passMarkPct: null });
   await meta.getByText("Subject · —", { exact: true }).waitFor();
   assert.equal(await meta.getByText(/^Pass mark/).count(), 0);
+
+  await page.getByRole("button", { name: "Import badge from link", exact: true }).click();
+  const badgeDialog = page.getByRole("dialog", { name: "Import badge from link" });
+  const imageUrl = badgeDialog.getByLabel("Official badge image URL");
+  const importBadge = badgeDialog.getByRole("button", { name: "Import badge from link" });
+  assert.equal(await imageUrl.inputValue(), badgeSource.imageUrl);
+  assert.equal(await badgeDialog.getByLabel("Certification issuer page URL").inputValue(), badgeSource.issuerUrl);
+  await importBadge.click();
+  await badgeDialog.getByRole("alert").filter({ hasText: /Check the image link/ }).waitFor();
+  const updatedImageUrl = "https://images.credly.com/corrected.png";
+  await imageUrl.fill(updatedImageUrl);
+  await importBadge.click();
+  await badgeDialog.waitFor({ state: "detached" });
+  assert.deepEqual(badgeRequests, [
+    { source: badgeSource, replace: false },
+    { source: { ...badgeSource, imageUrl: updatedImageUrl }, replace: false },
+  ]);
+  await page.getByRole("button", { name: "Replace badge from link", exact: true }).waitFor();
+  const picker = page.getByRole("button", { name: /Select exam, current exam: Solutions Architect Pro/ });
+  await waitUntil("active exam thumbnail loaded", () => picker.locator("img").evaluate(img => img.complete && img.naturalWidth > 0));
+  await picker.click();
+  const option = page.getByRole("option", { name: "Solutions Architect Pro", exact: true });
+  await waitUntil("exam picker option thumbnail loaded", () => option.locator("img").evaluate(img => img.complete && img.naturalWidth > 0));
+  await option.press("Escape");
+  console.log("PASS badge import fills the official source, retries with edited input and refreshes both exam thumbnails");
+
   await page.getByRole("button", { name: "All exams" }).click();
   await page.getByRole("button", { name: /Solutions Architect Pro.*aws-sap-c02/ }).waitFor();
   console.log("PASS exam details: prefilled edit, slug validation and confirmation, conflict error, changed-fields PATCH, clearing, live refresh");

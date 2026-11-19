@@ -87,7 +87,7 @@ test("both MCP catalogs publish complete behavioral hints over JSON and legacy S
       for (const tool of tools) {
         const mutation = MUTATION_ANNOTATIONS[tool.name];
         assert.deepEqual(tool.annotations, mutation ? {
-          readOnlyHint: false, destructiveHint: mutation[0], idempotentHint: mutation[1], openWorldHint: false,
+          readOnlyHint: false, destructiveHint: mutation[0], idempotentHint: mutation[1], openWorldHint: tool.name === "admin_create_exam",
         } : READ_ANNOTATIONS, tool.name);
         for (const value of Object.values(tool.annotations)) assert.equal(typeof value, "boolean", tool.name);
       }

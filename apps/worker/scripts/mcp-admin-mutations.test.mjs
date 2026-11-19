@@ -10,6 +10,22 @@ import {
   callAdminToolExpectingError, lastMetric,
 } from "./mcp-foundation-fixture.mjs";
 
+test("an Admin MCP exam imports its configured badge after committing the exam", async t => {
+  const f = await fixture(t);
+  const imageUrl = "https://images.credly.com/example/associate.png";
+  const issuerUrl = "https://www.credly.com/org/example/badge/associate";
+  const image = await readFile(new URL("../../../tests/fixtures/mcp-presentation/response-flow.png", import.meta.url));
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.equal(url.href, imageUrl);
+    assert.ok(f.sqlite.prepare("SELECT id FROM exams WHERE slug = 'associate'").get());
+    return new Response(image, { headers: { "Content-Type": "image/png" } });
+  });
+  const result = await callAdminTool(f, "admin_create_exam", { slug: "associate", name: "Associate", badgeSource: { imageUrl, issuerUrl } });
+  assert.equal(result.badgeImport.status, "imported");
+  assert.equal(result.exam.badgeIconUrl, result.badgeImport.badgeIconUrl);
+  assert.equal(f.bucketObjects.size, 1);
+});
+
 test("implementation: admin_validate_question_payload previews create and edit without mutating, and only issues a proposalToken when valid", async (t) => {
   const f = await questionBankFixture(t);
 

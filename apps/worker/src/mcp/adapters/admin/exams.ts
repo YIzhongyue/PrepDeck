@@ -7,10 +7,11 @@ import {
 import { EXAM_SLUG_PATTERN } from "@prepdeck/shared";
 import { officialFormatSchema } from "@prepdeck/shared/schemas";
 import type { AdminAdapterContext } from "./context";
+import { importExamBadge, isApprovedBadgeSource } from "../../../lib/examBadges";
 
 // Admin MCP exam lifecycle: create, update and archive.
 export function examOperations(ctx: AdminAdapterContext) {
-  const { db, principal, consumeAdminMutationLimit } = ctx;
+  const { db, env, principal, consumeAdminMutationLimit } = ctx;
 
   return {
     // --- Exam lifecycle (implementation) -------------------------------------------
@@ -21,6 +22,7 @@ export function examOperations(ctx: AdminAdapterContext) {
       await consumeAdminMutationLimit();
       if (!EXAM_SLUG_PATTERN.test(input.slug)) throw new McpApplicationError("invalid_input");
       if (input.officialFormat !== undefined && !officialFormatSchema.safeParse(input.officialFormat).success) throw new McpApplicationError("invalid_input");
+      if (input.badgeSource && !isApprovedBadgeSource(input.badgeSource, env)) throw new McpApplicationError("invalid_input");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       try {
@@ -38,7 +40,8 @@ export function examOperations(ctx: AdminAdapterContext) {
         });
         throw new McpApplicationError("conflict");
       }
-      return { exam: (await getExamRecord(db, id, { includeArchivedProviders: true }))! };
+      const badgeImport = await importExamBadge(env, id);
+      return { exam: (await getExamRecord(db, id, { includeArchivedProviders: true }))!, badgeImport };
     },
 
     async updateExam(input: { id: string } & ExamMutableFields) {
