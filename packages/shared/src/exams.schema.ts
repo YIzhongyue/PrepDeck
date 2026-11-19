@@ -13,6 +13,20 @@ const PASS_CORRECT = "officialFormat.passCorrectCount must be a whole number fro
 const PASS_MARK = "passMarkPct must be a number from 0 to 100, or null";
 const SLUG_AND_NAME = "slug and name are required";
 
+const httpsUrl = (message: string) => z.string(message).trim().max(2048, message)
+  .pipe(z.url({ protocol: /^https$/, normalize: true, error: message }))
+  .refine((value) => /^https:\/\/[^:/?#@]+(?:[/?#]|$)/.test(value), message);
+
+export const examBadgeSourceSchema = z.strictObject({
+  imageUrl: httpsUrl("Enter an HTTPS badge image URL"),
+  issuerUrl: httpsUrl("Enter an HTTPS certification issuer URL"),
+});
+
+export const importExamBadgeRequestSchema = z.strictObject({
+  source: examBadgeSourceSchema.optional(),
+  replace: z.boolean().optional(),
+});
+
 /** An exam's official mock format (see examFormat.ts); null clears it. */
 export const officialFormatSchema = z.object({
   questionCount: z.int(QUESTION_COUNT).min(1, QUESTION_COUNT).max(MAX_ATTEMPT_QUESTIONS, QUESTION_COUNT),
@@ -41,7 +55,11 @@ const optionalFields = {
   officialFormat: officialFormatSchema.optional(),
 };
 
-const createExamFieldsSchema = z.object({ slug, name, ...optionalFields });
+const createExamFieldsSchema = z.object({
+  slug, name, ...optionalFields,
+  badgeSource: examBadgeSourceSchema.optional(),
+  importBadge: z.boolean().optional(),
+});
 
 // POST /api/exams. A missing or empty slug or name is refused before any
 // field is checked.

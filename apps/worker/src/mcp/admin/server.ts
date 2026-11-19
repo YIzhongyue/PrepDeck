@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { QUESTION_IMPORT_GUIDANCE, getImportSchemas } from "@prepdeck/shared";
+import { examBadgeSourceSchema } from "@prepdeck/shared/schemas";
 import type { Env } from "../../bindings";
 import type { McpPrincipal } from "../credentials";
 import type { McpObservation } from "../observability";
@@ -33,6 +34,7 @@ const examCreateFieldsSchema = z.strictObject({
   language: z.string().max(50).nullable().optional(),
   passMarkPct: z.number().min(0).max(100).nullable().optional(),
   officialFormat: officialFormatSchema,
+  badgeSource: examBadgeSourceSchema.optional().describe("Official HTTPS badge image and issuer page for this exact certification"),
 });
 const examMutableFieldsSchema = z.strictObject({
   slug: examSlugSchema.optional(), name: z.string().min(1).max(200).optional(),
@@ -291,8 +293,8 @@ export function adminMcpTools(principal: McpPrincipal, env: Env): McpTool[] {
     // --- Exam lifecycle (implementation) -------------------------------------------
     defineMcpTool(
       "admin_create_exam",
-      { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      "Create a new exam. Prefer archive/disable semantics over destructive deletion for exams with historical attempts or references — there is no delete tool.",
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      "Create a new exam and import its badge when an approved source is configured. The exam is created even if the badge fetch fails. Prefer archive/disable semantics over destructive deletion for exams with historical attempts or references — there is no delete tool.",
       examCreateFieldsSchema,
       (input) => services.createExam(input),
     ),

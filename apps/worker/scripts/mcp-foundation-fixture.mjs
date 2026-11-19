@@ -41,6 +41,7 @@ const schemaFiles = [
   "0026_question_tag_links.sql", "0027_drop_questions_tags_json.sql", "0029_question_mutation_audit.sql",
   "0033_question_needs_review.sql", "0034_question_components.sql", "0035_exam_official_format.sql", "0037_user_session_version.sql",
   "0041_provider_archiving.sql", "0042_question_archiving.sql", "0043_question_archive_audit_actions.sql", "0045_mcp_oauth.sql", "0047_admin_mcp_import_created_tags.sql",
+  "0049_exam_badge_sources.sql",
 ];
 
 // implementation's import tools write import_logs (0002 predates schemaFiles'
